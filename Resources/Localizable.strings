@@ -1,0 +1,28 @@
+/* Ink — Localizable Strings */
+
+/* General */
+"app.name" = "Ink";
+
+/* Library */
+"library.title" = "Library";
+"library.empty.title" = "No notes yet";
+"library.empty.subtitle" = "Tap the pen to start your first note.";
+"library.empty.action" = "New Note";
+"library.search.placeholder" = "Search notes…";
+
+/* Editor */
+"editor.untitled" = "Untitled";
+"editor.placeholder" = "Start writing…";
+
+/* Settings */
+"settings.title" = "Settings";
+"settings.theme" = "Theme";
+"settings.theme.light" = "Light";
+"settings.theme.dark" = "Dark";
+
+/* Actions */
+"action.new.note" = "New Note";
+"action.delete" = "Delete";
+"action.cancel" = "Cancel";
+"action.done" = "Done";
+"action.share" = "Share";

@@ -1,0 +1,615 @@
+import AVFoundation
+import Combine
+import Foundation
+import PencilKit
+import SwiftUI
+import UIKit
+
+// MARK: - SaveStatus
+
+enum SaveStatus: Equatable {
+    case idle
+    case saving
+    case saved        // shown briefly (1s) then transitions back to idle
+    case error(String)
+}
+
+// MARK: - RecordingState
+
+enum RecordingState {
+    case idle
+    case recording
+    case processing
+}
+
+// MARK: - EditorViewModel
+
+@MainActor
+final class EditorViewModel: ObservableObject {
+
+    // MARK: Identity / data
+    let notebook: Notebook
+    @Published private(set) var pages: [Page]
+    @Published var currentPageIndex: Int
+
+    var currentPage: Page { pages[currentPageIndex] }
+
+    // MARK: Toolbar / chrome visibility
+    @Published var isToolbarVisible: Bool = true
+    @Published var isShowingPageStrip: Bool = false
+    @Published var isFullScreen: Bool = false
+    private var toolbarHideTask: Task<Void, Never>?
+
+    // MARK: Tool state
+    @Published var selectedTool: InkTool
+    @Published private(set) var lastTool: InkTool?         // for "switch between two tools"
+    @Published var activePencilDoubleTapAction: PencilDoubleTapAction = .toggleEraser
+    @Published var isShowingColorPicker: Bool = false
+
+    // MARK: Zoom
+    @Published var zoomScale: CGFloat = 1.0
+
+    // MARK: Save state
+    @Published private(set) var isDirty: Bool = false
+    @Published private(set) var saveStatus: SaveStatus = .idle
+    private var saveTask: Task<Void, Never>?
+    private var savedFlashTask: Task<Void, Never>?
+
+    // MARK: Drawing accessor — set by CanvasContainerView coordinator after makeUIView
+    weak var canvasView: PKCanvasView?
+
+    /// Stroke count on the active canvas — used for VoiceOver labels.
+    var strokeCount: Int { canvasView?.drawing.strokes.count ?? 0 }
+
+    // MARK: Tool palette position (persisted)
+    @Published var toolPalettePosition: CGPoint = CGPoint(x: 0, y: 0)
+
+    // MARK: Recent colours (persisted)
+    @Published private(set) var recentColours: [UIColor] = []
+
+    // MARK: Notebook title editing
+    @Published var isEditingTitle: Bool = false
+
+    // MARK: Export
+    @Published var isShowingExportSheet: Bool = false
+
+    // MARK: Page navigation animation
+    @Published var pageSwapInFlight: Bool = false        // shown only if swap exceeds 100ms
+
+    // MARK: Text blocks
+    @Published private(set) var currentPageTextBlocks: [TextBlock] = []
+
+    // MARK: Media attachments
+    @Published private(set) var currentPageAttachments: [MediaAttachment] = []
+    @Published var selectedAttachmentIds: Set<UUID> = []
+    @Published var mediaError: String?
+
+    /// Drives the media picker sheet — set by MediaInsertCoordinator methods.
+    @Published var activeMediaSource: MediaSource?
+
+    // MARK: Media insert coordinator (lazy to break init cycle)
+    lazy var mediaInsertCoordinator: MediaInsertCoordinator = MediaInsertCoordinator(viewModel: self)
+
+    // MARK: Undo stack for deleted attachments (session-only, not SwiftData undo)
+    private var deletedAttachmentsUndo: [(MediaAttachment, Data?)] = []
+
+    // MARK: Audio annotations
+    @Published private(set) var currentPageAudioAnnotations: [AudioAnnotation] = []
+    @Published var playingAnnotationId:         UUID?     = nil
+    @Published var isRecordingPanelVisible:     Bool      = false
+    @Published var recordingState:              RecordingState = .idle
+    /// Defaults from `ink.transcription.auto` (Settings → Audio & Transcription).
+    /// User can also override per-recording via the panel toggle while recording.
+    @Published var isTranscriptionEnabled: Bool =
+        UserDefaults.standard.object(forKey: "ink.transcription.auto") as? Bool ?? true
+    @Published var isShowingAudioFilePicker:    Bool      = false
+
+    private var audioRecorder = AudioRecorder()
+
+    // MARK: Keyboard offset — updated by EditorView keyboard notifications
+    @Published var keyboardVisibleHeight: CGFloat = 0
+
+    // MARK: Pending exit confirmation (back button while dirty)
+    @Published var isShowingExitConfirmation: Bool = false
+
+    // MARK: Storage
+    private let storage: StorageService
+    private let userDefaults: UserDefaults
+
+    // MARK: Init
+
+    init(
+        notebook: Notebook,
+        storage: StorageService = .shared,
+        userDefaults: UserDefaults = .standard,
+        theme: InkTheme = .light
+    ) {
+        self.notebook        = notebook
+        self.storage         = storage
+        self.userDefaults    = userDefaults
+
+        let fetched = storage.fetchPages(in: notebook)
+        // SwiftData should always return at least one page (createNotebook seeds one),
+        // but guard for safety.
+        self.pages            = fetched.isEmpty ? [] : fetched
+        self.currentPageIndex = 0
+        self.selectedTool     = InkTool.Defaults.pen(theme: theme)
+
+        loadPersistedState(theme: theme)
+        resetToolbarTimer()
+        refreshCurrentPageTextBlocks()
+        refreshCurrentPageAttachments()
+        refreshCurrentPageAudioAnnotations()
+    }
+
+    deinit {
+        // Tasks captured [weak self] — they will be no-ops after dealloc.
+        toolbarHideTask?.cancel()
+        saveTask?.cancel()
+        savedFlashTask?.cancel()
+    }
+
+    // MARK: - Persisted state
+
+    private struct StorageKeys {
+        static let toolPalettePosition = "ink.toolPalette.position"
+        static let recentColours       = "ink.colorPicker.recent"
+        // Must stay in lock-step with SettingsViewModel.DoubleTapAction's @AppStorage key.
+        static let pencilDoubleTap     = "ink.pencil.doubletap"
+    }
+
+    private func loadPersistedState(theme: InkTheme) {
+        // Tool palette position — default: right edge, vertically centred
+        if let data  = userDefaults.data(forKey: StorageKeys.toolPalettePosition),
+           let point = try? JSONDecoder().decode(CGPointWrapper.self, from: data) {
+            toolPalettePosition = point.cgPoint
+        } else {
+            // Will be repositioned by ToolPaletteView on first appear once the bounds are known.
+            toolPalettePosition = CGPoint(x: -1, y: -1)
+        }
+
+        // Recent colours
+        if let hexes = userDefaults.array(forKey: StorageKeys.recentColours) as? [String] {
+            recentColours = hexes.map { UIColor(hex: $0) }
+        }
+
+        // Pencil double-tap action — honour system preference if set
+        if let raw = userDefaults.string(forKey: StorageKeys.pencilDoubleTap),
+           let action = PencilDoubleTapAction(rawValue: raw) {
+            activePencilDoubleTapAction = action
+        } else if let mapped = PencilDoubleTapAction.from(UIPencilInteraction.preferredTapAction) {
+            activePencilDoubleTapAction = mapped
+        }
+    }
+
+    func persistToolPalettePosition() {
+        if let data = try? JSONEncoder().encode(CGPointWrapper(cgPoint: toolPalettePosition)) {
+            userDefaults.set(data, forKey: StorageKeys.toolPalettePosition)
+        }
+    }
+
+    private func persistRecentColours() {
+        let hexes = recentColours.map { $0.hexString }
+        userDefaults.set(hexes, forKey: StorageKeys.recentColours)
+    }
+
+    // MARK: - Toolbar auto-hide
+
+    func resetToolbarTimer() {
+        toolbarHideTask?.cancel()
+        if !isToolbarVisible {
+            withAnimation(.inkSpring(InkSpring.smooth)) { isToolbarVisible = true }
+        }
+        toolbarHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                withAnimation(.inkSpring(InkSpring.smooth)) {
+                    self.isToolbarVisible = false
+                }
+            }
+        }
+    }
+
+    func keepToolbarVisible() {
+        toolbarHideTask?.cancel()
+        if !isToolbarVisible {
+            withAnimation(.inkSpring(InkSpring.smooth)) { isToolbarVisible = true }
+        }
+    }
+
+    // MARK: - Tool selection
+
+    /// Switch tool, remembering the previous selection so "switch between two tools"
+    /// (Apple Pencil double-tap) can ping-pong.
+    func selectTool(_ tool: InkTool) {
+        if tool.identity != selectedTool.identity {
+            lastTool = selectedTool
+        }
+        selectedTool = tool
+        resetToolbarTimer()
+    }
+
+    func toggleLastTwoTools() {
+        guard let last = lastTool else { return }
+        let current = selectedTool
+        selectedTool = last
+        lastTool     = current
+    }
+
+    func toggleEraser() {
+        if case .eraser = selectedTool {
+            // Cycle eraser sub-mode
+            if case .eraser(.pixel) = selectedTool {
+                selectedTool = .eraser(mode: .object)
+            } else {
+                selectedTool = .eraser(mode: .pixel)
+            }
+        } else {
+            lastTool     = selectedTool
+            selectedTool = InkTool.Defaults.eraser
+        }
+    }
+
+    func cycleEraserMode() {
+        guard case .eraser(let mode) = selectedTool else { return }
+        selectedTool = .eraser(mode: mode == .pixel ? .object : .pixel)
+    }
+
+    func incrementWidth() {
+        guard selectedTool.hasWidth else { return }
+        selectedTool = selectedTool.withWidth(selectedTool.currentWidth + 0.5)
+    }
+
+    func decrementWidth() {
+        guard selectedTool.hasWidth else { return }
+        selectedTool = selectedTool.withWidth(selectedTool.currentWidth - 0.5)
+    }
+
+    func setWidth(_ width: CGFloat) {
+        selectedTool = selectedTool.withWidth(width)
+    }
+
+    func setOpacity(_ opacity: CGFloat) {
+        selectedTool = selectedTool.withOpacity(opacity)
+    }
+
+    // MARK: - Colour selection
+
+    func selectColour(_ colour: UIColor) {
+        selectedTool = selectedTool.withColour(colour)
+        addRecentColour(colour)
+    }
+
+    private func addRecentColour(_ colour: UIColor) {
+        let hex = colour.hexString
+        var current = recentColours
+        current.removeAll { $0.hexString == hex }
+        current.insert(colour, at: 0)
+        if current.count > 8 { current = Array(current.prefix(8)) }
+        recentColours = current
+        persistRecentColours()
+    }
+
+    // MARK: - Pencil double-tap
+
+    func handlePencilDoubleTap() {
+        switch activePencilDoubleTapAction {
+        case .switchTool:        toggleLastTwoTools()
+        case .toggleEraser:      toggleEraser()
+        case .showColorPicker:   isShowingColorPicker = true
+        case .doNothing:         break
+        }
+        resetToolbarTimer()
+    }
+
+    // MARK: - Page navigation
+
+    /// Swap the current page in-place. Saves the outgoing page synchronously,
+    /// then assigns the incoming drawing. **Does not recreate `PKCanvasView`.**
+    /// Returns true on success.
+    @discardableResult
+    func goToPage(index newIndex: Int) -> Bool {
+        guard newIndex >= 0, newIndex < pages.count, newIndex != currentPageIndex else {
+            return false
+        }
+        guard let canvasView else {
+            currentPageIndex = newIndex
+            return true
+        }
+
+        // Track elapsed time so we can show a loading indicator if the swap is unexpectedly slow.
+        let start = Date()
+
+        // 1. Save outgoing — synchronous, ignore errors (autosave will retry shortly)
+        flushPendingSaveSync()
+
+        // 2. Swap drawing
+        let outgoing = pages[currentPageIndex]
+        let incoming = pages[newIndex]
+
+        if let data    = incoming.strokeData,
+           let drawing = try? PKDrawing(data: data) {
+            canvasView.drawing = drawing
+        } else {
+            canvasView.drawing = PKDrawing()
+        }
+
+        // Reset undo manager scope so undoes don't bleed across pages.
+        canvasView.undoManager?.removeAllActions()
+
+        currentPageIndex = newIndex
+        isDirty          = false
+        saveStatus       = .idle
+        refreshCurrentPageTextBlocks()
+        refreshCurrentPageAttachments()
+        refreshCurrentPageAudioAnnotations()
+
+        let elapsed = Date().timeIntervalSince(start)
+        if elapsed > 0.1 { pageSwapInFlight = true }
+        else             { pageSwapInFlight = false }
+
+        // Invalidate any stale thumbnails for the outgoing page — defer to the strip's cache.
+        PageThumbnailCache.shared.invalidate(pageId: outgoing.id)
+        return true
+    }
+
+    func goToNextPage() {
+        guard currentPageIndex < pages.count - 1 else { return }
+        goToPage(index: currentPageIndex + 1)
+    }
+
+    func goToPreviousPage() {
+        guard currentPageIndex > 0 else { return }
+        goToPage(index: currentPageIndex - 1)
+    }
+
+    func addPage(after pageNumber: Int? = nil) {
+        guard let _ = try? storage.createPage(in: notebook, after: pageNumber ?? pages.last?.pageNumber) else { return }
+        refreshPages()
+    }
+
+    func deletePage(_ page: Page) {
+        guard pages.count > 1 else { return }   // don't allow deleting the last page
+        let wasCurrent = page.id == currentPage.id
+        try? storage.deletePage(page)
+        refreshPages()
+        if wasCurrent {
+            let safeIndex = max(0, min(currentPageIndex, pages.count - 1))
+            currentPageIndex = safeIndex
+            // Force a drawing reload
+            if let canvasView,
+               let data    = pages[safeIndex].strokeData,
+               let drawing = try? PKDrawing(data: data) {
+                canvasView.drawing = drawing
+            } else {
+                canvasView?.drawing = PKDrawing()
+            }
+        }
+    }
+
+    func duplicatePage(_ page: Page) {
+        guard let _ = try? storage.duplicatePage(page) else { return }
+        refreshPages()
+    }
+
+    private func refreshPages() {
+        let fetched = storage.fetchPages(in: notebook)
+        guard !fetched.isEmpty else { return }
+        pages = fetched
+        currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
+        refreshCurrentPageTextBlocks()
+        refreshCurrentPageAttachments()
+        refreshCurrentPageAudioAnnotations()
+    }
+
+    func refreshCurrentPageTextBlocks() {
+        currentPageTextBlocks = currentPage.textBlocks
+            .filter { !$0.isDeleted }
+            .sorted { $0.zIndex < $1.zIndex }
+    }
+
+    func refreshCurrentPageAttachments() {
+        currentPageAttachments = currentPage.mediaAttachments
+            .filter { !$0.isDeleted }
+            .sorted { $0.zIndex < $1.zIndex }
+    }
+
+    func refreshCurrentPageAudioAnnotations() {
+        currentPageAudioAnnotations = currentPage.audioAnnotations
+            .filter { !$0.isDeleted }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    // MARK: - Attachment undo (session-only shake/toolbar undo)
+
+    func registerAttachmentUndo(_ attachment: MediaAttachment) {
+        let data = try? Data(contentsOf: StorageService.shared.mediaURL(for: attachment))
+        deletedAttachmentsUndo.append((attachment, data))
+    }
+
+    func undoLastAttachmentDelete() {
+        guard let (attachment, _) = deletedAttachmentsUndo.popLast() else { return }
+        try? StorageService.shared.restoreAttachment(attachment)
+        refreshCurrentPageAttachments()
+    }
+
+    var canUndoAttachmentDelete: Bool { !deletedAttachmentsUndo.isEmpty }
+
+    // MARK: - Audio recording
+
+    func startRecording() async {
+        do {
+            try await audioRecorder.requestPermission()
+            let dir = StorageService.shared.audioDirURL(notebookId: currentPage.notebookId)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let tempId  = UUID()
+            let fileURL = dir.appendingPathComponent(tempId.uuidString + ".m4a")
+            try await audioRecorder.start(outputURL: fileURL)
+            recordingState = .recording
+            pendingRecordingURL = fileURL
+            pendingRecordingId  = tempId
+        } catch {
+            mediaError = error.localizedDescription
+        }
+    }
+
+    func stopRecording() async {
+        guard recordingState == .recording else { return }
+        recordingState = .processing
+        do {
+            let result = try await audioRecorder.stop()
+            guard let url = pendingRecordingURL, let id = pendingRecordingId else {
+                recordingState = .idle
+                return
+            }
+            let pinPoint = CGPoint(x: 0.15, y: 0.15)
+            let annotation = try StorageService.shared.insertAudioFile(
+                to: currentPage,
+                annotationId: id,
+                fileName: id.uuidString + ".m4a",
+                duration: result.duration,
+                fileSizeBytes: result.fileSizeBytes,
+                at: pinPoint
+            )
+            refreshCurrentPageAudioAnnotations()
+            pendingRecordingURL = nil
+            pendingRecordingId  = nil
+            recordingState      = .idle
+            isRecordingPanelVisible = false
+
+            if isTranscriptionEnabled {
+                let capturedURL = url
+                let capturedId  = annotation.id
+                Task.detached(priority: .utility) { [weak self] in
+                    await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
+                    await MainActor.run { self?.refreshCurrentPageAudioAnnotations() }
+                }
+            }
+        } catch {
+            mediaError     = error.localizedDescription
+            recordingState = .idle
+        }
+    }
+
+    /// Returns the AudioRecorder's live level stream for the waveform view.
+    func audioLevelStream() async -> AsyncStream<Float> {
+        await audioRecorder.levelStream ?? AsyncStream { $0.finish() }
+    }
+
+    private var pendingRecordingURL: URL?
+    private var pendingRecordingId:  UUID?
+
+    // MARK: - Title rename
+
+    func renameNotebook(_ newTitle: String) {
+        let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != notebook.title else { return }
+        try? storage.updateNotebook(notebook, title: trimmed,
+                                    coverColorHex: nil, isPinned: nil, tags: nil)
+    }
+
+    // MARK: - Autosave (debounced 1.2s)
+
+    /// Called by the canvas coordinator on `canvasViewDrawingDidChange`.
+    /// Cancels any pending save and schedules a new one 1.2s later.
+    func scheduleAutosave() {
+        isDirty = true
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled, let self else { return }
+            await self.performSave()
+        }
+    }
+
+    /// Force-flush any pending save synchronously. Used when navigating between pages.
+    func flushPendingSaveSync() {
+        guard isDirty, let canvasView, let storage = Optional(self.storage) else { return }
+        let drawing = canvasView.drawing
+        let page    = currentPage
+        do {
+            try storage.updatePageStrokes(page, drawing: drawing)
+            isDirty    = false
+            saveStatus = .saved
+            scheduleSavedFlash()
+            scheduleThumbnailRegeneration(for: page, drawing: drawing)
+        } catch {
+            saveStatus = .error(error.localizedDescription)
+        }
+    }
+
+    private func performSave() async {
+        guard let canvasView else { return }
+        let drawing = canvasView.drawing
+        let page    = currentPage
+
+        saveStatus = .saving
+
+        do {
+            try storage.updatePageStrokes(page, drawing: drawing)
+            isDirty    = false
+            saveStatus = .saved
+            scheduleSavedFlash()
+            scheduleThumbnailRegeneration(for: page, drawing: drawing)
+        } catch {
+            saveStatus = .error(error.localizedDescription)
+        }
+    }
+
+    private func scheduleSavedFlash() {
+        savedFlashTask?.cancel()
+        savedFlashTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.0))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if case .saved = self?.saveStatus {
+                    self?.saveStatus = .idle
+                }
+            }
+        }
+    }
+
+    /// Regenerate the page thumbnail off the drawing thread.
+    private func scheduleThumbnailRegeneration(for page: Page, drawing: PKDrawing) {
+        let pageSize = page.pageSize.pointSize
+        let pageId   = page.id
+        Task.detached(priority: .utility) {
+            let bounds = CGRect(origin: .zero, size: pageSize)
+            let scale: CGFloat = 0.20  // ~ 200×260 thumbnail dimensions
+            let image  = drawing.image(from: bounds, scale: scale)
+            await MainActor.run {
+                PageThumbnailCache.shared.set(image, for: pageId)
+            }
+        }
+    }
+
+    // MARK: - Exit
+
+    /// Called when the user taps Back. Triggers a flush save before dismissing.
+    func prepareForDismissal() {
+        toolbarHideTask?.cancel()
+        flushPendingSaveSync()
+    }
+}
+
+// MARK: - CGPoint codable wrapper
+
+private struct CGPointWrapper: Codable {
+    let x: CGFloat
+    let y: CGFloat
+    init(cgPoint: CGPoint) { x = cgPoint.x; y = cgPoint.y }
+    var cgPoint: CGPoint { CGPoint(x: x, y: y) }
+}
+
+// MARK: - UIColor hex string helper
+
+extension UIColor {
+    /// Returns "#RRGGBB" — alpha is dropped intentionally (we store opacity separately).
+    var hexString: String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X",
+                      Int(round(r * 255)), Int(round(g * 255)), Int(round(b * 255)))
+    }
+}

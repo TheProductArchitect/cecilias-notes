@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Info.plist for the main Ink target.
+
+    Required Xcode setup:
+    - Set this file as the target's Info.plist (Build Settings → Info.plist File).
+    - The keys below are the ones Stage 10 mandates. Existing build-tool-managed
+      keys (CFBundleIdentifier, CFBundleVersion etc.) should be merged in by
+      Xcode at archive time.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Identity & version (Xcode auto-fills from project settings) -->
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>
+    <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- iPad only -->
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>2</integer>
+    </array>
+    <key>UIRequiresFullScreen</key>
+    <false/>
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Status bar -->
+    <key>UIStatusBarStyle</key>
+    <string>UIStatusBarStyleDefault</string>
+    <key>UIViewControllerBasedStatusBarAppearance</key>
+    <true/>
+
+    <!-- Pencil + scribble -->
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+
+    <!-- Privacy usage descriptions -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Ink records audio for your notes. Recordings are stored on your device and never uploaded.</string>
+
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Ink transcribes your recordings locally on your device using Apple's speech recognition.</string>
+
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Ink lets you insert photos from your photo library into your notes.</string>
+
+    <key>NSCameraUsageDescription</key>
+    <string>Ink lets you photograph and insert images directly into your notes.</string>
+
+    <!-- Deep link URL scheme -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.ink.app</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>ink</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Scenes -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <true/>
+    </dict>
+
+    <!-- Launch -->
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key>
+        <string>InkLaunchBackground</string>
+    </dict>
+</dict>
+</plist>
