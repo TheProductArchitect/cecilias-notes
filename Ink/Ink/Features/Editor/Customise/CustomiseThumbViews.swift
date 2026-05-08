@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - CoverThumbView
 
@@ -28,62 +29,79 @@ struct CoverThumbView: View {
 
 // MARK: - TemplateThumbView
 
-/// Small live preview of a `PageTemplate`, rendered by wrapping the
-/// existing `PageRenderer` (UIKit) in a `UIViewRepresentable`. We render
-/// at a small fixed `PageSize` and let SwiftUI scale the view down via
-/// the frame modifier — PageRenderer's own draw routines are
-/// resolution-independent so this looks crisp at thumb size.
+/// Static preview of a `PageTemplate`, rendered by drawing the existing
+/// `PageRenderer` (UIView) into a `UIImage` at thumb size and caching it
+/// per (template, size, appearance) tuple. Going through `layer.render(in:)`
+/// uses the same Core Graphics draw path the live canvas uses, so what the
+/// user sees in the carousel is what they'll get on the page.
+///
+/// Earlier this view tried to scale a live `PageRenderer` UIView via
+/// `CGAffineTransform` inside a SwiftUI host. That looked blank because
+/// the host's bounds settled *after* the renderer had already drawn at
+/// `.zero` size. Static rasterisation removes the timing dependency.
 struct TemplateThumbView: View {
     let template: PageTemplate
     let size: CGSize
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        TemplateThumbHost(template: template)
+        Image(uiImage: TemplateThumbCache.image(for: template, size: size, scheme: colorScheme))
+            .resizable()
             .frame(width: size.width, height: size.height)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-private struct TemplateThumbHost: UIViewRepresentable {
-    let template: PageTemplate
+// MARK: - Cache + renderer
 
-    func makeUIView(context: Context) -> ScaledPageRendererView {
-        ScaledPageRendererView(template: template)
+private enum TemplateThumbCache {
+    private struct Key: Hashable {
+        let templateRaw: String
+        let widthPt:    Int
+        let heightPt:   Int
+        let isDark:     Bool
     }
 
-    func updateUIView(_ view: ScaledPageRendererView, context: Context) {
-        view.update(template: template)
-    }
-}
+    private static var cache: [Key: UIImage] = [:]
 
-/// Hosts a `PageRenderer` at A4 native size and scales it down to fit.
-/// This keeps the Core Graphics drawing crisp — we paint once at full
-/// page-point resolution then transform the layer.
-private final class ScaledPageRendererView: UIView {
-    private let renderer: PageRenderer
-
-    init(template: PageTemplate) {
-        self.renderer = PageRenderer(pageSize: .a4, template: template)
-        super.init(frame: .zero)
-        addSubview(renderer)
-        clipsToBounds = true
-        backgroundColor = .clear
+    static func image(for template: PageTemplate, size: CGSize, scheme: ColorScheme) -> UIImage {
+        let isDark = (scheme == .dark)
+        let key = Key(
+            templateRaw: template.jsonString,
+            widthPt:     Int(size.width.rounded()),
+            heightPt:    Int(size.height.rounded()),
+            isDark:      isDark
+        )
+        if let hit = cache[key] { return hit }
+        let img = render(template: template, size: size, isDark: isDark)
+        cache[key] = img
+        return img
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
+    private static func render(template: PageTemplate, size: CGSize, isDark: Bool) -> UIImage {
+        let pagePoints = PageSize.a4.pointSize
+        let scale = min(size.width / pagePoints.width, size.height / pagePoints.height)
 
-    func update(template: PageTemplate) {
-        renderer.update(pageSize: .a4, template: template)
-    }
+        let renderer = PageRenderer(pageSize: .a4, template: template)
+        renderer.frame = CGRect(origin: .zero, size: pagePoints)
+        renderer.overrideUserInterfaceStyle = isDark ? .dark : .light
+        renderer.layoutIfNeeded()
+        renderer.setNeedsDisplay()
 
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let pageSize = PageSize.a4.pointSize
-        let scale = min(bounds.width / pageSize.width, bounds.height / pageSize.height)
-        renderer.transform = .identity
-        renderer.bounds = CGRect(origin: .zero, size: pageSize)
-        renderer.center = CGPoint(x: bounds.midX, y: bounds.midY)
-        renderer.transform = CGAffineTransform(scaleX: scale, y: scale)
+        let imageRenderer = UIGraphicsImageRenderer(size: size)
+        return imageRenderer.image { ctx in
+            // Centre the scaled page within the thumb so the portrait
+            // page sits centred horizontally inside the 80×104 box.
+            let scaledW = pagePoints.width  * scale
+            let scaledH = pagePoints.height * scale
+            let dx = (size.width  - scaledW) / 2
+            let dy = (size.height - scaledH) / 2
+            ctx.cgContext.translateBy(x: dx, y: dy)
+            ctx.cgContext.scaleBy(x: scale, y: scale)
+            // `layer.render(in:)` triggers `draw(_:)` on the UIView with
+            // the current CG context — same path the canvas uses live.
+            renderer.layer.render(in: ctx.cgContext)
+        }
     }
 }

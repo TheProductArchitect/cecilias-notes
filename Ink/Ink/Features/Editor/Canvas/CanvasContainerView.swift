@@ -276,8 +276,17 @@ struct CanvasContainerView: UIViewRepresentable {
         }
 
         // 2. Page change — swap drawing only. Never recreate canvasView.
-        if context.coordinator.appliedPageId != viewModel.currentPage.id {
-            let page = viewModel.currentPage
+        let page          = viewModel.currentPage
+        let pageIdChanged = context.coordinator.appliedPageId != page.id
+        // Same-page mutations from the Customise panel: detect by comparing
+        // pageSize / template raw against what we last applied.
+        let templateRaw    = page.backgroundTemplateRaw
+        let sizeChanged    = !pageIdChanged
+            && context.coordinator.appliedPageSize != page.pageSize
+        let templateChanged = !pageIdChanged
+            && context.coordinator.appliedTemplateRaw != templateRaw
+
+        if pageIdChanged || sizeChanged || templateChanged {
             renderer.update(pageSize: page.pageSize, template: page.backgroundTemplate)
 
             let newSize = page.pageSize.pointSize
@@ -292,16 +301,22 @@ struct CanvasContainerView: UIViewRepresentable {
             context.coordinator.audioContainer?.frame            = CGRect(origin: .zero, size: newSize)
             context.coordinator.gestureController?.frame         = CGRect(origin: .zero, size: newSize)
 
-            if let data = page.strokeData, let drawing = try? PKDrawing(data: data) {
-                canvasView.drawing = drawing
-            } else {
-                canvasView.drawing = PKDrawing()
+            // Drawing only swaps on a *page* change. Same-page size/template
+            // mutations preserve in-progress strokes.
+            if pageIdChanged {
+                if let data = page.strokeData, let drawing = try? PKDrawing(data: data) {
+                    canvasView.drawing = drawing
+                } else {
+                    canvasView.drawing = PKDrawing()
+                }
+                // Reset undo scope so previous-page edits are not in this
+                // page's undo manager.
+                canvasView.undoManager?.removeAllActions()
             }
 
-            // Reset undo scope so previous-page edits are not in this page's undo manager.
-            canvasView.undoManager?.removeAllActions()
-
-            context.coordinator.appliedPageId = page.id
+            context.coordinator.appliedPageId      = page.id
+            context.coordinator.appliedPageSize    = page.pageSize
+            context.coordinator.appliedTemplateRaw = templateRaw
             DispatchQueue.main.async { coord.centerContent(animated: false) }
         }
 
@@ -386,6 +401,11 @@ extension CanvasContainerView {
 
         var appliedTool:   InkTool?
         var appliedPageId: UUID?
+        // Cached so the canvas can react when the *same* page is mutated via
+        // the Customise panel (page-size / template). Without these, only a
+        // page-id swap would trigger a re-layout.
+        var appliedPageSize: PageSize?
+        var appliedTemplateRaw: String?
         var suppressZoomUpdate: Bool = false
 
         // Two-finger swipe debounce — guard against double-firing during decel.
