@@ -14,6 +14,8 @@
     <!-- Identity & version (Xcode auto-fills from project settings) -->
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
+    <key>CFBundleDisplayName</key>
+    <string>wave notes app</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -25,15 +27,15 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
 
-    <!-- iPad only -->
-    <key>UIDeviceFamily</key>
-    <array>
-        <integer>2</integer>
-    </array>
+    <!-- iPad/iPhone targeting comes from TARGETED_DEVICE_FAMILY in
+         build settings. Don't set UIDeviceFamily here — Xcode warns and
+         overwrites. -->
     <key>UIRequiresFullScreen</key>
     <false/>
     <key>UISupportedInterfaceOrientations~ipad</key>
