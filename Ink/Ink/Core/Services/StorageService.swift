@@ -453,13 +453,19 @@ extension StorageService {
         title: String?,
         coverColorHex: String?,
         isPinned: Bool?,
-        tags: [String]?
+        tags: [String]?,
+        coverTexture: CoverTexture? = nil,
+        pageSize: PageSize? = nil,
+        defaultTemplate: PageTemplate? = nil
     ) throws {
         if let title {
             guard title.count <= 80 else { throw InkStorageError.fileSizeLimitExceeded }
             notebook.title = title
         }
         if let colorHex = coverColorHex { notebook.coverColorHex = colorHex }
+        if let coverTexture { notebook.coverTexture = coverTexture }
+        if let pageSize { notebook.pageSize = pageSize }
+        if let defaultTemplate { notebook.defaultTemplate = defaultTemplate }
         if let pinned = isPinned { notebook.isPinned = pinned }
         if let tags {
             let validated = tags.prefix(5).map { String($0.prefix(20)) }

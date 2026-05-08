@@ -84,6 +84,48 @@ final class EditorViewModel: ObservableObject {
     // MARK: Notebook title editing
     @Published var isEditingTitle: Bool = false
 
+    // MARK: Customise pill + panel (Item 1)
+
+    /// Whether the floating "Customise" pill is currently visible. Driven
+    /// by `EditorView.onAppear` via `markCustomisePillIfFresh()` for newly-
+    /// created notebooks, and auto-dismissed after 5 seconds.
+    @Published var isCustomisePillVisible: Bool = false
+
+    /// Whether the slide-down Customise panel is open. Tapping the pill,
+    /// the title bar, or "Customise Notebook…" in the More menu sets this.
+    @Published var isCustomisePanelOpen: Bool = false
+
+    /// Notebook IDs that have already been shown a pill in this session.
+    /// Session-local — not persisted; we don't want pills resurfacing on
+    /// every cold launch. Static so it survives across editor view-model
+    /// instances within a single app run.
+    private static var pillShownIds: Set<UUID> = []
+
+    /// Called from `EditorView.onAppear`. Shows the pill iff the notebook
+    /// was created within the last 30 seconds AND we haven't already shown
+    /// the pill for it this session. The 5-second auto-dismiss is owned
+    /// by the pill view itself (it has the timing context).
+    func markCustomisePillIfFresh() {
+        guard !Self.pillShownIds.contains(notebook.id) else { return }
+        let age = Date().timeIntervalSince(notebook.createdAt)
+        guard age < 30 else { return }
+        Self.pillShownIds.insert(notebook.id)
+        isCustomisePillVisible = true
+    }
+
+    func dismissCustomisePill() {
+        isCustomisePillVisible = false
+    }
+
+    func openCustomisePanel() {
+        isCustomisePillVisible = false
+        isCustomisePanelOpen   = true
+    }
+
+    func closeCustomisePanel() {
+        isCustomisePanelOpen = false
+    }
+
     // MARK: Export
     @Published var isShowingExportSheet: Bool = false
 
@@ -1026,8 +1068,86 @@ final class EditorViewModel: ObservableObject {
         do {
             try storage.updateNotebook(notebook, title: trimmed,
                                        coverColorHex: nil, isPinned: nil, tags: nil)
+            objectWillChange.send()
         } catch {
             showError(.storageFailed(action: "rename notebook", underlying: error))
+        }
+    }
+
+    // MARK: - Customise panel mutations (Item 1)
+    //
+    // Each method updates the notebook live, persists the user's choice as
+    // the new "last-used" default for future quick-creates, and bumps
+    // `objectWillChange` so views re-read the updated `notebook.*` fields.
+    // No save/cancel — direct manipulation.
+
+    /// Apply a cover preset. Updates the notebook's color+texture and
+    /// remembers the choice for future quick-creates.
+    func applyCustomCover(_ cover: NotebookCover) {
+        do {
+            try storage.updateNotebook(
+                notebook,
+                title:         nil,
+                coverColorHex: cover.colorHex,
+                isPinned:      nil,
+                tags:          nil,
+                coverTexture:  cover.texture
+            )
+            userDefaults.set(cover.rawValue, forKey: "ink.lastUsed.cover")
+            objectWillChange.send()
+        } catch {
+            showError(.storageFailed(action: "update cover", underlying: error))
+        }
+    }
+
+    /// Apply a page size. Mutates the notebook's default page size, plus
+    /// the *first page* if it is empty (no strokes) — so a freshly-created
+    /// notebook visibly resizes behind the panel. Pages with content are
+    /// left alone to avoid clipping the user's drawing.
+    func applyCustomPageSize(_ size: PageSize) {
+        do {
+            try storage.updateNotebook(
+                notebook,
+                title:         nil,
+                coverColorHex: nil,
+                isPinned:      nil,
+                tags:          nil,
+                pageSize:      size
+            )
+            // Apply to the first page only when empty — preserves drawings
+            // on existing notebooks where the user re-enters the panel.
+            if let first = notebook.pages.first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
+               first.strokeData == nil || first.strokeDataSize == 0 {
+                first.pageSize  = size
+                first.updatedAt = Date()
+            }
+            userDefaults.set(size.rawValue, forKey: "ink.lastUsed.pageSize")
+            objectWillChange.send()
+        } catch {
+            showError(.storageFailed(action: "update page size", underlying: error))
+        }
+    }
+
+    /// Apply a page template. Same empty-page rule as `applyCustomPageSize`.
+    func applyCustomTemplate(_ template: PageTemplate) {
+        do {
+            try storage.updateNotebook(
+                notebook,
+                title:           nil,
+                coverColorHex:   nil,
+                isPinned:        nil,
+                tags:            nil,
+                defaultTemplate: template
+            )
+            if let first = notebook.pages.first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
+               first.strokeData == nil || first.strokeDataSize == 0 {
+                first.backgroundTemplate = template
+                first.updatedAt          = Date()
+            }
+            userDefaults.set(template.jsonString, forKey: "ink.lastUsed.template")
+            objectWillChange.send()
+        } catch {
+            showError(.storageFailed(action: "update template", underlying: error))
         }
     }
 

@@ -120,6 +120,50 @@ struct EditorView: View {
                     .allowsHitTesting(!viewModel.isFocusMode)
                 }
 
+                // 5y. Customise pill (Item 1) — surfaces top-right for ~5s
+                // after a fresh notebook is created. Tap → open the panel.
+                if viewModel.isCustomisePillVisible
+                    && !viewModel.isFullScreen
+                    && !viewModel.isFocusMode
+                    && !viewModel.isCustomisePanelOpen {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            CustomisePill(
+                                onTap:     { viewModel.openCustomisePanel() },
+                                onDismiss: { viewModel.dismissCustomisePill() }
+                            )
+                            .padding(.trailing, Ink.Spacing.md)
+                            .padding(.top, proxy.safeAreaInsets.top + 60)  // below toolbar
+                        }
+                        Spacer()
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .zIndex(72)
+                }
+
+                // 5x. Customise panel — slide-down overlay, non-modal.
+                // Tap-outside layer captures stray taps to dismiss while
+                // letting the panel itself remain interactive.
+                if viewModel.isCustomisePanelOpen {
+                    Color.black.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.inkSpring(InkSpring.smooth)) {
+                                viewModel.closeCustomisePanel()
+                            }
+                        }
+                        .zIndex(73)
+
+                    VStack {
+                        CustomisePanel(viewModel: viewModel)
+                            .padding(.top, proxy.safeAreaInsets.top + 52) // below toolbar
+                        Spacer()
+                    }
+                    .zIndex(74)
+                }
+
                 // 5z. Shape recognition "Undo Shape" pill — floats at the
                 // top-centre when a stroke was just replaced. Tap to revert,
                 // auto-dismisses after 3s; the conversion is then committed
@@ -382,7 +426,14 @@ struct EditorView: View {
                 DispatchQueue.main.async { deepLink.pendingExport = false }
                 viewModel.isShowingExportSheet = true
             }
+            // Item 1 — surface the floating Customise pill iff this is a
+            // freshly-created notebook we haven't already pilled this session.
+            withAnimation(.inkSpring(InkSpring.smooth)) {
+                viewModel.markCustomisePillIfFresh()
+            }
         }
+        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isCustomisePanelOpen)
+        .animation(.inkSpring(InkSpring.fade),   value: viewModel.isCustomisePillVisible)
         .onDisappear {
             undoTimer?.invalidate()
             undoTimer = nil

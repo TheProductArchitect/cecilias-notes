@@ -385,26 +385,41 @@ final class LibraryViewModel: ObservableObject {
         return NotebookNameGenerator.randomName(avoiding: titles)
     }
 
-    /// Creates a notebook instantly with default cover/template from Settings,
-    /// auto-named "Untitled N", and opens it in the editor. No modal, no friction.
+    /// Creates a notebook instantly with the user's *last-used* cover, page
+    /// size, and template — or sensible first-run defaults if those keys
+    /// have never been written. Opens directly into the editor; the editor
+    /// surfaces a floating "Customise" pill so the user can tweak covers,
+    /// page size, and template post-creation.
+    ///
+    /// Persistence: `lastUsed*` keys are *only* written when the user
+    /// explicitly picks something via the Customise panel. The panel's
+    /// model layer owns those writes; this method just reads them.
     func createUntitledNotebookAndOpen() {
         HapticManager.shared.notebookCreated()
+
+        let cover    = NotebookCover.from(rawValue: UserDefaults.standard.string(forKey: "ink.lastUsed.cover"))
         let pageSize: PageSize = {
-            if let raw = UserDefaults.standard.string(forKey: "ink.newpage.size"),
+            // Backwards-compat: also honour the legacy "ink.newpage.size" key
+            // that the Settings → New Pages screen still writes to.
+            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize")
+                ?? UserDefaults.standard.string(forKey: "ink.newpage.size"),
                let v = PageSize(rawValue: raw) { return v }
             return .a4
         }()
         let template: PageTemplate = {
-            if let raw = UserDefaults.standard.string(forKey: "ink.newpage.template"),
+            let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.template")
+                ?? UserDefaults.standard.string(forKey: "ink.newpage.template")
+            if let raw,
                let data = raw.data(using: .utf8),
-               let t = try? JSONDecoder().decode(PageTemplate.self, from: data) { return t }
+               let t    = try? JSONDecoder().decode(PageTemplate.self, from: data) { return t }
             return .blank
         }()
+
         createNotebook(
             title:         uniqueUntitledName(),
             subjectId:     selectedSubjectId,
-            coverColorHex: InkColorPresets.subjectColors[6],   // #007AFF
-            coverTexture:  .none,
+            coverColorHex: cover.colorHex,
+            coverTexture:  cover.texture,
             pageSize:      pageSize,
             template:      template,
             folderId:      currentFolder?.id

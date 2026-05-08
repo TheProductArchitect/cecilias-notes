@@ -84,7 +84,11 @@ struct EditorToolbarView: View {
             .buttonStyle(.inkPressable)
             .inkTapTarget()
 
-            // Title — tap to rename
+            // Title — tap to open the Customise panel (rename happens
+            // there via the Name field, alongside cover/size/template).
+            // The legacy inline rename TextField stays as a fallback when
+            // `isEditingTitle` is set programmatically (e.g. from the
+            // library's "rename" context menu deep-link).
             if viewModel.isEditingTitle {
                 TextField("Untitled", text: $titleBuffer)
                     .font(.inkHeadline)
@@ -99,7 +103,7 @@ struct EditorToolbarView: View {
                     .frame(maxWidth: 280)
             } else {
                 Button {
-                    viewModel.isEditingTitle = true
+                    viewModel.openCustomisePanel()
                 } label: {
                     Text(viewModel.notebook.title)
                         .font(.inkHeadline)
@@ -109,6 +113,7 @@ struct EditorToolbarView: View {
                         .frame(maxWidth: 280, alignment: .leading)
                 }
                 .buttonStyle(.inkPressable)
+                .accessibilityHint("Open the customise panel")
             }
         }
     }
@@ -201,6 +206,12 @@ struct EditorToolbarView: View {
             iconButton("square.and.arrow.up") { onShare() }
 
             Menu {
+                Button {
+                    viewModel.openCustomisePanel()
+                } label: { Label("Customise Notebook…", systemImage: "sparkles") }
+
+                Divider()
+
                 // Media insertion sub-menu
                 Menu {
                     Button { viewModel.mediaInsertCoordinator.insertPhotos() }
