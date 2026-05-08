@@ -29,7 +29,7 @@ struct EditorView: View {
         GeometryReader { proxy in
             ZStack(alignment: .top) {
                 // 1. Canvas (full screen) + text block overlay (inside scroll/zoom space)
-                CanvasContainerView(viewModel: viewModel)
+                ContinuousCanvasView(viewModel: viewModel)
                     .ignoresSafeArea()
                     .onAppear { canvasFrame = proxy.frame(in: .global) }
                     .accessibilityLabel(A11y.canvasLabel(strokeCount: viewModel.strokeCount))
@@ -475,9 +475,14 @@ struct EditorView: View {
                 Button("Redo")     { redo() }
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!canRedo)
-                Button("Previous Page") { viewModel.goToPreviousPage() }
-                    .keyboardShortcut(.leftArrow, modifiers: .command)
-                Button("Next Page")     { viewModel.goToNextPage() }
+                // ⌘← / ⌘→ scroll one viewport-height up / down in the
+                // continuous-scroll canvas. The previous binding swapped
+                // pages 1:1 — no longer needed now that all pages are
+                // visible at once. Page-strip tap still navigates to a
+                // specific page.
+                Button("Scroll Up")   { scrollByViewportHeight(direction: -1) }
+                    .keyboardShortcut(.leftArrow,  modifiers: .command)
+                Button("Scroll Down") { scrollByViewportHeight(direction:  1) }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
                 Button("Close Editor")  { onDismiss() }
                     .keyboardShortcut(.escape, modifiers: [])
@@ -527,6 +532,34 @@ struct EditorView: View {
                     scrollView.setContentOffset(offset, animated: false)
                 }
             }
+        }
+    }
+
+    // MARK: Continuous-scroll keyboard navigation
+
+    /// Walk up the active canvas's view hierarchy to find the outer
+    /// UIScrollView, then scroll one viewport height up / down. Direction
+    /// is `-1` for up, `+1` for down. No-op if the scroll view can't be
+    /// found (e.g. the canvas hasn't mounted yet).
+    private func scrollByViewportHeight(direction: CGFloat) {
+        var v: UIView? = viewModel.canvasView
+        while let candidate = v {
+            if let scrollView = candidate as? UIScrollView,
+               scrollView.contentSize.height > scrollView.bounds.height {
+                let target = scrollView.contentOffset.y
+                    + direction * scrollView.bounds.height * 0.92
+                let maxY = scrollView.contentSize.height
+                    - scrollView.bounds.height
+                    + scrollView.contentInset.bottom
+                let minY = -scrollView.contentInset.top
+                let clamped = Swift.min(maxY, Swift.max(minY, target))
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: clamped),
+                    animated: true
+                )
+                return
+            }
+            v = candidate.superview
         }
     }
 

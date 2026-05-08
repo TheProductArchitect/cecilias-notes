@@ -145,5 +145,9 @@ struct MinimapView: View {
 // MARK: - Notifications
 
 extension Notification.Name {
-    static let inkCanvasShouldPanTo = Notification.Name("ink.canvas.shouldPanTo")
+    static let inkCanvasShouldPanTo       = Notification.Name("ink.canvas.shouldPanTo")
+    /// Posted by the canvas on every scroll/zoom change so the minimap
+    /// (and anyone else who cares) can track the viewport. UserInfo:
+    /// `offset: CGPoint`, `zoom: CGFloat`.
+    static let inkCanvasViewportDidChange = Notification.Name("ink.canvas.viewportDidChange")
 }

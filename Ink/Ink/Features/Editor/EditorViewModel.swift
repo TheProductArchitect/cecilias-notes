@@ -732,56 +732,28 @@ final class EditorViewModel: ObservableObject {
 
     /// Swap the current page in-place. Saves the outgoing page synchronously,
     /// then assigns the incoming drawing. **Does not recreate `PKCanvasView`.**
-    /// Returns true on success.
+    /// Navigate to a specific page index. In the continuous-scroll editor
+    /// (Item 2) this is a *scroll request* rather than a drawing swap —
+    /// every page already has its own PKCanvasView mounted in the warm
+    /// band, so there's nothing to swap. Setting `pendingScrollPageIndex`
+    /// signals `ContinuousCanvasView` to scroll the viewport to that
+    /// page; once the scroll lands, the active-page detector updates
+    /// `currentPageIndex` (and the overlays that read `currentPage`).
+    ///
+    /// Returns `true` if the index was valid and a scroll was requested.
     @discardableResult
     func goToPage(index newIndex: Int) -> Bool {
-        guard newIndex >= 0, newIndex < pages.count, newIndex != currentPageIndex else {
-            return false
-        }
-        guard let canvasView else {
-            currentPageIndex = newIndex
-            return true
-        }
-
-        // Track elapsed time so we can show a loading indicator if the swap is unexpectedly slow.
-        let start = Date()
-
-        // 1. Save outgoing — synchronous, ignore errors (autosave will retry shortly)
-        flushPendingSaveSync()
-
-        // 2. Swap drawing.
-        //    Earlier work added a CATransition on canvasView.layer for a
-        //    horizontal page-slide effect. That broke PencilKit's live
-        //    stroke preview — the in-flight Metal render in
-        //    PKCanvasAttachmentView (a sublayer) inherited the transition
-        //    and stuck on screen as a "shadow" of the pen tip after pen-up.
-        //    The slide is removed; pages now swap instantly.
-        let outgoing = pages[currentPageIndex]
-        let incoming = pages[newIndex]
-
-        if let data    = incoming.strokeData,
-           let drawing = try? PKDrawing(data: data) {
-            canvasView.drawing = drawing
-        } else {
-            canvasView.drawing = PKDrawing()
-        }
-
-        // Reset undo manager scope so undoes don't bleed across pages.
-        canvasView.undoManager?.removeAllActions()
-
+        guard newIndex >= 0, newIndex < pages.count else { return false }
+        guard newIndex != currentPageIndex else { return false }
+        // Set the synchronous index immediately so overlays / page strip
+        // visually track ahead of the scroll animation. The canvas
+        // coordinator will re-confirm the active page when the scroll
+        // lands.
         currentPageIndex = newIndex
-        isDirty          = false
-        saveStatus       = .idle
         refreshCurrentPageTextBlocks()
         refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
-
-        let elapsed = Date().timeIntervalSince(start)
-        if elapsed > 0.1 { pageSwapInFlight = true }
-        else             { pageSwapInFlight = false }
-
-        // Invalidate any stale thumbnails for the outgoing page — defer to the strip's cache.
-        PageThumbnailCache.shared.invalidate(pageId: outgoing.id)
+        pendingScrollPageIndex = newIndex
         return true
     }
 
@@ -882,7 +854,7 @@ final class EditorViewModel: ObservableObject {
         refreshPages()
     }
 
-    private func refreshPages() {
+    func refreshPages() {
         let fetched = storage.fetchPages(in: notebook)
         guard !fetched.isEmpty else { return }
         pages = fetched
@@ -1221,12 +1193,25 @@ final class EditorViewModel: ObservableObject {
 
     /// Force-flush any pending save synchronously. Used when navigating between pages.
     func flushPendingSaveSync() {
-        guard isDirty, let canvasView, let storage = Optional(self.storage) else { return }
-        let drawing = canvasView.drawing
-        let page    = currentPage
+        if isDirty, let canvasView {
+            let drawing = canvasView.drawing
+            let page    = currentPage
+            savePage(page, drawing: drawing)
+            isDirty = false
+        }
+        // ContinuousCanvasView (Item 2) owns per-page autosave for *every*
+        // page in the warm band, not just the active one. Give it a chance
+        // to flush all dirty pages before the editor unwinds.
+        canvasFlushAllHandler?()
+    }
+
+    /// Synchronous per-page save. Used by ContinuousCanvasView's coordinator
+    /// for every page's debounced autosave AND for the unmount/dismiss
+    /// flush. Idempotent — calling it on a page that's already up-to-date
+    /// just rewrites the same bytes.
+    func savePage(_ page: Page, drawing: PKDrawing) {
         do {
             try storage.updatePageStrokes(page, drawing: drawing)
-            isDirty    = false
             saveStatus = .saved
             scheduleSavedFlash()
             scheduleThumbnailRegeneration(for: page, drawing: drawing)
@@ -1234,6 +1219,15 @@ final class EditorViewModel: ObservableObject {
             saveStatus = .error(error.localizedDescription)
         }
     }
+
+    /// Set by the active canvas host (ContinuousCanvasView's coordinator)
+    /// so `flushPendingSaveSync()` can walk every dirty page on dismiss.
+    var canvasFlushAllHandler: (() -> Void)?
+
+    /// Set by the page-strip / keyboard so the continuous canvas knows to
+    /// scroll to a particular page index. Read-and-clear contract: the
+    /// canvas coordinator clears the value once it has acted on it.
+    @Published var pendingScrollPageIndex: Int?
 
     private func performSave() async {
         guard let canvasView else { return }
