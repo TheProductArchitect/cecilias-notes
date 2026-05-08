@@ -98,8 +98,21 @@ final class PageRenderer: UIView {
 
     // MARK: Template renderers
 
+    /// Colour the template lines render in. Tuned for visibility against
+    /// the paper colour in `draw(_:)` — `inkTextTertiary` in dark mode is
+    /// only slightly lighter than the dark paper (#555552 vs #1C1C1A),
+    /// which at the previous 0.20 alpha was essentially invisible. Use a
+    /// dedicated brighter token for the dark variant.
+    private var paperLineColour: UIColor {
+        UIColor { t in
+            t.userInterfaceStyle == .dark
+                ? UIColor(hex: "#5A5A57")
+                : UIColor(hex: "#9C9C98")
+        }
+    }
+
     private func drawLined(ctx: CGContext, in rect: CGRect, spacing: CGFloat) {
-        let stroke = UIColor.inkTextTertiary.withAlphaComponent(0.25).cgColor
+        let stroke = paperLineColour.withAlphaComponent(0.55).cgColor
         ctx.setStrokeColor(stroke)
         ctx.setLineWidth(0.5)
         var y = spacing
@@ -112,7 +125,7 @@ final class PageRenderer: UIView {
     }
 
     private func drawGrid(ctx: CGContext, in rect: CGRect, spacing: CGFloat) {
-        let stroke = UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor
+        let stroke = paperLineColour.withAlphaComponent(0.45).cgColor
         ctx.setStrokeColor(stroke)
         ctx.setLineWidth(0.5)
 
@@ -134,7 +147,7 @@ final class PageRenderer: UIView {
     private func drawDotGrid(
         ctx: CGContext, in rect: CGRect, spacing: CGFloat, dotSize: CGFloat
     ) {
-        let fill = UIColor.inkTextTertiary.withAlphaComponent(0.30).cgColor
+        let fill = paperLineColour.withAlphaComponent(0.65).cgColor
         ctx.setFillColor(fill)
 
         let r = max(0.5, dotSize)
@@ -154,7 +167,7 @@ final class PageRenderer: UIView {
     }
 
     private func drawCornell(ctx: CGContext, in rect: CGRect) {
-        let lineColour = UIColor.inkTextTertiary.withAlphaComponent(0.30).cgColor
+        let lineColour = paperLineColour.withAlphaComponent(0.60).cgColor
         ctx.setStrokeColor(lineColour)
         ctx.setLineWidth(0.5)
 
@@ -196,7 +209,7 @@ final class PageRenderer: UIView {
     }
 
     private func drawMusic(ctx: CGContext, in rect: CGRect) {
-        let stroke = UIColor.inkTextTertiary.withAlphaComponent(0.30).cgColor
+        let stroke = paperLineColour.withAlphaComponent(0.55).cgColor
         ctx.setStrokeColor(stroke)
         ctx.setLineWidth(0.5)
 

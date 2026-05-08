@@ -383,6 +383,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             canvas.minimumZoomScale = 1
             canvas.contentInsetAdjustmentBehavior = .never
             canvas.drawingPolicy = fingerDrawingEnabled ? .anyInput : .pencilOnly
+            // Render stroke colours literally rather than letting PencilKit
+            // auto-invert them for "contrast" in dark mode. Without this,
+            // a user picking white in a dark-themed app sees their stroke
+            // come out as dark grey because PencilKit treats the canvas
+            // as dark and flips white → near-black. The page renderer
+            // behind the canvas keeps its own trait-aware paper colour.
+            canvas.overrideUserInterfaceStyle = .light
 
             if let data = page.strokeData, let drawing = try? PKDrawing(data: data) {
                 canvas.drawing = drawing
