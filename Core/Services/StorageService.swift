@@ -12,13 +12,42 @@ final class StorageService: ObservableObject {
     static let shared = StorageService()
 
     // MARK: Directory URLs
+    //
+    // The SwiftData store always lives in `inkDirectoryURL` (local Application
+    // Support — never synced; performance + integrity reasons). Only file
+    // assets (`media/`, `audio/`, `exports/`) follow `notebooksDirectoryURL`,
+    // which is dynamic: iCloud ubiquity container when sync is enabled and
+    // available, local Application Support otherwise.
+    //
+    // Toggling iCloud doesn't migrate the SQLite store; it only relocates the
+    // Notebooks asset directory. CloudSyncManager.enable()/disable() perform
+    // the move and flip the persisted flag.
 
     static var inkDirectoryURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ink")
     }
-    static var notebooksDirectoryURL: URL {
+
+    /// Local-only path. Used as the source/destination during enable/disable
+    /// migration and as the fallback when iCloud isn't available.
+    static var localNotebooksDirectoryURL: URL {
         inkDirectoryURL.appendingPathComponent("Notebooks")
+    }
+
+    /// Resolves the notebooks asset root. Returns the iCloud ubiquity
+    /// `Documents/Notebooks` when sync is enabled AND ubiquity is reachable;
+    /// otherwise the local Application Support path.
+    ///
+    /// Persisted-flag key is `ink.icloud.sync.enabled` (owned by CloudSyncManager).
+    static var notebooksDirectoryURL: URL {
+        let enabled = UserDefaults.standard.bool(forKey: "ink.icloud.sync.enabled")
+        if enabled,
+           let icloudRoot = FileManager.default
+            .url(forUbiquityContainerIdentifier: nil)?
+            .appendingPathComponent("Documents/Notebooks") {
+            return icloudRoot
+        }
+        return localNotebooksDirectoryURL
     }
 
     // MARK: Core
@@ -421,7 +450,8 @@ extension StorageService {
         guard fm.fileExists(atPath: src.path) else { return }
         do {
             try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.copyItem(at: src, to: dst)
+            // Coordinator-wrapped when destination is in the iCloud container.
+            try Self.copyFile(at: src, to: dst)
         } catch {
             throw InkStorageError.fileWriteFailed(error)
         }
@@ -685,14 +715,14 @@ extension StorageService {
                 .appendingPathComponent("media")
             try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
-            // Full resolution
+            // Full resolution. NSFileCoordinator-wrapped when iCloud is enabled.
             if let jpeg = image.jpegData(compressionQuality: 0.90) {
-                try? jpeg.write(to: mediaDestURL, options: .atomic)
+                try? Self.writeFile(jpeg, to: mediaDestURL)
             }
             // Thumbnail — max 400×400pt, JPEG 75%
             if let thumb = image.thumbnailFitting(maxDimension: 400),
                let thumbJpeg = thumb.jpegData(compressionQuality: 0.75) {
-                try? thumbJpeg.write(to: thumbDestURL, options: .atomic)
+                try? Self.writeFile(thumbJpeg, to: thumbDestURL)
             }
         }
 
@@ -737,7 +767,7 @@ extension StorageService {
         let thumbURL  = thumbnailURL(for: attachment)
         let notebookId = attachment.notebookId
 
-        try jpegData.write(to: destURL, options: .atomic)
+        try Self.writeFile(jpegData, to: destURL)
         attachment.fileSizeBytes  = Int64(jpegData.count)
         attachment.originalWidth  = originalWidth
         attachment.originalHeight = originalHeight
@@ -750,7 +780,7 @@ extension StorageService {
                   let thumb = image.thumbnailFitting(maxDimension: 400),
                   let thumbJpeg = thumb.jpegData(compressionQuality: 0.75)
             else { return }
-            try? thumbJpeg.write(to: thumbURL, options: .atomic)
+            try? Self.writeFile(thumbJpeg, to: thumbURL)
         }
         _ = notebookId
     }

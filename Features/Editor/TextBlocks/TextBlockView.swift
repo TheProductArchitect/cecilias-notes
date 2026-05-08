@@ -1,3 +1,4 @@
+import SafariServices
 import SwiftUI
 import UIKit
 
@@ -8,7 +9,9 @@ import UIKit
 final class InkTextView: UITextView {
 
     var onKeyCommand: ((RichTextToolbar.Action) -> Void)?
-    var onEscape: (() -> Void)?
+    var onEscape:     (() -> Void)?
+    var onTab:        (() -> Void)?
+    var onShiftTab:   (() -> Void)?
 
     override var keyCommands: [UIKeyCommand]? {
         [
@@ -22,6 +25,12 @@ final class InkTextView: UITextView {
                          action: #selector(cmdLink), discoverabilityTitle: "Link"),
             UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [],
                          action: #selector(cmdEscape)),
+            UIKeyCommand(input: "\t", modifierFlags: [],
+                         action: #selector(cmdTab),
+                         discoverabilityTitle: "Indent / Next Block"),
+            UIKeyCommand(input: "\t", modifierFlags: .shift,
+                         action: #selector(cmdShiftTab),
+                         discoverabilityTitle: "Outdent / Previous Block"),
         ]
     }
 
@@ -30,6 +39,8 @@ final class InkTextView: UITextView {
     @objc private func cmdUnderline() { onKeyCommand?(.underline) }
     @objc private func cmdLink()      { onKeyCommand?(.link) }
     @objc private func cmdEscape()    { onEscape?() }
+    @objc private func cmdTab()       { onTab?() }
+    @objc private func cmdShiftTab()  { onShiftTab?() }
 }
 
 // MARK: - TextBlockView
@@ -46,6 +57,10 @@ struct TextBlockView: UIViewRepresentable {
     let onCommit: (NSAttributedString) -> Void
     let onBecomeActive: () -> Void           // tapped but not editing → promote to editing
     let onRequestLink: (NSRange) -> Void
+    /// Tab pressed while NOT inside a list — overlay should focus the next block by zIndex.
+    var onRequestNextBlock: (() -> Void)? = nil
+    /// Shift+Tab pressed while NOT inside a list — overlay should focus the previous block.
+    var onRequestPreviousBlock: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onCommit: onCommit, onBecomeActive: onBecomeActive,
@@ -66,9 +81,14 @@ struct TextBlockView: UIViewRepresentable {
         textView.isScrollEnabled   = false
         textView.isEditable        = false
         textView.isSelectable      = true
+        // Always interactive — required for the `shouldInteractWith URL` delegate
+        // to fire in idle/selected states. Hit-testing is gated by the parent
+        // TextModeGestureController so this doesn't steal pencil/scroll.
+        textView.isUserInteractionEnabled = true
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         textView.textContainer.lineFragmentPadding = 0
-        textView.dataDetectorTypes = []
+        // Link detection is enabled in idle/selected states (see updateUIView).
+        textView.dataDetectorTypes = .link
 
         // Load content
         let attrText = loadAttributedText()
@@ -87,6 +107,25 @@ struct TextBlockView: UIViewRepresentable {
         }
         textView.onEscape = { [weak coordinator] in
             coordinator?.textView?.resignFirstResponder()
+        }
+        // Tab + Shift+Tab routing — list indent if inside a list, else focus next/prev block.
+        let onNext = onRequestNextBlock
+        let onPrev = onRequestPreviousBlock
+        textView.onTab = { [weak coordinator] in
+            guard let coord = coordinator, let tv = coord.textView else { return }
+            if coord.isInListItem(textView: tv) {
+                coord.indentListItem(textView: tv)
+            } else {
+                onNext?()
+            }
+        }
+        textView.onShiftTab = { [weak coordinator] in
+            guard let coord = coordinator, let tv = coord.textView else { return }
+            if coord.isInListItem(textView: tv) {
+                coord.dedentListItem(textView: tv)
+            } else {
+                onPrev?()
+            }
         }
 
         textView.delegate = context.coordinator
@@ -108,6 +147,17 @@ struct TextBlockView: UIViewRepresentable {
                 if textView.isFirstResponder { textView.resignFirstResponder() }
             }
         }
+
+        // Link tap-through is enabled in idle/selected, disabled in editing
+        // (so the user can edit a URL without it auto-launching Safari).
+        // dataDetectorTypes is also re-evaluated when attributedText is set,
+        // which is why we set it on every update rather than once in makeUIView.
+        let detectors: UIDataDetectorTypes = shouldEdit ? [] : .link
+        if textView.dataDetectorTypes != detectors {
+            textView.dataDetectorTypes = detectors
+        }
+        // Pass the current state down so the delegate can branch behaviour.
+        context.coordinator.currentState = interactionState
 
         // Reapply content only if block data changed (avoid disrupting active editing)
         if !textView.isFirstResponder {
@@ -160,6 +210,9 @@ extension TextBlockView {
         weak var textView: UITextView?
         weak var toolbar:  RichTextToolbar?
         var block: TextBlock?
+        /// Updated by `updateUIView`. Used by `shouldInteractWith URL` to decide
+        /// whether to intercept (idle/selected) or let UITextView handle it (editing).
+        var currentState: TextBlockInteractionState = .idle
 
         private var shortcutHandler: MarkdownShortcutHandler?
         private var saveTask: Task<Void, Never>?
@@ -207,6 +260,41 @@ extension TextBlockView {
 
         func textViewDidEndEditing(_ textView: UITextView) {
             commitNow()
+        }
+
+        // MARK: Link tap-through (idle / selected)
+
+        /// In .idle and .selected states, intercept link taps and open them in
+        /// SFSafariViewController. In .editing state, do nothing — let the user
+        /// continue editing the underlying text. This is the canonical pattern
+        /// for non-editing UITextViews.
+        func textView(_ textView: UITextView,
+                      shouldInteractWith URL: URL,
+                      in characterRange: NSRange,
+                      interaction: UITextItemInteraction) -> Bool {
+            guard currentState != .editing else { return true }
+            presentSafari(for: URL)
+            return false
+        }
+
+        private func presentSafari(for url: URL) {
+            // Only present http(s) URLs to avoid e.g. tel: or mailto: surprises.
+            guard let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else { return }
+            let safari = SFSafariViewController(url: url)
+            safari.preferredControlTintColor = UIColor.inkAccentPrimary
+
+            guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+                  let root = scene.windows.first?.rootViewController
+            else { return }
+
+            // Walk to topmost presented view controller — settings sheets etc.
+            var presenter: UIViewController = root
+            while let presented = presenter.presentedViewController {
+                presenter = presented
+            }
+            presenter.present(safari, animated: true)
         }
 
         // MARK: RichTextToolbarDelegate
@@ -275,6 +363,73 @@ extension TextBlockView {
             guard let textView else { return }
             saveTask?.cancel()
             onCommit(textView.attributedText)
+        }
+
+        // MARK: List indent / outdent
+
+        /// True iff the paragraph at the current cursor location has a non-empty
+        /// `textLists` (i.e. it's a bullet or numbered-list item).
+        func isInListItem(textView: UITextView) -> Bool {
+            currentParagraphStyle(textView: textView)?
+                .textLists.isEmpty == false
+        }
+
+        /// Increases list nesting level by one. Appends a new `NSTextList` to the
+        /// paragraph's `textLists` array — UITextView re-renders the marker
+        /// indented by one level. No-op if the cursor isn't in a list.
+        func indentListItem(textView: UITextView) {
+            mutateListLevel(textView: textView) { textLists in
+                guard let last = textLists.last else { return textLists }
+                // Reuse the marker style of the last (innermost) list.
+                let marker = last.markerFormat
+                let nested = NSTextList(markerFormat: marker, options: 0)
+                return textLists + [nested]
+            }
+        }
+
+        /// Decreases list nesting by one. Removes the last `NSTextList` from the
+        /// paragraph's `textLists` array. If only one list level remains, it's
+        /// removed entirely — the paragraph becomes a non-list paragraph.
+        func dedentListItem(textView: UITextView) {
+            mutateListLevel(textView: textView) { textLists in
+                guard !textLists.isEmpty else { return textLists }
+                return Array(textLists.dropLast())
+            }
+        }
+
+        // MARK: List helpers
+
+        private func currentParagraphStyle(textView: UITextView) -> NSParagraphStyle? {
+            let attrText = textView.attributedText
+            guard attrText.length > 0 else { return nil }
+            let loc = max(0, min(textView.selectedRange.location, attrText.length - 1))
+            return attrText.attribute(.paragraphStyle, at: loc, effectiveRange: nil)
+                as? NSParagraphStyle
+        }
+
+        /// Applies a transformation to the paragraph-style `textLists` of the
+        /// current paragraph and writes the result back. Preserves selection.
+        private func mutateListLevel(
+            textView: UITextView,
+            transform: ([NSTextList]) -> [NSTextList]
+        ) {
+            let mutable = NSMutableAttributedString(attributedString: textView.attributedText)
+            let paragraphRange = (mutable.string as NSString)
+                .paragraphRange(for: textView.selectedRange)
+
+            mutable.enumerateAttribute(.paragraphStyle, in: paragraphRange,
+                                        options: []) { value, subRange, _ in
+                let style = (value as? NSParagraphStyle).flatMap {
+                    $0.mutableCopy() as? NSMutableParagraphStyle
+                } ?? NSMutableParagraphStyle()
+                style.textLists = transform(style.textLists)
+                mutable.addAttribute(.paragraphStyle, value: style, range: subRange)
+            }
+
+            let preservedSelection = textView.selectedRange
+            textView.attributedText = mutable
+            textView.selectedRange  = preservedSelection
+            scheduleSave()
         }
     }
 }

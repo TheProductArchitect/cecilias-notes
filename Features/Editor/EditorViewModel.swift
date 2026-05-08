@@ -355,8 +355,36 @@ final class EditorViewModel: ObservableObject {
     }
 
     func goToNextPage() {
-        guard currentPageIndex < pages.count - 1 else { return }
+        if currentPageIndex < pages.count - 1 {
+            goToPage(index: currentPageIndex + 1)
+        } else if autoAddEnabled {
+            // At last page + auto-add on: append a page and navigate there.
+            addPageAfterCurrent()
+        }
+        // At last page + auto-add off: no-op. The toolbar's → button is
+        // disabled in this state (see EditorToolbarView).
+    }
+
+    /// Appends a new page after the current one, refreshes the pages list,
+    /// then navigates to the newly-added page. Triggered by `goToNextPage`
+    /// when at the last page and `ink.newpage.autoAdd` is on; also reachable
+    /// from the page strip's "Add Page After" context menu.
+    func addPageAfterCurrent() {
+        guard let _ = try? storage.createPage(in: notebook, after: currentPage.pageNumber) else { return }
+        refreshPages()
         goToPage(index: currentPageIndex + 1)
+        HapticManager.shared.pageAdded()
+    }
+
+    // MARK: - Toolbar state hooks
+
+    /// True iff `currentPageIndex` is the last page in the notebook.
+    var isOnLastPage: Bool { currentPageIndex == pages.count - 1 }
+
+    /// Reads `ink.newpage.autoAdd` from UserDefaults. Default is `true` (matches
+    /// the SettingsViewModel `@AppStorage` default).
+    var autoAddEnabled: Bool {
+        UserDefaults.standard.object(forKey: "ink.newpage.autoAdd") as? Bool ?? true
     }
 
     func goToPreviousPage() {
@@ -419,6 +447,131 @@ final class EditorViewModel: ObservableObject {
         currentPageAudioAnnotations = currentPage.audioAnnotations
             .filter { !$0.isDeleted }
             .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    // MARK: - Overlay-view StorageService wrappers
+    //
+    // The TextBlockOverlay, AudioAnnotationPinsOverlay, and Media overlay all
+    // used to call `StorageService.shared` directly. These wrappers route the
+    // mutations through the view model so views never depend on StorageService.
+
+    /// Returns the created `TextBlock` so the overlay can install its layout
+    /// state immediately. Refreshes `currentPageTextBlocks` and schedules
+    /// autosave on success.
+    @discardableResult
+    func createTextBlock(at normalizedRect: CGRect) -> TextBlock? {
+        guard let block = try? storage.createTextBlock(on: currentPage,
+                                                       at: normalizedRect) else {
+            return nil
+        }
+        refreshCurrentPageTextBlocks()
+        scheduleAutosave()
+        return block
+    }
+
+    func updateTextBlock(_ block: TextBlock,
+                         richText: NSAttributedString,
+                         rect: CGRect?) {
+        try? storage.updateTextBlock(block, richText: richText, rect: rect)
+        // No refresh — TextBlock's @Model mutation propagates through SwiftData.
+        scheduleAutosave()
+    }
+
+    func deleteTextBlock(_ block: TextBlock) {
+        try? storage.deleteTextBlock(block)
+        refreshCurrentPageTextBlocks()
+        scheduleAutosave()
+    }
+
+    func moveAudioAnnotation(_ annotation: AudioAnnotation, to point: CGPoint) {
+        try? storage.moveAudioAnnotation(annotation, to: point)
+        refreshCurrentPageAudioAnnotations()
+        scheduleAutosave()
+    }
+
+    func deleteAudioAnnotation(_ annotation: AudioAnnotation) {
+        try? storage.deleteAudioAnnotation(annotation)
+        refreshCurrentPageAudioAnnotations()
+        scheduleAutosave()
+    }
+
+    func deleteAttachment(_ attachment: MediaAttachment) {
+        try? storage.deleteAttachment(attachment)
+        refreshCurrentPageAttachments()
+        scheduleAutosave()
+    }
+
+    func updateAttachment(
+        _ attachment: MediaAttachment,
+        rect: CGRect? = nil,
+        rotation: Double? = nil,
+        opacity: Double? = nil,
+        caption: String? = nil
+    ) {
+        try? storage.updateAttachment(attachment, rect: rect, rotation: rotation,
+                                       caption: caption, opacity: opacity)
+        scheduleAutosave()
+    }
+
+    func updateAttachmentZIndex(_ attachment: MediaAttachment, zIndex: Int) {
+        try? storage.updateAttachmentZIndex(attachment, zIndex: zIndex)
+        refreshCurrentPageAttachments()
+        scheduleAutosave()
+    }
+
+    func replaceAttachmentImage(
+        _ attachment: MediaAttachment,
+        jpegData: Data,
+        originalWidth: Int,
+        originalHeight: Int
+    ) {
+        try? storage.replaceAttachmentImage(attachment, jpegData: jpegData,
+                                            originalWidth: originalWidth,
+                                            originalHeight: originalHeight)
+        scheduleAutosave()
+    }
+
+    /// Inserts an audio file (already copied to the audio directory) into the current
+    /// page. Used by `AudioFilePicker` after it has finished copying / transcoding.
+    @discardableResult
+    func insertAudioFile(
+        annotationId: UUID,
+        fileName: String,
+        duration: Double,
+        fileSizeBytes: Int64,
+        at point: CGPoint
+    ) -> AudioAnnotation? {
+        let annotation = try? storage.insertAudioFile(
+            to: currentPage,
+            annotationId: annotationId,
+            fileName: fileName,
+            duration: duration,
+            fileSizeBytes: fileSizeBytes,
+            at: point
+        )
+        if annotation != nil {
+            refreshCurrentPageAudioAnnotations()
+            scheduleAutosave()
+        }
+        return annotation
+    }
+
+    /// URL of the audio directory for the active notebook — needed by AudioFilePicker
+    /// to write a transcoded copy before calling `insertAudioFile(from:...)`.
+    func audioDirURL() -> URL {
+        storage.audioDirURL(notebookId: currentPage.notebookId)
+    }
+
+    // Read-only URL passthroughs — overlays use these to load image bytes for
+    // Copy / Crop / display without depending on StorageService directly.
+    func mediaURL(for attachment: MediaAttachment) -> URL {
+        storage.mediaURL(for: attachment)
+    }
+    func thumbnailURL(for attachment: MediaAttachment) -> URL {
+        storage.thumbnailURL(for: attachment)
+    }
+    func audioURL(for annotation: AudioAnnotation) -> URL {
+        storage.audioURL(for: annotation)
     }
 
     // MARK: - Attachment undo (session-only shake/toolbar undo)

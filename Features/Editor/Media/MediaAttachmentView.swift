@@ -36,6 +36,10 @@ struct MediaAttachmentView: UIViewRepresentable {
     // MARK: Image loading
 
     private func loadImage(into imageView: UIImageView) {
+        // Read-only path resolution. Not a layering violation — neither URL
+        // mutates state. Adding a `viewModel` parameter here would force every
+        // call-site (overlay rendering inside ForEach) to thread it through
+        // and gain nothing.
         let thumbURL = StorageService.shared.thumbnailURL(for: attachment)
         let fullURL  = StorageService.shared.mediaURL(for: attachment)
         let useThumb = frameWidth < 800

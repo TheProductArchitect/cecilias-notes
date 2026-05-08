@@ -64,8 +64,9 @@ struct AudioFilePicker: UIViewControllerRepresentable {
 
             let annotationId = UUID()
             let page         = await MainActor.run { viewModel.currentPage }
-            let destURL      = StorageService.shared.audioDirURL(notebookId: page.notebookId)
-                .appendingPathComponent(annotationId.uuidString + ".m4a")
+            let destURL = await MainActor.run {
+                viewModel.audioDirURL().appendingPathComponent(annotationId.uuidString + ".m4a")
+            }
 
             do {
                 try FileManager.default.createDirectory(
@@ -84,9 +85,8 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
                 let pinPoint = CGPoint(x: 0.1, y: 0.1)
 
-                let annotation = try await MainActor.run {
-                    try StorageService.shared.insertAudioFile(
-                        to: page,
+                let annotation = await MainActor.run {
+                    viewModel.insertAudioFile(
                         annotationId: annotationId,
                         fileName: annotationId.uuidString + ".m4a",
                         duration: duration,
@@ -96,9 +96,9 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 }
 
                 await MainActor.run {
-                    viewModel.refreshCurrentPageAudioAnnotations()
                     viewModel.recordingState = .idle
                 }
+                guard let annotation else { return }
 
                 // Background transcription
                 let shouldTranscribe = await MainActor.run { viewModel.isTranscriptionEnabled }

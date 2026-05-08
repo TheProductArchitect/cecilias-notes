@@ -196,7 +196,7 @@ final class AudioPlayerController: ObservableObject {
 
     func load(annotation: AudioAnnotation, viewModel: EditorViewModel) {
         self.viewModel = viewModel
-        let url = StorageService.shared.audioURL(for: annotation)
+        let url = viewModel.audioURL(for: annotation)
         guard let player = try? AVAudioPlayer(contentsOf: url) else { return }
         player.enableRate = true
         player.prepareToPlay()

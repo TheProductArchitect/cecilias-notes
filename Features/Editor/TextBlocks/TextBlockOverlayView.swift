@@ -103,6 +103,12 @@ struct TextBlockOverlayView: View {
                 },
                 onRequestLink: { range in
                     presentLinkPopover(for: block, range: range)
+                },
+                onRequestNextBlock: {
+                    focusNextTextBlock(after: block.id)
+                },
+                onRequestPreviousBlock: {
+                    focusPreviousTextBlock(before: block.id)
                 }
             )
         }
@@ -250,15 +256,13 @@ struct TextBlockOverlayView: View {
             width:  defaultWidth,
             height: defaultHeight
         )
-        do {
-            let block = try StorageService.shared.createTextBlock(on: viewModel.currentPage, at: rect)
-            layouts[block.id] = TextBlockLayoutState(from: block)
-            interactionStates[block.id] = .editing
-            activeBlockId = block.id
-            viewModel.refreshCurrentPageTextBlocks()
-        } catch {
+        guard let block = viewModel.createTextBlock(at: rect) else {
             // Silently ignore — block creation failures are non-critical
+            return
         }
+        layouts[block.id] = TextBlockLayoutState(from: block)
+        interactionStates[block.id] = .editing
+        activeBlockId = block.id
     }
 
     // MARK: - Commit
@@ -266,7 +270,7 @@ struct TextBlockOverlayView: View {
     private func commitBlock(_ block: TextBlock, attrString: NSAttributedString,
                               layout: TextBlockLayoutState) {
         let rect = layout.normalizedRect
-        try? StorageService.shared.updateTextBlock(block, richText: attrString, rect: rect)
+        viewModel.updateTextBlock(block, richText: attrString, rect: rect)
     }
 
     private func commitLayout(block: TextBlock, pageSize: CGSize) {
@@ -279,8 +283,7 @@ struct TextBlockOverlayView: View {
         } else {
             attrText = NSAttributedString(string: block.content)
         }
-        try? StorageService.shared.updateTextBlock(block, richText: attrText,
-                                                   rect: layout.normalizedRect)
+        viewModel.updateTextBlock(block, richText: attrText, rect: layout.normalizedRect)
     }
 
     // MARK: - Link helpers
@@ -301,7 +304,7 @@ struct TextBlockOverlayView: View {
         else { return }
         let mutable = NSMutableAttributedString(attributedString: decoded)
         RichTextAttributes.applyLink(url, to: mutable, range: range)
-        try? StorageService.shared.updateTextBlock(block, richText: mutable, rect: nil)
+        viewModel.updateTextBlock(block, richText: mutable, rect: nil)
     }
 
     private func removeLink(from block: TextBlock, range: NSRange) {
@@ -310,7 +313,7 @@ struct TextBlockOverlayView: View {
         else { return }
         let mutable = NSMutableAttributedString(attributedString: decoded)
         RichTextAttributes.removeLink(from: mutable, range: range)
-        try? StorageService.shared.updateTextBlock(block, richText: mutable, rect: nil)
+        viewModel.updateTextBlock(block, richText: mutable, rect: nil)
     }
 
     // MARK: - Sync
@@ -332,5 +335,31 @@ struct TextBlockOverlayView: View {
 
     private func normalise(_ point: CGPoint, pageSize: CGSize) -> CGPoint {
         CGPoint(x: point.x / pageSize.width, y: point.y / pageSize.height)
+    }
+
+    // MARK: - Focus navigation (Tab / Shift+Tab outside a list)
+
+    /// Activates editing on the next text block by ascending zIndex. The list
+    /// in `viewModel.currentPageTextBlocks` is already sorted by zIndex, so we
+    /// simply walk forward from the current id.
+    private func focusNextTextBlock(after currentBlockId: UUID) {
+        let blocks = viewModel.currentPageTextBlocks
+        guard let idx = blocks.firstIndex(where: { $0.id == currentBlockId }),
+              idx + 1 < blocks.count else { return }
+        let nextBlock = blocks[idx + 1]
+        deselectAll(except: nextBlock.id)
+        interactionStates[nextBlock.id] = .editing
+        activeBlockId = nextBlock.id
+    }
+
+    /// Activates editing on the previous text block by descending zIndex.
+    private func focusPreviousTextBlock(before currentBlockId: UUID) {
+        let blocks = viewModel.currentPageTextBlocks
+        guard let idx = blocks.firstIndex(where: { $0.id == currentBlockId }),
+              idx > 0 else { return }
+        let prevBlock = blocks[idx - 1]
+        deselectAll(except: prevBlock.id)
+        interactionStates[prevBlock.id] = .editing
+        activeBlockId = prevBlock.id
     }
 }

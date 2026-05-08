@@ -30,27 +30,114 @@ final class CloudSyncManager: ObservableObject {
 
     // MARK: Public API
 
+    /// Enables iCloud sync. Moves the local Notebooks asset directory into the
+    /// ubiquity container so subsequent reads/writes (via the now-dynamic
+    /// `StorageService.notebooksDirectoryURL`) target iCloud automatically.
+    /// Sets the persisted flag *after* the move so a crash mid-migration leaves
+    /// the app reading from the local directory it still owns.
     func enable() async throws {
         guard !isEnabled else { return }
         try verifyiCloudAvailable()
 
-        // Mirror the Notebooks directory into iCloud Drive ubiquity container
-        try await startUbiquityMirroring()
+        // Establish destination
+        guard let ubiquityRoot = FileManager.default
+            .url(forUbiquityContainerIdentifier: nil)?
+            .appendingPathComponent("Documents/Notebooks")
+        else { throw CloudSyncError.iCloudUnavailable }
 
-        isEnabled  = true
-        syncStatus = .checking
+        let fm = FileManager.default
+        try fm.createDirectory(at: ubiquityRoot, withIntermediateDirectories: true)
+
+        // Move every notebook directory currently in local Application Support
+        // into the ubiquity root. Existing iCloud items are left in place.
+        let local = StorageService.localNotebooksDirectoryURL
+        if fm.fileExists(atPath: local.path) {
+            let items = (try? fm.contentsOfDirectory(at: local,
+                                                     includingPropertiesForKeys: nil,
+                                                     options: .skipsHiddenFiles)) ?? []
+            for src in items {
+                let dst = ubiquityRoot.appendingPathComponent(src.lastPathComponent)
+                guard !fm.fileExists(atPath: dst.path) else { continue }
+                // setUbiquitous handles the move + ubiquity attribute in one
+                // shot; fall back to plain move if it refuses (e.g. permissions).
+                do {
+                    try fm.setUbiquitous(true, itemAt: src, destinationURL: dst)
+                } catch {
+                    try? fm.moveItem(at: src, to: dst)
+                }
+            }
+        }
+
+        // Persist AFTER the move — partial-migration safety.
         UserDefaults.standard.set(true, forKey: Self.enabledKey)
+        await MainActor.run {
+            isEnabled  = true
+            syncStatus = .checking
+        }
         await reconcileAfterLaunch()
     }
 
+    /// Disables iCloud sync. Moves files BACK from the ubiquity container into
+    /// local Application Support so they remain accessible offline. Uses
+    /// NSFileCoordinator since we're reading from iCloud-backed paths.
     func disable() async throws {
         guard isEnabled else { return }
-        // Stop evicting; leave files already uploaded in iCloud as-is
+
+        let fm = FileManager.default
+        guard let ubiquityRoot = fm.url(forUbiquityContainerIdentifier: nil)?
+            .appendingPathComponent("Documents/Notebooks")
+        else {
+            // No ubiquity → nothing to move. Just flip the flag.
+            UserDefaults.standard.set(false, forKey: Self.enabledKey)
+            await MainActor.run {
+                isEnabled  = false
+                syncStatus = .disabled
+                stopMetadataQueryObserver()
+            }
+            return
+        }
+
+        let local = StorageService.localNotebooksDirectoryURL
+        try fm.createDirectory(at: local, withIntermediateDirectories: true)
+
+        let items = (try? fm.contentsOfDirectory(at: ubiquityRoot,
+                                                 includingPropertiesForKeys: nil,
+                                                 options: .skipsHiddenFiles)) ?? []
+        for src in items {
+            let dst = local.appendingPathComponent(src.lastPathComponent)
+            guard !fm.fileExists(atPath: dst.path) else { continue }
+
+            // Coordinator-wrapped move — required for ubiquity reads.
+            var coordError: NSError?
+            var moveError:  Error?
+            NSFileCoordinator().coordinate(
+                readingItemAt: src, options: .withoutChanges,
+                writingItemAt: dst, options: .forMoving,
+                error: &coordError
+            ) { readURL, writeURL in
+                do {
+                    try fm.moveItem(at: readURL, to: writeURL)
+                } catch {
+                    moveError = error
+                }
+            }
+            if let err = coordError ?? moveError { throw err }
+        }
+
+        UserDefaults.standard.set(false, forKey: Self.enabledKey)
         await MainActor.run {
             isEnabled  = false
             syncStatus = .disabled
+            stopMetadataQueryObserver()
         }
-        UserDefaults.standard.set(false, forKey: Self.enabledKey)
+    }
+
+    /// Stops any in-flight metadata observation. Single-shot queries clean
+    /// themselves up; this is a guard against future refactors that hold one.
+    @MainActor
+    private func stopMetadataQueryObserver() {
+        // Currently no persistent query — runMetadataQuery() is single-shot.
+        // Hook for future use; intentionally empty.
     }
 
     func syncNow() async {
@@ -64,35 +151,7 @@ final class CloudSyncManager: ObservableObject {
         }
     }
 
-    // MARK: - iCloud Drive mirroring
-
-    private func startUbiquityMirroring() async throws {
-        guard let ubiquityURL = ubiquityDocumentsURL() else {
-            throw CloudSyncError.iCloudUnavailable
-        }
-        let notebooksSource = StorageService.notebooksDirectoryURL
-        let notebooksDest   = ubiquityURL.appendingPathComponent("Notebooks")
-
-        let fm = FileManager.default
-        try fm.createDirectory(at: notebooksDest, withIntermediateDirectories: true)
-
-        // Copy any existing local notebooks to iCloud if not already there
-        if let items = try? fm.contentsOfDirectory(
-            at: notebooksSource,
-            includingPropertiesForKeys: nil,
-            options: .skipsHiddenFiles
-        ) {
-            for item in items {
-                let dest = notebooksDest.appendingPathComponent(item.lastPathComponent)
-                if !fm.fileExists(atPath: dest.path) {
-                    try? fm.copyItem(at: item, to: dest)
-                }
-            }
-        }
-
-        // Set the ubiquity attribute to upload
-        try fm.setUbiquitous(true, itemAt: notebooksDest, destinationURL: notebooksDest)
-    }
+    // MARK: - iCloud Drive sync helpers
 
     private func reconcileAfterLaunch() async {
         await MainActor.run { syncStatus = .checking }

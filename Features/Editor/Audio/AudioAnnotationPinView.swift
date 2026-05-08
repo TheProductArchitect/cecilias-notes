@@ -7,15 +7,16 @@ import SwiftUI
 /// Playing: pulsing accent ring around the circle.
 struct AudioAnnotationPinView: View {
 
-    let annotation:   AudioAnnotation
-    let isPlaying:    Bool
-    let onTap:        () -> Void
-    let onLongPress:  () -> Void
+    let annotation:    AudioAnnotation
+    let isPlaying:     Bool
+    let onLongPress:   () -> Void
+    @ObservedObject var viewModel: EditorViewModel
 
     private let size: CGFloat = 32
 
-    @State private var pulseScale:   CGFloat = 1.0
-    @State private var pulseOpacity: Double  = 0.6
+    @State private var pulseScale:     CGFloat = 1.0
+    @State private var pulseOpacity:   Double  = 0.6
+    @State private var isShowingPlayer = false
 
     var body: some View {
         ZStack {
@@ -28,7 +29,7 @@ struct AudioAnnotationPinView: View {
                     .opacity(pulseOpacity)
             }
 
-            // Main circle
+            // Main circle (the popover anchor)
             Circle()
                 .fill(Color.inkAccentPrimary)
                 .frame(width: size, height: size)
@@ -39,8 +40,19 @@ struct AudioAnnotationPinView: View {
                 )
         }
         .contentShape(Circle().size(CGSize(width: size + 16, height: size + 16)))
-        .onTapGesture { onTap() }
+        .onTapGesture { isShowingPlayer = true }
         .onLongPressGesture(minimumDuration: 0.4) { onLongPress() }
+        // Per-pin popover. iPad presents this as a real floating popover with an
+        // arrow anchored to the pin's centre; `presentationCompactAdaptation(.popover)`
+        // forbids the system from collapsing it to a sheet on smaller layouts.
+        .popover(
+            isPresented: $isShowingPlayer,
+            attachmentAnchor: .point(.center),
+            arrowEdge: .leading
+        ) {
+            AudioPlayerView(annotation: annotation, viewModel: viewModel)
+                .presentationCompactAdaptation(.popover)
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.audioLabel(
             duration: annotation.durationSeconds,

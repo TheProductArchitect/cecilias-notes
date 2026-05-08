@@ -137,20 +137,33 @@ struct EditorToolbarView: View {
                 .monospacedDigit()
                 .frame(minWidth: 60)
 
+            // → button states (per Stage 10 / Gap F):
+            //   • Not on last page                  → chevron.right, active
+            //   • Last page + autoAdd ON            → plus.circle, active (tap appends a page)
+            //   • Last page + autoAdd OFF           → chevron.right, dimmed + disabled
             Button {
                 viewModel.goToNextPage()
             } label: {
-                Image(systemName: "chevron.right")
+                Image(systemName: nextPageIcon)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(
-                        viewModel.currentPageIndex < viewModel.pages.count - 1
-                            ? .inkTextSecondary : .inkTextTertiary
-                    )
+                    .foregroundColor(nextPageColor)
                     .frame(width: 36, height: 36)
             }
             .buttonStyle(.plain)
-            .disabled(viewModel.currentPageIndex >= viewModel.pages.count - 1)
+            .disabled(viewModel.isOnLastPage && !viewModel.autoAddEnabled)
+            .opacity(viewModel.isOnLastPage && !viewModel.autoAddEnabled ? 0.3 : 1.0)
         }
+    }
+
+    private var nextPageIcon: String {
+        if viewModel.isOnLastPage && viewModel.autoAddEnabled { return "plus.circle" }
+        return "chevron.right"
+    }
+
+    private var nextPageColor: Color {
+        if viewModel.isOnLastPage && viewModel.autoAddEnabled { return .inkAccentPrimary }
+        if viewModel.isOnLastPage { return .inkTextTertiary }
+        return .inkTextSecondary
     }
 
     // MARK: Right — strip / undo / redo / share / save / more

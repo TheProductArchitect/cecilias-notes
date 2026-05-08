@@ -71,9 +71,9 @@ struct MediaAttachmentOverlayView: View {
         // Crop sheet
         .fullScreenCover(item: $croppingAttachment) { att in
             InlineCropView(attachment: att) { croppedJpeg, newWidth, newHeight in
-                try? StorageService.shared.replaceAttachmentImage(att, jpegData: croppedJpeg,
-                                                                   originalWidth: newWidth,
-                                                                   originalHeight: newHeight)
+                viewModel.replaceAttachmentImage(att, jpegData: croppedJpeg,
+                                                  originalWidth: newWidth,
+                                                  originalHeight: newHeight)
                 viewModel.refreshCurrentPageAttachments()
             }
         }
@@ -434,7 +434,7 @@ struct MediaAttachmentOverlayView: View {
         Divider()
 
         Button {
-            if let img = UIImage(contentsOfFile: StorageService.shared.mediaURL(for: att).path) {
+            if let img = UIImage(contentsOfFile: viewModel.mediaURL(for: att).path) {
                 UIPasteboard.general.image = img
             }
         } label: {
@@ -492,43 +492,35 @@ struct MediaAttachmentOverlayView: View {
         let other = all[swapIdx]
         let myZ   = att.zIndex
         let otherZ = other.zIndex
-        try? StorageService.shared.updateAttachmentZIndex(att,   zIndex: otherZ)
-        try? StorageService.shared.updateAttachmentZIndex(other, zIndex: myZ)
-        viewModel.refreshCurrentPageAttachments()
+        viewModel.updateAttachmentZIndex(att,   zIndex: otherZ)
+        viewModel.updateAttachmentZIndex(other, zIndex: myZ)
     }
 
     private func sendToBack(_ att: MediaAttachment) {
         let minZ = viewModel.currentPageAttachments.map(\.zIndex).min() ?? 0
-        try? StorageService.shared.updateAttachmentZIndex(att, zIndex: minZ - 1)
-        viewModel.refreshCurrentPageAttachments()
+        viewModel.updateAttachmentZIndex(att, zIndex: minZ - 1)
     }
 
     private func bringToFront(_ att: MediaAttachment) {
         let maxZ = viewModel.currentPageAttachments.map(\.zIndex).max() ?? 0
-        try? StorageService.shared.updateAttachmentZIndex(att, zIndex: maxZ + 1)
-        viewModel.refreshCurrentPageAttachments()
+        viewModel.updateAttachmentZIndex(att, zIndex: maxZ + 1)
     }
 
     private func deleteAttachment(_ att: MediaAttachment) {
         // Register undo before deletion
         viewModel.registerAttachmentUndo(att)
-        try? StorageService.shared.deleteAttachment(att)
+        viewModel.deleteAttachment(att)
         layouts.removeValue(forKey: att.id)
         interactionStates.removeValue(forKey: att.id)
-        viewModel.refreshCurrentPageAttachments()
     }
 
     // MARK: - Commit
 
     private func commitLayout(att: MediaAttachment) {
         guard let layout = layouts[att.id] else { return }
-        try? StorageService.shared.updateAttachment(
-            att,
-            rect:     layout.normalizedRect,
-            rotation: layout.rotation,
-            caption:  nil,
-            opacity:  nil
-        )
+        viewModel.updateAttachment(att,
+                                    rect:     layout.normalizedRect,
+                                    rotation: layout.rotation)
     }
 
     // MARK: - Popovers
@@ -549,9 +541,7 @@ struct MediaAttachmentOverlayView: View {
                 Spacer()
                 Button("Done") {
                     if let att = captionAttachment {
-                        try? StorageService.shared.updateAttachment(att, rect: nil,
-                                                                    rotation: nil,
-                                                                    caption: captionText)
+                        viewModel.updateAttachment(att, caption: captionText)
                         viewModel.refreshCurrentPageAttachments()
                     }
                     isShowingCaption = false
@@ -589,10 +579,7 @@ struct MediaAttachmentOverlayView: View {
                 }
             Button("Done") {
                 if let att = opacityAttachment {
-                    try? StorageService.shared.updateAttachment(att, rect: nil,
-                                                               rotation: nil,
-                                                               caption: nil,
-                                                               opacity: opacityValue)
+                    viewModel.updateAttachment(att, opacity: opacityValue)
                     viewModel.refreshCurrentPageAttachments()
                 }
                 isShowingOpacity = false

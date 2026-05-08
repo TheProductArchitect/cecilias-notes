@@ -12,11 +12,12 @@ struct AudioAnnotationPinsOverlayView: View {
     /// Updated by CanvasContainerView.updateUIView when page changes.
     var pageSize: CGSize
 
-    @State private var playerAnnotation:    AudioAnnotation?
     @State private var draggingAnnotation:  AudioAnnotation?
     @State private var dragOffset:          CGSize = .zero
 
     var body: some View {
+        // Each pin owns its own .popover anchored to its centre — there is no
+        // parent-level sheet/popover here.
         ZStack(alignment: .topLeading) {
             Color.clear
                 .contentShape(Rectangle())
@@ -26,11 +27,6 @@ struct AudioAnnotationPinsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height)
-        .sheet(item: $playerAnnotation) { ann in
-            AudioPlayerView(annotation: ann, viewModel: viewModel)
-                .presentationDetents([.height(300)])
-                .presentationDragIndicator(.visible)
-        }
     }
 
     // MARK: - Per-pin view
@@ -45,12 +41,10 @@ struct AudioAnnotationPinsOverlayView: View {
         AudioAnnotationPinView(
             annotation:  annotation,
             isPlaying:   viewModel.playingAnnotationId == annotation.id,
-            onTap: {
-                playerAnnotation = annotation
-            },
             onLongPress: {
                 draggingAnnotation = annotation
-            }
+            },
+            viewModel:   viewModel
         )
         .position(x: CGFloat(baseX) + dx, y: CGFloat(baseY) + dy)
         .gesture(
@@ -62,16 +56,14 @@ struct AudioAnnotationPinsOverlayView: View {
                 .onEnded { value in
                     let newX = min(max(0, (CGFloat(baseX) + value.translation.width)  / pageSize.width),  1)
                     let newY = min(max(0, (CGFloat(baseY) + value.translation.height) / pageSize.height), 1)
-                    try? StorageService.shared.moveAudioAnnotation(annotation, to: CGPoint(x: newX, y: newY))
-                    viewModel.refreshCurrentPageAudioAnnotations()
+                    viewModel.moveAudioAnnotation(annotation, to: CGPoint(x: newX, y: newY))
                     draggingAnnotation = nil
                     dragOffset = .zero
                 }
         )
         .contextMenu {
             Button(role: .destructive) {
-                try? StorageService.shared.deleteAudioAnnotation(annotation)
-                viewModel.refreshCurrentPageAudioAnnotations()
+                viewModel.deleteAudioAnnotation(annotation)
             } label: {
                 Label("Delete", systemImage: "trash")
             }

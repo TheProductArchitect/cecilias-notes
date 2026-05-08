@@ -202,6 +202,7 @@ struct CropCanvasView: UIViewRepresentable {
         view.coordinator = context.coordinator
 
         // Load image
+        // Read-only path resolution; same rationale as MediaAttachmentView.loadImage.
         let url = StorageService.shared.mediaURL(for: attachment)
         if let image = UIImage(contentsOfFile: url.path) {
             view.setImage(image)
