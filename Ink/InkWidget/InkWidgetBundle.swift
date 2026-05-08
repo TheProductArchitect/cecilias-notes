@@ -12,5 +12,6 @@ import SwiftUI
 struct InkWidgetBundle: WidgetBundle {
     var body: some Widget {
         InkWidget()
+        QuickCaptureWidget()
     }
 }

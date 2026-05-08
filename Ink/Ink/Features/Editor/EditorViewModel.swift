@@ -45,6 +45,18 @@ final class EditorViewModel: ObservableObject {
     @Published var isFullScreen: Bool = false
     private var toolbarHideTask: Task<Void, Never>?
 
+    /// Distraction-free writing mode. When true, the editor toolbar, page
+    /// strip, and minimap fade out; the tool palette dims to 30%; status
+    /// bar and home indicator are hidden. The canvas stays fully
+    /// interactive. Exits automatically on returning to Library.
+    /// (Auto-hide-then-restore-on-edge-tap of the palette is a deferred
+    /// follow-up — for now the palette stays at 30% opacity.)
+    @Published var isFocusMode: Bool = false
+
+    // MARK: Pencil Pro squeeze radial wheel
+    /// Drives the radial wheel overlay. Nil = wheel hidden.
+    @Published var squeezeWheelCentre: CGPoint?
+
     // MARK: Tool state
     @Published var selectedTool: InkTool
     @Published private(set) var lastTool: InkTool?         // for "switch between two tools"
@@ -65,9 +77,6 @@ final class EditorViewModel: ObservableObject {
 
     /// Stroke count on the active canvas — used for VoiceOver labels.
     var strokeCount: Int { canvasView?.drawing.strokes.count ?? 0 }
-
-    // MARK: Tool palette position (persisted)
-    @Published var toolPalettePosition: CGPoint = CGPoint(x: 0, y: 0)
 
     // MARK: Recent colours (persisted)
     @Published private(set) var recentColours: [UIColor] = []
@@ -127,10 +136,40 @@ final class EditorViewModel: ObservableObject {
     // MARK: Pending exit confirmation (back button while dirty)
     @Published var isShowingExitConfirmation: Bool = false
 
+    // MARK: Shape recognition
+    /// User toggle, persists across launches. Default OFF.
+    @AppStorage("ink.shape.recognitionEnabled") var shapeRecognitionEnabled: Bool = false
+
+    /// Pending shape replacement — drives the floating "Undo Shape" pill.
+    /// Set after a successful detection; cleared on tap-to-undo, tap-to-dismiss,
+    /// timeout (3s), or new stroke.
+    struct PendingShapeReplacement: Equatable {
+        let originalStroke: PKStroke
+        let replacementStrokeIndex: Int
+
+        // PKStroke is not Equatable in PencilKit — compare by index since
+        // only one replacement is in flight at a time.
+        static func == (lhs: PendingShapeReplacement, rhs: PendingShapeReplacement) -> Bool {
+            lhs.replacementStrokeIndex == rhs.replacementStrokeIndex
+        }
+    }
+    @Published var pendingShapeUndo: PendingShapeReplacement?
+
+    /// In-flight 600ms recognition timer. Cancelled when a new stroke arrives.
+    private var shapeRecognitionTask: Task<Void, Never>?
+    /// In-flight 3s pill auto-dismiss timer.
+    private var shapePillDismissTask: Task<Void, Never>?
+
     // MARK: Storage
     private let storage: StorageService
     private let userDefaults: UserDefaults
     private var cancellables = Set<AnyCancellable>()
+
+    // MARK: Per-tool persisted settings
+    /// One blob per app — see `ToolSettingsStore`. Snapshotted on every
+    /// selectedTool mutation, restored on identity-switch.
+    private var toolSettings = ToolSettingsStore.load()
+    private let theme: InkTheme
 
     // MARK: Init
 
@@ -143,6 +182,7 @@ final class EditorViewModel: ObservableObject {
         self.notebook        = notebook
         self.storage         = storage
         self.userDefaults    = userDefaults
+        self.theme           = theme
 
         let fetched = storage.fetchPages(in: notebook)
         // SwiftData should always return at least one page (createNotebook seeds one),
@@ -161,7 +201,8 @@ final class EditorViewModel: ObservableObject {
         } else {
             self.currentPageIndex = 0
         }
-        self.selectedTool     = InkTool.Defaults.pen(theme: theme)
+        // Restore the pen's last-used colour/width/opacity if present.
+        self.selectedTool     = ToolSettingsStore.load().tool(for: .pen, theme: theme)
 
         loadPersistedState(theme: theme)
 
@@ -197,22 +238,12 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Persisted state
 
     private struct StorageKeys {
-        static let toolPalettePosition = "ink.toolPalette.position"
         static let recentColours       = "ink.colorPicker.recent"
         // Must stay in lock-step with SettingsViewModel.DoubleTapAction's @AppStorage key.
         static let pencilDoubleTap     = "ink.pencil.doubletap"
     }
 
     private func loadPersistedState(theme: InkTheme) {
-        // Tool palette position — default: right edge, vertically centred
-        if let data  = userDefaults.data(forKey: StorageKeys.toolPalettePosition),
-           let point = try? JSONDecoder().decode(CGPointWrapper.self, from: data) {
-            toolPalettePosition = point.cgPoint
-        } else {
-            // Will be repositioned by ToolPaletteView on first appear once the bounds are known.
-            toolPalettePosition = CGPoint(x: -1, y: -1)
-        }
-
         // Recent colours
         if let hexes = userDefaults.array(forKey: StorageKeys.recentColours) as? [String] {
             recentColours = hexes.map { UIColor(hex: $0) }
@@ -224,12 +255,6 @@ final class EditorViewModel: ObservableObject {
             activePencilDoubleTapAction = action
         } else if let mapped = PencilDoubleTapAction.from(UIPencilInteraction.preferredTapAction) {
             activePencilDoubleTapAction = mapped
-        }
-    }
-
-    func persistToolPalettePosition() {
-        if let data = try? JSONEncoder().encode(CGPointWrapper(cgPoint: toolPalettePosition)) {
-            userDefaults.set(data, forKey: StorageKeys.toolPalettePosition)
         }
     }
 
@@ -263,16 +288,91 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Focus Mode
+
+    func toggleFocusMode() {
+        withAnimation(.inkSpring(InkSpring.smooth)) {
+            isFocusMode.toggle()
+        }
+    }
+
+    // MARK: - Pencil Pro squeeze wheel
+
+    /// Called by `PencilSqueezeDetector` on each squeeze. Toggles the wheel.
+    /// `squeezeWheelCentre` is a sentinel — `nil` means hidden, any
+    /// non-nil value means visible. The host view computes the real
+    /// position from its own GeometryReader. Future: feed pencil hover
+    /// position through this property.
+    func handlePencilSqueeze() {
+        if squeezeWheelCentre != nil {
+            // Already up — second squeeze dismisses.
+            squeezeWheelCentre = nil
+            return
+        }
+        squeezeWheelCentre = .zero
+        HapticManager.shared.contextMenuOpened()
+    }
+
+    func dismissSqueezeWheel() {
+        squeezeWheelCentre = nil
+    }
+
+    /// Routes a wheel selection. The host also dismisses the wheel.
+    func handleWheelSelection(_ item: WheelItem) {
+        switch item {
+        case .tool(let identity):
+            selectTool(identity: identity)
+        case .undo:
+            canvasView?.undoManager?.undo()
+            scheduleAutosave()
+        case .redo:
+            canvasView?.undoManager?.redo()
+            scheduleAutosave()
+        case .toggleFocus, .exitFocus:
+            toggleFocusMode()
+        }
+        squeezeWheelCentre = nil
+    }
+
     // MARK: - Tool selection
 
     /// Switch tool, remembering the previous selection so "switch between two tools"
-    /// (Apple Pencil double-tap) can ping-pong.
+    /// (Apple Pencil double-tap) can ping-pong. Snapshots the outgoing tool's
+    /// associated values to the per-tool persisted store so the next time
+    /// the user picks that identity, their last colour/width/opacity is
+    /// restored.
     func selectTool(_ tool: InkTool) {
         if tool.identity != selectedTool.identity {
+            // Snapshot the *outgoing* tool before we overwrite selectedTool.
+            toolSettings.snapshot(selectedTool)
+            toolSettings.save()
             lastTool = selectedTool
         }
         selectedTool = tool
         resetToolbarTimer()
+    }
+
+    /// Switch to a tool by identity — looks up persisted per-tool settings
+    /// (`ToolSettingsStore`) and falls back to defaults. This is what the
+    /// tool palette should call when the user taps a tool button.
+    func selectTool(identity: InkTool.Identity) {
+        let restored = toolSettings.tool(for: identity, theme: theme)
+        selectTool(restored)
+        // Remember this variant as the category's current pick.
+        ToolCategoryStore.setLastVariant(identity)
+    }
+
+    /// Selects the last-used variant for the given category — what the
+    /// palette's category button calls when tapped while inactive.
+    func selectCategory(_ category: ToolCategory) {
+        selectTool(identity: ToolCategoryStore.lastVariant(for: category))
+    }
+
+    /// Persist the current tool's settings — call after any mutation that
+    /// changes colour/width/opacity (slider release, palette ± button, etc.).
+    private func persistCurrentToolSettings() {
+        toolSettings.snapshot(selectedTool)
+        toolSettings.save()
     }
 
     func toggleLastTwoTools() {
@@ -317,28 +417,196 @@ final class EditorViewModel: ObservableObject {
         scheduleAutosave()
     }
 
+    // MARK: - Shape recognition
+
+    /// Called from the canvas coordinator on `canvasViewDidEndUsingTool`.
+    /// Schedules a 600 ms recognition pass; the next stroke cancels it.
+    func handleStrokeEnded() {
+        // Any active "Undo Shape" pill is from the previous stroke and must
+        // commit (or get blown away) when the user starts drawing again.
+        if pendingShapeUndo != nil { dismissShapePill() }
+
+        guard shapeRecognitionEnabled, canvasView != nil else { return }
+        shapeRecognitionTask?.cancel()
+        shapeRecognitionTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { self?.runShapeRecognition() }
+        }
+    }
+
+    private func runShapeRecognition() {
+        guard let canvas = canvasView,
+              let lastStroke = canvas.drawing.strokes.last
+        else { return }
+        guard let shape = ShapeRecognizer.recognize(lastStroke) else { return }
+
+        let replacementIndex = canvas.drawing.strokes.count - 1
+        let cleanStroke = makeCleanStroke(for: shape, like: lastStroke)
+
+        var newStrokes = canvas.drawing.strokes
+        newStrokes[replacementIndex] = cleanStroke
+        canvas.drawing = PKDrawing(strokes: newStrokes)
+
+        // ⌘Z restores the rough stroke as a separate undo entry.
+        canvas.undoManager?.registerUndo(withTarget: canvas) { target in
+            var s = target.drawing.strokes
+            if replacementIndex < s.count {
+                s[replacementIndex] = lastStroke
+                target.drawing = PKDrawing(strokes: s)
+            }
+        }
+        canvas.undoManager?.setActionName("Recognise Shape")
+
+        withAnimation(.inkSpring(InkSpring.fade)) {
+            pendingShapeUndo = PendingShapeReplacement(
+                originalStroke: lastStroke,
+                replacementStrokeIndex: replacementIndex
+            )
+        }
+
+        // Auto-dismiss the pill after 3 s.
+        shapePillDismissTask?.cancel()
+        shapePillDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.inkSpring(InkSpring.fade)) {
+                    self?.pendingShapeUndo = nil
+                }
+            }
+        }
+
+        HapticManager.shared.toolSwitched()  // brief tactile signal
+        scheduleAutosave()
+    }
+
+    /// Tap-handler for the "Undo Shape" pill. Restores the rough stroke
+    /// and clears pill state.
+    func undoShapeReplacement() {
+        guard let pending = pendingShapeUndo,
+              let canvas  = canvasView else { return }
+        var strokes = canvas.drawing.strokes
+        if pending.replacementStrokeIndex < strokes.count {
+            strokes[pending.replacementStrokeIndex] = pending.originalStroke
+            canvas.drawing = PKDrawing(strokes: strokes)
+        }
+        dismissShapePill()
+        scheduleAutosave()
+    }
+
+    private func dismissShapePill() {
+        shapePillDismissTask?.cancel()
+        shapePillDismissTask = nil
+        withAnimation(.inkSpring(InkSpring.fade)) {
+            pendingShapeUndo = nil
+        }
+    }
+
+    /// Build a clean PKStroke for a recognised shape, copying the inking
+    /// configuration (colour, width) from the rough stroke that triggered
+    /// the recognition.
+    private func makeCleanStroke(for shape: RecognizedShape, like template: PKStroke) -> PKStroke {
+        let path = pkPath(for: shape, sampleWidth: template.path.first?.size.width ?? 4)
+        return PKStroke(ink: template.ink, path: path)
+    }
+
+    private func pkPath(for shape: RecognizedShape, sampleWidth: CGFloat) -> PKStrokePath {
+        let now = Date()
+        var points: [PKStrokePoint] = []
+        func addPoint(_ p: CGPoint, t: TimeInterval) {
+            points.append(PKStrokePoint(
+                location: p,
+                timeOffset: t,
+                size: CGSize(width: sampleWidth, height: sampleWidth),
+                opacity: 1,
+                force: 0.5,
+                azimuth: 0,
+                altitude: .pi / 2
+            ))
+        }
+
+        switch shape {
+        case .line(let start, let end):
+            addPoint(start, t: 0)
+            addPoint(end,   t: 0.05)
+        case .ellipse(let rect):
+            let cx = rect.midX, cy = rect.midY
+            let rx = rect.width / 2, ry = rect.height / 2
+            let n = 36
+            for i in 0...n {
+                let a = CGFloat(i) / CGFloat(n) * 2 * .pi
+                addPoint(CGPoint(x: cx + rx * cos(a), y: cy + ry * sin(a)),
+                         t: Double(i) * 0.01)
+            }
+        case .rectangle(let rect):
+            let pts: [CGPoint] = [
+                CGPoint(x: rect.minX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.minY),
+                CGPoint(x: rect.maxX, y: rect.maxY),
+                CGPoint(x: rect.minX, y: rect.maxY),
+                CGPoint(x: rect.minX, y: rect.minY),
+            ]
+            for (i, p) in pts.enumerated() { addPoint(p, t: Double(i) * 0.05) }
+        case .triangle(let a, let b, let c):
+            for (i, p) in [a, b, c, a].enumerated() {
+                addPoint(p, t: Double(i) * 0.05)
+            }
+        }
+        return PKStrokePath(controlPoints: points, creationDate: now)
+    }
+
     func incrementWidth() {
         guard selectedTool.hasWidth else { return }
+        if case .eraser(.pixel) = selectedTool {
+            setPixelEraserSize(selectedTool.currentWidth + 1)
+            return
+        }
         selectedTool = selectedTool.withWidth(selectedTool.currentWidth + 0.5)
+        persistCurrentToolSettings()
     }
 
     func decrementWidth() {
         guard selectedTool.hasWidth else { return }
+        if case .eraser(.pixel) = selectedTool {
+            setPixelEraserSize(selectedTool.currentWidth - 1)
+            return
+        }
         selectedTool = selectedTool.withWidth(selectedTool.currentWidth - 0.5)
+        persistCurrentToolSettings()
     }
 
     func setWidth(_ width: CGFloat) {
+        if case .eraser(.pixel) = selectedTool {
+            setPixelEraserSize(width)
+            return
+        }
         selectedTool = selectedTool.withWidth(width)
+        persistCurrentToolSettings()
+    }
+
+    /// Pixel-eraser size lives in `ink.eraser.pixelSize.session` (a UserDefaults
+    /// key cleared at app cold-launch). The PKEraserTool is rebuilt by
+    /// re-emitting the same case so the canvas picks up the new bitmap width.
+    private func setPixelEraserSize(_ width: CGFloat) {
+        let clamped = max(4, min(80, width))
+        UserDefaults.standard.set(Double(clamped), forKey: "ink.eraser.pixelSize.session")
+        // Toggle selectedTool to force PKCanvasView to rebuild its tool.
+        if case .eraser(.pixel) = selectedTool {
+            selectedTool = .eraser(mode: .pixel)
+        }
     }
 
     func setOpacity(_ opacity: CGFloat) {
         selectedTool = selectedTool.withOpacity(opacity)
+        persistCurrentToolSettings()
     }
 
     // MARK: - Colour selection
 
     func selectColour(_ colour: UIColor) {
         selectedTool = selectedTool.withColour(colour)
+        persistCurrentToolSettings()
         addRecentColour(colour)
     }
 
@@ -844,17 +1112,12 @@ final class EditorViewModel: ObservableObject {
     func prepareForDismissal() {
         toolbarHideTask?.cancel()
         flushPendingSaveSync()
+        // Focus Mode is editor-scoped — exit on the way back to Library so
+        // the next notebook opens with normal chrome.
+        isFocusMode = false
     }
 }
 
-// MARK: - CGPoint codable wrapper
-
-private struct CGPointWrapper: Codable {
-    let x: CGFloat
-    let y: CGFloat
-    init(cgPoint: CGPoint) { x = cgPoint.x; y = cgPoint.y }
-    var cgPoint: CGPoint { CGPoint(x: x, y: y) }
-}
 
 // MARK: - UIColor hex string helper
 

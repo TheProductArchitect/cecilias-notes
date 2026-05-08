@@ -460,6 +460,9 @@ extension CanvasContainerView {
         func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
             // Resume the auto-hide timer once the user lifts the pencil.
             viewModel.resetToolbarTimer()
+            // Kick the shape recognition pipeline (no-op if the user toggle
+            // is off — handleStrokeEnded gates internally).
+            viewModel.handleStrokeEnded()
         }
 
         // MARK: - UIPencilInteractionDelegate

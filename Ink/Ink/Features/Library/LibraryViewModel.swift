@@ -57,8 +57,17 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: Additional published state
     @Published private(set) var subjects:         [Subject] = []
+    @Published private(set) var folders:          [Folder] = []
     @Published private(set) var notebooks:        [Notebook] = []
     @Published private(set) var pinnedNotebooks:  [Notebook] = []
+
+    /// Files-style folder navigation. Empty = at the subject's root.
+    /// Top of the stack = current folder. Stack is reset whenever the
+    /// selected subject changes.
+    @Published var folderPath: [Folder] = []
+
+    /// Drives inline rename in the browser.
+    @Published var renamingFolderId:   UUID?
     @Published private(set) var searchResults:    GroupedSearchResults?
     @Published private(set) var duplicatingIds:   Set<UUID> = []
     @Published var isSearchActive: Bool = false
@@ -87,12 +96,14 @@ final class LibraryViewModel: ObservableObject {
             .sink { [weak self] text in self?.performSearch(text) }
             .store(in: &cancellables)
 
-        // Clear selection mode when subject changes
+        // Clear selection mode AND reset the folder browser path when the
+        // subject changes — every subject opens at its own root.
         $selectedSubjectId
             .dropFirst()
             .sink { [weak self] _ in
                 self?.isSelecting = false
                 self?.selectedNotebookIds = []
+                self?.folderPath = []
                 self?.refresh()
             }
             .store(in: &cancellables)
@@ -121,6 +132,7 @@ final class LibraryViewModel: ObservableObject {
 
     func refresh() {
         subjects        = storage.fetchSubjects()
+        folders         = storage.fetchAllFolders()
         let raw: [Notebook]
         if let id = selectedSubjectId {
             raw = storage.fetchNotebooks(subjectId: id)
@@ -129,6 +141,78 @@ final class LibraryViewModel: ObservableObject {
         }
         notebooks       = sorted(raw)
         pinnedNotebooks = notebooks.filter(\.isPinned)
+    }
+
+    // MARK: Browser helpers (Files-style nesting)
+
+    /// Folder the user is currently inside. Nil = at the subject root.
+    var currentFolder: Folder? { folderPath.last }
+
+    /// Folders to render at the current browser level (subject root or
+    /// inside the current folder).
+    var foldersAtCurrentLevel: [Folder] {
+        if let current = currentFolder {
+            return folders.filter { $0.parentFolderId == current.id }
+        } else if let subjectId = selectedSubjectId {
+            return folders.filter {
+                $0.parentSubjectId == subjectId && $0.parentFolderId == nil
+            }
+        } else {
+            // "All Notes" view doesn't surface folders — too noisy across subjects.
+            return []
+        }
+    }
+
+    /// Notebooks to render at the current browser level.
+    var notebooksAtCurrentLevel: [Notebook] {
+        if let current = currentFolder {
+            return notebooks.filter { $0.folderId == current.id }
+        } else if let subjectId = selectedSubjectId {
+            return notebooks.filter {
+                $0.subjectId == subjectId && $0.folderId == nil
+            }
+        } else {
+            // "All Notes" — show every non-deleted notebook regardless of folder.
+            return notebooks
+        }
+    }
+
+    /// Total count of items inside `folder` (notebooks + subfolders), used
+    /// for the badge on the folder card. Computed client-side from cached
+    /// arrays; cheap.
+    /// Top-level folders (no parent folder) inside a given subject. Used by
+    /// the notebook card's "Move to Folder…" submenu so the user can drop
+    /// directly into a root folder of the subject.
+    func topLevelFolders(in subjectId: UUID) -> [Folder] {
+        folders.filter { $0.parentSubjectId == subjectId && $0.parentFolderId == nil }
+    }
+
+    func itemCount(in folder: Folder) -> Int {
+        let nbs    = notebooks.filter { $0.folderId == folder.id }.count
+        let subs   = folders.filter   { $0.parentFolderId == folder.id }.count
+        return nbs + subs
+    }
+
+    // MARK: Browser navigation
+
+    func navigate(into folder: Folder) {
+        folderPath.append(folder)
+    }
+
+    func navigateUp() {
+        guard !folderPath.isEmpty else { return }
+        folderPath.removeLast()
+    }
+
+    /// Pop the path back to the breadcrumb segment at `index`. Index 0 =
+    /// "back to subject root"; index N pops to the Nth folder.
+    func navigateToBreadcrumb(index: Int) {
+        guard index >= 0 && index < folderPath.count else { return }
+        folderPath = Array(folderPath.prefix(index))
+    }
+
+    func navigateToSubjectRoot() {
+        folderPath.removeAll()
     }
 
     private func sorted(_ notebooks: [Notebook]) -> [Notebook] {
@@ -182,6 +266,87 @@ final class LibraryViewModel: ObservableObject {
         refresh()
     }
 
+    // MARK: - Folders
+
+    /// Creates a folder at the **current** browser location:
+    ///   • If `currentFolder == nil` → the subject's root.
+    ///   • Otherwise → inside `currentFolder` (nested).
+    func createFolderAtCurrentLevel() {
+        guard let subjectId = selectedSubjectId,
+              let subject = subjects.first(where: { $0.id == subjectId })
+        else { return }
+        guard let folder = try? storage.createFolder(
+            name: "New Folder",
+            in: subject,
+            parentFolderId: currentFolder?.id
+        ) else { return }
+        renamingFolderId = folder.id
+        refresh()
+    }
+
+    /// Legacy single-arg overload kept for any sidebar/test call sites that
+    /// pass a subject directly.
+    func createFolder(in subject: Subject) {
+        guard let folder = try? storage.createFolder(name: "New Folder", in: subject) else { return }
+        renamingFolderId = folder.id
+        refresh()
+    }
+
+    func renameFolder(_ folder: Folder, name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            try storage.updateFolder(folder, name: trimmed)
+        } catch {
+            showError(.storageFailed(action: "rename folder", underlying: error))
+        }
+        refresh()
+    }
+
+    /// Soft-deletes the folder, promoting its direct children one level up.
+    /// Notebooks and subfolders survive. Used for "Move and Delete Folder".
+    func deleteFolder(_ folder: Folder) {
+        do {
+            try storage.deleteFolder(folder)
+        } catch {
+            showError(.storageFailed(action: "delete folder", underlying: error))
+        }
+        // If the user was inside (or below) the deleted folder, pop out so
+        // the breadcrumb doesn't dangle on a tombstoned segment.
+        if folderPath.contains(where: { $0.id == folder.id }) {
+            if let idx = folderPath.firstIndex(where: { $0.id == folder.id }) {
+                folderPath = Array(folderPath.prefix(idx))
+            }
+        }
+        refresh()
+    }
+
+    /// Soft-deletes the folder and recursively soft-deletes every notebook
+    /// and subfolder underneath it. Used for "Delete Folder and All Contents".
+    func deleteFolderAndContents(_ folder: Folder) {
+        do {
+            try storage.deleteFolderAndContents(folder)
+        } catch {
+            showError(.storageFailed(action: "delete folder", underlying: error))
+        }
+        if let idx = folderPath.firstIndex(where: { $0.id == folder.id }) {
+            folderPath = Array(folderPath.prefix(idx))
+        }
+        refresh()
+    }
+
+    /// Move a notebook into / out of a folder. `folderId == nil` means
+    /// "directly under the subject (no folder)". Used by drag-and-drop and
+    /// the context menu's "Move to folder…" option.
+    func moveNotebook(_ notebook: Notebook, toFolder folderId: UUID?) {
+        do {
+            try storage.moveNotebook(notebook, toFolder: folderId)
+        } catch {
+            showError(.storageFailed(action: "move notebook", underlying: error))
+        }
+        refresh()
+    }
+
     // MARK: - Notebooks
 
     func createNotebook(
@@ -190,7 +355,8 @@ final class LibraryViewModel: ObservableObject {
         coverColorHex: String,
         coverTexture: CoverTexture,
         pageSize: PageSize,
-        template: PageTemplate
+        template: PageTemplate,
+        folderId: UUID? = nil
     ) {
         guard let nb = try? storage.createNotebook(
             title: title,
@@ -200,6 +366,10 @@ final class LibraryViewModel: ObservableObject {
             pageSize: pageSize,
             template: template
         ) else { return }
+        // Place the new notebook inside the active browser folder, if any.
+        if let folderId {
+            try? storage.moveNotebook(nb, toFolder: folderId)
+        }
         refresh()
         // Scroll-to is communicated via selectedNotebookId
         withAnimation(.inkSpring(InkSpring.smooth)) {
@@ -207,14 +377,12 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Returns the next free "Untitled" / "Untitled 2" / "Untitled 3" … name.
+    /// Returns a playful default name (e.g. "Brain Dump", "Scratch Pad of Doom",
+    /// "Coffee-Fueled Ideas") that doesn't collide with existing titles.
     /// Always reads a fresh fetch so rapid successive taps cannot collide.
     func uniqueUntitledName() -> String {
         let titles = Set(storage.fetchAllNotebooks().map(\.title))
-        if !titles.contains("Untitled") { return "Untitled" }
-        var n = 2
-        while titles.contains("Untitled \(n)") { n += 1 }
-        return "Untitled \(n)"
+        return NotebookNameGenerator.randomName(avoiding: titles)
     }
 
     /// Creates a notebook instantly with default cover/template from Settings,
@@ -238,7 +406,8 @@ final class LibraryViewModel: ObservableObject {
             coverColorHex: InkColorPresets.subjectColors[6],   // #007AFF
             coverTexture:  .none,
             pageSize:      pageSize,
-            template:      template
+            template:      template,
+            folderId:      currentFolder?.id
         )
     }
 

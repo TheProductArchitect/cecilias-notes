@@ -16,7 +16,9 @@ struct SubjectSidebarView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                     .listRowSeparator(.hidden)
 
-                // Subject rows — drag-reorderable
+                // Subject rows — drag-reorderable. Folders and notebooks
+                // live in the main browser (Files-style) rather than nested
+                // here, so this list is intentionally flat.
                 ForEach(viewModel.subjects) { subject in
                     SubjectRowView(subject: subject, viewModel: viewModel)
                         .listRowBackground(Color.clear)

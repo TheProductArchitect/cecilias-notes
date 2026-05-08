@@ -191,6 +191,177 @@ extension StorageService {
     }
 }
 
+// MARK: - Folders
+
+extension StorageService {
+
+    /// Creates a folder under `subject`, optionally nested inside `parentFolderId`.
+    /// Soft-deleted folders aren't fetched, so reusing a name across deletes is fine.
+    func createFolder(name: String, in subject: Subject, parentFolderId: UUID? = nil) throws -> Folder {
+        guard name.count <= 50 else { throw InkStorageError.fileSizeLimitExceeded }
+        let nextOrder = (fetchFolders(in: subject.id).map(\.sortOrder).max() ?? -1) + 1
+        let folder = Folder(
+            name: name,
+            parentSubjectId: subject.id,
+            parentFolderId: parentFolderId,
+            sortOrder: nextOrder
+        )
+        context.insert(folder)
+        try context.save()
+        return folder
+    }
+
+    /// All non-deleted folders inside `subjectId`. Sorted by sortOrder, then name.
+    func fetchFolders(in subjectId: UUID) -> [Folder] {
+        let descriptor = FetchDescriptor<Folder>(
+            predicate: #Predicate { $0.parentSubjectId == subjectId && $0.isDeleted == false },
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.name)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// All non-deleted folders across the app — used by Library when no
+    /// subject filter is active ("All Notes" view).
+    func fetchAllFolders() -> [Folder] {
+        let descriptor = FetchDescriptor<Folder>(
+            predicate: #Predicate { $0.isDeleted == false },
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.name)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    func updateFolder(_ folder: Folder, name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 50 else {
+            throw InkStorageError.fileSizeLimitExceeded
+        }
+        folder.name      = trimmed
+        folder.updatedAt = Date()
+        try context.save()
+    }
+
+    /// Soft-deletes a folder and moves any notebooks inside it back to the
+    /// folder's parent (subject root, or the parent folder for nested folders).
+    /// Notebooks are never deleted along with the folder.
+    /// Soft-delete a folder, **promoting** its direct children one level up:
+    ///   • Child folders' `parentFolderId` becomes this folder's parent.
+    ///   • Child notebooks' `folderId` becomes this folder's parent.
+    /// Children remain visible at the parent location. Use this for the
+    /// "Move and Delete Folder" path of the delete prompt.
+    func deleteFolder(_ folder: Folder) throws {
+        let notebooks = fetchNotebooks(inFolder: folder.id)
+        for nb in notebooks {
+            nb.folderId  = folder.parentFolderId
+            nb.updatedAt = Date()
+        }
+        let childFolders = fetchSubfolders(of: folder.id)
+        for child in childFolders {
+            child.parentFolderId = folder.parentFolderId
+            child.updatedAt      = Date()
+        }
+        folder.isDeleted = true
+        folder.deletedAt = Date()
+        folder.updatedAt = Date()
+        try context.save()
+    }
+
+    /// Soft-delete a folder **and everything inside it, recursively**. Use
+    /// this for the "Delete Folder and All Contents" path. Notebooks and
+    /// nested folders are soft-deleted; SwiftData relationships and the
+    /// 30-day reaper handle final purge.
+    func deleteFolderAndContents(_ folder: Folder) throws {
+        // Notebooks at every level under this folder.
+        for nb in fetchNotebooksRecursive(inFolder: folder.id) {
+            nb.isDeleted = true
+            nb.deletedAt = Date()
+            nb.updatedAt = Date()
+        }
+        // Subfolders at every depth.
+        for sub in fetchSubfoldersRecursive(of: folder.id) {
+            sub.isDeleted = true
+            sub.deletedAt = Date()
+            sub.updatedAt = Date()
+        }
+        folder.isDeleted = true
+        folder.deletedAt = Date()
+        folder.updatedAt = Date()
+        try context.save()
+    }
+
+    /// Direct child folders of `parentId` (one level only).
+    func fetchSubfolders(of parentId: UUID) -> [Folder] {
+        let descriptor = FetchDescriptor<Folder>(
+            predicate: #Predicate { $0.parentFolderId == parentId && $0.isDeleted == false },
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.name)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// All folders at any depth under `parentId`. Used by recursive delete.
+    private func fetchSubfoldersRecursive(of parentId: UUID) -> [Folder] {
+        var result: [Folder] = []
+        var queue = fetchSubfolders(of: parentId)
+        while let next = queue.first {
+            queue.removeFirst()
+            result.append(next)
+            queue.append(contentsOf: fetchSubfolders(of: next.id))
+        }
+        return result
+    }
+
+    /// All notebooks at any depth under `folderId`.
+    private func fetchNotebooksRecursive(inFolder folderId: UUID) -> [Notebook] {
+        var result: [Notebook] = fetchNotebooks(inFolder: folderId)
+        for sub in fetchSubfoldersRecursive(of: folderId) {
+            result.append(contentsOf: fetchNotebooks(inFolder: sub.id))
+        }
+        return result
+    }
+
+    /// Move a folder into / out of another folder (within the same subject).
+    /// Pass `nil` to demote the folder to the subject root. Caller is
+    /// responsible for cycle detection (don't move a folder into itself or
+    /// into one of its descendants).
+    func moveFolder(_ folder: Folder, toFolder parentFolderId: UUID?) throws {
+        folder.parentFolderId = parentFolderId
+        folder.updatedAt      = Date()
+        try context.save()
+    }
+
+    /// Move a notebook into / out of a folder. Pass `nil` for "directly under
+    /// the subject (no folder)". Caller is responsible for ensuring the
+    /// folder is in the same subject as the notebook.
+    func moveNotebook(_ notebook: Notebook, toFolder folderId: UUID?) throws {
+        notebook.folderId  = folderId
+        notebook.updatedAt = Date()
+        try context.save()
+    }
+
+    /// Notebooks directly inside `folderId` (excludes nested folders' contents).
+    func fetchNotebooks(inFolder folderId: UUID) -> [Notebook] {
+        let descriptor = FetchDescriptor<Notebook>(
+            predicate: #Predicate {
+                $0.folderId == folderId && $0.isDeleted == false
+            },
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Notebooks directly under `subjectId` that are NOT inside any folder.
+    func fetchNotebooksWithoutFolder(subjectId: UUID?) -> [Notebook] {
+        let descriptor = FetchDescriptor<Notebook>(
+            predicate: #Predicate {
+                $0.subjectId == subjectId
+                    && $0.folderId == nil
+                    && $0.isDeleted == false
+            },
+            sortBy: [SortDescriptor(\.sortOrder), SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+}
+
 // MARK: - Notebooks
 
 extension StorageService {
@@ -309,6 +480,9 @@ extension StorageService {
             }
         }
         notebook.subjectId = subjectId
+        // Folders are scoped to a single subject — clear the folderId so
+        // we never carry a stale reference across subjects.
+        notebook.folderId  = nil
         notebook.updatedAt = Date()
 
         // Add to new subject relationship
@@ -1143,6 +1317,14 @@ extension StorageService {
             context.delete(s)
         }
 
+        // Folders (added in V3 — same 30-day soft-delete pattern)
+        let deletedFolders = (try? context.fetch(
+            FetchDescriptor<Folder>(predicate: #Predicate { $0.isDeleted == true })
+        )) ?? []
+        for f in deletedFolders where (f.deletedAt ?? .distantFuture) < cutoff {
+            context.delete(f)
+        }
+
         // Notebooks
         let deletedNotebooks = (try? context.fetch(
             FetchDescriptor<Notebook>(predicate: #Predicate { $0.isDeleted == true })
@@ -1161,6 +1343,11 @@ extension StorageService {
             FetchDescriptor<Subject>(predicate: #Predicate { $0.isDeleted == true })
         )) ?? []
         allSubjects.forEach { context.delete($0) }
+
+        let allFolders = (try? context.fetch(
+            FetchDescriptor<Folder>(predicate: #Predicate { $0.isDeleted == true })
+        )) ?? []
+        allFolders.forEach { context.delete($0) }
 
         let allNotebooks = (try? context.fetch(
             FetchDescriptor<Notebook>(predicate: #Predicate { $0.isDeleted == true })

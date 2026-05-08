@@ -10,6 +10,9 @@ final class Notebook {
     var title: String
     /// nil = Uncategorised
     var subjectId: UUID?
+    /// nil = directly under the subject. Non-nil = inside the folder with this id.
+    /// Folder is always within the same subject as the notebook.
+    var folderId: UUID?
     var coverColorHex: String
     var coverTexture: CoverTexture
     var sortOrder: Int
@@ -59,6 +62,7 @@ final class Notebook {
         self.id              = UUID()
         self.title           = title
         self.subjectId       = subjectId
+        self.folderId        = nil
         self.coverColorHex   = coverColorHex
         self.coverTexture    = coverTexture
         self.sortOrder          = 0

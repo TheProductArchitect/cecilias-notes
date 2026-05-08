@@ -91,6 +91,7 @@ struct EditorToolbarView: View {
                     .foregroundColor(.inkTextPrimary)
                     .focused($titleFocused)
                     .submitLabel(.done)
+                    .autocorrectionDisabled()
                     .onSubmit { commitTitle() }
                     .onChange(of: titleFocused) { _, focused in
                         if !focused { commitTitle() }
@@ -245,6 +246,17 @@ struct EditorToolbarView: View {
                         systemImage: viewModel.isFullScreen
                             ? "arrow.down.right.and.arrow.up.left"
                             : "arrow.up.left.and.arrow.down.right"
+                    )
+                }
+
+                Button {
+                    viewModel.toggleFocusMode()
+                } label: {
+                    Label(
+                        viewModel.isFocusMode ? "Exit Focus Mode" : "Focus Mode",
+                        systemImage: viewModel.isFocusMode
+                            ? "rectangle.portrait.inset.filled"
+                            : "rectangle.portrait"
                     )
                 }
             } label: {

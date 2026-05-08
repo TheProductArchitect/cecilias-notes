@@ -13,41 +13,62 @@ struct NotebookGridView: View {
             if viewModel.isSearchActive {
                 searchArea
             } else {
+                // Breadcrumb only shows when the user is *inside* a folder.
+                // At the subject root the toolbar's title already says
+                // "Maths" / "All Notes" — duplicating that as a breadcrumb
+                // would be visual noise.
+                if !viewModel.folderPath.isEmpty {
+                    BreadcrumbBar(viewModel: viewModel)
+                    InkDivider()
+                }
                 gridArea
             }
         }
         .background(Color.inkBackgroundPrimary)
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSearchActive)
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSelecting)
+        .animation(.inkSpring(InkSpring.snappy), value: viewModel.folderPath.map(\.id))
     }
 
     // MARK: Grid
 
+    /// Items at the current browser level. Folders render first, then notebooks
+    /// — the same convention Files uses, and what users expect when "drill
+    /// into folder" is a primary action.
+    private var levelFolders:   [Folder]   { viewModel.foldersAtCurrentLevel }
+    private var levelNotebooks: [Notebook] { viewModel.notebooksAtCurrentLevel }
+
     @ViewBuilder
     private var gridArea: some View {
-        if viewModel.notebooks.isEmpty {
+        if levelFolders.isEmpty && levelNotebooks.isEmpty {
             emptyState
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Pinned strip
-                    if !viewModel.pinnedNotebooks.isEmpty {
+                    // Pinned strip — only at the subject root, not inside a
+                    // folder (the folder is its own scope).
+                    if viewModel.currentFolder == nil && !viewModel.pinnedNotebooks.isEmpty {
                         PinnedNotebooksStrip(viewModel: viewModel)
                     }
 
-                    // Main grid
+                    // Main grid: folders first, then notebooks.
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(viewModel.notebooks) { notebook in
+                        ForEach(levelFolders) { folder in
+                            FolderCardView(folder: folder, viewModel: viewModel)
+                                .frame(width: 168, height: 200)
+                                .transition(.scale(scale: 0.85).combined(with: .opacity))
+                        }
+
+                        ForEach(levelNotebooks) { notebook in
                             NotebookCardView(notebook: notebook, viewModel: viewModel)
                                 .frame(width: 168, height: 200)
                                 .transition(.scale(scale: 0.85).combined(with: .opacity))
-                                // Drag to reorder (manual sort only)
+                                // Drag to reorder (manual sort only) or to drop
+                                // onto a folder card.
                                 .draggable(
                                     (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id)))
                                         ?? Data()
                                 ) {
-                                    // Preview closure runs when the drag actually
-                                    // starts — fire the start haptic here.
                                     NotebookCardView(notebook: notebook, viewModel: viewModel)
                                         .frame(width: 168, height: 200)
                                         .opacity(0.6)
@@ -56,7 +77,8 @@ struct NotebookGridView: View {
                         }
                     }
                     .padding(24)
-                    .animation(.inkSpring(InkSpring.smooth), value: viewModel.notebooks.map(\.id))
+                    .animation(.inkSpring(InkSpring.smooth), value: levelFolders.map(\.id))
+                    .animation(.inkSpring(InkSpring.smooth), value: levelNotebooks.map(\.id))
                 }
             }
         }
@@ -113,21 +135,39 @@ struct NotebookGridView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if let subjectId = viewModel.selectedSubjectId,
-           let subject = viewModel.subjects.first(where: { $0.id == subjectId }) {
-            // Subject-specific empty
+        if let folder = viewModel.currentFolder {
+            // Inside an empty folder — different from "subject is empty".
             VStack(spacing: Ink.Spacing.md) {
                 InkEmptyState(
-                    icon: "tray",
-                    title: "Nothing in \(subject.name)",
-                    subtitle: "Create a notebook or move one here."
+                    icon: "folder",
+                    title: "\"\(folder.name)\" is empty",
+                    subtitle: "Add a notebook or a subfolder."
                 )
                 HStack(spacing: Ink.Spacing.sm) {
                     InkButton("New Notebook", style: .primary) {
                         viewModel.createUntitledNotebookAndOpen()
                     }
-                    InkButton("Move Notebooks", style: .secondary) {
-                        viewModel.selectedSubjectId = nil
+                    InkButton("New Folder", style: .secondary) {
+                        viewModel.createFolderAtCurrentLevel()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let subjectId = viewModel.selectedSubjectId,
+                  let subject = viewModel.subjects.first(where: { $0.id == subjectId }) {
+            // Subject-specific empty
+            VStack(spacing: Ink.Spacing.md) {
+                InkEmptyState(
+                    icon: "tray",
+                    title: "Nothing in \(subject.name)",
+                    subtitle: "Create a notebook, a folder, or move one here."
+                )
+                HStack(spacing: Ink.Spacing.sm) {
+                    InkButton("New Notebook", style: .primary) {
+                        viewModel.createUntitledNotebookAndOpen()
+                    }
+                    InkButton("New Folder", style: .secondary) {
+                        viewModel.createFolderAtCurrentLevel()
                     }
                 }
             }
@@ -183,7 +223,9 @@ private struct GridToolbarView: View {
     // Normal mode
     private var normalToolbar: some View {
         Group {
-            Text(viewModel.selectedSubjectName)
+            // Inside a folder, the breadcrumb bar carries the path; show
+            // just the leaf name here so the title doesn't compete.
+            Text(viewModel.currentFolder?.name ?? viewModel.selectedSubjectName)
                 .font(.inkHeadline)
                 .foregroundColor(.inkTextPrimary)
                 .lineLimit(1)
@@ -232,11 +274,37 @@ private struct GridToolbarView: View {
             .font(.inkBody)
             .foregroundColor(.inkAccentPrimary)
 
-            // New Notebook
+            // Hidden ⌘N → New Notebook. The visible "+" is a menu (below)
+            // because we have two creation paths now; keyboardShortcut on a
+            // Menu would only open the menu, so we keep the shortcut on a
+            // separate zero-size button.
             Button {
                 viewModel.createUntitledNotebookAndOpen()
+            } label: { EmptyView() }
+            .keyboardShortcut("n", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+
+            // "+" menu — New Notebook / New Folder. Folder option is only
+            // surfaced when a subject is selected (folders live inside a
+            // subject; "All Notes" is cross-subject and has no place to put
+            // a new folder).
+            Menu {
+                Button {
+                    viewModel.createUntitledNotebookAndOpen()
+                } label: {
+                    Label("New Notebook", systemImage: "book.closed")
+                }
+                if viewModel.selectedSubjectId != nil {
+                    Button {
+                        viewModel.createFolderAtCurrentLevel()
+                    } label: {
+                        Label("New Folder", systemImage: "folder.badge.plus")
+                    }
+                }
             } label: {
-                Label("New Notebook", systemImage: "plus")
+                Label("New", systemImage: "plus")
                     .font(.inkHeadline)
                     .foregroundColor(.white)
                     .padding(.horizontal, Ink.Spacing.md)
@@ -244,7 +312,6 @@ private struct GridToolbarView: View {
                     .background(Color.inkAccentPrimary)
                     .clipShape(Capsule())
             }
-            .buttonStyle(.inkPressable)
         }
     }
 
@@ -280,6 +347,79 @@ private struct GridToolbarView: View {
             .font(.inkHeadline)
             .foregroundColor(.inkAccentPrimary)
         }
+    }
+}
+
+// MARK: - Breadcrumb bar
+
+/// Files-style path bar shown above the grid when the user is inside a
+/// folder. Tap a segment to pop the path back to that level. The leading
+/// "back" chevron pops one level — quicker than aiming for the parent
+/// segment when the path is deep.
+private struct BreadcrumbBar: View {
+    @ObservedObject var viewModel: LibraryViewModel
+
+    var body: some View {
+        HStack(spacing: Ink.Spacing.xs) {
+            Button {
+                withAnimation(.inkSpring(InkSpring.snappy)) {
+                    viewModel.navigateUp()
+                }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.inkHeadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.inkAccentPrimary)
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.inkPressable)
+            .accessibilityLabel("Back")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    // Subject root crumb
+                    Button {
+                        withAnimation(.inkSpring(InkSpring.snappy)) {
+                            viewModel.navigateToSubjectRoot()
+                        }
+                    } label: {
+                        Text(viewModel.selectedSubjectName)
+                            .font(.inkSubhead)
+                            .foregroundColor(.inkAccentPrimary)
+                    }
+                    .buttonStyle(.inkPressable)
+
+                    // Folder segments
+                    ForEach(Array(viewModel.folderPath.enumerated()), id: \.element.id) { idx, folder in
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.inkTextTertiary)
+
+                        if idx == viewModel.folderPath.count - 1 {
+                            // Leaf — non-tappable, primary text
+                            Text(folder.name)
+                                .font(.inkSubhead)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.inkTextPrimary)
+                        } else {
+                            Button {
+                                withAnimation(.inkSpring(InkSpring.snappy)) {
+                                    viewModel.navigateToBreadcrumb(index: idx)
+                                }
+                            } label: {
+                                Text(folder.name)
+                                    .font(.inkSubhead)
+                                    .foregroundColor(.inkAccentPrimary)
+                            }
+                            .buttonStyle(.inkPressable)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 40)
     }
 }
 

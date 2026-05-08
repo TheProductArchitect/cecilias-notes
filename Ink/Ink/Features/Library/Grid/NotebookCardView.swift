@@ -117,6 +117,7 @@ struct NotebookCardView: View {
                 .textFieldStyle(.plain)
                 .focused($titleFocused)
                 .submitLabel(.done)
+                .autocorrectionDisabled()
                 .onSubmit { commitTitle() }
                 .onChange(of: titleFocused) { _, focused in
                     if !focused { commitTitle() }
@@ -278,6 +279,26 @@ struct NotebookCardView: View {
             ForEach(viewModel.subjects) { subject in
                 Button(subject.name) {
                     viewModel.moveNotebook(notebook, to: subject.id)
+                }
+            }
+        }
+
+        // Move into / out of a folder within the current subject.
+        if let subjectId = notebook.subjectId {
+            let foldersInSubject = viewModel.topLevelFolders(in: subjectId)
+            if !foldersInSubject.isEmpty || notebook.folderId != nil {
+                Menu("Move to Folder…") {
+                    if notebook.folderId != nil {
+                        Button("Out of Folder") {
+                            viewModel.moveNotebook(notebook, toFolder: nil)
+                        }
+                        Divider()
+                    }
+                    ForEach(foldersInSubject) { folder in
+                        Button(folder.name) {
+                            viewModel.moveNotebook(notebook, toFolder: folder.id)
+                        }
+                    }
                 }
             }
         }

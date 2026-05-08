@@ -22,7 +22,20 @@ struct InkApp: App {
                 .environmentObject(deepLink)
                 .onAppear {
                     themeManager.applyTheme()
-                    restoreLastSession()
+                    // Session-scoped values that should not survive a relaunch:
+                    // - pixel-eraser size (resets to the user's Settings default
+                    //   each time the app cold-starts).
+                    UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize.session")
+
+                    // Defer the resume check by one runloop tick so a
+                    // cold-launch `ink://quick-capture` URL has time to
+                    // land in `.onOpenURL` and set `pendingQuickCapture`
+                    // before we'd otherwise reopen the last notebook.
+                    DispatchQueue.main.async {
+                        if !deepLink.pendingQuickCapture {
+                            restoreLastSession()
+                        }
+                    }
                 }
                 // Spotlight launch
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
@@ -73,7 +86,13 @@ final class DeepLinkRouter: ObservableObject {
     /// When true, the Library should present the settings sheet.
     @Published var openSettings: Bool = false
 
-    /// Parses `ink://open/{uuid}`, `ink://library`, `ink://settings`.
+    /// When true, the Library should immediately create a new playful-named
+    /// notebook and open it in the editor — the Quick Capture flow.
+    /// Set on cold launch (via the launch URL), checked once by `LibraryView`.
+    @Published var pendingQuickCapture: Bool = false
+
+    /// Parses `ink://open/{uuid}`, `ink://library`, `ink://settings`,
+    /// `ink://quick-capture`.
     func handle(_ url: URL) {
         guard url.scheme == "ink" else { return }
         switch url.host {
@@ -87,6 +106,8 @@ final class DeepLinkRouter: ObservableObject {
         case "library":
             openNotebookId = nil
             openSettings   = false
+        case "quick-capture":
+            pendingQuickCapture = true
         default:
             break
         }

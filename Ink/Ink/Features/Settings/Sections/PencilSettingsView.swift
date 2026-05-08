@@ -90,7 +90,7 @@ struct PencilSettingsView: View {
     private var eraserCard: some View {
         VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             HStack {
-                cardHeader("Pixel Eraser Size")
+                cardHeader("Default Eraser Size")
                 Spacer()
                 Text("\(Int(viewModel.pixelEraserSize)) pt")
                     .font(.inkMono)
@@ -101,7 +101,7 @@ struct PencilSettingsView: View {
             Slider(value: $viewModel.pixelEraserSize, in: 4...80, step: 1)
                 .tint(.inkAccentPrimary)
 
-            Text("Default size for the Pixel Eraser. Whole-Stroke and Erase Page do not have a size setting.")
+            Text("Starting size when you pick the pixel eraser. Adjust live in the toolbar.")
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }

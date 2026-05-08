@@ -130,6 +130,11 @@ struct SubjectRowView: View {
         } label: {
             Label("Change Colour", systemImage: "paintpalette")
         }
+        Button {
+            viewModel.createFolder(in: subject)
+        } label: {
+            Label("New Folder", systemImage: "folder.badge.plus")
+        }
         Divider()
         Button(role: .destructive) {
             showDeleteAlert = true

@@ -138,5 +138,20 @@ struct LibraryView: View {
                 viewModel.isSearchActive = true
             }
         }
+        // Quick Capture lock-screen widget — create a fresh notebook and dive
+        // straight into the editor. The flag is read once and cleared.
+        .onChange(of: deepLink.pendingQuickCapture) { _, pending in
+            guard pending else { return }
+            DispatchQueue.main.async { deepLink.pendingQuickCapture = false }
+            viewModel.createUntitledNotebookAndOpen()
+        }
+        .task {
+            // Cold-launch case: pendingQuickCapture may already be true by the
+            // time the view first appears, before any onChange would fire.
+            if deepLink.pendingQuickCapture {
+                deepLink.pendingQuickCapture = false
+                viewModel.createUntitledNotebookAndOpen()
+            }
+        }
     }
 }

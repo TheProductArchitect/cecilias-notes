@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Full-screen editor. Composition (back-to-front):
 ///   1. CanvasContainerView (PKCanvasView in UIScrollView)
-///   2. ToolPaletteView (floating right-edge pill)
+///   2. ToolPaletteView (edge-snapping pill — top in portrait, right in landscape by default)
 ///   3. PageStripView (slides up from bottom)
 ///   4. MinimapView (bottom-right when zoom > 1.5)
 ///   5. EditorToolbarView (top, blur background, auto-hides)
@@ -35,16 +35,36 @@ struct EditorView: View {
                     .accessibilityLabel(A11y.canvasLabel(strokeCount: viewModel.strokeCount))
                     .accessibilityHint(A11y.canvasHint)
 
-                // 2. Floating tool palette
+                // Tap-outside-to-dismiss while the title is being renamed.
+                // Active ONLY while editing — does not steal canvas touches
+                // at any other time. Resigning first responder fires the
+                // toolbar's onChange(of: titleFocused) which auto-saves.
+                if viewModel.isEditingTitle {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
+                            )
+                        }
+                        .zIndex(50)
+                }
+
+                // 2. Floating tool palette — dims in Focus Mode but stays
+                // mounted so re-emerging on exit is instant.
                 if !viewModel.isFullScreen {
                     ToolPaletteView(
                         viewModel: viewModel,
                         parentSize: proxy.size,
                         safeAreaInsets: proxy.safeAreaInsets
                     )
+                    .opacity(viewModel.isFocusMode ? 0.3 : 1.0)
+                    .animation(.inkSpring(InkSpring.fade), value: viewModel.isFocusMode)
                 }
 
-                // 3. Page strip (bottom)
+                // 3. Page strip (bottom) — fully hidden in Focus Mode
                 if viewModel.isShowingPageStrip && !viewModel.isFullScreen {
                     VStack {
                         Spacer()
@@ -52,9 +72,11 @@ struct EditorView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                     .ignoresSafeArea()
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(!viewModel.isFocusMode)
                 }
 
-                // 4. Minimap (when zoomed in)
+                // 4. Minimap (when zoomed in) — fully hidden in Focus Mode
                 if viewModel.zoomScale > 1.5 && !viewModel.isFullScreen {
                     VStack {
                         Spacer()
@@ -67,10 +89,11 @@ struct EditorView: View {
                         }
                     }
                     .transition(.opacity)
-                    .allowsHitTesting(true)
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(!viewModel.isFocusMode)
                 }
 
-                // 5. Top toolbar
+                // 5. Top toolbar — hidden in Focus Mode
                 if !viewModel.isFullScreen {
                     VStack(spacing: 0) {
                         EditorToolbarView(
@@ -93,6 +116,121 @@ struct EditorView: View {
                         )
                         Spacer()
                     }
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(!viewModel.isFocusMode)
+                }
+
+                // 5z. Shape recognition "Undo Shape" pill — floats at the
+                // top-centre when a stroke was just replaced. Tap to revert,
+                // auto-dismisses after 3s; the conversion is then committed
+                // (still undoable via standard ⌘Z).
+                if viewModel.pendingShapeUndo != nil {
+                    VStack {
+                        Button {
+                            viewModel.undoShapeReplacement()
+                        } label: {
+                            HStack(spacing: Ink.Spacing.xs) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.inkCaption)
+                                Text("Undo Shape")
+                                    .font(.inkCaption)
+                            }
+                            .foregroundColor(.inkTextPrimary)
+                            .padding(.horizontal, Ink.Spacing.md)
+                            .padding(.vertical, Ink.Spacing.xs)
+                            .background(
+                                Capsule()
+                                    .fill(Color.inkBackgroundElevated.opacity(0.95))
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                                    )
+                            )
+                        }
+                        .buttonStyle(.inkPressable)
+                        .padding(.top, proxy.safeAreaInsets.top + 60)   // below toolbar
+                        Spacer()
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .zIndex(70)
+                }
+
+                // 5a. Focus Mode exit pill (top-right). Semi-transparent so
+                // it doesn't compete with the writing. Also dismissable via
+                // two-finger long-press anywhere (set up further down).
+                if viewModel.isFocusMode {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button {
+                                viewModel.toggleFocusMode()
+                            } label: {
+                                HStack(spacing: Ink.Spacing.xs) {
+                                    Image(systemName: "xmark")
+                                        .font(.inkCaption)
+                                    Text("Exit Focus")
+                                        .font(.inkCaption)
+                                }
+                                .foregroundColor(.inkTextPrimary)
+                                .padding(.horizontal, Ink.Spacing.sm)
+                                .padding(.vertical, Ink.Spacing.xs)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.inkBackgroundElevated.opacity(0.85))
+                                )
+                            }
+                            .buttonStyle(.inkPressable)
+                            .opacity(0.6)
+                            .padding(.top, proxy.safeAreaInsets.top + Ink.Spacing.sm)
+                            .padding(.trailing, Ink.Spacing.md)
+                        }
+                        Spacer()
+                    }
+                    .transition(.opacity)
+                    .zIndex(60)
+                }
+
+                // 5b. Two-finger long-press anywhere → exit Focus Mode.
+                // Wrapped in a UIViewRepresentable that only claims a touch
+                // when 2+ fingers are down — so single-finger drawing is
+                // never disturbed.
+                if viewModel.isFocusMode {
+                    TwoFingerLongPressDetector { viewModel.toggleFocusMode() }
+                        .ignoresSafeArea()
+                        .zIndex(55)
+                }
+
+                // 5c. Apple Pencil Pro squeeze detector. Always mounted —
+                // gracefully no-ops on iOS 17.0–17.4 / non-Pro Pencils.
+                // Lives at zIndex 0 underneath everything; takes no hits.
+                PencilSqueezeDetector {
+                    viewModel.handlePencilSqueeze()
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // 5d. Radial wheel summoned by squeeze. Centre uses
+                // the editor viewport centre (squeezeWheelCentre is a
+                // .zero sentinel meaning "use viewport centre" — when
+                // pencil hover tracking lands later, we'll feed a real
+                // point through this same property).
+                if viewModel.squeezeWheelCentre != nil {
+                    let items: [WheelItem] = viewModel.isFocusMode
+                        ? WheelItem.focusModeSet
+                        : WheelItem.defaultSet
+                    let centre = CGPoint(
+                        x: proxy.size.width  / 2,
+                        y: proxy.size.height / 2
+                    )
+                    RadialToolWheel(
+                        items: items,
+                        center: centre,
+                        onSelect: { viewModel.handleWheelSelection($0) },
+                        onDismiss: { viewModel.dismissSqueezeWheel() }
+                    )
+                    .transition(.opacity)
+                    .zIndex(80)
                 }
 
                 // 6. Persistent back button + top-edge restorer.
@@ -233,7 +371,8 @@ struct EditorView: View {
                 viewModel.isShowingExportSheet = false
             }
         }
-        .statusBarHidden(viewModel.isFullScreen)
+        .statusBarHidden(viewModel.isFullScreen || viewModel.isFocusMode)
+        .persistentSystemOverlays(viewModel.isFocusMode ? .hidden : .automatic)
         .onAppear {
             startUndoStateTimer()
             // Library "Share as PDF…" deep-link: present the export sheet immediately.
@@ -291,19 +430,30 @@ struct EditorView: View {
                     .keyboardShortcut(.escape, modifiers: [])
                 Button("Toggle Toolbar") { viewModel.resetToolbarTimer() }
                     .keyboardShortcut(.space, modifiers: [])
-                Button("Pen")         { viewModel.selectTool(.Defaults.pen(theme: themeManager.theme)) }
+                Button("Focus Mode") { viewModel.toggleFocusMode() }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                // Tool shortcuts go through the identity-based selector so
+                // the user's per-tool persisted settings (colour/width/opacity)
+                // are restored, not reset to the default each time.
+                Button("Pen")         { viewModel.selectTool(identity: .pen) }
                     .keyboardShortcut("1", modifiers: [])
-                Button("Highlighter") { viewModel.selectTool(.Defaults.highlighter) }
+                Button("Fountain Pen") { viewModel.selectTool(identity: .fountainPen) }
                     .keyboardShortcut("2", modifiers: [])
-                Button("Pencil")      { viewModel.selectTool(.Defaults.pencil(theme: themeManager.theme)) }
+                Button("Brush")       { viewModel.selectTool(identity: .brush) }
                     .keyboardShortcut("3", modifiers: [])
-                Button("Eraser")      { viewModel.selectTool(.Defaults.eraser) }
+                Button("Marker")      { viewModel.selectTool(identity: .marker) }
                     .keyboardShortcut("4", modifiers: [])
-                Button("Lasso")       { viewModel.selectTool(.Defaults.lasso) }
+                Button("Pencil")      { viewModel.selectTool(identity: .pencil) }
                     .keyboardShortcut("5", modifiers: [])
-                Button("Ruler")       { viewModel.selectTool(.Defaults.ruler) }
+                Button("Highlighter") { viewModel.selectTool(identity: .highlighter) }
                     .keyboardShortcut("6", modifiers: [])
-                Button("Text Tool")   { viewModel.selectTool(.Defaults.text) }
+                Button("Eraser")      { viewModel.selectTool(identity: .eraser) }
+                    .keyboardShortcut("7", modifiers: [])
+                Button("Lasso")       { viewModel.selectTool(identity: .lasso) }
+                    .keyboardShortcut("8", modifiers: [])
+                Button("Ruler")       { viewModel.selectTool(identity: .ruler) }
+                    .keyboardShortcut("9", modifiers: [])
+                Button("Text Tool")   { viewModel.selectTool(identity: .text) }
                     .keyboardShortcut("t", modifiers: [])
             }
             .frame(width: 0, height: 0)
@@ -479,5 +629,50 @@ struct EditorView: View {
         UIView.animate(withDuration: duration, delay: 0, options: options) {
             viewModel.keyboardVisibleHeight = frame.height
         }
+    }
+}
+
+// MARK: - TwoFingerLongPressDetector
+
+/// Transparent UIView that fires `onTrigger` after a 0.5s two-finger
+/// hold. Single-finger touches pass straight through — the underlying
+/// canvas / drawing gestures are never disturbed.
+///
+/// Used for the Focus Mode escape hatch: hold two fingers anywhere to exit.
+private struct TwoFingerLongPressDetector: UIViewRepresentable {
+    let onTrigger: () -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let v = TwoFingerPassthroughView()
+        let g = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handle(_:))
+        )
+        g.numberOfTouchesRequired = 2
+        g.minimumPressDuration = 0.5
+        g.cancelsTouchesInView = false
+        v.addGestureRecognizer(g)
+        return v
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(onTrigger: onTrigger) }
+
+    final class Coordinator {
+        let onTrigger: () -> Void
+        init(onTrigger: @escaping () -> Void) { self.onTrigger = onTrigger }
+        @objc func handle(_ g: UILongPressGestureRecognizer) {
+            if g.state == .began { onTrigger() }
+        }
+    }
+}
+
+/// Companion view: only "claims" a hit when ≥2 touches are present.
+/// Lets the gesture recognizer above see the multi-touch event while
+/// single-finger touches fall through to the canvas.
+private final class TwoFingerPassthroughView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let touches = event?.allTouches, touches.count >= 2 else { return nil }
+        return super.hitTest(point, with: event)
     }
 }

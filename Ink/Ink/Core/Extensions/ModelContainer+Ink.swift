@@ -3,25 +3,22 @@ import SwiftData
 
 extension ModelContainer {
 
-    // Bump this integer whenever the SwiftData schema changes in a way that
-    // is incompatible with existing on-disk stores (added non-optional columns,
-    // renamed properties, changed enum encoding, etc.). The first launch after
-    // a bump will delete the old SQLite files so SwiftData can build a fresh
-    // store — acceptable during development; production apps should use a
-    // proper VersionedSchema + MigrationPlan instead.
-    private static let currentSchemaVersion = 2
-    private static let schemaVersionKey     = "ink.schema.version"
-
     /// Production container backed by ink.sqlite in Application Support/Ink/.
+    ///
+    /// Schema migration: production-grade. `InkMigrationPlan` declares the
+    /// transition V2 → V3 (adds `Folder`, adds `Notebook.folderId`) as a
+    /// lightweight migration. SwiftData reads the on-disk schema, diffs it
+    /// against the current schema (V3), and applies `ALTER TABLE` for
+    /// additive changes — existing notebooks come back with `folderId = nil`
+    /// (i.e., directly under their subject), no data loss.
+    ///
+    /// CloudKit is explicitly disabled: Ink's iCloud sync uses CloudDocuments
+    /// (iCloud Drive file presence) via `CloudSyncManager`, not CloudKit
+    /// Database. Without `cloudKitDatabase: .none`, SwiftData would auto-mirror
+    /// the store to CloudKit and reject the load because `Folder.parentSubjectId`
+    /// (non-optional) violates CloudKit's "all attributes must be optional or
+    /// have a default" rule.
     static func inkContainer() throws -> ModelContainer {
-        let schema = Schema([
-            Subject.self,
-            Notebook.self,
-            Page.self,
-            TextBlock.self,
-            MediaAttachment.self,
-            AudioAnnotation.self,
-        ])
         let storeURL = StorageService.inkDirectoryURL
             .appendingPathComponent("ink.sqlite")
         try FileManager.default.createDirectory(
@@ -29,40 +26,27 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // Delete the store when the schema version changes so SwiftData
-        // never reads rows that are missing non-optional columns.
-        let storedVersion = UserDefaults.standard.integer(forKey: schemaVersionKey)
-        if storedVersion != currentSchemaVersion {
-            for ext in ["sqlite", "sqlite-shm", "sqlite-wal"] {
-                try? FileManager.default.removeItem(
-                    at: storeURL.deletingPathExtension().appendingPathExtension(ext)
-                )
-            }
-            UserDefaults.standard.set(currentSchemaVersion, forKey: schemaVersionKey)
-        }
-
-        // cloudKitDatabase: .none — without this, SwiftData defaults to
-        // `.automatic` and auto-enables CloudKit Database sync because the
-        // app's entitlements declare an iCloud container. CloudKit then
-        // validates the schema against its strict rules (all relationships
-        // must have inverses + be optional, every attribute must be optional
-        // or have a default) and refuses to load the store on launch.
-        //
-        // Ink does NOT use CloudKit Database — its iCloud sync uses
-        // CloudDocuments (iCloud Drive file presence) via CloudSyncManager +
-        // NSFileCoordinator. SwiftData stays local-only.
+        // Use the V3 schema (current). The migration plan handles arrivals
+        // from V2.
+        let schema = Schema(versionedSchema: InkSchemaV3.self)
         let config = ModelConfiguration(
             schema: schema,
             url: storeURL,
             cloudKitDatabase: .none
         )
-        return try ModelContainer(for: schema, configurations: config)
+
+        return try ModelContainer(
+            for: schema,
+            migrationPlan: InkMigrationPlan.self,
+            configurations: config
+        )
     }
 
     /// In-memory container for unit tests — no disk I/O.
     static func inkTestContainer() throws -> ModelContainer {
         let schema = Schema([
             Subject.self,
+            Folder.self,
             Notebook.self,
             Page.self,
             TextBlock.self,

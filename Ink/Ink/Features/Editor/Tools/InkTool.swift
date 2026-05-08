@@ -7,23 +7,70 @@ import UIKit
 /// User-facing tool model. Maps to a `PKTool` in `CanvasContainerView`.
 /// Associated values are the *current* settings; defaults live in `InkTool.defaults`.
 enum InkTool: Equatable {
+    // Inking — each maps to a PKInkingTool ink type.
     case pen(colour: UIColor, width: CGFloat, opacity: CGFloat)
-    case highlighter(colour: UIColor, width: CGFloat)
+    case fountainPen(colour: UIColor, width: CGFloat, opacity: CGFloat)
+    case monoline(colour: UIColor, width: CGFloat)
+    case marker(colour: UIColor, width: CGFloat)
+    case brush(colour: UIColor, width: CGFloat, opacity: CGFloat)
+    case crayon(colour: UIColor, width: CGFloat)
     case pencil(colour: UIColor, width: CGFloat, opacity: CGFloat)
+    case highlighter(colour: UIColor, width: CGFloat)
+    // Modes
     case eraser(mode: EraserMode)
     case lasso
     case ruler
     case text                   // finger-driven text block mode
 
-    enum Identity: String, CaseIterable {
-        case pen, highlighter, pencil, eraser, lasso, ruler, text
+    enum Identity: String, CaseIterable, Codable {
+        case pen, fountainPen, monoline, marker, brush, crayon, pencil, highlighter
+        case eraser, lasso, ruler, text
+
+        var systemImage: String {
+            switch self {
+            case .pen:          return "pencil.tip"
+            case .fountainPen:  return "applepencil.tip"
+            case .monoline:     return "scribble"
+            case .marker:       return "paintbrush.pointed"
+            case .brush:        return "paintbrush"
+            case .crayon:       return "pencil.tip.crop.circle"
+            case .pencil:       return "pencil"
+            case .highlighter:  return "highlighter"
+            case .eraser:       return "eraser"
+            case .lasso:        return "lasso"
+            case .ruler:        return "ruler"
+            case .text:         return "text.cursor"
+            }
+        }
+
+        var displayName: String {
+            switch self {
+            case .pen:          return "Pen"
+            case .fountainPen:  return "Fountain Pen"
+            case .monoline:     return "Monoline"
+            case .marker:       return "Marker"
+            case .brush:        return "Brush"
+            case .crayon:       return "Crayon"
+            case .pencil:       return "Pencil"
+            case .highlighter:  return "Highlighter"
+            case .eraser:       return "Eraser"
+            case .lasso:        return "Lasso"
+            case .ruler:        return "Ruler"
+            case .text:         return "Text"
+            }
+        }
     }
 
     var identity: Identity {
         switch self {
         case .pen:          return .pen
-        case .highlighter:  return .highlighter
+        case .fountainPen:  return .fountainPen
+        case .monoline:     return .monoline
+        case .marker:       return .marker
+        case .brush:        return .brush
+        case .crayon:       return .crayon
         case .pencil:       return .pencil
+        case .highlighter:  return .highlighter
         case .eraser:       return .eraser
         case .lasso:        return .lasso
         case .ruler:        return .ruler
@@ -31,72 +78,83 @@ enum InkTool: Equatable {
         }
     }
 
-    var systemImage: String {
-        switch self {
-        case .pen:          return "pencil.tip"
-        case .highlighter:  return "highlighter"
-        case .pencil:       return "pencil"
-        case .eraser:       return "eraser"
-        case .lasso:        return "lasso"
-        case .ruler:        return "ruler"
-        case .text:         return "text.cursor"
-        }
-    }
+    var systemImage: String { identity.systemImage }
 
     /// Tools that have an editable colour swatch.
     var hasColour: Bool {
         switch self {
-        case .pen, .highlighter, .pencil: return true
-        case .eraser, .lasso, .ruler, .text: return false
+        case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil, .highlighter:
+            return true
+        case .eraser, .lasso, .ruler, .text:
+            return false
         }
     }
 
     /// Tools that have an editable width.
     var hasWidth: Bool {
         switch self {
-        case .pen, .highlighter, .pencil: return true
+        case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil, .highlighter:
+            return true
         case .eraser(.pixel):             return true
         case .eraser:                     return false
         case .lasso, .ruler, .text:       return false
         }
     }
 
-    /// Tools that support an editable opacity slider (highlighter is fixed at 40%).
+    /// Tools that support an editable opacity slider.
+    /// Marker/crayon/monoline are full-opacity by design.
+    /// Highlighter is fixed at 40%.
     var hasOpacity: Bool {
         switch self {
-        case .pen, .pencil:    return true
-        default:               return false
+        case .pen, .fountainPen, .brush, .pencil:    return true
+        default:                                     return false
         }
     }
 
     var currentColour: UIColor {
         switch self {
-        case .pen(let c, _, _):       return c
-        case .highlighter(let c, _):  return c
-        case .pencil(let c, _, _):    return c
-        default:                      return .inkTextPrimary
+        case .pen(let c, _, _),
+             .fountainPen(let c, _, _),
+             .brush(let c, _, _),
+             .pencil(let c, _, _):                    return c
+        case .monoline(let c, _),
+             .marker(let c, _),
+             .crayon(let c, _),
+             .highlighter(let c, _):                  return c
+        default:                                      return .inkTextPrimary
         }
     }
 
     var currentWidth: CGFloat {
         switch self {
-        case .pen(_, let w, _):       return w
-        case .highlighter(_, let w):  return w
-        case .pencil(_, let w, _):    return w
+        case .pen(_, let w, _),
+             .fountainPen(_, let w, _),
+             .brush(_, let w, _),
+             .pencil(_, let w, _):                   return w
+        case .monoline(_, let w),
+             .marker(_, let w),
+             .crayon(_, let w),
+             .highlighter(_, let w):                 return w
         case .eraser(.pixel):
-            // Reads the user's saved Pixel Eraser default. Falls back to 24 pt.
-            let stored = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
+            // Session value takes precedence over the Settings default.
+            // Session is cleared at app cold-launch; the toolbar size
+            // slider writes through to it on every adjustment.
+            let session = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize.session")
+            if session > 0 { return CGFloat(session) }
+            let stored  = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
             return stored > 0 ? CGFloat(stored) : 24
-        default:                      return 0
+        default:                                     return 0
         }
     }
 
     var currentOpacity: CGFloat {
         switch self {
-        case .pen(_, _, let o):           return o
-        case .pencil(_, _, let o):        return o
-        case .highlighter:                return 0.4
-        default:                          return 1.0
+        case .pen(_, _, let o),
+             .fountainPen(_, _, let o),
+             .brush(_, _, let o),
+             .pencil(_, _, let o):                  return o
+        case .highlighter:                          return 0.4
+        default:                                    return 1.0
         }
     }
 
@@ -105,14 +163,11 @@ enum InkTool: Equatable {
         return false
     }
 
-    /// Tools that act on the PKCanvasView (strokes, erasing, selection, guides).
-    /// Finger touches for these tools must reach the canvas, not the media overlay,
-    /// or the eraser/lasso/ruler stops working when used with a finger.
-    /// Only `.text` is genuinely non-canvas.
+    /// Tools that act on the PKCanvasView. Only `.text` is genuinely non-canvas.
     var isDrawingTool: Bool {
         switch self {
-        case .pen, .highlighter, .pencil, .eraser, .lasso, .ruler: return true
         case .text: return false
+        default:    return true
         }
     }
 
@@ -123,48 +178,96 @@ enum InkTool: Equatable {
 
     func withColour(_ colour: UIColor) -> InkTool {
         switch self {
-        case .pen(_, let w, let o):       return .pen(colour: colour, width: w, opacity: o)
-        case .highlighter(_, let w):      return .highlighter(colour: colour, width: w)
-        case .pencil(_, let w, let o):    return .pencil(colour: colour, width: w, opacity: o)
-        default:                          return self
+        case .pen(_, let w, let o):          return .pen(colour: colour, width: w, opacity: o)
+        case .fountainPen(_, let w, let o):  return .fountainPen(colour: colour, width: w, opacity: o)
+        case .monoline(_, let w):            return .monoline(colour: colour, width: w)
+        case .marker(_, let w):              return .marker(colour: colour, width: w)
+        case .brush(_, let w, let o):        return .brush(colour: colour, width: w, opacity: o)
+        case .crayon(_, let w):              return .crayon(colour: colour, width: w)
+        case .pencil(_, let w, let o):       return .pencil(colour: colour, width: w, opacity: o)
+        case .highlighter(_, let w):         return .highlighter(colour: colour, width: w)
+        default:                             return self
         }
     }
 
     func withWidth(_ width: CGFloat) -> InkTool {
         let clamped = max(0.5, min(20, width))
         switch self {
-        case .pen(let c, _, let o):        return .pen(colour: c, width: clamped, opacity: o)
-        case .highlighter(let c, _):       return .highlighter(colour: c, width: clamped)
-        case .pencil(let c, _, let o):     return .pencil(colour: c, width: clamped, opacity: o)
-        default:                           return self
+        case .pen(let c, _, let o):          return .pen(colour: c, width: clamped, opacity: o)
+        case .fountainPen(let c, _, let o):  return .fountainPen(colour: c, width: clamped, opacity: o)
+        case .monoline(let c, _):            return .monoline(colour: c, width: clamped)
+        case .marker(let c, _):              return .marker(colour: c, width: clamped)
+        case .brush(let c, _, let o):        return .brush(colour: c, width: clamped, opacity: o)
+        case .crayon(let c, _):              return .crayon(colour: c, width: clamped)
+        case .pencil(let c, _, let o):       return .pencil(colour: c, width: clamped, opacity: o)
+        case .highlighter(let c, _):         return .highlighter(colour: c, width: clamped)
+        default:                             return self
         }
     }
 
     func withOpacity(_ opacity: CGFloat) -> InkTool {
         let clamped = max(0.1, min(1.0, opacity))
         switch self {
-        case .pen(let c, let w, _):        return .pen(colour: c, width: w, opacity: clamped)
-        case .pencil(let c, let w, _):     return .pencil(colour: c, width: w, opacity: clamped)
-        default:                           return self
+        case .pen(let c, let w, _):          return .pen(colour: c, width: w, opacity: clamped)
+        case .fountainPen(let c, let w, _):  return .fountainPen(colour: c, width: w, opacity: clamped)
+        case .brush(let c, let w, _):        return .brush(colour: c, width: w, opacity: clamped)
+        case .pencil(let c, let w, _):       return .pencil(colour: c, width: w, opacity: clamped)
+        default:                             return self
         }
     }
 
     // MARK: Defaults
 
     enum Defaults {
+        private static func inkColour(_ theme: InkTheme) -> UIColor {
+            theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
+        }
+
         static func pen(theme: InkTheme) -> InkTool {
-            let c: UIColor = theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
-            return .pen(colour: c, width: 2, opacity: 1.0)
+            .pen(colour: inkColour(theme), width: 2, opacity: 1.0)
+        }
+        static func fountainPen(theme: InkTheme) -> InkTool {
+            .fountainPen(colour: inkColour(theme), width: 2, opacity: 1.0)
+        }
+        static func monoline(theme: InkTheme) -> InkTool {
+            .monoline(colour: inkColour(theme), width: 2)
+        }
+        static func marker(theme: InkTheme) -> InkTool {
+            .marker(colour: inkColour(theme), width: 6)
+        }
+        static func brush(theme: InkTheme) -> InkTool {
+            .brush(colour: inkColour(theme), width: 6, opacity: 0.85)
+        }
+        static func crayon(theme: InkTheme) -> InkTool {
+            .crayon(colour: inkColour(theme), width: 5)
+        }
+        static func pencil(theme: InkTheme) -> InkTool {
+            .pencil(colour: inkColour(theme), width: 3, opacity: 1.0)
         }
         static let highlighter: InkTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
-        static func pencil(theme: InkTheme) -> InkTool {
-            let c: UIColor = theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
-            return .pencil(colour: c, width: 3, opacity: 1.0)
-        }
         static let eraser: InkTool = .eraser(mode: .wholeStroke)
         static let lasso: InkTool = .lasso
         static let ruler: InkTool = .ruler
         static let text: InkTool  = .text
+
+        /// Build a default for any identity. Used by the palette when the
+        /// per-tool persistence has nothing stored for that identity yet.
+        static func forIdentity(_ id: Identity, theme: InkTheme) -> InkTool {
+            switch id {
+            case .pen:          return pen(theme: theme)
+            case .fountainPen:  return fountainPen(theme: theme)
+            case .monoline:     return monoline(theme: theme)
+            case .marker:       return marker(theme: theme)
+            case .brush:        return brush(theme: theme)
+            case .crayon:       return crayon(theme: theme)
+            case .pencil:       return pencil(theme: theme)
+            case .highlighter:  return highlighter
+            case .eraser:       return eraser
+            case .lasso:        return lasso
+            case .ruler:        return ruler
+            case .text:         return text
+            }
+        }
     }
 
     // MARK: PKTool mapping
@@ -174,35 +277,42 @@ enum InkTool: Equatable {
     func makePKTool() -> PKTool {
         switch self {
         case .pen(let c, let w, let opacity):
-            // Apply opacity as alpha — PKInkingTool .pen does not have a separate opacity setting.
-            let resolved = c.withAlphaComponent(opacity)
-            return PKInkingTool(.pen, color: resolved, width: w)
-        case .highlighter(let c, let w):
-            // Spec: highlighter is colour at 40% alpha (fixed).
-            let resolved = c.withAlphaComponent(0.4)
-            return PKInkingTool(.marker, color: resolved, width: w)
+            return PKInkingTool(.pen, color: c.withAlphaComponent(opacity), width: w)
+        case .fountainPen(let c, let w, let opacity):
+            // PKInkingTool.InkType.fountainPen is iOS 17+ — pressure-sensitive
+            // width modulation tied to stroke speed/pressure.
+            return PKInkingTool(.fountainPen, color: c.withAlphaComponent(opacity), width: w)
+        case .monoline(let c, let w):
+            // Constant-width pen with no pressure response.
+            return PKInkingTool(.monoline, color: c, width: w)
+        case .marker(let c, let w):
+            // Chunky, full-opacity, no pressure variation.
+            return PKInkingTool(.marker, color: c, width: w)
+        case .brush(let c, let w, let opacity):
+            // iOS 17+ watercolour brush — soft edges, opacity buildup.
+            return PKInkingTool(.watercolor, color: c.withAlphaComponent(opacity), width: w)
+        case .crayon(let c, let w):
+            // Textured wax-crayon look (iOS 17+).
+            return PKInkingTool(.crayon, color: c, width: w)
         case .pencil(let c, let w, let opacity):
             return PKInkingTool(.pencil, color: c.withAlphaComponent(opacity), width: w)
+        case .highlighter(let c, let w):
+            // Spec: highlighter is colour at 40% alpha (fixed). Marker ink type
+            // gives the chunky chisel feel a highlighter expects.
+            return PKInkingTool(.marker, color: c.withAlphaComponent(0.4), width: w)
         case .eraser(.pixel):
-            // PKEraserTool(.bitmap, width:) is iOS 16.4+; safe on this iOS 17+ app.
-            let stored = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
-            let width: CGFloat = stored > 0 ? CGFloat(stored) : 24
+            let session = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize.session")
+            let stored  = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
+            let width: CGFloat = session > 0 ? CGFloat(session)
+                              : (stored > 0 ? CGFloat(stored) : 24)
             return PKEraserTool(.bitmap, width: width)
         case .eraser(.wholeStroke):
             return PKEraserTool(.vector)
         case .eraser(.page):
-            // .page is a one-shot action handled by the toolbar (eraseCurrentPage),
-            // not an active PKTool. Return a harmless no-op so the canvas doesn't
-            // mis-handle it if this branch is ever hit.
             return PKInkingTool(.pen, color: .clear, width: 1)
         case .lasso:
             return PKLassoTool()
-        case .ruler:
-            // Caller toggles canvasView.isRulerActive instead. Returning a no-op pen
-            // keeps PKCanvasView from crashing if this branch is reached unexpectedly.
-            return PKInkingTool(.pen, color: .clear, width: 1)
-        case .text:
-            // Text tool does not interact with PKCanvasView; return a no-op pen.
+        case .ruler, .text:
             return PKInkingTool(.pen, color: .clear, width: 1)
         }
     }
