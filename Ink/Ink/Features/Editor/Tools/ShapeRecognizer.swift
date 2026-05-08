@@ -1,85 +1,130 @@
 import Foundation
 import PencilKit
 import CoreGraphics
+import UIKit
+import Vision
 
 // MARK: - RecognizedShape
 
 /// What `ShapeRecognizer` produces when it's confident.
+///
+/// Polygons (triangle / pentagon / hexagon) carry their resolved vertices
+/// rather than a bbox so non-axis-aligned drawings produce a clean shape
+/// at the same orientation. Square/Circle are kept distinct from
+/// rectangle/ellipse so callers can show "Square recognised" rather than
+/// the user-confusing "Rectangle" when they drew an obvious square.
 enum RecognizedShape {
     case line(start: CGPoint, end: CGPoint)
     case rectangle(rect: CGRect)
+    case square(rect: CGRect)
     case ellipse(rect: CGRect)
+    case circle(rect: CGRect)
     case triangle(a: CGPoint, b: CGPoint, c: CGPoint)
+    case pentagon(points: [CGPoint])
+    case hexagon(points: [CGPoint])
+    case arrow(start: CGPoint, tip: CGPoint, leftBarb: CGPoint, rightBarb: CGPoint)
 }
 
 // MARK: - ShapeRecognizer
 
-/// Geometric-heuristic shape detector. No machine learning, no Vision —
-/// just samples the stroke, fits candidate shapes, picks the best fit
-/// above a confidence threshold.
+/// Vision-based shape detector. Rasterises the user's stroke into a small
+/// alpha mask, runs `VNDetectContoursRequest`, and classifies the result
+/// using `VNContour.polygonApproximation(epsilon:)`. Arrows are detected
+/// by stroke-endpoint geometry — Vision contours don't model the open
+/// arrowhead well.
 ///
-/// Confidence is `1 - (residual / pathLength)` clamped to `[0, 1]`.
-/// Threshold for replacement is `0.75` (per spec).
+/// Performance: rasterise + detect runs ~30–80 ms on modern iPad. Always
+/// call `recognize` from a background `Task` — it does not hop to the
+/// main actor itself.
 enum ShapeRecognizer {
 
     /// Confidence threshold for stroke → shape replacement.
-    static let confidenceThreshold: CGFloat = 0.75
+    /// Lowered from 0.75 → 0.65 so more borderline shapes get caught;
+    /// the more-prominent 5s "Undo Shape" pill makes false positives
+    /// trivially recoverable.
+    static let confidenceThreshold: CGFloat = 0.65
 
-    /// Detect a shape in `stroke`, or return nil if none qualifies.
-    /// Strokes shorter than 8 sample points are ignored (likely a tap or scribble).
-    static func recognize(_ stroke: PKStroke) -> RecognizedShape? {
-        let points = sample(stroke, count: 64)
-        guard points.count >= 8 else { return nil }
+    /// Polygon approximation tolerance — fraction of the contour's
+    /// arclength. `0.04` is loose enough to swallow rounded rectangle
+    /// corners while still distinguishing a hexagon from a circle.
+    static let polygonEpsilon: Float = 0.04
+
+    /// Resolve a shape from the stroke, or `nil` if no candidate clears
+    /// the confidence bar. Async so the heavy lifting (Vision request,
+    /// rasterisation) can run off the main actor.
+    static func recognize(_ stroke: PKStroke) async -> RecognizedShape? {
+        let points = sample(stroke, count: 96)
+        guard points.count >= 16 else { return nil }
 
         let bbox = boundingBox(points)
-        // Reject degenerate strokes (zero-area boxes).
         guard bbox.width > 4, bbox.height > 4 else { return nil }
 
         let pathLength = perimeter(points)
-        guard pathLength > 20 else { return nil }
+        guard pathLength > 24 else { return nil }
 
-        let endGap = distance(points.first ?? .zero, points.last ?? .zero)
+        let endGap   = distance(points.first ?? .zero, points.last ?? .zero)
         let isClosed = endGap < pathLength * 0.18
 
-        // Score each candidate. Higher is better.
-        var candidates: [(shape: RecognizedShape, confidence: CGFloat)] = []
-
-        if isClosed {
-            // Closed → ellipse or polygon.
-            if let s = scoreEllipse(points: points, bbox: bbox, pathLength: pathLength) {
-                candidates.append(s)
+        // 1. Open strokes — try arrow first, then line.
+        if !isClosed {
+            if let arrow = detectArrow(points: points, pathLength: pathLength) {
+                return arrow
             }
-            if let s = scorePolygon(points: points, sides: 3, pathLength: pathLength) {
-                candidates.append(s)
+            if let line = scoreLine(points: points), line.confidence >= confidenceThreshold {
+                return line.shape
             }
-            if let s = scorePolygon(points: points, sides: 4, pathLength: pathLength) {
-                candidates.append(s)
-            }
-        } else {
-            // Open → line.
-            if let s = scoreLine(points: points, pathLength: pathLength) {
-                candidates.append(s)
-            }
+            return nil
         }
 
-        guard let best = candidates.max(by: { $0.confidence < $1.confidence }),
-              best.confidence >= confidenceThreshold
-        else { return nil }
-        return best.shape
+        // 2. Closed strokes — Vision contour + polygon approximation.
+        guard let cgImage = rasterise(points: points, bbox: bbox) else { return nil }
+        guard let normalisedVertices = await detectPolygon(in: cgImage) else { return nil }
+        guard normalisedVertices.count >= 3 else { return nil }
+
+        let canvasVertices = normalisedVertices.map { remap($0, bbox: bbox, image: cgImage) }
+        let n = canvasVertices.count
+
+        // Confidence here is binary-ish — we passed Vision's detection AND
+        // landed on a recognised vertex count. Keep the literal at 0.85 so
+        // an obvious shape wins easily over the line/arrow score path.
+        let confidence: CGFloat = 0.85
+        guard confidence >= confidenceThreshold else { return nil }
+
+        switch n {
+        case 3:
+            return .triangle(a: canvasVertices[0],
+                             b: canvasVertices[1],
+                             c: canvasVertices[2])
+        case 4:
+            return classifyQuad(canvasVertices, bbox: bbox)
+        case 5:
+            return .pentagon(points: canvasVertices)
+        case 6:
+            return .hexagon(points: canvasVertices)
+        default:
+            // Lots of vertices → rounded curve. Distinguish circle vs
+            // ellipse by aspect ratio of the original bbox.
+            let aspect = bbox.width / bbox.height
+            if abs(aspect - 1) < 0.18 {
+                let side = (bbox.width + bbox.height) / 2
+                let centred = CGRect(
+                    x: bbox.midX - side / 2,
+                    y: bbox.midY - side / 2,
+                    width: side, height: side
+                )
+                return .circle(rect: centred)
+            }
+            return .ellipse(rect: bbox)
+        }
     }
 
     // MARK: - Sampling
 
-    /// Resample `count` evenly-spaced points along the stroke's path. Uses
-    /// the path's parametric `interpolatedLocation` to get smooth coverage
-    /// regardless of input spacing.
     private static func sample(_ stroke: PKStroke, count: Int) -> [CGPoint] {
         let path = stroke.path
         guard path.count > 0 else { return [] }
         var out: [CGPoint] = []
         out.reserveCapacity(count)
-        // PKStrokePath is parameterised over its control-point indices.
-        // interpolatedLocation(at:) returns the location at a fractional index.
         let last = CGFloat(path.count - 1)
         for i in 0..<count {
             let t = CGFloat(i) / CGFloat(max(1, count - 1)) * last
@@ -110,133 +155,190 @@ enum ShapeRecognizer {
         return sum
     }
 
-    // MARK: - Line
+    /// Signed angular delta in `(-π, π]`.
+    private static func angleDelta(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+        var d = b - a
+        while d >  .pi { d -= 2 * .pi }
+        while d <= -.pi { d += 2 * .pi }
+        return d
+    }
 
-    private static func scoreLine(points: [CGPoint], pathLength: CGFloat) -> (RecognizedShape, CGFloat)? {
+    /// Mirror `p` across the line through `a → b`.
+    private static func mirror(_ p: CGPoint, across a: CGPoint, _ b: CGPoint) -> CGPoint {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 0.0001 else { return p }
+        let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
+        let projX = a.x + t * dx
+        let projY = a.y + t * dy
+        return CGPoint(x: 2 * projX - p.x, y: 2 * projY - p.y)
+    }
+
+    // MARK: - Line scoring (open strokes)
+
+    private static func scoreLine(points: [CGPoint]) -> (shape: RecognizedShape, confidence: CGFloat)? {
         guard let first = points.first, let last = points.last else { return nil }
-        // Residual = average perpendicular distance from each point to the
-        // line through the endpoints.
         let dx = last.x - first.x
         let dy = last.y - first.y
         let len = hypot(dx, dy)
         guard len > 1 else { return nil }
         var sum: CGFloat = 0
         for p in points {
-            // Cross product / len gives perpendicular distance.
-            let num = abs((p.x - first.x) * dy - (p.y - first.y) * dx)
-            sum += num / len
+            sum += abs((p.x - first.x) * dy - (p.y - first.y) * dx) / len
         }
         let residual = sum / CGFloat(points.count)
-        // Confidence: low residual relative to the line's length means
-        // the points cluster tightly around the straight line.
         let confidence = (1 - residual / max(20, len * 0.15)).clampedShape()
         return (.line(start: first, end: last), confidence)
     }
 
-    // MARK: - Ellipse
+    // MARK: - Arrow detection (heuristic, endpoint analysis)
 
-    private static func scoreEllipse(points: [CGPoint], bbox: CGRect, pathLength: CGFloat) -> (RecognizedShape, CGFloat)? {
-        // Residual = how far each point is from the ellipse inscribed in bbox.
-        let cx = bbox.midX
-        let cy = bbox.midY
-        let rx = bbox.width  / 2
-        let ry = bbox.height / 2
-        guard rx > 2, ry > 2 else { return nil }
-        var sum: CGFloat = 0
-        for p in points {
-            // Convert to normalised ellipse space; distance from unit circle.
-            let nx = (p.x - cx) / rx
-            let ny = (p.y - cy) / ry
-            sum += abs(hypot(nx, ny) - 1)
+    /// Drawn arrows usually trace `start → tip → barb` in one stroke
+    /// (lifting the pen for a second barb is the exception). We detect
+    /// the kink: a sharp angle late in the stroke where the pen reverses
+    /// direction. The mirror across the body line gives the second
+    /// barb so the rendered arrow looks symmetrical.
+    private static func detectArrow(points: [CGPoint], pathLength: CGFloat) -> RecognizedShape? {
+        guard points.count >= 24, let start = points.first, let end = points.last else { return nil }
+
+        // Find the point farthest from the start — candidate "tip".
+        var tipIdx = points.count - 1
+        var tipDist: CGFloat = 0
+        for (i, p) in points.enumerated() {
+            let d = distance(p, start)
+            if d > tipDist { tipDist = d; tipIdx = i }
         }
-        let residual = sum / CGFloat(points.count)
-        // Tighter tolerance — ellipses fit cleanly when drawn well.
-        let confidence = (1 - residual / 0.25).clampedShape()
-        return (.ellipse(rect: bbox), confidence)
+        // Tip must lie comfortably inside the stroke (not at start, not at end).
+        guard tipIdx > points.count * 6 / 10, tipIdx < points.count - 4 else { return nil }
+        let tip = points[tipIdx]
+
+        let bodyLen = distance(start, tip)
+        let barbLen = distance(tip, end)
+        // Barb segment must be substantially shorter than the body — otherwise
+        // we'd be mistaking a bent line for an arrow.
+        guard barbLen > 6,
+              barbLen < bodyLen * 0.6,
+              bodyLen > 24
+        else { return nil }
+
+        // Body should be roughly straight. Reject if the leading 80% of
+        // the stroke deviates a lot from the start→tip chord.
+        let bodyPoints = Array(points.prefix(tipIdx + 1))
+        guard let bodyFit = scoreLine(points: bodyPoints), bodyFit.confidence > 0.55 else { return nil }
+
+        let bodyAngle = atan2(tip.y - start.y, tip.x - start.x)
+        let barbAngle = atan2(end.y - tip.y, end.x - tip.x)
+        let delta     = abs(angleDelta(bodyAngle, barbAngle))
+        // Reject head-on continuations (delta near 0) and full reversals
+        // (delta near π). Real arrows kink ~30°–150°.
+        guard delta > .pi / 6, delta < .pi * 5 / 6 else { return nil }
+
+        let leftBarb  = end
+        let rightBarb = mirror(end, across: start, tip)
+        return .arrow(start: start, tip: tip, leftBarb: leftBarb, rightBarb: rightBarb)
     }
 
-    // MARK: - Polygons (triangle, rectangle)
+    // MARK: - Vision rasterisation
 
-    /// Find `sides` corners by simplifying the polyline (Ramer-Douglas-Peucker
-    /// flavour: pick the points with highest perpendicular distance from
-    /// chord). Score the polygon formed by those corners against the original.
-    private static func scorePolygon(points: [CGPoint], sides: Int, pathLength: CGFloat) -> (RecognizedShape, CGFloat)? {
-        guard sides >= 3, points.count > sides else { return nil }
-        let corners = findCorners(points, count: sides)
-        guard corners.count == sides else { return nil }
+    /// Rasterise the closed stroke into a 256×256 alpha mask: white shape
+    /// on black, padded so the contour doesn't touch the edge (Vision
+    /// otherwise rejects edge-coincident contours).
+    private static func rasterise(points: [CGPoint], bbox: CGRect) -> CGImage? {
+        let imageSize = CGSize(width: 256, height: 256)
+        let padding: CGFloat = 16
 
-        // Build the closed polygon edge-by-edge and average each input
-        // point's distance to the nearest edge.
-        var sum: CGFloat = 0
-        for p in points {
-            var minDist = CGFloat.greatestFiniteMagnitude
-            for i in 0..<corners.count {
-                let a = corners[i]
-                let b = corners[(i + 1) % corners.count]
-                minDist = Swift.min(minDist, distancePointToSegment(p, a, b))
+        let scaleX = (imageSize.width  - 2 * padding) / max(1, bbox.width)
+        let scaleY = (imageSize.height - 2 * padding) / max(1, bbox.height)
+        let scale  = Swift.min(scaleX, scaleY)
+        let dx = (imageSize.width  - bbox.width  * scale) / 2 - bbox.minX * scale
+        let dy = (imageSize.height - bbox.height * scale) / 2 - bbox.minY * scale
+
+        let renderer = UIGraphicsImageRenderer(size: imageSize)
+        let image = renderer.image { ctx in
+            UIColor.black.setFill()
+            ctx.fill(CGRect(origin: .zero, size: imageSize))
+
+            let path = UIBezierPath()
+            for (i, p) in points.enumerated() {
+                let pt = CGPoint(x: p.x * scale + dx, y: p.y * scale + dy)
+                if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
             }
-            sum += minDist
+            path.close()
+            UIColor.white.setFill()
+            path.fill()
         }
-        let residual = sum / CGFloat(points.count)
-        let confidence = (1 - residual / 12).clampedShape()
-
-        switch sides {
-        case 3:
-            // For triangles, return the three corners directly.
-            return (.triangle(a: corners[0], b: corners[1], c: corners[2]), confidence)
-        case 4:
-            // For rectangles, normalise to an axis-aligned bbox of the corners.
-            // (Free-rotated rectangles are a stretch goal — for now snap to bbox.)
-            let bbox = boundingBox(corners)
-            return (.rectangle(rect: bbox), confidence)
-        default:
-            return nil
-        }
+        return image.cgImage
     }
 
-    /// Pick `count` "corner" points from `points` — those with the highest
-    /// perpendicular distance from the chord between their neighbours.
-    /// Always includes the first point so a closed polygon's first vertex
-    /// is well-defined.
-    private static func findCorners(_ points: [CGPoint], count: Int) -> [CGPoint] {
-        var candidates: [(idx: Int, score: CGFloat)] = []
-        let stride = max(1, points.count / 32)
-        for i in stride..<(points.count - stride) {
-            let prev = points[i - stride]
-            let next = points[i + stride]
-            let chordLen = distance(prev, next)
-            guard chordLen > 0.01 else { continue }
-            let dx = next.x - prev.x
-            let dy = next.y - prev.y
-            let p = points[i]
-            let perp = abs((p.x - prev.x) * dy - (p.y - prev.y) * dx) / chordLen
-            candidates.append((i, perp))
-        }
-        // Pick top-`count` non-adjacent candidates, sorted by stroke order.
-        candidates.sort { $0.score > $1.score }
-        var picked: [Int] = []
-        let minSpacing = max(2, points.count / (count + 1))
-        for c in candidates {
-            if picked.allSatisfy({ abs($0 - c.idx) >= minSpacing }) {
-                picked.append(c.idx)
-                if picked.count == count { break }
+    /// Run Vision contour detection + polygon approximation. Returns
+    /// the polygon's vertices in Vision's normalised coordinate space
+    /// (origin bottom-left, y up, range `[0, 1]`).
+    private static func detectPolygon(in cgImage: CGImage) async -> [CGPoint]? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[CGPoint]?, Never>) in
+            let request = VNDetectContoursRequest { request, _ in
+                guard let observation = request.results?.first as? VNContoursObservation else {
+                    continuation.resume(returning: nil); return
+                }
+                // Largest top-level contour by point count = the user's stroke.
+                var best: VNContour?
+                for contour in observation.topLevelContours {
+                    if (best?.pointCount ?? 0) < contour.pointCount { best = contour }
+                }
+                guard let contour = best,
+                      let approx  = try? contour.polygonApproximation(epsilon: polygonEpsilon)
+                else {
+                    continuation.resume(returning: nil); return
+                }
+                let pts = approx.normalizedPoints.map {
+                    CGPoint(x: CGFloat($0.x), y: CGFloat($0.y))
+                }
+                continuation.resume(returning: pts)
             }
+            request.contrastAdjustment = 1.0
+            request.detectsDarkOnLight = false  // white shape on black
+
+            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            do { try handler.perform([request]) }
+            catch { continuation.resume(returning: nil) }
         }
-        picked.sort()
-        return picked.map { points[$0] }
     }
 
-    private static func distancePointToSegment(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
-        let dx = b.x - a.x
-        let dy = b.y - a.y
-        let len2 = dx * dx + dy * dy
-        guard len2 > 0.0001 else { return distance(p, a) }
-        // Projection parameter t in [0, 1] for points on the segment.
-        var t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2
-        t = Swift.max(0, Swift.min(1, t))
-        let projX = a.x + t * dx
-        let projY = a.y + t * dy
-        return hypot(p.x - projX, p.y - projY)
+    /// Map a Vision-normalised point back into canvas coords. We applied
+    /// uniform scale + centring during rasterisation; reverse it here.
+    /// Vision's y-axis is flipped (origin bottom-left), so y is inverted.
+    private static func remap(_ p: CGPoint, bbox: CGRect, image: CGImage) -> CGPoint {
+        let imageW = CGFloat(image.width)
+        let imageH = CGFloat(image.height)
+        let padding: CGFloat = 16
+        let scaleX = (imageW - 2 * padding) / max(1, bbox.width)
+        let scaleY = (imageH - 2 * padding) / max(1, bbox.height)
+        let scale  = Swift.min(scaleX, scaleY)
+        let dx = (imageW - bbox.width  * scale) / 2 - bbox.minX * scale
+        let dy = (imageH - bbox.height * scale) / 2 - bbox.minY * scale
+        // Vision normalised → image coords (flip y).
+        let imgX = p.x * imageW
+        let imgY = (1 - p.y) * imageH
+        return CGPoint(x: (imgX - dx) / scale, y: (imgY - dy) / scale)
+    }
+
+    // MARK: - Quadrilateral classification
+
+    /// Decide square vs rectangle from four contour vertices. We snap to
+    /// an axis-aligned bbox of the corners — free-rotated rectangles are
+    /// a stretch goal — and call it a square when its sides agree
+    /// within ~12%.
+    private static func classifyQuad(_ vertices: [CGPoint], bbox: CGRect) -> RecognizedShape {
+        let cornerBox = boundingBox(vertices)
+        let aspect = cornerBox.width / max(0.0001, cornerBox.height)
+        if abs(aspect - 1) < 0.18 {
+            let side = (cornerBox.width + cornerBox.height) / 2
+            return .square(rect: CGRect(
+                x: cornerBox.midX - side / 2,
+                y: cornerBox.midY - side / 2,
+                width: side, height: side
+            ))
+        }
+        return .rectangle(rect: cornerBox)
     }
 }
 

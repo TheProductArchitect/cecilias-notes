@@ -481,12 +481,36 @@ final class EditorViewModel: ObservableObject {
         guard let canvas = canvasView,
               let lastStroke = canvas.drawing.strokes.last
         else { return }
-        guard let shape = ShapeRecognizer.recognize(lastStroke) else { return }
 
-        let replacementIndex = canvas.drawing.strokes.count - 1
+        // Vision rasterisation + contour detection runs ~30–80ms — push
+        // the heavy lifting onto a background priority Task and only
+        // hop back to the main actor for the canvas mutation.
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let shape = await ShapeRecognizer.recognize(lastStroke) else { return }
+            await MainActor.run {
+                self?.applyRecognisedShape(shape, replacing: lastStroke)
+            }
+        }
+    }
+
+    /// Apply a recognised shape back onto the canvas. Runs on the main
+    /// actor — kept separate from `runShapeRecognition` so the Vision
+    /// path is purely background.
+    private func applyRecognisedShape(_ shape: RecognizedShape, replacing originalStroke: PKStroke) {
+        guard let canvas = canvasView else { return }
+        // The user may have drawn another stroke (or undone) between
+        // background detection and now. Locate the original stroke by
+        // identity — we still hold a reference. If it's no longer the
+        // last stroke, abandon the replacement rather than mutating
+        // something we don't own.
+        let strokes = canvas.drawing.strokes
+        guard let lastStroke = strokes.last,
+              lastStroke.path.creationDate == originalStroke.path.creationDate
+        else { return }
+
+        let replacementIndex = strokes.count - 1
         let cleanStroke = makeCleanStroke(for: shape, like: lastStroke)
-
-        var newStrokes = canvas.drawing.strokes
+        var newStrokes = strokes
         newStrokes[replacementIndex] = cleanStroke
         canvas.drawing = PKDrawing(strokes: newStrokes)
 
@@ -507,10 +531,12 @@ final class EditorViewModel: ObservableObject {
             )
         }
 
-        // Auto-dismiss the pill after 3 s.
+        // Auto-dismiss the pill after 5 s. Bumped from 3 s along with the
+        // 0.75 → 0.65 confidence drop: more shapes get caught, so the user
+        // needs a slightly longer window to reject a misfire.
         shapePillDismissTask?.cancel()
         shapePillDismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 withAnimation(.inkSpring(InkSpring.fade)) {
@@ -568,32 +594,60 @@ final class EditorViewModel: ObservableObject {
             ))
         }
 
-        switch shape {
-        case .line(let start, let end):
-            addPoint(start, t: 0)
-            addPoint(end,   t: 0.05)
-        case .ellipse(let rect):
+        // Helper: trace a closed polygon by its vertex list.
+        func tracePolygon(_ verts: [CGPoint]) {
+            for (i, p) in verts.enumerated() { addPoint(p, t: Double(i) * 0.05) }
+            if let first = verts.first { addPoint(first, t: Double(verts.count) * 0.05) }
+        }
+
+        // Helper: trace a parametric curve (ellipse / circle).
+        func traceEllipse(rect: CGRect) {
             let cx = rect.midX, cy = rect.midY
-            let rx = rect.width / 2, ry = rect.height / 2
+            let rx = rect.width  / 2
+            let ry = rect.height / 2
             let n = 36
             for i in 0...n {
                 let a = CGFloat(i) / CGFloat(n) * 2 * .pi
                 addPoint(CGPoint(x: cx + rx * cos(a), y: cy + ry * sin(a)),
                          t: Double(i) * 0.01)
             }
-        case .rectangle(let rect):
-            let pts: [CGPoint] = [
+        }
+
+        switch shape {
+        case .line(let start, let end):
+            addPoint(start, t: 0)
+            addPoint(end,   t: 0.05)
+
+        case .ellipse(let rect):
+            traceEllipse(rect: rect)
+
+        case .circle(let rect):
+            traceEllipse(rect: rect)
+
+        case .rectangle(let rect), .square(let rect):
+            tracePolygon([
                 CGPoint(x: rect.minX, y: rect.minY),
                 CGPoint(x: rect.maxX, y: rect.minY),
                 CGPoint(x: rect.maxX, y: rect.maxY),
                 CGPoint(x: rect.minX, y: rect.maxY),
-                CGPoint(x: rect.minX, y: rect.minY),
-            ]
-            for (i, p) in pts.enumerated() { addPoint(p, t: Double(i) * 0.05) }
+            ])
+
         case .triangle(let a, let b, let c):
-            for (i, p) in [a, b, c, a].enumerated() {
-                addPoint(p, t: Double(i) * 0.05)
-            }
+            tracePolygon([a, b, c])
+
+        case .pentagon(let pts), .hexagon(let pts):
+            tracePolygon(pts)
+
+        case .arrow(let start, let tip, let leftBarb, let rightBarb):
+            // One stroke that draws the body, then both barbs in turn:
+            //   start → tip → leftBarb → tip → rightBarb
+            // Visiting the tip twice is fine in PKStroke land — the shape
+            // reads as a clean arrow when rendered.
+            addPoint(start,     t: 0.00)
+            addPoint(tip,       t: 0.05)
+            addPoint(leftBarb,  t: 0.10)
+            addPoint(tip,       t: 0.15)
+            addPoint(rightBarb, t: 0.20)
         }
         return PKStrokePath(controlPoints: points, creationDate: now)
     }

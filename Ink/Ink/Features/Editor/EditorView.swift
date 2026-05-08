@@ -166,8 +166,11 @@ struct EditorView: View {
 
                 // 5z. Shape recognition "Undo Shape" pill — floats at the
                 // top-centre when a stroke was just replaced. Tap to revert,
-                // auto-dismisses after 3s; the conversion is then committed
-                // (still undoable via standard ⌘Z).
+                // auto-dismisses after 5s; the conversion is then committed
+                // (still undoable via standard ⌘Z). Visually a touch louder
+                // than the equivalent "Customise" pill — the user just lost
+                // a stroke they drew, so a calmer "Undo Shape" wouldn't
+                // catch the eye in time.
                 if viewModel.pendingShapeUndo != nil {
                     VStack {
                         Button {
@@ -175,20 +178,19 @@ struct EditorView: View {
                         } label: {
                             HStack(spacing: Ink.Spacing.xs) {
                                 Image(systemName: "arrow.uturn.backward")
-                                    .font(.inkCaption)
+                                    .font(.inkSubhead)
+                                    .fontWeight(.semibold)
                                 Text("Undo Shape")
-                                    .font(.inkCaption)
+                                    .font(.inkSubhead)
+                                    .fontWeight(.semibold)
                             }
-                            .foregroundColor(.inkTextPrimary)
+                            .foregroundColor(.white)
                             .padding(.horizontal, Ink.Spacing.md)
-                            .padding(.vertical, Ink.Spacing.xs)
+                            .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(Color.inkBackgroundElevated.opacity(0.95))
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
-                                    )
+                                    .fill(Color.inkAccentPrimary)
+                                    .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
                             )
                         }
                         .buttonStyle(.inkPressable)
