@@ -3,6 +3,21 @@ import SwiftUI
 struct PencilSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
 
+    /// Bind the segmented picker against `@AppStorage` directly rather
+    /// than routing through `viewModel.doubleTapAction`.
+    ///
+    /// `SettingsViewModel` is a `@MainActor` class with an explicit
+    /// `objectWillChange` publisher (synthesised conformance fails under
+    /// Swift 5.10's stricter actor isolation). `@AppStorage` properties
+    /// on an `ObservableObject` write to UserDefaults but never fire
+    /// `objectWillChange`, so views observing the model don't re-render
+    /// — toggles and sliders hide this because their gesture animation
+    /// snaps regardless of the bound value, but a segmented Picker is
+    /// purely value-driven and stays stuck on the previous segment.
+    /// Reading via SwiftUI's view-level `@AppStorage` makes the Picker
+    /// a proper `DynamicProperty` reader and the segments update.
+    @AppStorage("ink.pencil.doubletap") private var doubleTapAction: DoubleTapAction = .switchTool
+
     var body: some View {
         ScrollView {
             VStack(spacing: Ink.Spacing.lg) {
@@ -26,7 +41,7 @@ struct PencilSettingsView: View {
         VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             cardHeader("Double-Tap Action")
 
-            Picker("Double-tap", selection: $viewModel.doubleTapAction) {
+            Picker("Double-tap", selection: $doubleTapAction) {
                 ForEach(DoubleTapAction.allCases, id: \.rawValue) { action in
                     Text(action.displayName).tag(action)
                 }
