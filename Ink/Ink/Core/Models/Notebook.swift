@@ -14,10 +14,23 @@ final class Notebook {
     var coverTexture: CoverTexture
     var sortOrder: Int
     var isPinned: Bool
-    /// Max 5 tags, 20 chars each — enforced in StorageService.
-    var tags: [String]
+    /// Comma-separated tags (stored as String so CoreData's transformer is never invoked).
+    /// Access via the computed `tags` property.
+    var tagsRaw: String
     var pageSize: PageSize
-    var defaultTemplate: PageTemplate
+    /// JSON-encoded PageTemplate (stored as String — plain Codable enums with associated
+    /// values break CoreData's Transformable decoder). Access via `defaultTemplate`.
+    var defaultTemplateRaw: String
+
+    var tags: [String] {
+        get { tagsRaw.isEmpty ? [] : tagsRaw.components(separatedBy: "\u{001F}") }
+        set { tagsRaw = newValue.joined(separator: "\u{001F}") }
+    }
+
+    var defaultTemplate: PageTemplate {
+        get { .from(jsonString: defaultTemplateRaw) }
+        set { defaultTemplateRaw = newValue.jsonString }
+    }
     /// Denormalised page count — maintained by StorageService.
     var totalPageCount: Int
     /// JPEG 200×260pt thumbnail of first page, regenerated on save.
@@ -48,11 +61,11 @@ final class Notebook {
         self.subjectId       = subjectId
         self.coverColorHex   = coverColorHex
         self.coverTexture    = coverTexture
-        self.sortOrder       = 0
-        self.isPinned        = false
-        self.tags            = []
-        self.pageSize        = pageSize
-        self.defaultTemplate = defaultTemplate
+        self.sortOrder          = 0
+        self.isPinned           = false
+        self.tagsRaw            = ""
+        self.pageSize           = pageSize
+        self.defaultTemplateRaw = defaultTemplate.jsonString
         self.totalPageCount  = 0
         self.thumbnailData   = nil
         self.createdAt       = Date()

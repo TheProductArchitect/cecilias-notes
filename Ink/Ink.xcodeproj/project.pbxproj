@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		ABB82F3E2FAD0C6100EAEC50 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */; };
+		ABB82F402FAD0C6100EAEC50 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */; };
+		ABB82F512FAD0C6300EAEC50 /* InkWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = ABB82F3B2FAD0C6100EAEC50 /* InkWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		ABB82E2E2FAD01B400EAEC50 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,17 +27,68 @@
 			remoteGlobalIDString = ABB82E1F2FAD01B300EAEC50;
 			remoteInfo = Ink;
 		};
+		ABB82F4F2FAD0C6300EAEC50 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ABB82E182FAD01B300EAEC50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = ABB82F3A2FAD0C6100EAEC50;
+			remoteInfo = InkWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		ABB82F562FAD0C6300EAEC50 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				ABB82F512FAD0C6300EAEC50 /* InkWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		ABB82E202FAD01B300EAEC50 /* Ink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = venu_bundle_1.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82E2D2FAD01B400EAEC50 /* InkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82E372FAD01B400EAEC50 /* InkUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABB82F3B2FAD0C6100EAEC50 /* InkWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = InkWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		ABB82F2C2FAD037C00EAEC50 /* Exceptions for "Ink" folder in "Ink" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Core/Extensions/.gitkeep,
+				Core/Models/.gitkeep,
+				Core/Services/.gitkeep,
+				Core/Utilities/.gitkeep,
+				Features/Editor/.gitkeep,
+				Features/Library/.gitkeep,
+				Features/Onboarding/.gitkeep,
+				Resources/Info.plist,
+			);
+			target = ABB82E1F2FAD01B300EAEC50 /* Ink */;
+		};
+		ABB82F552FAD0C6300EAEC50 /* Exceptions for "InkWidget" folder in "InkWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = ABB82F3A2FAD0C6100EAEC50 /* InkWidgetExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		ABB82E222FAD01B300EAEC50 /* Ink */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				ABB82F2C2FAD037C00EAEC50 /* Exceptions for "Ink" folder in "Ink" target */,
+			);
 			path = Ink;
 			sourceTree = "<group>";
 		};
@@ -43,6 +100,14 @@
 		ABB82E3A2FAD01B400EAEC50 /* InkUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = InkUITests;
+			sourceTree = "<group>";
+		};
+		ABB82F412FAD0C6100EAEC50 /* InkWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				ABB82F552FAD0C6300EAEC50 /* Exceptions for "InkWidget" folder in "InkWidgetExtension" target */,
+			);
+			path = InkWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +134,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		ABB82F382FAD0C6100EAEC50 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ABB82F402FAD0C6100EAEC50 /* SwiftUI.framework in Frameworks */,
+				ABB82F3E2FAD0C6100EAEC50 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -78,6 +152,8 @@
 				ABB82E222FAD01B300EAEC50 /* Ink */,
 				ABB82E302FAD01B400EAEC50 /* InkTests */,
 				ABB82E3A2FAD01B400EAEC50 /* InkUITests */,
+				ABB82F412FAD0C6100EAEC50 /* InkWidget */,
+				ABB82F3C2FAD0C6100EAEC50 /* Frameworks */,
 				ABB82E212FAD01B300EAEC50 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,11 +161,21 @@
 		ABB82E212FAD01B300EAEC50 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				ABB82E202FAD01B300EAEC50 /* Ink.app */,
+				ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */,
 				ABB82E2D2FAD01B400EAEC50 /* InkTests.xctest */,
 				ABB82E372FAD01B400EAEC50 /* InkUITests.xctest */,
+				ABB82F3B2FAD0C6100EAEC50 /* InkWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		ABB82F3C2FAD0C6100EAEC50 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */,
+				ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,10 +188,12 @@
 				ABB82E1C2FAD01B300EAEC50 /* Sources */,
 				ABB82E1D2FAD01B300EAEC50 /* Frameworks */,
 				ABB82E1E2FAD01B300EAEC50 /* Resources */,
+				ABB82F562FAD0C6300EAEC50 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				ABB82F502FAD0C6300EAEC50 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				ABB82E222FAD01B300EAEC50 /* Ink */,
@@ -114,7 +202,7 @@
 			packageProductDependencies = (
 			);
 			productName = Ink;
-			productReference = ABB82E202FAD01B300EAEC50 /* Ink.app */;
+			productReference = ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */;
 			productType = "com.apple.product-type.application";
 		};
 		ABB82E2C2FAD01B400EAEC50 /* InkTests */ = {
@@ -163,6 +251,28 @@
 			productReference = ABB82E372FAD01B400EAEC50 /* InkUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		ABB82F3A2FAD0C6100EAEC50 /* InkWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = ABB82F522FAD0C6300EAEC50 /* Build configuration list for PBXNativeTarget "InkWidgetExtension" */;
+			buildPhases = (
+				ABB82F372FAD0C6100EAEC50 /* Sources */,
+				ABB82F382FAD0C6100EAEC50 /* Frameworks */,
+				ABB82F392FAD0C6100EAEC50 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				ABB82F412FAD0C6100EAEC50 /* InkWidget */,
+			);
+			name = InkWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = InkWidgetExtension;
+			productReference = ABB82F3B2FAD0C6100EAEC50 /* InkWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -184,6 +294,9 @@
 						CreatedOnToolsVersion = 26.4.1;
 						TestTargetID = ABB82E1F2FAD01B300EAEC50;
 					};
+					ABB82F3A2FAD0C6100EAEC50 = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 				};
 			};
 			buildConfigurationList = ABB82E1B2FAD01B300EAEC50 /* Build configuration list for PBXProject "Ink" */;
@@ -203,6 +316,7 @@
 				ABB82E1F2FAD01B300EAEC50 /* Ink */,
 				ABB82E2C2FAD01B400EAEC50 /* InkTests */,
 				ABB82E362FAD01B400EAEC50 /* InkUITests */,
+				ABB82F3A2FAD0C6100EAEC50 /* InkWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -223,6 +337,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		ABB82E352FAD01B400EAEC50 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABB82F392FAD0C6100EAEC50 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -253,6 +374,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		ABB82F372FAD0C6100EAEC50 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +393,11 @@
 			isa = PBXTargetDependency;
 			target = ABB82E1F2FAD01B300EAEC50 /* Ink */;
 			targetProxy = ABB82E382FAD01B400EAEC50 /* PBXContainerItemProxy */;
+		};
+		ABB82F502FAD0C6300EAEC50 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = ABB82F3A2FAD0C6100EAEC50 /* InkWidgetExtension */;
+			targetProxy = ABB82F4F2FAD0C6300EAEC50 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,23 +528,27 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ink/Resources/Ink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "wave notes app";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.Ink;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu;
+				PRODUCT_NAME = venu_bundle_1;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -427,23 +564,27 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ink/Resources/Ink.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "wave notes app";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.Ink;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu;
+				PRODUCT_NAME = venu_bundle_1;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -464,7 +605,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.InkTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -486,7 +627,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.InkTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -506,7 +647,7 @@
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.InkUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -526,7 +667,7 @@
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ink.InkUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -535,6 +676,68 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Ink;
+			};
+			name = Release;
+		};
+		ABB82F532FAD0C6300EAEC50 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = InkWidget/InkWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InkWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = InkWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		ABB82F542FAD0C6300EAEC50 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = InkWidget/InkWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = InkWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = InkWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.wave.venu.InkWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -573,6 +776,15 @@
 			buildConfigurations = (
 				ABB82E482FAD01B400EAEC50 /* Debug */,
 				ABB82E492FAD01B400EAEC50 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		ABB82F522FAD0C6300EAEC50 /* Build configuration list for PBXNativeTarget "InkWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ABB82F532FAD0C6300EAEC50 /* Debug */,
+				ABB82F542FAD0C6300EAEC50 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

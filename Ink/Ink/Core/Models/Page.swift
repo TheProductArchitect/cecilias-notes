@@ -11,7 +11,13 @@ final class Page {
     /// 1-indexed. Maintained by StorageService; never set directly by callers.
     var pageNumber: Int
     var pageSize: PageSize
-    var backgroundTemplate: PageTemplate
+    /// JSON-encoded PageTemplate stored as String — see Notebook.defaultTemplateRaw.
+    var backgroundTemplateRaw: String
+
+    var backgroundTemplate: PageTemplate {
+        get { .from(jsonString: backgroundTemplateRaw) }
+        set { backgroundTemplateRaw = newValue.jsonString }
+    }
     /// Serialised PKDrawing — written by StorageService.updatePageStrokes.
     var strokeData: Data?
     /// Byte count of strokeData; updated atomically with strokeData.
@@ -40,8 +46,8 @@ final class Page {
         self.id                 = UUID()
         self.notebookId         = notebookId
         self.pageNumber         = pageNumber
-        self.pageSize           = pageSize
-        self.backgroundTemplate = backgroundTemplate
+        self.pageSize              = pageSize
+        self.backgroundTemplateRaw = backgroundTemplate.jsonString
         self.strokeData         = nil
         self.strokeDataSize     = 0
         self.createdAt          = Date()
