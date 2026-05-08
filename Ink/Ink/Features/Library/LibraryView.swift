@@ -15,6 +15,9 @@ struct LibraryView: View {
     @State private var isShowingSettings      = false
     @State private var reExportNotebookId: UUID?
 
+    // MARK: Personal identity (Onboarding feature)
+    @AppStorage(PersonalIdentity.onboardingCompletedKey) private var hasCompletedOnboarding: Bool = false
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SubjectSidebarView(viewModel: viewModel)
@@ -73,6 +76,18 @@ struct LibraryView: View {
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        // First-launch personal-identity onboarding. Cannot be dismissed
+        // by swipe — `.fullScreenCover` blocks the rest of the app behind
+        // it until `OnboardingView` calls back.
+        .fullScreenCover(isPresented: Binding(
+            get: { !hasCompletedOnboarding },
+            set: { _ in /* read-only — OnboardingView controls completion */ }
+        )) {
+            OnboardingView {
+                hasCompletedOnboarding = true
+            }
+            .interactiveDismissDisabled(true)
         }
         // Each .onChange below mutates the publisher it observes (sets the
         // trigger property back to nil/false). SwiftUI considers re-entrant

@@ -204,6 +204,24 @@ struct NotebookGridView: View {
 private struct GridToolbarView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @State private var showMoveSheet = false
+    @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
+
+    /// Top-left title. When the user is at the subject root and has set
+    /// a name, surface the personalised greeting (`"alex's notes"`).
+    /// Inside a folder we keep showing the leaf folder name so the
+    /// breadcrumb path remains legible.
+    private var titleText: String {
+        if viewModel.currentFolder != nil {
+            return viewModel.currentFolder?.name ?? viewModel.selectedSubjectName
+        }
+        if !userName.isEmpty {
+            return libraryGreeting(forName: userName)
+        }
+        // Spec: "If userName is empty, the slot is empty." Returning ""
+        // collapses the Text to zero width; the grid below carries the
+        // screen's purpose.
+        return ""
+    }
 
     var body: some View {
         HStack(spacing: Ink.Spacing.md) {
@@ -224,8 +242,9 @@ private struct GridToolbarView: View {
     private var normalToolbar: some View {
         Group {
             // Inside a folder, the breadcrumb bar carries the path; show
-            // just the leaf name here so the title doesn't compete.
-            Text(viewModel.currentFolder?.name ?? viewModel.selectedSubjectName)
+            // just the leaf name here so the title doesn't compete. At
+            // the subject root, the personalised greeting takes over.
+            Text(titleText)
                 .font(.inkHeadline)
                 .foregroundColor(.inkTextPrimary)
                 .lineLimit(1)

@@ -121,4 +121,25 @@ public extension Color {
 
     static let inkDestructive = Color(UIColor.inkDestructive)
     static let inkRecording   = Color(UIColor.inkRecording)
+
+    // MARK: - Brand wordmark tokens
+    //
+    // Used by `BrandWordmark` everywhere the lowercase letter + dot
+    // composition appears (onboarding, library greeting, app icons,
+    // Settings preview).
+    //
+    // `brandLetter` is environment-aware so the letter has high contrast
+    // against either light or dark surfaces. `brandDot` is fixed —
+    // resolves to `inkAccentPrimary` (the existing brand colour) so the
+    // dot reads consistently regardless of the surface it lands on.
+
+    /// Letter colour: near-black on light, off-white on dark.
+    static let brandLetter = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(hex: "#F4F3EE")
+            : UIColor(hex: "#06060A")
+    })
+
+    /// Dot colour: the existing brand accent — fixed regardless of theme.
+    static let brandDot = Color.inkAccentPrimary
 }

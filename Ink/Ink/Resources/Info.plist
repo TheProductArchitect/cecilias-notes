@@ -97,5 +97,96 @@
         <key>UIColorName</key>
         <string>InkLaunchBackground</string>
     </dict>
+
+    <!-- Bundled custom fonts. Drop the .ttf into Resources/Fonts/ and add
+         the file to the Ink target's "Copy Bundle Resources" build phase
+         (or rely on the file-system synchronized group). The
+         BrandWordmark / BrandIconRenderer code falls back to system bold
+         if the font isn't registered. -->
+    <key>UIAppFonts</key>
+    <array>
+        <string>Fonts/BricolageGrotesque-VariableFont_opsz,wdth,wght.ttf</string>
+    </array>
+
+    <!-- Personal Identity: alternate app icons keyed by first letter.
+         The 26 icon files (Icon-a.png … Icon-z.png at every iOS-required
+         pixel density) live at Resources/AppIcons/ and are produced by
+         Scripts/GenerateBrandIcons.swift. iOS expects each
+         CFBundleIconFiles entry to refer to a base name; suffixed
+         pixel-density variants are looked up by Apple's own loader. -->
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array><string>AppIcon</string></array>
+        </dict>
+        <key>CFBundleAlternateIcons</key>
+        <dict>
+            <key>a</key><dict><key>CFBundleIconFiles</key><array><string>Icon-a</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>b</key><dict><key>CFBundleIconFiles</key><array><string>Icon-b</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>c</key><dict><key>CFBundleIconFiles</key><array><string>Icon-c</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>d</key><dict><key>CFBundleIconFiles</key><array><string>Icon-d</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>e</key><dict><key>CFBundleIconFiles</key><array><string>Icon-e</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>f</key><dict><key>CFBundleIconFiles</key><array><string>Icon-f</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>g</key><dict><key>CFBundleIconFiles</key><array><string>Icon-g</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>h</key><dict><key>CFBundleIconFiles</key><array><string>Icon-h</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>i</key><dict><key>CFBundleIconFiles</key><array><string>Icon-i</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>j</key><dict><key>CFBundleIconFiles</key><array><string>Icon-j</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>k</key><dict><key>CFBundleIconFiles</key><array><string>Icon-k</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>l</key><dict><key>CFBundleIconFiles</key><array><string>Icon-l</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>m</key><dict><key>CFBundleIconFiles</key><array><string>Icon-m</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>n</key><dict><key>CFBundleIconFiles</key><array><string>Icon-n</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>o</key><dict><key>CFBundleIconFiles</key><array><string>Icon-o</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>p</key><dict><key>CFBundleIconFiles</key><array><string>Icon-p</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>q</key><dict><key>CFBundleIconFiles</key><array><string>Icon-q</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>r</key><dict><key>CFBundleIconFiles</key><array><string>Icon-r</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>s</key><dict><key>CFBundleIconFiles</key><array><string>Icon-s</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>t</key><dict><key>CFBundleIconFiles</key><array><string>Icon-t</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>u</key><dict><key>CFBundleIconFiles</key><array><string>Icon-u</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>v</key><dict><key>CFBundleIconFiles</key><array><string>Icon-v</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>w</key><dict><key>CFBundleIconFiles</key><array><string>Icon-w</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>x</key><dict><key>CFBundleIconFiles</key><array><string>Icon-x</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>y</key><dict><key>CFBundleIconFiles</key><array><string>Icon-y</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>z</key><dict><key>CFBundleIconFiles</key><array><string>Icon-z</string></array><key>UIPrerenderedIcon</key><false/></dict>
+        </dict>
+    </dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconFiles</key>
+            <array><string>AppIcon</string></array>
+        </dict>
+        <key>CFBundleAlternateIcons</key>
+        <dict>
+            <key>a</key><dict><key>CFBundleIconFiles</key><array><string>Icon-a</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>b</key><dict><key>CFBundleIconFiles</key><array><string>Icon-b</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>c</key><dict><key>CFBundleIconFiles</key><array><string>Icon-c</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>d</key><dict><key>CFBundleIconFiles</key><array><string>Icon-d</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>e</key><dict><key>CFBundleIconFiles</key><array><string>Icon-e</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>f</key><dict><key>CFBundleIconFiles</key><array><string>Icon-f</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>g</key><dict><key>CFBundleIconFiles</key><array><string>Icon-g</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>h</key><dict><key>CFBundleIconFiles</key><array><string>Icon-h</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>i</key><dict><key>CFBundleIconFiles</key><array><string>Icon-i</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>j</key><dict><key>CFBundleIconFiles</key><array><string>Icon-j</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>k</key><dict><key>CFBundleIconFiles</key><array><string>Icon-k</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>l</key><dict><key>CFBundleIconFiles</key><array><string>Icon-l</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>m</key><dict><key>CFBundleIconFiles</key><array><string>Icon-m</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>n</key><dict><key>CFBundleIconFiles</key><array><string>Icon-n</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>o</key><dict><key>CFBundleIconFiles</key><array><string>Icon-o</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>p</key><dict><key>CFBundleIconFiles</key><array><string>Icon-p</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>q</key><dict><key>CFBundleIconFiles</key><array><string>Icon-q</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>r</key><dict><key>CFBundleIconFiles</key><array><string>Icon-r</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>s</key><dict><key>CFBundleIconFiles</key><array><string>Icon-s</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>t</key><dict><key>CFBundleIconFiles</key><array><string>Icon-t</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>u</key><dict><key>CFBundleIconFiles</key><array><string>Icon-u</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>v</key><dict><key>CFBundleIconFiles</key><array><string>Icon-v</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>w</key><dict><key>CFBundleIconFiles</key><array><string>Icon-w</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>x</key><dict><key>CFBundleIconFiles</key><array><string>Icon-x</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>y</key><dict><key>CFBundleIconFiles</key><array><string>Icon-y</string></array><key>UIPrerenderedIcon</key><false/></dict>
+            <key>z</key><dict><key>CFBundleIconFiles</key><array><string>Icon-z</string></array><key>UIPrerenderedIcon</key><false/></dict>
+        </dict>
+    </dict>
 </dict>
 </plist>

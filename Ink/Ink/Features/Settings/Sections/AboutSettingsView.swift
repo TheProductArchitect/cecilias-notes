@@ -6,6 +6,7 @@ struct AboutSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: Ink.Spacing.lg) {
+                yourNameCard
                 infoCard
                 privacyCard
                 actionsCard
@@ -15,6 +16,13 @@ struct AboutSettingsView: View {
         .background(Color.inkBackgroundSecondary.ignoresSafeArea())
         .navigationTitle("About")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: Your Name
+
+    private var yourNameCard: some View {
+        YourNameCard()
+            .inkCard()
     }
 
     // MARK: App info
