@@ -23,17 +23,13 @@ final class Page {
     /// Byte count of strokeData; updated atomically with strokeData.
     var strokeDataSize: Int
 
-    /// Vertical extension of this page, in points, beyond the base
-    /// `pageSize.pointSize.height`. Auto-extended by the editor when
-    /// the user draws into the bottom half of the *last* page in a
-    /// notebook — instead of inserting a new page, the existing page
-    /// just gets longer. Optional so the V3→V4 lightweight migration
-    /// can add the column without rewriting every existing row;
-    /// callers should treat nil as 0 (use `effectiveExtraHeight`).
-    var extraHeight: Double?
-
-    /// Convenience: the extension to use in layout. nil → 0.
-    var effectiveExtraHeight: CGFloat { CGFloat(extraHeight ?? 0) }
+    // Note: the auto-grow "extra height" for the last page in a
+    // notebook is *not* stored on the model. Adding it as a SwiftData
+    // column requires a versioned schema bump with scoped per-version
+    // model types (otherwise SwiftData crashes with "Duplicate version
+    // checksums"). For now the extension is stored sidecar in
+    // UserDefaults keyed by the page UUID — see `PageExtraHeightStore`
+    // — so the data layer stays unchanged.
 
     // MARK: Timestamps
     var createdAt: Date

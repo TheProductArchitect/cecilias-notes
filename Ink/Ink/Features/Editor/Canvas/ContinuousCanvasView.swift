@@ -338,10 +338,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         /// Effective rendered height for a page = base size + auto-grow
-        /// extension. Only the last page in a notebook ever has a
-        /// non-zero extension in normal use.
+        /// extension. The extension is stored sidecar in
+        /// `PageExtraHeightStore` keyed by page UUID — see the comment
+        /// in InkSchemas.swift for why it's not a SwiftData column.
         private func effectiveHeight(for page: Page) -> CGFloat {
-            page.pageSize.pointSize.height + page.effectiveExtraHeight
+            page.pageSize.pointSize.height
+                + PageExtraHeightStore.extraHeight(forPageId: page.id)
         }
 
         /// Recompute every host's frame in place (without tearing down
@@ -788,19 +790,16 @@ extension EditorViewModel {
         HapticManager.shared.pageAdded()
     }
 
-    /// Grow the last page's vertical extension. Used by the continuous
-    /// canvas's stroke-end auto-extend detector to give the user more
-    /// room without forcing a hard page break. Caller passes the
+    /// Grow the last page's vertical extension. Caller passes the
     /// *additional* points of paper to grant (typically one base-page
-    /// height); the page model accumulates this in `extraHeight`.
+    /// height); the value accumulates in `PageExtraHeightStore` keyed
+    /// by the page's UUID. Bumping `objectWillChange` triggers
+    /// SwiftUI to re-render `ContinuousCanvasView`, which detects the
+    /// height change in `applyPageMetadataChanges()` and relayouts.
     func extendLastPage(_ page: Page, byAdditional additional: CGFloat) {
         guard additional > 0 else { return }
-        let current = page.extraHeight ?? 0
-        page.extraHeight = current + Double(additional)
-        page.updatedAt   = Date()
-        // Persist via the SwiftData context the page was fetched into.
-        // ModelContext autosaves periodically; we don't need to bump
-        // a save here — the next stroke autosave will batch this in.
+        PageExtraHeightStore.extend(pageId: page.id, byAdditional: additional)
+        page.updatedAt = Date()
         objectWillChange.send()
         refreshPages()
         HapticManager.shared.pageAdded()

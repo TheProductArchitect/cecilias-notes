@@ -28,7 +28,7 @@ extension ModelContainer {
 
         // Use the V3 schema (current). The migration plan handles arrivals
         // from V2.
-        let schema = Schema(versionedSchema: InkSchemaV4.self)
+        let schema = Schema(versionedSchema: InkSchemaV3.self)
         let config = ModelConfiguration(
             schema: schema,
             url: storeURL,
