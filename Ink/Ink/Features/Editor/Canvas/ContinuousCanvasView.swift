@@ -26,10 +26,13 @@ import UIKit
 ///   overlays) keep working unchanged.
 ///
 /// Auto-add page
-///   When the bottom of the *last* page is within `autoAddTriggerInset`
-///   of the viewport bottom AND no stroke is in progress AND the
-///   `ink.newpage.autoAdd` setting is on, append a fresh page. Throttled
-///   to once per second.
+///   Triggered when the user *finishes a stroke on the last page whose
+///   geometry extends into the bottom half of that page*. Pure scrolling
+///   (no drawing) never appends pages — that prevents the runaway
+///   "every scroll-to-bottom adds a page" behaviour. The bottom-half
+///   gate keeps short top-of-page strokes from adding pages too. Gated
+///   by the `ink.newpage.autoAdd` setting and throttled to once per
+///   second so a flurry of strokes can't add a stack at once.
 ///
 /// Phase 1 deferral
 ///   Text-block / media-attachment / audio-annotation overlays live in
@@ -43,7 +46,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
     private let pageGap: CGFloat              = 24
     private let warmBandPaddingFactor: CGFloat = 1.0
-    private let autoAddTriggerInset: CGFloat  = 400
     private let autoAddCooldown: TimeInterval = 1.0
 
     func makeCoordinator() -> Coordinator {
@@ -51,7 +53,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     fingerDrawingEnabled: fingerDrawingEnabled,
                     pageGap: pageGap,
                     warmBandPaddingFactor: warmBandPaddingFactor,
-                    autoAddTriggerInset: autoAddTriggerInset,
                     autoAddCooldown: autoAddCooldown)
     }
 
@@ -192,7 +193,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         private let pageGap: CGFloat
         private let warmBandPaddingFactor: CGFloat
-        private let autoAddTriggerInset: CGFloat
         private let autoAddCooldown: TimeInterval
 
         weak var host:         UIView?
@@ -222,13 +222,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
              fingerDrawingEnabled: Bool,
              pageGap: CGFloat,
              warmBandPaddingFactor: CGFloat,
-             autoAddTriggerInset: CGFloat,
              autoAddCooldown: TimeInterval) {
             self.viewModel = viewModel
             self.fingerDrawingEnabled = fingerDrawingEnabled
             self.pageGap = pageGap
             self.warmBandPaddingFactor = warmBandPaddingFactor
-            self.autoAddTriggerInset = autoAddTriggerInset
             self.autoAddCooldown = autoAddCooldown
         }
 
@@ -487,31 +485,41 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         // MARK: Auto-add page
+        //
+        // Stroke-driven: a fresh page is appended only when the user
+        // finishes a stroke on the *last* page whose geometry reaches
+        // into the bottom half of that page. Plain scrolling — even all
+        // the way down — doesn't add pages. Drawing in the top half of
+        // the last page doesn't add pages either; the user has plenty
+        // of room left, no need to extend yet.
 
-        private func considerAutoAdd() {
-            guard !isStrokeInProgress else { return }
+        /// Called from `canvasViewDidEndUsingTool` after each stroke
+        /// commits. Returns immediately if the stroke isn't on the last
+        /// page or doesn't reach the lower half. Throttled to once per
+        /// `autoAddCooldown` second so a fast pen with a series of
+        /// strokes doesn't append a stack of empty pages at once.
+        private func considerAutoAddAfterStroke(on canvas: PKCanvasView) {
             guard viewModel.autoAddEnabled else { return }
-            guard let scrollView else { return }
-            guard let last = hosts.last else { return }
+            guard let lastHost = hosts.last else { return }
+            // Must be the last page's canvas — drawing on page 3 of 5
+            // never triggers auto-add.
+            guard lastHost.canvasView === canvas else { return }
+            // Use the most recent stroke's bounding box. PKStroke's
+            // renderBounds is the inked rect in the canvas's coordinate
+            // space, which equals the page's coordinate space (canvas is
+            // sized to page).
+            guard let lastStroke = canvas.drawing.strokes.last else { return }
+            let strokeMaxY = lastStroke.renderBounds.maxY
+            let pageMidY   = lastHost.frame.height / 2
+            guard strokeMaxY > pageMidY else { return }
 
-            let scale = scrollView.zoomScale
-            let lastBottom    = last.frame.maxY * scale
-            let viewportBottom = scrollView.contentOffset.y + scrollView.bounds.height
-            let distance       = lastBottom - viewportBottom
-
-            // Trigger when the bottom of the last page is within
-            // `autoAddTriggerInset` of the viewport bottom *or above it*.
-            guard distance < autoAddTriggerInset else { return }
-
-            // Throttle so a slow scroll doesn't fire repeatedly.
             let now = Date()
             guard now.timeIntervalSince(lastAutoAddDate) > autoAddCooldown else { return }
             lastAutoAddDate = now
 
-            // Append a fresh page using the notebook's defaults (the same
-            // defaults the toolbar's "→" button uses when on the last
-            // page). The append → SwiftData refresh → `rebuildPageHostsIfNeeded`
-            // round trip happens via the next updateUIView.
+            // Append a fresh page using the notebook's defaults. The
+            // SwiftData refresh + `rebuildPageHostsIfNeeded` happens
+            // on the next updateUIView pass.
             viewModel.appendPageForContinuousScroll()
         }
 
@@ -630,7 +638,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             )
             updateCanvasMembership()
             updateActivePageFromScroll()
-            considerAutoAdd()
+            // Auto-add is no longer scroll-driven — it fires on
+            // stroke-end via `considerAutoAddAfterStroke(on:)`. Pure
+            // scrolling should never grow the notebook.
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
@@ -671,6 +681,8 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // the user just drew on.
             viewModel.canvasView = canvasView
             viewModel.handleStrokeEnded()
+            // Stroke-end is the only place we consider auto-adding a page.
+            considerAutoAddAfterStroke(on: canvasView)
         }
 
         // MARK: - UIPencilInteractionDelegate
