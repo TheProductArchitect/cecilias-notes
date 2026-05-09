@@ -272,8 +272,9 @@ struct ToolPaletteView: View {
     /// Renders one category as a single button. The icon shown is the
     /// category's *current variant's* glyph (so the Pen button shows a
     /// fountain-pen icon when the user has picked Fountain Pen recently).
-    /// A small "more" dot in the corner hints that long-press reveals
-    /// other variants.
+    /// A small "more" dot in the corner hints that the category has
+    /// other variants — tap an already-active category to open the
+    /// variant picker.
     private func categoryButton(_ category: ToolCategory) -> some View {
         let currentVariant = ToolCategoryStore.lastVariant(for: category)
         let isActive       = category.variants.contains(viewModel.selectedTool.identity)
@@ -305,16 +306,13 @@ struct ToolPaletteView: View {
         }
         .buttonStyle(.inkPressable)
         .inkTapTarget()
-        // Long-press always opens the variant picker, regardless of active state.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.4)
-                .onEnded { _ in
-                    if category.variants.count > 1 {
-                        HapticManager.shared.contextMenuOpened()
-                        openVariantCategory = category
-                    }
-                }
-        )
+        // The variant picker is opened by tapping an *already-active*
+        // category (see `handleCategoryTap`). The previous build also
+        // mounted a `.simultaneousGesture(LongPressGesture)` here as a
+        // second access path; that gesture raced with the Button's
+        // tap recogniser and frequently ate the first tap, so most
+        // tool selections needed two taps. Dropped — single-tap to
+        // activate, second tap on an active category to open variants.
         .accessibilityLabel(A11y.toolLabel(name: category.displayName, isActive: isActive))
         .accessibilityHint(A11y.toolHint)
         // Variant picker popover anchored to this button.

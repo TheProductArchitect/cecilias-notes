@@ -5,6 +5,18 @@ struct AudioSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @State private var isShowingLocalePicker = false
 
+    /// Bind the segmented picker against `@AppStorage` directly rather
+    /// than routing through `viewModel.transcriptionQuality`. Same root
+    /// cause as the Pencil double-tap fix in PencilSettingsView:
+    /// `SettingsViewModel` has an explicit `objectWillChange` publisher
+    /// (Swift 5.10 actor-isolation requirement); `@AppStorage` properties
+    /// on that ObservableObject persist to UserDefaults but never fire
+    /// `objectWillChange`, so the segmented Picker reads stale state and
+    /// stays on the previous segment. Re-declaring `@AppStorage` here
+    /// makes it a SwiftUI `DynamicProperty` that drives re-rendering.
+    @AppStorage("ink.transcription.quality")
+    private var transcriptionQuality: TranscriptionQuality = .fast
+
     private var selectedLocaleName: String {
         guard !viewModel.transcriptionLocale.isEmpty else { return "System default" }
         return Locale.current.localizedString(forIdentifier: viewModel.transcriptionLocale)
@@ -86,7 +98,7 @@ struct AudioSettingsView: View {
         VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             cardHeader("Transcription Quality")
 
-            Picker("Quality", selection: $viewModel.transcriptionQuality) {
+            Picker("Quality", selection: $transcriptionQuality) {
                 ForEach(TranscriptionQuality.allCases, id: \.rawValue) { q in
                     Text(q.displayName).tag(q)
                 }

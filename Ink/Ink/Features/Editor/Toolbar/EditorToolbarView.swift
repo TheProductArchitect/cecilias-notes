@@ -24,7 +24,6 @@ struct EditorToolbarView: View {
     let onToggleRecordingPanel: () -> Void
 
     @State private var titleBuffer: String = ""
-    @State private var showUndoStackInfo = false
     @FocusState private var titleFocused: Bool
 
     private let toolbarHeight: CGFloat = 52
@@ -192,14 +191,14 @@ struct EditorToolbarView: View {
             .buttonStyle(.inkPressable)
             .inkTapTarget()
 
+            // Undo button — single tap only. The previous build had a
+            // .simultaneousGesture(LongPressGesture) here that opened
+            // the undo-stack popover on hold; that gesture raced with
+            // the Button's tap recogniser and ate the first tap. The
+            // "Undo All" action that lived in the popover is now in the
+            // More menu (see Menu below). The plain Undo button on the
+            // toolbar is rock-solid: one tap, one undo.
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5)
-                        .onEnded { _ in showUndoStackInfo = true }
-                )
-                .popover(isPresented: $showUndoStackInfo) {
-                    UndoStackPopover(viewModel: viewModel)
-                }
 
             iconButton("arrow.uturn.forward", enabled: canRedo) { onRedo() }
 
@@ -241,6 +240,18 @@ struct EditorToolbarView: View {
                 Button(role: .destructive) {
                     onMoreMenuDeletePage()
                 } label: { Label("Delete Page", systemImage: "trash") }
+
+                // Undo All — drains the page's undo stack. Used to live
+                // behind a long-press on the Undo button; moved here so
+                // the visible Undo button stays single-tap.
+                Button(role: .destructive) {
+                    while viewModel.canvasView?.undoManager?.canUndo == true {
+                        viewModel.canvasView?.undoManager?.undo()
+                    }
+                } label: {
+                    Label("Undo All Strokes", systemImage: "arrow.uturn.backward.circle")
+                }
+                .disabled(!canUndo)
 
                 Divider()
 
@@ -298,35 +309,6 @@ struct EditorToolbarView: View {
         .buttonStyle(.inkPressable)
         .inkTapTarget()
         .disabled(!enabled)
-    }
-}
-
-// MARK: - Undo stack popover
-
-private struct UndoStackPopover: View {
-    @ObservedObject var viewModel: EditorViewModel
-
-    var body: some View {
-        VStack(spacing: Ink.Spacing.sm) {
-            Text("Undo Stack")
-                .font(.inkHeadline)
-                .foregroundColor(.inkTextPrimary)
-
-            if let mgr = viewModel.canvasView?.undoManager {
-                Text("\(mgr.canUndo ? "Has actions" : "Empty")")
-                    .font(.inkFootnote)
-                    .foregroundColor(.inkTextSecondary)
-            }
-
-            InkButton("Undo All", style: .destructive) {
-                while viewModel.canvasView?.undoManager?.canUndo == true {
-                    viewModel.canvasView?.undoManager?.undo()
-                }
-            }
-        }
-        .padding(Ink.Spacing.lg)
-        .frame(width: 220)
-        .presentationCompactAdaptation(.popover)
     }
 }
 
