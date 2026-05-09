@@ -14,6 +14,15 @@ struct InkApp: App {
     @AppStorage("ink.resume.lastNotebookId") private var lastNotebookIdString: String = ""
 
     init() {
+        // Disable UIScrollView's default 150ms gesture-arbitration delay
+        // so buttons inside scroll views (Settings cards, library search
+        // results, etc.) fire on the first tap rather than the second.
+        // The trade-off is the rare scenario where a user starts to
+        // scroll from a button and the press registers first — for the
+        // settings UIs and most app patterns this is the right trade.
+        // Drawing canvas's UIScrollView already sets this directly.
+        UIScrollView.appearance().delaysContentTouches = false
+
         // UI-test launch hook: when XCUIApplication launches us with the
         // "-uiTesting" argument, blow away every persisted ink.* /
         // app.user / app.onboarding key so each UI test starts from a
