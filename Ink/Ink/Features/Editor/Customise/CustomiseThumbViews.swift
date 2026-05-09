@@ -86,10 +86,16 @@ private enum TemplateThumbCache {
         let renderer = PageRenderer(pageSize: .a4, template: template)
         renderer.frame = CGRect(origin: .zero, size: pagePoints)
         renderer.overrideUserInterfaceStyle = isDark ? .dark : .light
-        renderer.layoutIfNeeded()
-        renderer.setNeedsDisplay()
 
-        let imageRenderer = UIGraphicsImageRenderer(size: size)
+        // Default UIGraphicsImageRenderer is opaque, so unpainted
+        // pixels fall through to black. Using a non-opaque format
+        // means a missed draw is *transparent*, not black — easier to
+        // notice if things break, and harmless here since we paint
+        // every pixel of the page in `draw(_:)`.
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        let imageRenderer = UIGraphicsImageRenderer(size: size, format: format)
+
         return imageRenderer.image { ctx in
             // Centre the scaled page within the thumb so the portrait
             // page sits centred horizontally inside the 80×104 box.
@@ -99,9 +105,15 @@ private enum TemplateThumbCache {
             let dy = (size.height - scaledH) / 2
             ctx.cgContext.translateBy(x: dx, y: dy)
             ctx.cgContext.scaleBy(x: scale, y: scale)
-            // `layer.render(in:)` triggers `draw(_:)` on the UIView with
-            // the current CG context — same path the canvas uses live.
-            renderer.layer.render(in: ctx.cgContext)
+
+            // Call `draw(_:)` directly so PageRenderer paints into the
+            // image-renderer's CG context. The previous build used
+            // `renderer.layer.render(in:)`, but a CALayer that has
+            // never been displayed in a window has no backing store —
+            // `render(in:)` becomes a no-op and the opaque image's
+            // default black background showed through, producing the
+            // "all black" template thumbs the user reported.
+            renderer.draw(renderer.bounds)
         }
     }
 }
