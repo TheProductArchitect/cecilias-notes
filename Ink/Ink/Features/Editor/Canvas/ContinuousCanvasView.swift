@@ -1,3 +1,4 @@
+import Combine
 import PencilKit
 import SwiftUI
 import UIKit
@@ -263,12 +264,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let pages   = viewModel.pages
             let maxW    = pages.map { $0.pageSize.pointSize.width }.max() ?? PageSize.a4.pointSize.width
             for page in pages {
-                let size = page.pageSize.pointSize
+                let baseSize = page.pageSize.pointSize
+                let h = effectiveHeight(for: page)
                 let frame = CGRect(
-                    x: (maxW - size.width) / 2,
+                    x: (maxW - baseSize.width) / 2,
                     y: y,
-                    width: size.width,
-                    height: size.height
+                    width: baseSize.width,
+                    height: h
                 )
                 let renderer = PageRenderer(pageSize: page.pageSize, template: page.backgroundTemplate)
                 renderer.frame = frame
@@ -278,7 +280,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     frame: frame,
                     renderer: renderer
                 ))
-                y += size.height + pageGap
+                y += h + pageGap
             }
             // Total content height excludes the trailing gap.
             let height = max(0, y - pageGap)
@@ -308,17 +310,70 @@ struct ContinuousCanvasView: UIViewRepresentable {
             hosts.removeAll()
         }
 
-        /// Refresh `PageRenderer.template` / `PageRenderer.pageSize` when
-        /// a page's metadata changed without the page list itself changing.
-        /// Customise panel mutations land here.
+        /// Refresh `PageRenderer.template` / `PageRenderer.pageSize` /
+        /// `Page.extraHeight` when a page's metadata changed without the
+        /// page list itself changing. Customise panel mutations and
+        /// auto-extend-last-page mutations both land here. A change to
+        /// `pageSize` or `extraHeight` reshapes the layout, so we trigger
+        /// a full rebuild of host frames + content size in that case.
         private func applyPageMetadataChanges() {
+            var needsLayoutRebuild = false
             for i in hosts.indices {
                 guard let page = page(for: hosts[i].pageId) else { continue }
-                if hosts[i].renderer.pageSize != page.pageSize
-                    || hosts[i].renderer.template != page.backgroundTemplate {
-                    hosts[i].renderer.update(pageSize: page.pageSize, template: page.backgroundTemplate)
+                let templateChanged   = hosts[i].renderer.template != page.backgroundTemplate
+                let pageSizeChanged   = hosts[i].renderer.pageSize != page.pageSize
+                let effective         = effectiveHeight(for: page)
+                let extraHeightChanged = abs(hosts[i].frame.height - effective) > 0.5
+                if templateChanged || pageSizeChanged {
+                    hosts[i].renderer.update(pageSize: page.pageSize,
+                                             template: page.backgroundTemplate)
+                }
+                if pageSizeChanged || extraHeightChanged {
+                    needsLayoutRebuild = true
                 }
             }
+            if needsLayoutRebuild {
+                relayoutHosts()
+            }
+        }
+
+        /// Effective rendered height for a page = base size + auto-grow
+        /// extension. Only the last page in a notebook ever has a
+        /// non-zero extension in normal use.
+        private func effectiveHeight(for page: Page) -> CGFloat {
+            page.pageSize.pointSize.height + page.effectiveExtraHeight
+        }
+
+        /// Recompute every host's frame in place (without tearing down
+        /// canvases), then update the scroll view's content size. Used
+        /// when the last page auto-grows or when the user changes a
+        /// page's size via the Customise panel.
+        private func relayoutHosts() {
+            guard let contentView else { return }
+            let pages = viewModel.pages
+            guard pages.count == hosts.count else {
+                // Page list shape changed — fall through to a full rebuild.
+                rebuildPageHosts()
+                return
+            }
+            let maxW = pages.map { $0.pageSize.pointSize.width }.max()
+                ?? PageSize.a4.pointSize.width
+            var y: CGFloat = 0
+            for (i, page) in pages.enumerated() {
+                let w = page.pageSize.pointSize.width
+                let h = effectiveHeight(for: page)
+                let frame = CGRect(x: (maxW - w) / 2, y: y, width: w, height: h)
+                hosts[i].frame = frame
+                hosts[i].renderer.frame = frame
+                hosts[i].canvasView?.frame = frame
+                y += h + pageGap
+            }
+            let height = max(0, y - pageGap)
+            updateContentSize(width: maxW, height: height)
+            // The contentView is a child of the scrollView; updating its
+            // own frame is part of `updateContentSize`. Repaint pages.
+            for h in hosts { h.renderer.setNeedsDisplay() }
+            _ = contentView   // referenced for completeness
         }
 
         private func updateContentSize(width: CGFloat, height: CGFloat) {
@@ -484,30 +539,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
-        // MARK: Auto-add page
+        // MARK: Auto-extend last page
         //
-        // Stroke-driven: a fresh page is appended only when the user
-        // finishes a stroke on the *last* page whose geometry reaches
-        // into the bottom half of that page. Plain scrolling — even all
-        // the way down — doesn't add pages. Drawing in the top half of
-        // the last page doesn't add pages either; the user has plenty
-        // of room left, no need to extend yet.
+        // Stroke-driven: when the user finishes a stroke on the *last*
+        // page whose geometry reaches into the bottom half of that page,
+        // the last page's height grows by another base-page-height worth
+        // of paper. The user keeps writing into the same page; pages
+        // only ever pile up if the user explicitly inserts new ones via
+        // the page-strip menu. Plain scrolling never grows the page.
 
         /// Called from `canvasViewDidEndUsingTool` after each stroke
         /// commits. Returns immediately if the stroke isn't on the last
         /// page or doesn't reach the lower half. Throttled to once per
         /// `autoAddCooldown` second so a fast pen with a series of
-        /// strokes doesn't append a stack of empty pages at once.
+        /// strokes doesn't extend the page by a mile at once.
         private func considerAutoAddAfterStroke(on canvas: PKCanvasView) {
             guard viewModel.autoAddEnabled else { return }
             guard let lastHost = hosts.last else { return }
-            // Must be the last page's canvas — drawing on page 3 of 5
-            // never triggers auto-add.
+            // Must be the last page's canvas.
             guard lastHost.canvasView === canvas else { return }
-            // Use the most recent stroke's bounding box. PKStroke's
-            // renderBounds is the inked rect in the canvas's coordinate
-            // space, which equals the page's coordinate space (canvas is
-            // sized to page).
             guard let lastStroke = canvas.drawing.strokes.last else { return }
             let strokeMaxY = lastStroke.renderBounds.maxY
             let pageMidY   = lastHost.frame.height / 2
@@ -517,10 +567,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard now.timeIntervalSince(lastAutoAddDate) > autoAddCooldown else { return }
             lastAutoAddDate = now
 
-            // Append a fresh page using the notebook's defaults. The
-            // SwiftData refresh + `rebuildPageHostsIfNeeded` happens
-            // on the next updateUIView pass.
-            viewModel.appendPageForContinuousScroll()
+            guard let lastPage = page(for: lastHost.pageId) else { return }
+            // Grow by one base-page-height worth of paper. Roomy enough
+            // that the user has plenty to write into; the next extend
+            // can fire when this fresh space starts filling up too.
+            let increment = lastPage.pageSize.pointSize.height
+            viewModel.extendLastPage(lastPage, byAdditional: increment)
         }
 
         // MARK: Tool / drawing-policy propagation
@@ -720,11 +772,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
 extension EditorViewModel {
 
-    /// Append a fresh page at the END of the notebook, used by the
-    /// continuous-scroll auto-add detector. Distinct from
-    /// `addPageAfterCurrent()` which inserts after the *active* page —
-    /// in continuous scroll the user has already scrolled past the
-    /// active page, so "after current" would land in the wrong spot.
+    /// Append a fresh page at the END of the notebook. Reserved for
+    /// explicit user action (page-strip "Insert Page Below" on the last
+    /// page, etc.). Auto-add no longer calls this — auto-extend on the
+    /// last page is the default behaviour.
     func appendPageForContinuousScroll() {
         guard let last = pages.last else { return }
         guard let _ = try? StorageService.shared.createPage(
@@ -733,6 +784,24 @@ extension EditorViewModel {
             pageSize: notebook.pageSize,
             backgroundTemplate: notebook.defaultTemplate
         ) else { return }
+        refreshPages()
+        HapticManager.shared.pageAdded()
+    }
+
+    /// Grow the last page's vertical extension. Used by the continuous
+    /// canvas's stroke-end auto-extend detector to give the user more
+    /// room without forcing a hard page break. Caller passes the
+    /// *additional* points of paper to grant (typically one base-page
+    /// height); the page model accumulates this in `extraHeight`.
+    func extendLastPage(_ page: Page, byAdditional additional: CGFloat) {
+        guard additional > 0 else { return }
+        let current = page.extraHeight ?? 0
+        page.extraHeight = current + Double(additional)
+        page.updatedAt   = Date()
+        // Persist via the SwiftData context the page was fetched into.
+        // ModelContext autosaves periodically; we don't need to bump
+        // a save here — the next stroke autosave will batch this in.
+        objectWillChange.send()
         refreshPages()
         HapticManager.shared.pageAdded()
     }

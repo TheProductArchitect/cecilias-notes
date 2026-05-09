@@ -33,13 +33,15 @@ final class PageRenderer: UIView {
 
     // MARK: Public mutators
 
+    /// Update the renderer's drawn template / paper colour. The frame
+    /// is *not* touched here — the host (the canvas coordinator, or the
+    /// thumb-view's image renderer) owns layout and will resize the
+    /// view directly. This separation is what lets the editor's last
+    /// page auto-grow vertically without `update` snapping the
+    /// renderer back to a fixed pageSize.pointSize.
     func update(pageSize: PageSize, template: PageTemplate) {
-        let needsBoundsUpdate = pageSize != self.pageSize
-        self.pageSize  = pageSize
-        self.template  = template
-        if needsBoundsUpdate {
-            frame = CGRect(origin: frame.origin, size: pageSize.pointSize)
-        }
+        self.pageSize = pageSize
+        self.template = template
         setNeedsDisplay()
     }
 
