@@ -117,6 +117,7 @@ struct OnboardingView: View {
         switch validateName(inputText) {
         case .acceptEmpty:
             userName = ""
+            persistOnboardingCompleted()
             // Empty input → no icon change, no transition. Just dismiss.
             onComplete()
 
@@ -127,6 +128,15 @@ struct OnboardingView: View {
 
         case .accept(let firstWord):
             userName = firstWord
+            // Persist completion **immediately** so the user is never
+            // shown onboarding again, even if they kill the app during
+            // the 1.4s personalising transition + icon-switch alert.
+            // The cover's visual dismissal is driven by a separate
+            // @State in LibraryView via `onComplete`, not by the
+            // persisted flag — so writing the flag here doesn't
+            // dismiss the cover prematurely.
+            persistOnboardingCompleted()
+
             personalisingLetter = firstWord.first ?? "i"
             // Show the personalising transition first so the user has
             // 800ms with their wordmark before the system icon-change
@@ -147,6 +157,16 @@ struct OnboardingView: View {
                 }
             }
         }
+    }
+
+    /// Mark the onboarding flow as complete in UserDefaults. The cover's
+    /// visual dismissal is independent (driven by `onComplete`), so this
+    /// only commits to the persistent store.
+    private func persistOnboardingCompleted() {
+        UserDefaults.standard.set(
+            true,
+            forKey: PersonalIdentity.onboardingCompletedKey
+        )
     }
 }
 

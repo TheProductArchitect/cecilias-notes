@@ -16,7 +16,18 @@ struct LibraryView: View {
     @State private var reExportNotebookId: UUID?
 
     // MARK: Personal identity (Onboarding feature)
+    //
+    // The persisted "first-launch onboarding done" flag.
     @AppStorage(PersonalIdentity.onboardingCompletedKey) private var hasCompletedOnboarding: Bool = false
+
+    // Local state controlling the onboarding cover's visibility. Seeded
+    // from `hasCompletedOnboarding` on first appear, then flipped only
+    // by `OnboardingView`'s onComplete callback. Decoupling the cover
+    // from the @AppStorage flag means OnboardingView can persist the
+    // completion flag *immediately* on valid input (so a force-quit
+    // during the personalising transition doesn't lose the user's
+    // state) without that write dismissing the cover prematurely.
+    @State private var isShowingOnboarding: Bool = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -79,15 +90,21 @@ struct LibraryView: View {
         }
         // First-launch personal-identity onboarding. Cannot be dismissed
         // by swipe — `.fullScreenCover` blocks the rest of the app behind
-        // it until `OnboardingView` calls back.
-        .fullScreenCover(isPresented: Binding(
-            get: { !hasCompletedOnboarding },
-            set: { _ in /* read-only — OnboardingView controls completion */ }
-        )) {
+        // it until `OnboardingView`'s onComplete fires.
+        .fullScreenCover(isPresented: $isShowingOnboarding) {
             OnboardingView {
                 hasCompletedOnboarding = true
+                isShowingOnboarding   = false
             }
             .interactiveDismissDisabled(true)
+        }
+        .onAppear {
+            // Seed the local cover flag from the persisted AppStorage
+            // value once. Subsequent runs read true and never flip
+            // the cover open again.
+            if !hasCompletedOnboarding {
+                isShowingOnboarding = true
+            }
         }
         // Each .onChange below mutates the publisher it observes (sets the
         // trigger property back to nil/false). SwiftUI considers re-entrant
