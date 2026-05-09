@@ -173,12 +173,12 @@ struct NotebookGridView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            // Global empty
+            // "All Notes" empty state — no creation CTA. Notebooks
+            // belong to a subject; this is the cross-subject view.
             InkEmptyState(
                 icon: "book.closed",
                 title: "No notebooks yet",
-                subtitle: "Start writing.",
-                action: (label: "New Notebook", handler: { viewModel.createUntitledNotebookAndOpen() })
+                subtitle: "Pick a subject in the sidebar to create one."
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -293,43 +293,43 @@ private struct GridToolbarView: View {
             .font(.inkBody)
             .foregroundColor(.inkAccentPrimary)
 
-            // Hidden ⌘N → New Notebook. The visible "+" is a menu (below)
-            // because we have two creation paths now; keyboardShortcut on a
-            // Menu would only open the menu, so we keep the shortcut on a
-            // separate zero-size button.
-            Button {
-                viewModel.createUntitledNotebookAndOpen()
-            } label: { EmptyView() }
-            .keyboardShortcut("n", modifiers: .command)
-            .frame(width: 0, height: 0)
-            .opacity(0)
-            .accessibilityHidden(true)
-
-            // "+" menu — New Notebook / New Folder. Folder option is only
-            // surfaced when a subject is selected (folders live inside a
-            // subject; "All Notes" is cross-subject and has no place to put
-            // a new folder).
-            Menu {
+            // "All Notes" is *view-only* — every notebook must live under
+            // a subject (or a folder inside one). Hide creation
+            // affordances when no subject is selected; the user picks a
+            // subject from the sidebar to create.
+            if viewModel.selectedSubjectId != nil {
+                // Hidden ⌘N → New Notebook. The visible "+" is a menu
+                // (below) because we have two creation paths;
+                // keyboardShortcut on a Menu would only open the menu,
+                // so we keep the shortcut on a zero-size button.
                 Button {
                     viewModel.createUntitledNotebookAndOpen()
-                } label: {
-                    Label("New Notebook", systemImage: "book.closed")
-                }
-                if viewModel.selectedSubjectId != nil {
+                } label: { EmptyView() }
+                .keyboardShortcut("n", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+
+                Menu {
+                    Button {
+                        viewModel.createUntitledNotebookAndOpen()
+                    } label: {
+                        Label("New Notebook", systemImage: "book.closed")
+                    }
                     Button {
                         viewModel.createFolderAtCurrentLevel()
                     } label: {
                         Label("New Folder", systemImage: "folder.badge.plus")
                     }
+                } label: {
+                    Label("New", systemImage: "plus")
+                        .font(.inkHeadline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Ink.Spacing.md)
+                        .frame(height: 36)
+                        .background(Color.inkAccentPrimary)
+                        .clipShape(Capsule())
                 }
-            } label: {
-                Label("New", systemImage: "plus")
-                    .font(.inkHeadline)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, Ink.Spacing.md)
-                    .frame(height: 36)
-                    .background(Color.inkAccentPrimary)
-                    .clipShape(Capsule())
             }
         }
     }

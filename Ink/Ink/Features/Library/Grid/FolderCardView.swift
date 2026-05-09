@@ -78,11 +78,9 @@ struct FolderCardView: View {
                 viewModel.navigate(into: folder)
             }
         }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45)
-                .onChanged { _ in HapticManager.shared.prepare(for: .contextMenu) }
-                .onEnded   { _ in HapticManager.shared.contextMenuOpened() }
-        )
+        // Note: a `.simultaneousGesture(LongPressGesture)` used to live
+        // here for haptic pre-warm. It raced pencil taps and ate the
+        // first one. Removed — see NotebookCardView for the same fix.
         .contextMenu { contextMenu }
         // Accept dropped notebooks → move into this folder
         .dropDestination(for: Data.self) { items, _ in

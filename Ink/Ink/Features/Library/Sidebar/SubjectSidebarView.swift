@@ -24,6 +24,29 @@ struct SubjectSidebarView: View {
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                         .listRowSeparator(.hidden)
+                        // Swipe → reveal Delete on either edge so the
+                        // gesture works whether the user swipes left
+                        // (iOS Mail-style) or right (the "swipe right
+                        // to delete" the user asked for). Tapping the
+                        // pill calls through the same flow as the
+                        // context-menu Delete: notebooks get moved to
+                        // Uncategorised, the subject is soft-deleted.
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                HapticManager.shared.destructiveConfirmed()
+                                viewModel.deleteSubject(subject)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                HapticManager.shared.destructiveConfirmed()
+                                viewModel.deleteSubject(subject)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                 }
                 .onMove { from, to in
                     viewModel.reorderSubjects(from: from, to: to)

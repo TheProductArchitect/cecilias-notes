@@ -162,7 +162,10 @@ struct LibraryView: View {
             .accessibilityHidden(true)
         )
         // Listen for menu-bar / discoverability commands from InkCommands.
+        // ⌘N only creates when a subject is selected — "All Notes" is
+        // a view-only cross-subject screen.
         .onReceive(NotificationCenter.default.publisher(for: .inkCommandNewNotebook)) { _ in
+            guard viewModel.selectedSubjectId != nil else { return }
             viewModel.createUntitledNotebookAndOpen()
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkCommandSearch)) { _ in

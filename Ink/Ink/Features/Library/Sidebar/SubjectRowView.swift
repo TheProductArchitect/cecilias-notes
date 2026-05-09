@@ -44,12 +44,9 @@ struct SubjectRowView: View {
 
             Spacer()
 
-            // Drag handle — always visible at tertiary opacity
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 11))
-                .fontWeight(.medium)
-                .foregroundColor(.inkTextTertiary)
-
+            // Notebook count. The List provides its own drag affordance
+            // (via .environment(\.editMode, .active)) at the trailing
+            // edge — a second visual handle here was redundant.
             InkBadge("\(notebookCount)", style: .count)
         }
         .padding(.horizontal, Ink.Spacing.sm)

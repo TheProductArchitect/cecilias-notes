@@ -37,15 +37,11 @@ struct NotebookCardView: View {
             }
         }
         .contextMenu { contextMenu }
-        // Prepare the medium generator on touch-down so the haptic fires with
-        // zero warm-up latency when the long-press succeeds. Fire when the
-        // long-press completes (just before SwiftUI decides whether to show
-        // the context menu or start a drag — same haptic moment for both).
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45)
-                .onChanged { _ in HapticManager.shared.prepare(for: .contextMenu) }
-                .onEnded   { _ in HapticManager.shared.contextMenuOpened() }
-        )
+        // Note: a `.simultaneousGesture(LongPressGesture)` used to live
+        // here to pre-warm the haptic engine for context-menu open
+        // latency. It also raced pencil taps and consumed the first one,
+        // forcing a second tap to open notebooks. Removed — `.contextMenu`
+        // fires its own haptic and the warm-up gain is invisible.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.notebookLabel(
             title: notebook.title,
