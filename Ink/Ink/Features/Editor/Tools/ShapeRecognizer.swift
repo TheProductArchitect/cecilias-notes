@@ -81,7 +81,15 @@ enum ShapeRecognizer {
         guard let normalisedVertices = await detectPolygon(in: cgImage) else { return nil }
         guard normalisedVertices.count >= 3 else { return nil }
 
-        let canvasVertices = normalisedVertices.map { remap($0, bbox: bbox, image: cgImage) }
+        let rawCanvasVertices = normalisedVertices.map { remap($0, bbox: bbox, image: cgImage) }
+        // Merge near-coincident vertices. Vision's contour approximation
+        // occasionally produces a "ghost" vertex within 1–2pt of a real
+        // corner (rasterisation seam artifacts on closed paths), which
+        // would otherwise tip a 4-corner rectangle into the pentagon
+        // branch. Tolerance is a small fraction of the bbox diagonal
+        // so it scales with the user's stroke size.
+        let mergeTolerance = max(4, hypot(bbox.width, bbox.height) * 0.025)
+        let canvasVertices = mergeNearbyVertices(rawCanvasVertices, tolerance: mergeTolerance)
         let n = canvasVertices.count
 
         // Confidence here is binary-ish — we passed Vision's detection AND
@@ -319,6 +327,31 @@ enum ShapeRecognizer {
         let imgX = p.x * imageW
         let imgY = (1 - p.y) * imageH
         return CGPoint(x: (imgX - dx) / scale, y: (imgY - dy) / scale)
+    }
+
+    // MARK: - Vertex post-processing
+
+    /// Walk the polygon and drop any vertex that's within `tolerance`
+    /// points of its predecessor. The wrap-around case (last → first)
+    /// is also checked. Order is preserved.
+    private static func mergeNearbyVertices(
+        _ verts: [CGPoint],
+        tolerance: CGFloat
+    ) -> [CGPoint] {
+        guard verts.count > 3 else { return verts }
+        var result: [CGPoint] = []
+        for v in verts {
+            if let last = result.last, distance(last, v) < tolerance { continue }
+            result.append(v)
+        }
+        // Wrap-around dedup.
+        if result.count > 3,
+           let first = result.first,
+           let last  = result.last,
+           distance(first, last) < tolerance {
+            result.removeLast()
+        }
+        return result
     }
 
     // MARK: - Quadrilateral classification

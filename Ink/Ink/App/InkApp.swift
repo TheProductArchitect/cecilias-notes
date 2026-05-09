@@ -13,6 +13,47 @@ struct InkApp: App {
     @AppStorage("ink.resume.enabled") private var resumeEnabled: Bool = true
     @AppStorage("ink.resume.lastNotebookId") private var lastNotebookIdString: String = ""
 
+    init() {
+        // UI-test launch hook: when XCUIApplication launches us with the
+        // "-uiTesting" argument, blow away every persisted ink.* /
+        // app.user / app.onboarding key so each UI test starts from a
+        // clean state. We do *not* delete the SwiftData store here —
+        // that lives on disk and the tests that need a clean library
+        // build it inline. Resume is also force-disabled so a UI test
+        // run never lands inside an editor it didn't open itself.
+        if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
+            Self.resetForUITesting()
+        }
+    }
+
+    /// Wipe persisted state for UI tests. Visible to test infra via the
+    /// "-uiTesting" launch argument, and (in DEBUG) to engineering tools.
+    /// Runs in `InkApp.init` BEFORE the StorageService singleton resolves
+    /// its container, so we can also remove the on-disk SwiftData store
+    /// — otherwise notebooks from a prior test run collide with elements
+    /// the next test queries by label.
+    static func resetForUITesting() {
+        let defaults = UserDefaults.standard
+        let allKeys = defaults.dictionaryRepresentation().keys
+        for key in allKeys
+            where key.hasPrefix("ink.")
+               || key.hasPrefix("app.user")
+               || key.hasPrefix("app.onboarding") {
+            defaults.removeObject(forKey: key)
+        }
+        // Force resume off for UI tests so a stale lastNotebookId
+        // doesn't interfere even on the first launch after install.
+        defaults.set(false, forKey: "ink.resume.enabled")
+
+        // Wipe the on-disk SwiftData store. We attempt to remove the
+        // entire `Ink` Application Support directory: it contains the
+        // SQLite store and per-notebook resources (audio, media). This
+        // runs before `StorageService.shared` resolves, so the next
+        // container open creates a fresh empty DB.
+        let inkDir = StorageService.inkDirectoryURL
+        try? FileManager.default.removeItem(at: inkDir)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
