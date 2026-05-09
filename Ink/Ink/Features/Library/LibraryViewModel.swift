@@ -128,6 +128,18 @@ final class LibraryViewModel: ObservableObject {
         storage.fetchAllNotebooks().count
     }
 
+    /// All non-deleted notebooks under a subject — both root-level
+    /// and inside folders. Counts via the storage predicate (which
+    /// honours `isDeleted == false`) rather than reading
+    /// `Subject.notebooks` directly: the SwiftData relationship array
+    /// includes soft-deleted rows, and direct `notebook.isDeleted`
+    /// reads collide with NSManagedObject's hidden `isDeleted`
+    /// property and silently return false. Predicate fetches don't
+    /// have that problem.
+    func notebookCount(forSubject subjectId: UUID) -> Int {
+        storage.fetchNotebooks(subjectId: subjectId).count
+    }
+
     // MARK: Refresh
 
     func refresh() {

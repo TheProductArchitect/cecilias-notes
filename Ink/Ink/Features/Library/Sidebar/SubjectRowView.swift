@@ -12,8 +12,16 @@ struct SubjectRowView: View {
     @FocusState private var renameFocused: Bool
 
     private var isSelected: Bool { viewModel.selectedSubjectId == subject.id }
+
+    /// Live count of every non-deleted notebook under this subject —
+    /// pulled through the view model's predicate-respecting fetch
+    /// rather than `subject.notebooks.filter`. The relationship
+    /// array would include soft-deleted notebooks (and direct
+    /// `notebook.isDeleted` reads collide with NSManagedObject's
+    /// hidden `isDeleted`, returning false), so the badge would
+    /// otherwise overcount.
     private var notebookCount: Int {
-        subject.notebooks.filter { !$0.isDeleted }.count
+        viewModel.notebookCount(forSubject: subject.id)
     }
 
     var body: some View {
