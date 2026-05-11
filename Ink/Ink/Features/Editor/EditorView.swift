@@ -486,30 +486,16 @@ struct EditorView: View {
         .sheet(item: $viewModel.activeMediaSource) { source in
             mediaPickerSheet(for: source)
         }
-        // Image-attachment import picker. `imageImportRequest`
-        // carries the normalised tap location so the resulting
-        // record lands where the user touched. The picker
-        // self-dismisses; we still clear the request on the
-        // SwiftUI side so a second tap re-presents cleanly.
-        .sheet(item: $viewModel.imageImportRequest) { request in
-            ImageImportPicker(
-                isPresented: .constant(true),
-                onPicked: { image, ext in
-                    viewModel.commitImportedImage(
-                        image,
-                        fileExtension: ext,
-                        at: request
-                    )
-                    viewModel.imageImportRequest = nil
-                }
-            )
-            .onDisappear {
-                // Catches the user dismissing the dialog without
-                // selecting a source. Without this the request id
-                // sticks and the next tap is a no-op.
-                viewModel.imageImportRequest = nil
-            }
-        }
+        // The image-attachment import picker used to live here as a
+        // `.sheet(item: $viewModel.imageImportRequest)`. Presenting
+        // a sheet from inside a `.fullScreenCover` destination is
+        // unreliable on iPad — the inner UIKit picker's
+        // dismiss/present cycle can collapse the entire
+        // presentation chain and force-dismiss the editor cover.
+        // The picker is now presented from `LibraryView` at the
+        // root level (above the cover) via `ImagePickerBridge`,
+        // which decouples the picker's lifecycle from the editor's
+        // navigation surface.
         // Audio file picker sheet
         .sheet(isPresented: $viewModel.isShowingAudioFilePicker) {
             AudioFilePicker(viewModel: viewModel) {
@@ -543,10 +529,23 @@ struct EditorView: View {
                 DispatchQueue.main.async { deepLink.pendingExport = false }
                 viewModel.isShowingExportSheet = true
             }
-            // Item 1 — surface the floating Customise pill iff this is a
-            // freshly-created notebook we haven't already pilled this session.
-            withAnimation(.inkSpring(InkSpring.smooth)) {
-                viewModel.markCustomisePillIfFresh()
+            // "+ new notebook → editor" hand-off. When the library
+            // marks this notebook for auto-customise, slide the
+            // panel down immediately and request name-field focus
+            // so the keyboard is up the moment the user lands.
+            // Consumed via the one-shot registry so re-opening
+            // the same notebook later doesn't repeat the panel.
+            if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
+                viewModel.pendingCustomiseNameFocus = true
+                withAnimation(.inkSpring(InkSpring.smooth)) {
+                    viewModel.isCustomisePanelOpen = true
+                }
+            } else {
+                // Item 1 — surface the floating Customise pill iff this is a
+                // freshly-created notebook we haven't already pilled this session.
+                withAnimation(.inkSpring(InkSpring.smooth)) {
+                    viewModel.markCustomisePillIfFresh()
+                }
             }
             // Search deep-link: scroll to the page that produced the
             // result. Resolves the pageId to its current index in the

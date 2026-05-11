@@ -280,20 +280,32 @@ struct LibraryHeaderView: View {
             .buttonStyle(.inkPressable)
             .accessibilityLabel("Open PDF")
 
-            // Select
+            // Select — icon-only to fit the toolbar strip without
+            // wrapping (the text form was overflowing into a second
+            // line after the filter / image / PDF icons landed
+            // alongside). `checkmark.circle.fill` + brand accent
+            // signals "active" when the grid is in select mode;
+            // recessive ring otherwise. Matches the icon-only
+            // pattern of every other button in this strip.
             Button {
                 withAnimation(.inkSpring(InkSpring.snappy)) {
-                    viewModel.isSelecting = true
+                    viewModel.isSelecting.toggle()
                 }
             } label: {
-                Text("select")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color.brandAccent)
-                    .padding(.horizontal, 6)
-                    .frame(height: 44)
+                Image(systemName: viewModel.isSelecting
+                      ? "checkmark.circle.fill"
+                      : "checkmark.circle")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(viewModel.isSelecting
+                                     ? Color.brandAccent
+                                     : Color.inkRecessiveQuaternary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.inkPressable)
+            .accessibilityLabel(viewModel.isSelecting ? "Exit select" : "Select")
         }
     }
 

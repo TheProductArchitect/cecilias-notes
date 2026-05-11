@@ -72,12 +72,10 @@ final class SearchIndexService {
 
     /// Index JSON file. `Documents/search_index.json` — purges with
     /// app uninstall, included in user's iCloud backup, never leaves
-    /// the device. `nonisolated(unsafe)` so the detached
-    /// `loadAsync` / `writeToDisk` tasks can reference it without
-    /// hopping back to the main actor; the value is a constant
-    /// initialised once at class-load time, so there is no
-    /// mutation hazard.
-    nonisolated(unsafe) private static let indexURL: URL = {
+    /// the device. `URL` is `Sendable`, so a plain `static let` is
+    /// safe to access from any isolation context without an
+    /// annotation; the compiler proves the type-level safety.
+    private static let indexURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("search_index.json")
     }()
@@ -85,9 +83,9 @@ final class SearchIndexService {
     /// Hard cap on the persisted index. When exceeded we keep title /
     /// TextBlock / transcript entries (small) and drop the OCR text
     /// (much larger per page) so the searchable surface degrades
-    /// gracefully rather than ballooning unbounded.
-    /// `nonisolated` — pure constant, safe everywhere.
-    nonisolated private static let maxIndexBytes: Int = 10 * 1024 * 1024
+    /// gracefully rather than ballooning unbounded. `Int` is
+    /// `Sendable` — no annotation needed.
+    private static let maxIndexBytes: Int = 10 * 1024 * 1024
 
     /// `true` once `loadAsync()` has finished its first read off disk.
     /// All read + mutation paths early-return until this flips so:
@@ -123,6 +121,12 @@ final class SearchIndexService {
             index = Dictionary(uniqueKeysWithValues: entries.map { ($0.notebookId, $0) })
         }
         isLoaded = true
+        // Tell any view that's gating on readiness (currently the
+        // Ask sheet's "still indexing your notes…" message) it can
+        // accept input now. SwiftUI doesn't auto-observe `isLoaded`
+        // because `SearchIndexService` isn't `ObservableObject` —
+        // a notification keeps the dependency direction one-way.
+        NotificationCenter.default.post(name: .searchIndexLoaded, object: nil)
     }
 
     private func schedulePersist() {
@@ -667,4 +671,15 @@ final class SearchIndexService {
         }
         return out
     }
+}
+
+// MARK: - Change notification
+
+extension Notification.Name {
+    /// Posted once after `SearchIndexService.loadAsync` finishes
+    /// merging the persisted index into memory. Views that gate
+    /// behaviour on `isLoaded` (e.g. Ask My Notes' "still
+    /// indexing…" placeholder) observe this to flip out of the
+    /// not-ready state without polling.
+    static let searchIndexLoaded = Notification.Name("searchIndexLoaded")
 }

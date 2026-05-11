@@ -11,15 +11,18 @@ final class StorageService: ObservableObject {
 
     // MARK: Singleton
     //
-    // `nonisolated(unsafe)` so the model layer's `nonisolated`
-    // computed properties (`Notebook.isPDFBacked`,
-    // `Notebook.sourcePDFURL`) can reach the singleton from any
-    // isolation context. The methods those properties call
-    // (`hasSourcePDF`, `sourcePDFURL`) are themselves `nonisolated`
-    // and only touch file metadata via `FileManager` — no
-    // `@MainActor` state is read, so the "unsafe" annotation is
-    // accurate but the practical risk is zero.
-    nonisolated(unsafe) static let shared: StorageService = MainActor.assumeIsolated { StorageService() }
+    // `StorageService` is `@MainActor`-isolated, which makes the
+    // class implicitly `Sendable`. A plain `static let` on a
+    // `Sendable` type is safe to access from any isolation context
+    // without an annotation — the compiler proves the type-level
+    // safety, so `nonisolated(unsafe)` is redundant. The init is
+    // wrapped in `MainActor.assumeIsolated` because the
+    // `StorageService()` initialiser itself is MainActor-isolated.
+    // The `nonisolated` methods invoked through the singleton
+    // (`hasSourcePDF`, `sourcePDFURL`) continue to be reachable
+    // from off-main contexts because they're explicitly opted out
+    // of MainActor isolation on the methods themselves.
+    static let shared: StorageService = MainActor.assumeIsolated { StorageService() }
 
     // MARK: Directory URLs
     //

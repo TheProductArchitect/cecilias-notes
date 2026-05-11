@@ -27,7 +27,9 @@ struct OnboardingView: View {
     @State private var inputText:  String = ""
     @State private var validationError: Bool = false
     @State private var isPersonalising: Bool = false
-    @State private var personalisingLetter: Character = "i"
+    // `c` is the brand's default letter — matches the bundle's
+    // primary AppIcon (the `c·` mark Cecilia's Notes ships with).
+    @State private var personalisingLetter: Character = "c"
     @FocusState private var fieldFocused: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,7 +38,7 @@ struct OnboardingView: View {
         let firstChar = inputText
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .first
-        return firstChar ?? "i"
+        return firstChar ?? "c"
     }
 
     /// True when there is at least one non-whitespace character. The
@@ -155,7 +157,7 @@ struct OnboardingView: View {
             // dismiss the cover prematurely.
             persistOnboardingCompleted()
 
-            personalisingLetter = firstWord.first ?? "i"
+            personalisingLetter = firstWord.first ?? "c"
             // Show the personalising transition first so the user has
             // 800ms with their wordmark before the system icon-change
             // alert lands on top.
@@ -234,7 +236,7 @@ struct YourNameCard: View {
         let firstChar = buffer
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .first
-        return firstChar ?? "i"
+        return firstChar ?? "c"
     }
 
     var body: some View {

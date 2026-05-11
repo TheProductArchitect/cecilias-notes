@@ -484,11 +484,14 @@ final class LectureRecorder: ObservableObject {
         let alreadyElapsed = elapsedSeconds
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             // Compute the value in the Timer's run-loop context
-            // before the Task hop so `self` doesn't have to cross
-            // into the concurrent closure as a captured `var`.
-            // Swift 6 strict-concurrency rejects the var-capture form.
+            // before the Task hop so the result is a plain Sendable
+            // `Double` crossing the actor boundary. The inner Task
+            // re-captures `self` weakly via its own capture list so
+            // the outer Timer closure's `weak var self` doesn't
+            // bleed into concurrently-executing code — Swift 6
+            // strict-concurrency rejects the implicit-var form.
             let elapsed = alreadyElapsed + Date().timeIntervalSince(anchor)
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.elapsedSeconds = elapsed
             }
         }

@@ -80,6 +80,12 @@ struct NotebookGridView: View {
                 .animation(.inkSpring(InkSpring.smooth), value: levelFolders.map(\.id))
                 .animation(.inkSpring(InkSpring.smooth), value: levelNotebooks.map(\.id))
             }
+            // Scrolling the grid dismisses any open inline-rename
+            // keyboard immediately. Works for floating + docked
+            // keyboards uniformly — `.scrollDismissesKeyboard` is
+            // the SwiftUI-native path that doesn't conflict with
+            // PencilKit or other gesture recognisers downstream.
+            .scrollDismissesKeyboard(.immediately)
         }
     }
 

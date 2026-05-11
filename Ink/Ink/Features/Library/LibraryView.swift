@@ -22,6 +22,12 @@ struct LibraryView: View {
     @State private var isShowingSettings      = false
     @State private var reExportNotebookId: UUID?
 
+    /// Bridge between the editor (mounted inside `.fullScreenCover`)
+    /// and this view's `.sheet` for the image picker. Presenting the
+    /// picker from the cover destination is unreliable on iPad; the
+    /// bridge lets us present at the root level instead.
+    @ObservedObject private var imagePickerBridge = ImagePickerBridge.shared
+
     private static let sidebarWidth: CGFloat = 240
 
     // Onboarding routing now lives in `RootView` (the launch
@@ -191,6 +197,31 @@ struct LibraryView: View {
                     viewModel.deepLinkPageId = nil
                     viewModel.refresh()       // pull updated thumbnails / titles
                 }
+            )
+        }
+        // Cover-dismiss recovery. The user-initiated dismiss path
+        // (`onDismiss` above) clears `selectedNotebookId` cleanly,
+        // but a system-initiated dismiss (e.g. presentation-chain
+        // collapse from a nested sheet glitch) leaves the trigger
+        // pointing at the same notebook — tapping the same card
+        // after a forced-dismiss then becomes a no-op because
+        // `selectedNotebookId.didSet` only fires on a CHANGE.
+        // Mirroring the clear here makes both dismiss paths
+        // converge to the same state.
+        .onChange(of: editingNotebook) { _, new in
+            if new == nil { viewModel.selectedNotebookId = nil }
+        }
+        // Image-import picker — presented from this root level, NOT
+        // from inside the editor cover. The editor signals via
+        // `ImagePickerBridge`; the bridge's `pending` is what we
+        // bind to. Picker dismisses by clearing the bridge in its
+        // `onPicked` / `onCancel` paths — no `.onDisappear`
+        // clearing (which previously force-collapsed the cover).
+        .sheet(item: $imagePickerBridge.pending) { pending in
+            ImageImportPicker(
+                isPresented: .constant(true),
+                onPicked:  { image, ext in pending.onPicked(image, ext) },
+                onCancel:  { imagePickerBridge.cancel() }
             )
         }
         // Real keyboard shortcuts — settings ⌘, , new notebook ⌘N etc

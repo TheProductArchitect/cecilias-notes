@@ -31,6 +31,12 @@ struct ImageImportPicker: View {
     /// filename when the host writes the bytes; if the picker
     /// can't determine the extension it returns "jpg".
     let onPicked: (UIImage, String) -> Void
+    /// Called when the user dismisses the source-choice dialog
+    /// or a sub-picker without picking an image. The parent uses
+    /// this to clear `imageImportRequest` — without it the
+    /// sheet's `.sheet(item:)` binding would stay populated and
+    /// block a fresh tap from re-presenting.
+    var onCancel: () -> Void = {}
 
     @State private var presenting: Source?
 
@@ -62,7 +68,7 @@ struct ImageImportPicker: View {
                     Label("Files", systemImage: "folder")
                 }
                 Button("Cancel", role: .cancel) {
-                    isPresented = false
+                    onCancel()
                 }
             }
             .sheet(item: $presenting) { source in
@@ -72,12 +78,21 @@ struct ImageImportPicker: View {
 
     @ViewBuilder
     private func pickerFor(_ source: Source) -> some View {
+        // Every sub-picker's coordinator delivers `nil` on
+        // cancel and a `UIImage` on success. The host sheet's
+        // `imageImportRequest` is cleared either via `onPicked`
+        // (success) or `onCancel` (user dismissed) — never
+        // via `.onDisappear`, which was the source of the
+        // notebook-collapse bug.
         switch source {
         case .camera:
             IICameraPicker { image in
                 presenting = nil
-                isPresented = false
-                if let image { onPicked(image, "jpg") }
+                if let image {
+                    onPicked(image, "jpg")
+                } else {
+                    onCancel()
+                }
             }
             .ignoresSafeArea()
         case .photos:
@@ -86,15 +101,21 @@ struct ImageImportPicker: View {
                 filter: .images
             ) { image, ext in
                 presenting = nil
-                isPresented = false
-                if let image { onPicked(image, ext) }
+                if let image {
+                    onPicked(image, ext)
+                } else {
+                    onCancel()
+                }
             }
             .ignoresSafeArea()
         case .files:
             IIFilesPicker { image, ext in
                 presenting = nil
-                isPresented = false
-                if let image { onPicked(image, ext) }
+                if let image {
+                    onPicked(image, ext)
+                } else {
+                    onCancel()
+                }
             }
             .ignoresSafeArea()
         }

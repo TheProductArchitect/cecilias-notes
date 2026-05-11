@@ -87,7 +87,23 @@ struct CustomisePanel: View {
             .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
         )
         .transition(.move(edge: .top).combined(with: .opacity))
-        .onAppear { titleBuffer = viewModel.notebook.title }
+        .onAppear {
+            titleBuffer = viewModel.notebook.title
+            // Auto-focus the notebook name field when the panel
+            // was opened via the "+ new notebook" auto-customise
+            // path. Cleared on consume so a subsequent manual
+            // re-open doesn't steal focus from the user.
+            if viewModel.pendingCustomiseNameFocus {
+                viewModel.pendingCustomiseNameFocus = false
+                // One runloop tick so the panel finishes its
+                // slide-down animation before the keyboard
+                // animates up — feels less abrupt than both
+                // animating simultaneously.
+                DispatchQueue.main.async {
+                    nameFieldFocused = true
+                }
+            }
+        }
     }
 
     // MARK: Header
@@ -134,6 +150,21 @@ struct CustomisePanel: View {
                 .padding(.vertical, 8)
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                }
+                // Keyboard toolbar "Done" — same pattern as the
+                // grid card's title field. Single dismiss path
+                // that works under floating + docked keyboards.
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
+                            )
+                        }
+                        .foregroundStyle(Color.brandAccent)
+                    }
                 }
 
             suggestedTitlePill

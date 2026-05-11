@@ -62,7 +62,7 @@ struct ImageAttachmentsView: View {
                         if selectedId != nil {
                             selectedId = nil
                         } else {
-                            viewModel.imageImportRequest = EditorViewModel.ImageImportRequest(
+                            presentPicker(
                                 normalizedX: location.x / pageSize.width,
                                 normalizedY: location.y / pageSize.height
                             )
@@ -88,19 +88,11 @@ struct ImageAttachmentsView: View {
                 .contentShape(Rectangle())
                 .onLongPressGesture(minimumDuration: 0.6) {
                     // Long-press goes straight to the import
-                    // picker (which lives at `EditorView` level
-                    // via `.sheet(item:)`). The picker's own
-                    // confirmation dialog labels the source
-                    // choices — no need for a separate "Insert
-                    // Image" prompt inside this hosted overlay,
-                    // and avoiding presentation modifiers here
-                    // sidesteps the `_UIReparentingView` warning
-                    // that fires when SwiftUI presents from
-                    // inside a `UIHostingController`-mounted view.
-                    viewModel.imageImportRequest = EditorViewModel.ImageImportRequest(
-                        normalizedX: 0.5,
-                        normalizedY: 0.5
-                    )
+                    // picker via the shared bridge. Presenting
+                    // from `LibraryView` at the root level
+                    // avoids the `.fullScreenCover → .sheet`
+                    // collapse that previously closed the editor.
+                    presentPicker(normalizedX: 0.5, normalizedY: 0.5)
                 }
                 .allowsHitTesting(!imageMode)
         }
@@ -271,6 +263,29 @@ struct ImageAttachmentsView: View {
     private func delete(_ record: MediaAttachmentRecord) {
         MediaAttachmentStore.softDelete(id: record.id, pageId: record.pageId)
         if selectedId == record.id { selectedId = nil }
+    }
+
+    // MARK: - Picker bridge
+
+    /// Trigger the import picker via `ImagePickerBridge`. The
+    /// picker is presented from `LibraryView` at the root level —
+    /// not from inside this overlay's hosting controller — so its
+    /// dismiss/present cycle can't collapse the editor's
+    /// `.fullScreenCover`. On a successful pick, the closure
+    /// captures the normalised tap location and routes the image
+    /// through `EditorViewModel.commitImportedImage`.
+    private func presentPicker(normalizedX: Double, normalizedY: Double) {
+        let vm = viewModel
+        ImagePickerBridge.shared.present { image, ext in
+            vm.commitImportedImage(
+                image,
+                fileExtension: ext,
+                at: EditorViewModel.ImageImportRequest(
+                    normalizedX: normalizedX,
+                    normalizedY: normalizedY
+                )
+            )
+        }
     }
 
     // MARK: - Drag-and-drop

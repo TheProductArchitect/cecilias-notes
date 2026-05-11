@@ -20,6 +20,15 @@ struct AskMyNotesView: View {
     @State private var hasSubmitted: Bool = false
     @State private var isStreaming: Bool = false
     @State private var noMatches: Bool = false
+    /// Tracks the most recent submit's scope. `nil` means
+    /// search-everywhere; non-nil means the user picked a notebook
+    /// from the empty-state picker and we re-ran scoped. Used to
+    /// decide between the two empty-state copies.
+    @State private var lastSubmitScopedNotebookId: UUID?
+    /// Mirrors `SearchIndexService.shared.isLoaded`. Flipped on the
+    /// `.searchIndexLoaded` notification so the "still indexing…"
+    /// placeholder transitions to the live input without polling.
+    @State private var indexLoaded: Bool = SearchIndexService.shared.isLoaded
     @State private var streamTask: Task<Void, Never>?
     @FocusState private var inputFocused: Bool
 
@@ -38,22 +47,42 @@ struct AskMyNotesView: View {
         .background(Color(.systemBackground))
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .onAppear { inputFocused = true }
+        .onAppear {
+            inputFocused = true
+            // Re-read in case the index loaded between the parent
+            // showing this sheet and the sheet's first body
+            // evaluation. The notification observer below covers
+            // the live transition.
+            indexLoaded = SearchIndexService.shared.isLoaded
+        }
         .onDisappear { streamTask?.cancel() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .searchIndexLoaded)
+        ) { _ in indexLoaded = true }
     }
 
     // MARK: Header
 
     private var header: some View {
-        HStack {
-            Text("ask your notes")
-                .font(.system(size: 22, weight: .heavy))
-                .tracking(-0.5)
-                .foregroundStyle(Color.inkNearBlack)
-            Spacer()
-            Button("done") { dismiss() }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.brandAccent)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("ask your notes")
+                    .font(.system(size: 22, weight: .heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(Color.inkNearBlack)
+                Spacer()
+                Button("done") { dismiss() }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.brandAccent)
+            }
+            // Honest disclosure of what the index covers. Sits
+            // directly under the heading, always visible, so the
+            // user never wonders whether handwritten ink is in
+            // scope (it is, via OCR — but not perfect realtime
+            // reading).
+            Text("searches typed notes, transcripts, and recognised handwriting")
+                .font(.system(size: 11).italic())
+                .foregroundStyle(Color.inkRecessiveTertiary)
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
@@ -65,12 +94,36 @@ struct AskMyNotesView: View {
     private var scrollableAnswer: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if !hasSubmitted {
+                if !indexLoaded {
+                    // Pre-load gate. The persisted index is read off
+                    // the main actor by `SearchIndexService.loadAsync`
+                    // from the library's `.task`; the user can land
+                    // here before that completes on a cold launch.
+                    // Disabling the input prevents a confusing
+                    // "I couldn't find anything" against an empty
+                    // in-memory dict.
+                    Text("still indexing your notes, try again in a moment")
+                        .font(.system(size: 13).italic())
+                        .foregroundStyle(Color.inkRecessiveTertiary)
+                } else if !hasSubmitted {
                     emptyState
                 } else if noMatches {
-                    Text("I couldn't find anything in your notes about that.")
-                        .font(.system(size: 15))
-                        .foregroundStyle(Color.inkRecessivePrimary)
+                    if lastSubmitScopedNotebookId == nil {
+                        // First failed search — global. Offer the
+                        // notebook picker so the user can retry with
+                        // a narrower scope (a specific notebook
+                        // sometimes has matches the global keyword
+                        // path missed because they were spread thin).
+                        Text("I couldn't find anything across all your notes. Want me to search a specific notebook?")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.inkRecessivePrimary)
+                        notebookPicker
+                    } else {
+                        // Scoped retry also empty — game over.
+                        Text("I couldn't find anything in that notebook either.")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.inkRecessivePrimary)
+                    }
                 } else {
                     // Plain text response — 15pt regular, no bubble,
                     // no card. Reads like prose, matches the editorial
@@ -91,6 +144,65 @@ struct AskMyNotesView: View {
             .padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    // MARK: Notebook picker (empty-state fallback)
+
+    /// Scrollable list of notebook pills sorted by most-recently
+    /// opened. Tapping one re-runs the same query scoped to that
+    /// notebook only.
+    private var notebookPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("notebooks")
+                .font(.system(size: 8))
+                .tracking(0.08)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.inkRecessiveTertiary)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(pickerNotebooks, id: \.id) { nb in
+                        Button {
+                            retryScoped(to: nb.id)
+                        } label: {
+                            Text(nb.title)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.inkRecessivePrimary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .strokeBorder(Self.hairlineColour, lineWidth: 0.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Source list for the picker pills. `fetchRecentNotebooks`
+    /// returns by last-opened first; we backfill with the rest of
+    /// the library at the tail so users can still drill into a
+    /// rarely-opened notebook if the query lives there.
+    private var pickerNotebooks: [Notebook] {
+        let storage = StorageService.shared
+        var ordered = storage.fetchRecentNotebooks(limit: 50)
+        let seen = Set(ordered.map(\.id))
+        let rest = storage.fetchAllNotebooks().filter { !seen.contains($0.id) }
+        ordered.append(contentsOf: rest)
+        return ordered
+    }
+
+    /// Re-run the current query scoped to a specific notebook.
+    /// Carries the query text forward; clears the picker by
+    /// flipping `lastSubmitScopedNotebookId` so the empty-state
+    /// branch resolves to the final "in that notebook either"
+    /// copy if this retrieval also misses.
+    private func retryScoped(to notebookId: UUID) {
+        submit(scopedTo: notebookId)
     }
 
     private var emptyState: some View {
@@ -145,7 +257,7 @@ struct AskMyNotesView: View {
                 .focused($inputFocused)
                 .submitLabel(.send)
                 .onSubmit { submit() }
-                .disabled(isStreaming)
+                .disabled(isStreaming || !indexLoaded)
 
             if isStreaming {
                 Button { streamTask?.cancel(); isStreaming = false } label: {
@@ -158,13 +270,16 @@ struct AskMyNotesView: View {
                 Button { submit() } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 22))
-                        .foregroundStyle(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? Color.inkRecessiveQuaternary
-                            : Color.brandAccent
+                        .foregroundStyle(
+                            (query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !indexLoaded)
+                                ? Color.inkRecessiveQuaternary
+                                : Color.brandAccent
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(
+                    query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !indexLoaded
+                )
             }
         }
         .padding(.horizontal, 24)
@@ -176,20 +291,35 @@ struct AskMyNotesView: View {
 
     // MARK: Submit + stream
 
-    private func submit() {
+    private func submit(scopedTo notebookId: UUID? = nil) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
+        // Index-readiness gate. Should be rare — the library
+        // kicks off `loadAsync` from its first frame — but a user
+        // who opens Ask before the disk read completes shouldn't
+        // see "couldn't find anything" against an empty in-memory
+        // dict.
+        guard indexLoaded else { return }
         hasSubmitted = true
         noMatches    = false
         answer       = ""
         citations    = []
         isStreaming  = true
+        lastSubmitScopedNotebookId = notebookId
 
         // Retrieve relevant page-level context from the index.
-        let retrieved = AskRetrieval.retrieve(query: trimmed, limit: 5)
+        // Scope filter is `nil` for the first submit; populated by
+        // the empty-state notebook picker for retries.
+        let retrieved = AskRetrieval.retrieve(
+            query: trimmed,
+            limit: 5,
+            scopedTo: notebookId
+        )
         guard !retrieved.isEmpty else {
             // No relevant notes — short-circuit before invoking the
-            // model. Spec is explicit about this empty-state copy.
+            // model. The view body branches on
+            // `lastSubmitScopedNotebookId` to pick the right
+            // empty-state copy (offer-picker vs final).
             noMatches    = true
             isStreaming  = false
             return
@@ -270,14 +400,27 @@ enum AskRetrieval {
         let snippet:       String
     }
 
-    static func retrieve(query: String, limit: Int) -> [Hit] {
+    static func retrieve(
+        query: String,
+        limit: Int,
+        scopedTo notebookId: UUID? = nil
+    ) -> [Hit] {
         let storage = StorageService.shared
         let raw     = SearchIndexService.shared.search(query: query)
         let titleById = Dictionary(
             uniqueKeysWithValues: storage.fetchAllNotebooks().map { ($0.id, $0.title) }
         )
 
-        let hits = raw
+        // Scope filter is applied BEFORE the limit so a "search a
+        // specific notebook" follow-up gets the top-N hits from
+        // that notebook rather than the global top-N that happen
+        // to fall inside it.
+        let scoped: [SearchResult] = {
+            guard let notebookId else { return raw }
+            return raw.filter { $0.notebookId == notebookId }
+        }()
+
+        let hits = scoped
             .filter { $0.pageNumber != nil }
             .prefix(limit)
             .map { result -> Hit in

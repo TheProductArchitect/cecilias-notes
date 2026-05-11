@@ -10,9 +10,11 @@ struct InkApp: App {
     @StateObject private var cloudSync      = CloudSyncManager()
     @StateObject private var deepLink       = DeepLinkRouter()
 
-    /// Default ON. Settings → Resume Where You Left Off toggles this.
-    @AppStorage("ink.resume.enabled") private var resumeEnabled: Bool = true
-    @AppStorage("ink.resume.lastNotebookId") private var lastNotebookIdString: String = ""
+    // Auto-open-last-notebook was removed: navigation state is
+    // never persisted across cold launches per the architecture
+    // rule. The legacy `ink.resume.enabled` /
+    // `ink.resume.lastNotebookId` keys may still exist in
+    // existing installs but are no longer read or written.
 
     init() {
         // Register Apple Intelligence's master toggle as ON-by-default
@@ -107,15 +109,16 @@ struct InkApp: App {
                     // UserDefaults flag — subsequent launches no-op.
                     storageService.runOneTimePageCountBackfillIfNeeded()
 
-                    // Defer the resume check by one runloop tick so a
-                    // cold-launch `ink://quick-capture` URL has time to
-                    // land in `.onOpenURL` and set `pendingQuickCapture`
-                    // before we'd otherwise reopen the last notebook.
-                    DispatchQueue.main.async {
-                        if !deepLink.pendingQuickCapture {
-                            restoreLastSession()
-                        }
-                    }
+                    // No navigation state restoration on cold launch
+                    // — the app always lands in the library. The
+                    // previous auto-open-last-notebook behaviour
+                    // violated the "navigation state is never
+                    // persisted across cold launches" rule and
+                    // surprised users who closed the app from
+                    // inside a notebook expecting to land home.
+                    // Recents are still surfaced in the library
+                    // grid via `RecentNotebooksTracker` — display
+                    // only, no navigation side effect.
                 }
                 // Spotlight launch
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
@@ -132,22 +135,6 @@ struct InkApp: App {
         .commands { InkCommands(deepLink: deepLink) }
     }
 
-    /// On cold launch, route to the last-opened notebook if the user opted in
-    /// and the notebook still exists. Stale ids are cleared without warning.
-    private func restoreLastSession() {
-        guard resumeEnabled,
-              !lastNotebookIdString.isEmpty,
-              let uuid = UUID(uuidString: lastNotebookIdString)
-        else { return }
-
-        if StorageService.shared.fetchAllNotebooks().contains(where: { $0.id == uuid }) {
-            deepLink.openNotebookId = uuid
-        } else {
-            // Notebook was deleted between sessions — clean up.
-            lastNotebookIdString = ""
-            UserDefaults.standard.removeObject(forKey: "ink.resume.lastPageIndex")
-        }
-    }
 }
 
 // MARK: - DeepLinkRouter

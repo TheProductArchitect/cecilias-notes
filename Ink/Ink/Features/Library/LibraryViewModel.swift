@@ -566,6 +566,11 @@ final class LibraryViewModel: ObservableObject {
             try? storage.moveNotebook(nb, toFolder: folderId)
         }
         refresh()
+        // Mark the new notebook for auto-customise on open. The
+        // editor consumes the mark inside its `.onAppear` and
+        // slides the customise panel down so the user can name +
+        // style the notebook without an extra tap.
+        NewNotebookCustomiseTrigger.mark(nb.id)
         // Scroll-to is communicated via selectedNotebookId
         withAnimation(.inkSpring(InkSpring.smooth)) {
             selectedNotebookId = nb.id

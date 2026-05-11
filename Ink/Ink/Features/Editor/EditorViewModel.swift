@@ -107,31 +107,30 @@ final class EditorViewModel: ObservableObject {
     // MARK: Drawing accessor — set by CanvasContainerView coordinator after makeUIView
     weak var canvasView: PKCanvasView?
 
-    /// Pending image-import request. Non-nil triggers the import
-    /// picker sheet; the embedded normalised coordinates drive the
-    /// placement of the resulting `MediaAttachmentRecord`. Cleared
-    /// once the picker dismisses, regardless of whether an image
-    /// was actually selected.
-    @Published var imageImportRequest: ImageImportRequest?
-
-    /// Tap-location + presentation flag for the image picker.
-    /// Codable-free — purely a transport struct between the
-    /// canvas overlay and `EditorView`'s `.sheet(item:)`.
+    /// Transport struct for the normalised tap location the user
+    /// wants the imported image centred on. Used as the `at:`
+    /// argument to `commitImportedImage` from every entry point
+    /// (canvas tap, long-press, drag-drop, toolbar centre-import).
+    /// The previous `@Published var imageImportRequest` that
+    /// drove a `.sheet(item:)` inside the editor cover is gone —
+    /// the picker is now presented from `LibraryView` via
+    /// `ImagePickerBridge` to avoid the nested-presentation
+    /// collapse that closed the editor on iPad.
     struct ImageImportRequest: Identifiable {
         let id = UUID()
-        /// 0–1 in current page coordinates. The `.center` and
-        /// drag-drop entry points pre-fill this; the floating
-        /// toolbar entry uses `.center` (0.5, 0.5) so a fresh
-        /// import lands centred on the visible page.
         let normalizedX: Double
         let normalizedY: Double
     }
 
-    /// Open the import picker centred on the current page. Called
-    /// by the floating toolbar's image tool button — the canvas-
-    /// overlay tap-to-place path uses the tap location directly.
+    /// Open the import picker centred on the current page. Routes
+    /// through `ImagePickerBridge` so the picker is presented at
+    /// the library root level, above the editor's
+    /// `.fullScreenCover`.
     func requestImageImportCentred() {
-        imageImportRequest = ImageImportRequest(normalizedX: 0.5, normalizedY: 0.5)
+        let request = ImageImportRequest(normalizedX: 0.5, normalizedY: 0.5)
+        ImagePickerBridge.shared.present { [weak self] image, ext in
+            self?.commitImportedImage(image, fileExtension: ext, at: request)
+        }
     }
 
     /// Commit a picked image to disk + the side-channel store. The
@@ -251,6 +250,15 @@ final class EditorViewModel: ObservableObject {
     /// Whether the slide-down Customise panel is open. Tapping the pill,
     /// the title bar, or "Customise Notebook…" in the More menu sets this.
     @Published var isCustomisePanelOpen: Bool = false
+
+    /// When `true`, the customise panel should focus the notebook
+    /// name field on appear. Set by `EditorView.onAppear` when the
+    /// notebook id was marked by
+    /// `NewNotebookCustomiseTrigger.mark(_:)` (the
+    /// "+ new notebook → open notebook → auto-open customise"
+    /// flow). The panel reads + clears this on appear so a
+    /// subsequent manual re-open doesn't steal focus.
+    @Published var pendingCustomiseNameFocus: Bool = false
 
     /// Notebook IDs that have already been shown a pill in this session.
     /// Session-local — not persisted; we don't want pills resurfacing on

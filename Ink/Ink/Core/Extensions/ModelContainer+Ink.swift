@@ -61,10 +61,40 @@ extension ModelContainer {
                 url: storeURL,
                 cloudKitDatabase: .none
             )
-            return try ModelContainer(
-                for: schema,
-                configurations: localConfig
-            )
+            do {
+                return try ModelContainer(
+                    for: schema,
+                    configurations: localConfig
+                )
+            } catch {
+                // Both CloudKit and local opens failed. The
+                // overwhelmingly likely cause on a development
+                // device is a schema mismatch — the on-disk store
+                // was created against an older Swift model layout
+                // (this project added bidirectional relationships
+                // + optional to-many during the CloudKit-compat
+                // rewrite). This is a fresh-start project with no
+                // migration plan, so we delete the store and
+                // retry. Any genuine corruption is also recovered
+                // by this path — the user gets a clean start.
+                #if DEBUG
+                print("[ModelContainer] Local init failed (schema mismatch?), wiping store and retrying: \(error)")
+                #endif
+                try? FileManager.default.removeItem(at: storeURL)
+                // SQLite ships with sidecar journal/WAL files that
+                // can also be wedged if the main file is gone but
+                // they aren't — sweep them too so the next open
+                // sees a pristine directory.
+                for suffix in ["-shm", "-wal", "-journal"] {
+                    try? FileManager.default.removeItem(
+                        at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+                    )
+                }
+                return try ModelContainer(
+                    for: schema,
+                    configurations: localConfig
+                )
+            }
         }
     }
 

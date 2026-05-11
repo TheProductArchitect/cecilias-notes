@@ -162,22 +162,19 @@ struct CloudSettingsView: View {
     }
 
     private var statusText: String {
-        // Not signed into iCloud → prompt for sign-in regardless of
-        // any cached `cloud.syncStatus`. Cached statuses can come
-        // from before a user signed out.
+        // Two-state status, account-driven only. The legacy
+        // `cloud.syncStatus` is `CloudSyncManager`'s iCloud-Drive
+        // file-presence flag — SwiftData CloudKit sync runs on a
+        // separate, opaque pipeline (`NSPersistentCloudKitContainer`
+        // internals) that exposes no public progress publisher.
+        // Reading `syncStatus` here used to keep the row stuck on
+        // "syncing…" indefinitely. "up to date" is the honest
+        // default for any signed-in user; CloudKit retries
+        // failures silently in the background.
         if let status = iCloudAccountStatus, status != .available {
             return "sign in to iCloud to sync your notes"
         }
-        switch cloud.syncStatus {
-        case .syncing:
-            return "syncing…"
-        default:
-            // `.upToDate`, `.checking`, `.disabled`, `.error`,
-            // `.waitingForNetwork` all collapse to "up to date" per
-            // spec. Errors never surface to the user — CloudKit
-            // retries silently.
-            return "up to date"
-        }
+        return "up to date"
     }
 
     private func refreshAccountStatus() async {

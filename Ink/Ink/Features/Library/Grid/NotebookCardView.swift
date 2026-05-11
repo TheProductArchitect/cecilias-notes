@@ -59,7 +59,16 @@ struct NotebookCardView: View {
             withAnimation(.inkSpring(InkSpring.precise)) { isHovered = hovered }
         }
         .onTapGesture {
-            if isEditingTitle { return }
+            if isEditingTitle {
+                // Tap inside the card while editing commits the
+                // current buffer and resigns the keyboard. Without
+                // this the card's own gesture absorbs the tap and
+                // the LibraryView root's background-tap-dismiss
+                // never fires — the user gets stuck with the
+                // keyboard up until they hit return / checkmark.
+                commitTitle()
+                return
+            }
             if viewModel.isSelecting {
                 withAnimation(.inkSpring(InkSpring.snappy)) {
                     viewModel.toggleSelection(notebook)
@@ -277,6 +286,23 @@ struct NotebookCardView: View {
                 }
                 .onChange(of: titleBuffer) { _, newValue in
                     scheduleAutosave(newValue)
+                }
+                // Keyboard toolbar "Done" — single, always-present
+                // dismiss path regardless of keyboard type
+                // (floating, docked, hardware). Resigning first
+                // responder triggers the existing
+                // `onChange(of: titleFocused)` commit path.
+                .toolbar {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
+                            )
+                        }
+                        .foregroundStyle(Color.brandAccent)
+                    }
                 }
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)

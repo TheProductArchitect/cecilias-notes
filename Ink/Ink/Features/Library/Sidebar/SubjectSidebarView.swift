@@ -13,6 +13,10 @@ import SwiftData
 struct SubjectSidebarView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @EnvironmentObject private var cloudSync: CloudSyncManager
+    // The sidebar bottom bar now opts out of keyboard avoidance
+    // unconditionally via `.ignoresSafeArea(.keyboard)` — see
+    // `bottomBar`. The `KeyboardObserver` dependency the earlier
+    // floating-only gate required is no longer needed here.
 
     private static let horizontalInset: CGFloat = 13
 
@@ -155,6 +159,16 @@ struct SubjectSidebarView: View {
     // MARK: Bottom
 
     private var bottomBar: some View {
+        bottomBarContent
+            // The sidebar is a fixed-position panel — it should
+            // never reflow for any keyboard, floating or docked.
+            // Unconditional `.ignoresSafeArea(.keyboard)` keeps
+            // "+ new notebook" / "+ new subject" anchored at the
+            // bottom of the sidebar regardless of keyboard state.
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+    }
+
+    private var bottomBarContent: some View {
         VStack(spacing: 0) {
             sidebarDivider
 
