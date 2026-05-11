@@ -17,10 +17,10 @@ enum DoubleTapAction: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .switchTool:      return "Switch tool"
-        case .toggleEraser:    return "Toggle eraser"
-        case .showColorPicker: return "Show colours"
-        case .doNothing:       return "Nothing"
+        case .switchTool:      return "switch tool"
+        case .toggleEraser:    return "toggle eraser"
+        case .showColorPicker: return "show colours"
+        case .doNothing:       return "do nothing"
         }
     }
 }
@@ -46,25 +46,31 @@ enum TranscriptionQuality: String, CaseIterable {
 // MARK: - SettingsSection
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance  = "Appearance"
-    case pencil      = "Apple Pencil"
-    case newPages    = "New Pages"
-    case audio       = "Audio & Transcription"
-    case cloud       = "iCloud"
-    case storage     = "Storage"
-    case about       = "About"
+    case appearance   = "Appearance"
+    case pencil       = "Apple Pencil"
+    case audio        = "Audio & Transcription"
+    case cloud        = "iCloud"
+    case storage      = "Storage"
+    case intelligence = "Intelligence"
+    case about        = "About"
+    #if DEBUG
+    case debug        = "Debug"
+    #endif
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .appearance: return "paintpalette"
-        case .pencil:     return "applepencil"
-        case .newPages:   return "doc.badge.plus"
-        case .audio:      return "waveform"
-        case .cloud:      return "icloud"
-        case .storage:    return "internaldrive"
-        case .about:      return "info.circle"
+        case .appearance:   return "paintpalette"
+        case .pencil:       return "applepencil"
+        case .audio:        return "waveform"
+        case .cloud:        return "icloud"
+        case .storage:      return "internaldrive"
+        case .intelligence: return "sparkles"
+        case .about:        return "info.circle"
+        #if DEBUG
+        case .debug:        return "ladybug"
+        #endif
         }
     }
 }
@@ -108,24 +114,22 @@ final class SettingsViewModel: ObservableObject {
     /// notebook at the last viewed page. Default ON.
     @AppStorage("ink.resume.enabled") var resumeEnabled: Bool = true
 
-    // MARK: New Pages
-    @AppStorage("ink.newpage.size")    var defaultPageSize: PageSize = .a4
-    @AppStorage("ink.newpage.autoAdd") var autoAddPage: Bool = true
-    @AppStorage("ink.newpage.template") private var _defaultTemplateRaw: String = "blank"
-
-    var defaultTemplate: PageTemplate {
-        get {
-            (try? JSONDecoder().decode(PageTemplate.self,
-                from: _defaultTemplateRaw.data(using: .utf8) ?? Data())) ?? .blank
-        }
-        set {
-            _defaultTemplateRaw = (try? String(
-                data: JSONEncoder().encode(newValue), encoding: .utf8)) ?? "blank"
-        }
-    }
+    // The "New Pages" Settings section was removed. Auto-add and
+    // page-template defaults are now per-notebook (`coverTone`,
+    // `defaultTemplate`, `autoAddPagesOnScroll` on `Notebook`); the
+    // legacy global keys (`ink.newpage.*`) are no longer read.
 
     // MARK: Audio
     @AppStorage("ink.transcription.locale")  var transcriptionLocale: String = ""
+    /// Save the audio clip after recording. When OFF the recording is
+    /// discarded once any transcript has been generated; if both this
+    /// and `autoTranscribe` are OFF the recording is discarded
+    /// outright. Default ON.
+    @AppStorage("ink.audio.saveClips")       var saveAudioClips: Bool = true
+    /// Run on-device speech recognition after recording. Default ON.
+    /// Persists alongside `saveAudioClips`; the post-recording
+    /// pipeline reads both at stop-time (toggle changes apply
+    /// immediately).
     @AppStorage("ink.transcription.auto")    var autoTranscribe: Bool = true
     @AppStorage("ink.transcription.quality") var transcriptionQuality: TranscriptionQuality = .fast
 
@@ -204,6 +208,23 @@ final class SettingsViewModel: ObservableObject {
     }
 
     // MARK: On-device transcription locales
+
+    // MARK: DEBUG synthetic data
+
+    #if DEBUG
+    /// Injects `count` synthetic notebooks into the store. DEBUG only —
+    /// shipped builds don't surface the entry point. Runs on the
+    /// `@MainActor` since `StorageService` is main-isolated.
+    func generateSyntheticData(notebookCount: Int) async {
+        try? StorageService.shared.generateSyntheticNotebooks(count: notebookCount)
+    }
+
+    /// Hard wipe of every notebook and subject. Destructive — meant
+    /// for clearing synthetic data after a perf run.
+    func wipeAllSyntheticData() async {
+        try? StorageService.shared.wipeAllSyntheticData()
+    }
+    #endif
 
     func supportedOnDeviceLocales() -> [Locale] {
         SFSpeechRecognizer.supportedLocales()

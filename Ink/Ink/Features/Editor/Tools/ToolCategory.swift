@@ -24,7 +24,12 @@ enum ToolCategory: String, CaseIterable, Codable {
         case .pen:         return [.pen, .fountainPen, .monoline]
         case .pencil:      return [.pencil, .crayon]
         case .brush:       return [.brush, .marker]
-        case .highlighter: return [.highlighter]
+        case .highlighter:
+            // Three variants in the long-press picker. The base
+            // highlighter is the default; underline / strikethrough
+            // intercept the stroke against selectable PDF text and
+            // create the corresponding `PDFTextAnnotationRecord`.
+            return [.highlighter, .highlighterUnderline, .highlighterStrikethrough]
         }
     }
 

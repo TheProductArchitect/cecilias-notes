@@ -1,9 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// Top toolbar — 52pt tall, blur background, auto-hides after 3.5s of inactivity.
+/// Notebook header — the cover tone made visible at the top of the
+/// editor. Carries identity (back chevron + subject + title), meta
+/// (page count + last-opened) and the editor action chrome (page-strip
+/// toggle, mic, undo/redo, share, more menu, save status). A ghost
+/// letter sits behind everything bleeding off the right edge.
 ///
-/// **Note:** the blur here is the only `UIVisualEffectView` use in the entire app.
+/// Auto-hides as soon as the user begins writing, leaving a 3pt
+/// cover-tone bar at the top of the canvas as the return affordance.
+/// State is owned by `EditorViewModel.headerVisibility` (see
+/// `HeaderVisibility`).
 struct EditorToolbarView: View {
     @ObservedObject var viewModel: EditorViewModel
 
@@ -22,26 +29,77 @@ struct EditorToolbarView: View {
     let onMoreMenuFullScreen: () -> Void
     let onMoreMenuInsertMedia: () -> Void
     let onToggleRecordingPanel: () -> Void
+    /// Starts the long-form lecture recording mode. Picked via the
+    /// mic-button menu's "Lecture" option; the existing short-form
+    /// flow remains under "Quick note".
+    let onStartLecture: () -> Void
+    /// Opens the cover-tone picker as a popover anchored to the more menu.
+    var onOpenCoverPicker: (() -> Void)?
 
     @State private var titleBuffer: String = ""
     @FocusState private var titleFocused: Bool
 
-    private let toolbarHeight: CGFloat = 52
+    private let toolbarHeight: CGFloat = 56
+
+    private var tone: NotebookCoverTone { viewModel.notebook.coverTone }
+
+    private var subjectName: String {
+        // The editor doesn't carry a LibraryViewModel reference, so we
+        // resolve the subject through the StorageService singleton.
+        // The look-up is one fetch on every body re-evaluation, but
+        // the subject list is small (handful of rows in practice) and
+        // the toolbar only re-evaluates on viewModel change anyway.
+        guard let id = viewModel.notebook.subjectId else { return "uncategorised" }
+        return StorageService.shared
+            .fetchSubjects()
+            .first { $0.id == id }?
+            .name
+            .lowercased() ?? ""
+    }
+
+    /// Recessive opacity rung paired with the tone. Mirrors the helper
+    /// on `NotebookCardView`.
+    private func recessive(_ alpha: Double) -> Color {
+        tone.isLight
+            ? Color.black.opacity(alpha)
+            : Color.white.opacity(alpha)
+    }
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.md) {
-            leftCluster
+        // Two-layer composition: the cover-tone background and ghost
+        // letter live behind a row of interactive content. The
+        // background bleeds upward through `.ignoresSafeArea(.top)` so
+        // the status bar text (time, battery) sits over cover tone;
+        // the interactive row stays inside the safe area.
+        HStack(alignment: .center, spacing: 0) {
+            identityCluster
             Spacer(minLength: Ink.Spacing.md)
-            centreCluster
-            Spacer(minLength: Ink.Spacing.md)
-            rightCluster
+            actionCluster
+            metaCluster
+            SaveStatusIndicator(status: viewModel.saveStatus)
+                .padding(.leading, Ink.Spacing.sm)
         }
         .padding(.horizontal, Ink.Spacing.md)
         .frame(height: toolbarHeight)
-        .background(toolbarBackground)
-        .opacity(viewModel.isToolbarVisible ? 1 : 0)
-        .allowsHitTesting(viewModel.isToolbarVisible)
-        .inkAnimation(InkSpring.fade, value: viewModel.isToolbarVisible)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .trailing) {
+            // Ghost letter sits behind the row, anchored to the
+            // trailing edge and bleeding off the right of the screen.
+            GhostLetter(
+                character: viewModel.notebook.title.first ?? "?",
+                size: 200,
+                onDarkBackground: !tone.isLight
+            )
+            .offset(x: 60)
+            .clipped()
+            .accessibilityHidden(true)
+        }
+        .background(
+            // The cover-tone fill — extends up into the top safe area
+            // so the system status bar reads against the cover tone,
+            // not against an empty band of system background.
+            tone.background.ignoresSafeArea(edges: .top)
+        )
         .onChange(of: viewModel.isEditingTitle) { _, editing in
             if editing {
                 titleBuffer  = viewModel.notebook.title
@@ -50,70 +108,82 @@ struct EditorToolbarView: View {
         }
     }
 
-    // MARK: Background — only blur use in the app
+    // MARK: Identity (left)
 
-    private var toolbarBackground: some View {
-        ZStack {
-            Color.inkBackgroundElevated.opacity(0.94)
-            BlurMaterialView(material: .systemUltraThinMaterial)
-                .opacity(0.6)
+    private var identityCluster: some View {
+        HStack(spacing: 0) {
+            backAndSubject
+            verticalDivider
+            titleView
         }
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.inkBorderSubtle)
-                .frame(height: 0.5)
-        }
-        .ignoresSafeArea(edges: .top)
     }
 
-    // MARK: Left — back + title
-
-    private var leftCluster: some View {
-        HStack(spacing: Ink.Spacing.sm) {
-            // Back
-            Button {
-                viewModel.prepareForDismissal()
-                onBack()
-            } label: {
+    /// Tap target combining back chevron and subject eyebrow. Behaves
+    /// as one button so a finger landing anywhere on the cluster
+    /// returns to the library.
+    private var backAndSubject: some View {
+        Button {
+            viewModel.prepareForDismissal()
+            onBack()
+        } label: {
+            HStack(spacing: 6) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.inkTextPrimary)
-                    .frame(width: 36, height: 36)
-            }
-            .buttonStyle(.inkPressable)
-            .inkTapTarget()
-
-            // Title — tap to open the Customise panel (rename happens
-            // there via the Name field, alongside cover/size/template).
-            // The legacy inline rename TextField stays as a fallback when
-            // `isEditingTitle` is set programmatically (e.g. from the
-            // library's "rename" context menu deep-link).
-            if viewModel.isEditingTitle {
-                TextField("Untitled", text: $titleBuffer)
-                    .font(.inkHeadline)
-                    .foregroundColor(.inkTextPrimary)
-                    .focused($titleFocused)
-                    .submitLabel(.done)
-                    .autocorrectionDisabled()
-                    .onSubmit { commitTitle() }
-                    .onChange(of: titleFocused) { _, focused in
-                        if !focused { commitTitle() }
-                    }
-                    .frame(maxWidth: 280)
-            } else {
-                Button {
-                    viewModel.openCustomisePanel()
-                } label: {
-                    Text(viewModel.notebook.title)
-                        .font(.inkHeadline)
-                        .foregroundColor(.inkTextPrimary)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(recessive(0.4))
+                if !subjectName.isEmpty {
+                    Text(subjectName)
+                        .font(.system(size: 9.5, weight: .regular))
+                        .tracking(0.08)
+                        .textCase(.uppercase)
+                        .foregroundStyle(recessive(0.5))
                         .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: 280, alignment: .leading)
                 }
-                .buttonStyle(.inkPressable)
-                .accessibilityHint("Open the customise panel")
             }
+            .frame(height: toolbarHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back to library")
+    }
+
+    private var verticalDivider: some View {
+        Rectangle()
+            .fill(recessive(0.15))
+            .frame(width: 0.5, height: 16)
+            .padding(.horizontal, 12)
+    }
+
+    @ViewBuilder
+    private var titleView: some View {
+        let titleSize = WordmarkSizing.notebookHeaderSize(for: viewModel.notebook.title)
+
+        if viewModel.isEditingTitle {
+            TextField("Untitled", text: $titleBuffer)
+                .font(.system(size: titleSize, weight: .heavy))
+                .tracking(-0.5)
+                .foregroundStyle(tone.textColor)
+                .focused($titleFocused)
+                .submitLabel(.done)
+                .autocorrectionDisabled()
+                .onSubmit { commitTitle() }
+                .onChange(of: titleFocused) { _, focused in
+                    if !focused { commitTitle() }
+                }
+                .frame(maxWidth: 280)
+        } else {
+            Button {
+                viewModel.openCustomisePanel()
+            } label: {
+                Text(viewModel.notebook.title)
+                    .font(.system(size: titleSize, weight: .heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(tone.textColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Open the customise panel")
         }
     }
 
@@ -123,177 +193,158 @@ struct EditorToolbarView: View {
         titleFocused = false
     }
 
-    // MARK: Centre — page navigation
+    // MARK: Action chrome (right of centre)
 
-    private var centreCluster: some View {
-        HStack(spacing: Ink.Spacing.sm) {
-            Button {
-                viewModel.goToPreviousPage()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(viewModel.currentPageIndex > 0 ? .inkTextSecondary : .inkTextTertiary)
-                    .frame(width: 36, height: 36)
-            }
-            .buttonStyle(.inkPressable)
-            .inkTapTarget()
-            .disabled(viewModel.currentPageIndex == 0)
-
-            Text("\(viewModel.currentPageIndex + 1) / \(viewModel.pages.count)")
-                .font(.inkSubhead)
-                .foregroundColor(.inkTextPrimary)
-                .monospacedDigit()
-                .frame(minWidth: 60)
-
-            // → button states (per Stage 10 / Gap F):
-            //   • Not on last page                  → chevron.right, active
-            //   • Last page + autoAdd ON            → plus.circle, active (tap appends a page)
-            //   • Last page + autoAdd OFF           → chevron.right, dimmed + disabled
-            Button {
-                viewModel.goToNextPage()
-            } label: {
-                Image(systemName: nextPageIcon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(nextPageColor)
-                    .frame(width: 36, height: 36)
-            }
-            .buttonStyle(.inkPressable)
-            .inkTapTarget()
-            .disabled(viewModel.isOnLastPage && !viewModel.autoAddEnabled)
-            .opacity(viewModel.isOnLastPage && !viewModel.autoAddEnabled ? 0.3 : 1.0)
-        }
-    }
-
-    private var nextPageIcon: String {
-        if viewModel.isOnLastPage && viewModel.autoAddEnabled { return "plus.circle" }
-        return "chevron.right"
-    }
-
-    private var nextPageColor: Color {
-        if viewModel.isOnLastPage && viewModel.autoAddEnabled { return .inkAccentPrimary }
-        if viewModel.isOnLastPage { return .inkTextTertiary }
-        return .inkTextSecondary
-    }
-
-    // MARK: Right — strip / undo / redo / share / save / more
-
-    private var rightCluster: some View {
-        HStack(spacing: Ink.Spacing.xs) {
+    private var actionCluster: some View {
+        HStack(spacing: 4) {
             iconButton("rectangle.bottomthird.inset.filled") { onTogglePageStrip() }
 
-            // Mic button — accent tint when recording panel is open
-            Button { onToggleRecordingPanel() } label: {
-                Image(systemName: viewModel.isRecordingPanelVisible ? "mic.fill" : "mic")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(viewModel.isRecordingPanelVisible ? .inkAccentPrimary : .inkTextSecondary)
-                    .frame(width: 36, height: 36)
-            }
-            .buttonStyle(.inkPressable)
-            .inkTapTarget()
-
-            // Undo button — single tap only. The previous build had a
-            // .simultaneousGesture(LongPressGesture) here that opened
-            // the undo-stack popover on hold; that gesture raced with
-            // the Button's tap recogniser and ate the first tap. The
-            // "Undo All" action that lived in the popover is now in the
-            // More menu (see Menu below). The plain Undo button on the
-            // toolbar is rock-solid: one tap, one undo.
-            iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
-
-            iconButton("arrow.uturn.forward", enabled: canRedo) { onRedo() }
-
-            iconButton("square.and.arrow.up") { onShare() }
-
             Menu {
+                // Existing short-form flow — completely unchanged.
                 Button {
-                    viewModel.openCustomisePanel()
-                } label: { Label("Customise Notebook…", systemImage: "sparkles") }
-
-                Divider()
-
-                // Media insertion sub-menu
-                Menu {
-                    Button { viewModel.mediaInsertCoordinator.insertPhotos() }
-                        label: { Label("Photo Library…",    systemImage: "photo.on.rectangle") }
-                    Button { viewModel.mediaInsertCoordinator.insertFromFiles() }
-                        label: { Label("Files…",             systemImage: "folder") }
-                    Button { viewModel.mediaInsertCoordinator.insertFromCamera() }
-                        label: { Label("Camera…",            systemImage: "camera") }
-                    Button { viewModel.mediaInsertCoordinator.insertScan() }
-                        label: { Label("Scan Document…",     systemImage: "doc.viewfinder") }
-                } label: { Label("Insert Media", systemImage: "photo.badge.plus") }
-
-                Divider()
-
-                Button {
-                    onMoreMenuExportPDF()
-                } label: { Label("Export as PDF…", systemImage: "doc.richtext") }
-
-                Button {
-                    onMoreMenuPrint()
-                } label: { Label("Print…", systemImage: "printer") }
-
-                Button {
-                    onMoreMenuDuplicatePage()
-                } label: { Label("Duplicate Page", systemImage: "doc.on.doc") }
-
-                Button(role: .destructive) {
-                    onMoreMenuDeletePage()
-                } label: { Label("Delete Page", systemImage: "trash") }
-
-                // Undo All — drains the page's undo stack. Used to live
-                // behind a long-press on the Undo button; moved here so
-                // the visible Undo button stays single-tap.
-                Button(role: .destructive) {
-                    while viewModel.canvasView?.undoManager?.canUndo == true {
-                        viewModel.canvasView?.undoManager?.undo()
-                    }
+                    onToggleRecordingPanel()
                 } label: {
-                    Label("Undo All Strokes", systemImage: "arrow.uturn.backward.circle")
+                    Label("Quick note", systemImage: "mic")
                 }
-                .disabled(!canUndo)
-
-                Divider()
-
-                // TODO: implement when per-page template picker ships (Issue 6 in feature backlog).
-                // The `onMoreMenuPageSettings` callback is wired through the toolbar
-                // initialiser but produces no useful behaviour, so the menu item is
-                // hidden rather than shown as a stub.
-
+                // New long-form lecture mode. Slides the
+                // `LectureRecordingView` up over the editor.
                 Button {
-                    onMoreMenuFullScreen()
+                    onStartLecture()
                 } label: {
-                    Label(
-                        viewModel.isFullScreen ? "Exit Full Screen" : "Full Screen",
-                        systemImage: viewModel.isFullScreen
-                            ? "arrow.down.right.and.arrow.up.left"
-                            : "arrow.up.left.and.arrow.down.right"
-                    )
-                }
-
-                Button {
-                    viewModel.toggleFocusMode()
-                } label: {
-                    Label(
-                        viewModel.isFocusMode ? "Exit Focus Mode" : "Focus Mode",
-                        systemImage: viewModel.isFocusMode
-                            ? "rectangle.portrait.inset.filled"
-                            : "rectangle.portrait"
-                    )
+                    Label("Lecture", systemImage: "waveform.badge.mic")
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(.inkTextSecondary)
-                    .frame(width: 36, height: 36)
+                Image(systemName: viewModel.isRecordingPanelVisible ? "mic.fill" : "mic")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(
+                        viewModel.isRecordingPanelVisible
+                            ? Color.brandAccent
+                            : recessive(0.4)
+                    )
+                    .frame(width: 32, height: 32)
             }
-            .inkTapTarget()
+            // If the menu fails to surface for any reason (rare
+            // SwiftUI bug in popover positioning, accessibility
+            // overrides), a long-press on the icon falls through to
+            // the original short-form flow so audio capture is never
+            // blocked by a UI regression.
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                    onToggleRecordingPanel()
+                }
+            )
 
-            // Save status — far right
-            SaveStatusIndicator(status: viewModel.saveStatus)
-                .padding(.leading, Ink.Spacing.sm)
+            iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
+            iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }
+            iconButton("square.and.arrow.up") { onShare() }
+
+            Menu { moreMenuContent } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(recessive(0.4))
+                    .frame(width: 32, height: 32)
+            }
         }
     }
+
+    @ViewBuilder
+    private var moreMenuContent: some View {
+        Button {
+            viewModel.openCustomisePanel()
+        } label: { Label("Customise Notebook…", systemImage: "sparkles") }
+
+        if let onOpenCoverPicker {
+            Button {
+                onOpenCoverPicker()
+            } label: { Label("Cover", systemImage: "paintpalette") }
+        }
+
+        Divider()
+
+        Menu {
+            Button { viewModel.mediaInsertCoordinator.insertPhotos() }
+                label: { Label("Photo Library…",    systemImage: "photo.on.rectangle") }
+            Button { viewModel.mediaInsertCoordinator.insertFromFiles() }
+                label: { Label("Files…",             systemImage: "folder") }
+            Button { viewModel.mediaInsertCoordinator.insertFromCamera() }
+                label: { Label("Camera…",            systemImage: "camera") }
+            Button { viewModel.mediaInsertCoordinator.insertScan() }
+                label: { Label("Scan Document…",     systemImage: "doc.viewfinder") }
+        } label: { Label("Insert Media", systemImage: "photo.badge.plus") }
+
+        Divider()
+
+        Button { onMoreMenuExportPDF() }
+            label: { Label("Export as PDF…", systemImage: "doc.richtext") }
+        Button { onMoreMenuPrint() }
+            label: { Label("Print…",         systemImage: "printer") }
+        Button { onMoreMenuDuplicatePage() }
+            label: { Label("Duplicate Page", systemImage: "doc.on.doc") }
+        Button(role: .destructive) { onMoreMenuDeletePage() }
+            label: { Label("Delete Page", systemImage: "trash") }
+
+        Button(role: .destructive) {
+            while viewModel.canvasView?.undoManager?.canUndo == true {
+                viewModel.canvasView?.undoManager?.undo()
+            }
+        } label: { Label("Undo All Strokes", systemImage: "arrow.uturn.backward.circle") }
+        .disabled(!canUndo)
+
+        Divider()
+
+        Button { onMoreMenuFullScreen() } label: {
+            Label(
+                viewModel.isFullScreen ? "Exit Full Screen" : "Full Screen",
+                systemImage: viewModel.isFullScreen
+                    ? "arrow.down.right.and.arrow.up.left"
+                    : "arrow.up.left.and.arrow.down.right"
+            )
+        }
+
+        Button { viewModel.toggleFocusMode() } label: {
+            Label(
+                viewModel.isFocusMode ? "Exit Focus Mode" : "Focus Mode",
+                systemImage: viewModel.isFocusMode
+                    ? "rectangle.portrait.inset.filled"
+                    : "rectangle.portrait"
+            )
+        }
+    }
+
+    // MARK: Meta (page count + last opened, top-right)
+
+    private var metaCluster: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(pageCountLabel)
+                .font(.system(size: 8, weight: .regular))
+                .foregroundStyle(recessive(0.22))
+            if !lastOpenedLabel.isEmpty {
+                Text(lastOpenedLabel)
+                    .font(.system(size: 8, weight: .regular).italic())
+                    .foregroundStyle(recessive(0.15))
+            }
+        }
+        .padding(.leading, Ink.Spacing.md)
+    }
+
+    private var pageCountLabel: String {
+        viewModel.pages.count == 1 ? "1 page" : "\(viewModel.pages.count) pages"
+    }
+
+    private var lastOpenedLabel: String {
+        guard let date = RecentNotebooksTracker.lastOpened(viewModel.notebook.id)
+        else { return "" }
+        let cal = Calendar.current
+        if cal.isDateInToday(date)     { return "today" }
+        if cal.isDateInYesterday(date) { return "yesterday" }
+        let days = Int(Date().timeIntervalSince(date) / 86_400)
+        if days < 7  { return "\(days) days ago" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMM"
+        return f.string(from: date).lowercased()
+    }
+
+    // MARK: Helpers
 
     private func iconButton(
         _ systemName: String,
@@ -302,24 +353,11 @@ struct EditorToolbarView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(enabled ? .inkTextSecondary : .inkTextTertiary)
-                .frame(width: 36, height: 36)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(enabled ? recessive(0.4) : recessive(0.2))
+                .frame(width: 32, height: 32)
         }
-        .buttonStyle(.inkPressable)
-        .inkTapTarget()
+        .buttonStyle(.plain)
         .disabled(!enabled)
-    }
-}
-
-// MARK: - UIVisualEffectView bridge
-
-private struct BlurMaterialView: UIViewRepresentable {
-    let material: UIBlurEffect.Style
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        UIVisualEffectView(effect: UIBlurEffect(style: material))
-    }
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
-        uiView.effect = UIBlurEffect(style: material)
     }
 }

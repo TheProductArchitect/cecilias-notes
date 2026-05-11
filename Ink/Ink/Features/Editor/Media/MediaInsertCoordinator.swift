@@ -105,7 +105,7 @@ final class MediaInsertCoordinator: ObservableObject {
         // First scanned page → current page
         let first = processed[0]
         let rect  = centredRect(for: first.originalSize, pageSize: pageSize)
-        try? StorageService.shared.addPreprocessedImage(
+        _ = try? StorageService.shared.addPreprocessedImage(
             to: vm.currentPage, id: first.id, fileName: first.fileName,
             fileSizeBytes: first.fileSizeBytes,
             originalWidth: Int(first.originalSize.width),
@@ -118,7 +118,7 @@ final class MediaInsertCoordinator: ObservableObject {
             vm.addPage()
             guard let newPage = vm.pages.last else { continue }
             let r = centredRect(for: extra.originalSize, pageSize: pageSize)
-            try? StorageService.shared.addPreprocessedImage(
+            _ = try? StorageService.shared.addPreprocessedImage(
                 to: newPage, id: extra.id, fileName: extra.fileName,
                 fileSizeBytes: extra.fileSizeBytes,
                 originalWidth: Int(extra.originalSize.width),
@@ -155,7 +155,7 @@ final class MediaInsertCoordinator: ObservableObject {
                     let r = centredRect(for: processed.originalSize, pageSize: pageSize)
 
                     if i == 0 {
-                        try? StorageService.shared.addPreprocessedImage(
+                        _ = try? StorageService.shared.addPreprocessedImage(
                             to: viewModel.currentPage, id: processed.id,
                             fileName: processed.fileName,
                             fileSizeBytes: processed.fileSizeBytes,
@@ -166,7 +166,7 @@ final class MediaInsertCoordinator: ObservableObject {
                     } else {
                         viewModel.addPage()
                         if let newPage = viewModel.pages.last {
-                            try? StorageService.shared.addPreprocessedImage(
+                            _ = try? StorageService.shared.addPreprocessedImage(
                                 to: newPage, id: processed.id,
                                 fileName: processed.fileName,
                                 fileSizeBytes: processed.fileSizeBytes,

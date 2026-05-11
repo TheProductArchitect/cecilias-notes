@@ -1,5 +1,12 @@
+import CloudKit
 import SwiftUI
 
+/// Phase D + Phase 3 redesign — flat-white surface, editorial section
+/// labels, hairline-only rows. Toggle drives `CloudSyncManager`'s
+/// existing iCloud Drive flow (file-based sync); the live status row
+/// reports CloudKit Database sync state via the three-state pattern
+/// introduced in Prompt 7 (plain text, recessive italic — no icons,
+/// no spinners, no error surfaces).
 struct CloudSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
     @ObservedObject private var cloud: CloudSyncManager
@@ -9,6 +16,27 @@ struct CloudSettingsView: View {
     @State private var iCloudUsedBytes: Int64 = 0
     @State private var isLoadingUsage = true
 
+    /// `nil` until the first `CKContainer.accountStatus` callback
+    /// lands. The status row reads this to decide between "up to
+    /// date" and "sign in to iCloud to sync your notes" — the
+    /// `.available` state means the user is signed in; anything
+    /// else (`.noAccount`, `.restricted`, `.couldNotDetermine`,
+    /// `.temporarilyUnavailable`) collapses to the sign-in prompt.
+    @State private var iCloudAccountStatus: CKAccountStatus?
+
+    private static let hairlineColour = Color(
+        light: Color(hex: "#f5f5f5"),
+        dark:  Color(hex: "#1f1f1d")
+    )
+    private static let labelColour = Color(
+        light: Color(hex: "#999999"),
+        dark:  Color(hex: "#6a6a67")
+    )
+    private static let captionColour = Color(
+        light: Color(hex: "#aaaaaa"),
+        dark:  Color(hex: "#5e5e5c")
+    )
+
     init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
         self.cloud     = viewModel.cloudSyncManager
@@ -16,29 +44,30 @@ struct CloudSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
-                iCloudCard
-                storageRow
+            VStack(alignment: .leading, spacing: 28) {
+                syncSection
+                if cloud.isEnabled {
+                    statusSection
+                    storageSection
+                }
             }
-            .padding(Ink.Spacing.lg)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 28)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
-        .navigationTitle("iCloud")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color(.systemBackground))
         .task { await loadiCloudUsage() }
-        // Enable confirmation
-        .alert("Enable iCloud Sync?", isPresented: $pendingEnable) {
+        .alert("Enable iCloud sync?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
-            Button("Enable iCloud") {
+            Button("Enable") {
                 Task { try? await cloud.enable() }
             }
         } message: {
-            Text("Your notebooks will appear in the Files app under Ink.")
+            Text("Your notebooks will appear in the Files app under Cecilia's Notes.")
         }
-        // Disable confirmation
-        .alert("Disable iCloud Sync?", isPresented: $pendingDisable) {
+        .alert("Disable iCloud sync?", isPresented: $pendingDisable) {
             Button("Cancel", role: .cancel) {}
-            Button("Disable Sync", role: .destructive) {
+            Button("Disable", role: .destructive) {
                 Task { try? await cloud.disable() }
             }
         } message: {
@@ -46,28 +75,22 @@ struct CloudSettingsView: View {
         }
     }
 
-    // MARK: iCloud Card (full-width prominent card)
+    // MARK: Sync toggle
 
-    private var iCloudCard: some View {
-        VStack(spacing: Ink.Spacing.md) {
-            // Header row
-            HStack(alignment: .center, spacing: Ink.Spacing.md) {
-                Image(systemName: "icloud")
-                    .font(.inkLargeMetric)
-                    .foregroundColor(cloud.isEnabled ? .inkAccentPrimary : .inkTextSecondary)
-                    .frame(width: 36)
+    private var syncSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("sync")
 
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sync with iCloud Drive")
-                        .font(.inkHeadline)
-                        .foregroundColor(.inkTextPrimary)
-                    Text("Notebooks appear in the Files app under Ink.")
-                        .font(.inkCaption)
-                        .foregroundColor(.inkTextSecondary)
+                    Text("iCloud sync")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.inkNearBlack)
+                    Text("notebooks sync across your devices via iCloud drive.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Self.captionColour)
                 }
-
                 Spacer()
-
                 Toggle("", isOn: Binding(
                     get: { cloud.isEnabled },
                     set: { enabling in
@@ -75,112 +98,138 @@ struct CloudSettingsView: View {
                     }
                 ))
                 .labelsHidden()
-                .tint(.inkAccentPrimary)
+                .tint(.brandAccent)
             }
-
-            // Status area (shown when enabled)
-            if cloud.isEnabled {
-                InkDivider()
-                syncStatusView
-
-                InkButton("Sync Now", style: .ghost) {
-                    Task { await cloud.syncNow() }
-                }
-                .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
             }
         }
-        .padding(Ink.Spacing.md)
-        .inkCard()
     }
 
+    // MARK: Status
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("status")
+
+            VStack(alignment: .leading, spacing: 4) {
+                statusRow
+                if let lastSynced = cloud.lastSyncedAt {
+                    Text("last synced \(relativeDate(lastSynced))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Self.captionColour)
+                }
+            }
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            }
+
+            Button {
+                Task { await cloud.syncNow() }
+            } label: {
+                Text("sync now")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(Color.brandAccent)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!cloud.isEnabled)
+        }
+    }
+
+    /// Plain-text, three-state status row per Prompt 7 spec. Recessive
+    /// grey 12pt italic. **No icons, no spinners.** Errors are
+    /// swallowed — a sync failure (network offline, CloudKit
+    /// unavailable) reads as "up to date" rather than surfacing an
+    /// error to the user. CloudKit retries automatically and the
+    /// state self-corrects on the next successful sync.
     @ViewBuilder
-    private var syncStatusView: some View {
+    private var statusRow: some View {
+        Text(statusText)
+            .font(.system(size: 12).italic())
+            .foregroundStyle(Self.captionColour)
+            .task { await refreshAccountStatus() }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .CKAccountChanged
+            )) { _ in
+                Task { await refreshAccountStatus() }
+            }
+    }
+
+    private var statusText: String {
+        // Not signed into iCloud → prompt for sign-in regardless of
+        // any cached `cloud.syncStatus`. Cached statuses can come
+        // from before a user signed out.
+        if let status = iCloudAccountStatus, status != .available {
+            return "sign in to iCloud to sync your notes"
+        }
         switch cloud.syncStatus {
-        case .disabled:
-            EmptyView()
+        case .syncing:
+            return "syncing…"
+        default:
+            // `.upToDate`, `.checking`, `.disabled`, `.error`,
+            // `.waitingForNetwork` all collapse to "up to date" per
+            // spec. Errors never surface to the user — CloudKit
+            // retries silently.
+            return "up to date"
+        }
+    }
 
-        case .checking:
-            HStack(spacing: Ink.Spacing.sm) {
-                ProgressView()
-                    .scaleEffect(0.8)
-                Text("Syncing…")
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkTextSecondary)
-                Spacer()
-            }
-
-        case .syncing(let progress):
-            HStack(spacing: Ink.Spacing.sm) {
-                ProgressView(value: progress)
-                    .tint(.inkAccentPrimary)
-                    .frame(width: 80)
-                Text("\(Int(progress * 100))%")
-                    .font(.inkMono)
-                    .foregroundColor(.inkTextSecondary)
-                    .monospacedDigit()
-                Spacer()
-            }
-
-        case .upToDate:
-            HStack(spacing: Ink.Spacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.inkAccentPrimary)
-                Text("Up to date")
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkTextPrimary)
-                Spacer()
-            }
-
-        case .error(let msg):
-            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
-                HStack(spacing: Ink.Spacing.sm) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundColor(.inkDestructive)
-                    Text(msg)
-                        .font(.inkCaption)
-                        .foregroundColor(.inkDestructive)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer()
+    private func refreshAccountStatus() async {
+        let status: CKAccountStatus = await withCheckedContinuation { cont in
+            CKContainer(identifier: "iCloud.com.wave.venu.Ink")
+                .accountStatus { status, _ in
+                    cont.resume(returning: status)
                 }
-                HStack(spacing: Ink.Spacing.sm) {
-                    Button("Retry") { Task { await cloud.syncNow() } }
-                        .buttonStyle(.inkPressable)
-                        .font(.inkSubhead)
-                        .foregroundColor(.inkAccentPrimary)
-                    Button("Open Settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.inkPressable)
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkAccentPrimary)
-                    Spacer()
+        }
+        await MainActor.run { iCloudAccountStatus = status }
+    }
+
+    // MARK: Storage
+
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("storage")
+            HStack {
+                Text("used in iCloud")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.inkNearBlack)
+                Spacer()
+                if isLoadingUsage {
+                    ProgressView().scaleEffect(0.6)
+                } else {
+                    Text(ByteCountFormatter.string(fromByteCount: iCloudUsedBytes, countStyle: .file))
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.inkRecessivePrimary)
+                        .monospacedDigit()
                 }
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
             }
         }
     }
 
-    // MARK: Storage used by Ink in iCloud
+    // MARK: Helpers
 
-    private var storageRow: some View {
-        HStack {
-            Label("iCloud Storage Used by Ink", systemImage: "chart.pie")
-                .font(.inkBody)
-                .foregroundColor(.inkTextPrimary)
-            Spacer()
-            if isLoadingUsage {
-                ProgressView().scaleEffect(0.7)
-            } else {
-                Text(ByteCountFormatter.string(fromByteCount: iCloudUsedBytes, countStyle: .file))
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkTextSecondary)
-                    .monospacedDigit()
-            }
-        }
-        .padding(Ink.Spacing.md)
-        .inkCard()
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8))
+            .tracking(0.08)
+            .textCase(.uppercase)
+            .foregroundStyle(Self.labelColour)
+    }
+
+    private func relativeDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date()).lowercased()
     }
 
     // MARK: Compute iCloud usage
@@ -198,7 +247,8 @@ struct CloudSettingsView: View {
                 includingPropertiesForKeys: [.fileSizeKey],
                 options: .skipsHiddenFiles
             ) else { return Int64(0) }
-            for case let url as URL in enumerator {
+            while let next = enumerator.nextObject() {
+                guard let url = next as? URL else { continue }
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
                     .flatMap { Int64($0) } ?? 0
                 total += size

@@ -7,16 +7,10 @@ struct NotebookGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GridToolbarView(viewModel: viewModel)
-            InkDivider()
-
             if viewModel.isSearchActive {
                 searchArea
             } else {
                 // Breadcrumb only shows when the user is *inside* a folder.
-                // At the subject root the toolbar's title already says
-                // "Maths" / "All Notes" — duplicating that as a breadcrumb
-                // would be visual noise.
                 if !viewModel.folderPath.isEmpty {
                     BreadcrumbBar(viewModel: viewModel)
                     InkDivider()
@@ -24,7 +18,19 @@ struct NotebookGridView: View {
                 gridArea
             }
         }
-        .background(Color.inkBackgroundPrimary)
+        .background(Color(.systemBackground))
+        // Hidden ⌘N — the toolbar strip lives in the masthead now,
+        // but keeping the keystroke bound here means the shortcut
+        // works whenever focus is in the grid pane.
+        .background(
+            Button {
+                viewModel.createNotebookWithFallback()
+            } label: { EmptyView() }
+                .keyboardShortcut("n", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        )
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSearchActive)
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSelecting)
         .animation(.inkSpring(InkSpring.snappy), value: viewModel.folderPath.map(\.id))
@@ -44,42 +50,35 @@ struct NotebookGridView: View {
             emptyState
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Pinned strip — only at the subject root, not inside a
-                    // folder (the folder is its own scope).
-                    if viewModel.currentFolder == nil && !viewModel.pinnedNotebooks.isEmpty {
-                        PinnedNotebooksStrip(viewModel: viewModel)
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(levelFolders) { folder in
+                        FolderCardView(folder: folder, viewModel: viewModel)
+                            .frame(width: 168, height: 200)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
 
-                    // Main grid: folders first, then notebooks.
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(levelFolders) { folder in
-                            FolderCardView(folder: folder, viewModel: viewModel)
-                                .frame(width: 168, height: 200)
-                                .transition(.scale(scale: 0.85).combined(with: .opacity))
-                        }
-
-                        ForEach(levelNotebooks) { notebook in
-                            NotebookCardView(notebook: notebook, viewModel: viewModel)
-                                .frame(width: 168, height: 200)
-                                .transition(.scale(scale: 0.85).combined(with: .opacity))
-                                // Drag to reorder (manual sort only) or to drop
-                                // onto a folder card.
-                                .draggable(
-                                    (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id)))
-                                        ?? Data()
-                                ) {
-                                    NotebookCardView(notebook: notebook, viewModel: viewModel)
-                                        .frame(width: 168, height: 200)
-                                        .opacity(0.6)
-                                        .onAppear { HapticManager.shared.dragReorderStarted() }
-                                }
-                        }
+                    ForEach(levelNotebooks) { notebook in
+                        NotebookCardView(notebook: notebook, viewModel: viewModel)
+                            .frame(width: 168, height: 224)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
+                            .draggable(
+                                (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id)))
+                                    ?? Data()
+                            ) {
+                                NotebookCardView(notebook: notebook, viewModel: viewModel)
+                                    .frame(width: 168, height: 224)
+                                    .opacity(0.6)
+                                    .onAppear { HapticManager.shared.dragReorderStarted() }
+                            }
                     }
-                    .padding(24)
-                    .animation(.inkSpring(InkSpring.smooth), value: levelFolders.map(\.id))
-                    .animation(.inkSpring(InkSpring.smooth), value: levelNotebooks.map(\.id))
                 }
+                // 24pt of breathing room between the masthead's bottom
+                // rule and the first row of cards.
+                .padding(.top, 24)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 32)
+                .animation(.inkSpring(InkSpring.smooth), value: levelFolders.map(\.id))
+                .animation(.inkSpring(InkSpring.smooth), value: levelNotebooks.map(\.id))
             }
         }
     }
@@ -133,241 +132,60 @@ struct NotebookGridView: View {
 
     // MARK: Empty states
 
+    /// Three-element minimal empty state per the redesign — a 28pt
+    /// hairline rule, "nothing here yet.", "pick a subject, start
+    /// something.". No icon, no illustration, no CTA. Used everywhere
+    /// the grid would otherwise show an empty state (subject root,
+    /// inside an empty folder, all notes).
     @ViewBuilder
     private var emptyState: some View {
-        if let folder = viewModel.currentFolder {
-            // Inside an empty folder — different from "subject is empty".
-            VStack(spacing: Ink.Spacing.md) {
-                InkEmptyState(
-                    icon: "folder",
-                    title: "\"\(folder.name)\" is empty",
-                    subtitle: "Add a notebook or a subfolder."
-                )
-                HStack(spacing: Ink.Spacing.sm) {
-                    InkButton("New Notebook", style: .primary) {
-                        viewModel.createUntitledNotebookAndOpen()
-                    }
-                    InkButton("New Folder", style: .secondary) {
-                        viewModel.createFolderAtCurrentLevel()
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let subjectId = viewModel.selectedSubjectId,
-                  let subject = viewModel.subjects.first(where: { $0.id == subjectId }) {
-            // Subject-specific empty
-            VStack(spacing: Ink.Spacing.md) {
-                InkEmptyState(
-                    icon: "tray",
-                    title: "Nothing in \(subject.name)",
-                    subtitle: "Create a notebook, a folder, or move one here."
-                )
-                HStack(spacing: Ink.Spacing.sm) {
-                    InkButton("New Notebook", style: .primary) {
-                        viewModel.createUntitledNotebookAndOpen()
-                    }
-                    InkButton("New Folder", style: .secondary) {
-                        viewModel.createFolderAtCurrentLevel()
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            // "All Notes" empty state — no creation CTA. Notebooks
-            // belong to a subject; this is the cross-subject view.
-            InkEmptyState(
-                icon: "book.closed",
-                title: "No notebooks yet",
-                subtitle: "Pick a subject in the sidebar to create one."
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        EditorialEmptyState(
+            primary: "nothing here yet.",
+            secondary: "pick a subject, start something."
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var searchEmptyState: some View {
-        VStack(spacing: Ink.Spacing.md) {
-            InkEmptyState(
-                icon: "magnifyingglass",
-                title: "No results",
-                subtitle: "Try a different search term."
-            )
-            InkButton("Clear Search", style: .ghost) {
-                viewModel.deactivateSearch()
-            }
-        }
+        EditorialEmptyState(
+            primary: "nothing matches.",
+            secondary: "try fewer words."
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-// MARK: - Grid toolbar
+// MARK: - Editorial empty state
 
-private struct GridToolbarView: View {
-    @ObservedObject var viewModel: LibraryViewModel
-    @State private var showMoveSheet = false
-    @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
-
-    /// Top-left title. When the user is at the subject root and has set
-    /// a name, surface the personalised greeting (`"alex's notes"`).
-    /// Inside a folder we keep showing the leaf folder name so the
-    /// breadcrumb path remains legible.
-    private var titleText: String {
-        if viewModel.currentFolder != nil {
-            return viewModel.currentFolder?.name ?? viewModel.selectedSubjectName
-        }
-        if !userName.isEmpty {
-            return libraryGreeting(forName: userName)
-        }
-        // Spec: "If userName is empty, the slot is empty." Returning ""
-        // collapses the Text to zero width; the grid below carries the
-        // screen's purpose.
-        return ""
-    }
+/// Minimal empty state used across the Library main area. A 28pt
+/// hairline rule, then a dim italic primary line, then a quieter
+/// secondary line. No icon, no CTA — the redesign treats empty as
+/// part of the editorial composition rather than a problem to solve.
+private struct EditorialEmptyState: View {
+    let primary: String
+    let secondary: String
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.md) {
-            if viewModel.isSelecting {
-                selectingToolbar
-            } else {
-                normalToolbar
-            }
+        VStack(spacing: 10) {
+            Rectangle()
+                .fill(Color.inkRecessiveQuinary)
+                .frame(width: 28, height: 1)
+
+            Text(primary)
+                .font(.system(size: 11.5, weight: .regular).italic())
+                .foregroundStyle(Color.inkRecessiveTertiary)
+
+            Text(secondary)
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(Color.inkRecessiveQuinary)
         }
-        .padding(.horizontal, 24)
-        .frame(height: 56)
-        .sheet(isPresented: $showMoveSheet) {
-            MoveNotebooksSheet(viewModel: viewModel)
-        }
-    }
-
-    // Normal mode
-    private var normalToolbar: some View {
-        Group {
-            // Inside a folder, the breadcrumb bar carries the path; show
-            // just the leaf name here so the title doesn't compete. At
-            // the subject root, the personalised greeting takes over.
-            Text(titleText)
-                .font(.inkHeadline)
-                .foregroundColor(.inkTextPrimary)
-                .lineLimit(1)
-
-            Spacer()
-
-            // Search
-            Button {
-                withAnimation(.inkSpring(InkSpring.smooth)) {
-                    viewModel.isSearchActive.toggle()
-                    if !viewModel.isSearchActive { viewModel.deactivateSearch() }
-                }
-            } label: {
-                Image(systemName: viewModel.isSearchActive ? "xmark" : "magnifyingglass")
-                    .fontWeight(.medium)
-                    .foregroundColor(.inkTextSecondary)
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.inkPressable)
-            .keyboardShortcut("f", modifiers: .command)
-
-            // Sort
-            Menu {
-                ForEach(NotebookSortOrder.allCases) { order in
-                    Button {
-                        viewModel.sortOrder = order
-                    } label: {
-                        Label(order.rawValue, systemImage: order.symbolName)
-                    }
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .fontWeight(.medium)
-                    .foregroundColor(
-                        viewModel.sortOrder == .manual ? .inkAccentPrimary : .inkTextSecondary
-                    )
-                    .frame(width: 44, height: 44)
-            }
-
-            // Select
-            Button("Select") {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
-                    viewModel.isSelecting = true
-                }
-            }
-            .font(.inkBody)
-            .foregroundColor(.inkAccentPrimary)
-
-            // "All Notes" is *view-only* — every notebook must live under
-            // a subject (or a folder inside one). Hide creation
-            // affordances when no subject is selected; the user picks a
-            // subject from the sidebar to create.
-            if viewModel.selectedSubjectId != nil {
-                // Hidden ⌘N → New Notebook. The visible "+" is a menu
-                // (below) because we have two creation paths;
-                // keyboardShortcut on a Menu would only open the menu,
-                // so we keep the shortcut on a zero-size button.
-                Button {
-                    viewModel.createUntitledNotebookAndOpen()
-                } label: { EmptyView() }
-                .keyboardShortcut("n", modifiers: .command)
-                .frame(width: 0, height: 0)
-                .opacity(0)
-                .accessibilityHidden(true)
-
-                Menu {
-                    Button {
-                        viewModel.createUntitledNotebookAndOpen()
-                    } label: {
-                        Label("New Notebook", systemImage: "book.closed")
-                    }
-                    Button {
-                        viewModel.createFolderAtCurrentLevel()
-                    } label: {
-                        Label("New Folder", systemImage: "folder.badge.plus")
-                    }
-                } label: {
-                    Label("New", systemImage: "plus")
-                        .font(.inkHeadline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, Ink.Spacing.md)
-                        .frame(height: 36)
-                        .background(Color.inkAccentPrimary)
-                        .clipShape(Capsule())
-                }
-            }
-        }
-    }
-
-    // Multi-select mode
-    private var selectingToolbar: some View {
-        Group {
-            Text("\(viewModel.selectedNotebookIds.count) selected")
-                .font(.inkHeadline)
-                .foregroundColor(.inkTextPrimary)
-
-            Spacer()
-
-            Button("Move to…") { showMoveSheet = true }
-                .font(.inkBody)
-                .foregroundColor(.inkAccentPrimary)
-                .disabled(viewModel.selectedNotebookIds.isEmpty)
-
-            Button("Delete") {
-                withAnimation(.inkSpring(InkSpring.smooth)) {
-                    viewModel.deleteSelectedNotebooks()
-                }
-            }
-            .font(.inkBody)
-            .foregroundColor(.inkDestructive)
-            .disabled(viewModel.selectedNotebookIds.isEmpty)
-
-            Button("Done") {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
-                    viewModel.isSelecting = false
-                    viewModel.selectedNotebookIds = []
-                }
-            }
-            .font(.inkHeadline)
-            .foregroundColor(.inkAccentPrimary)
-        }
+        .multilineTextAlignment(.center)
     }
 }
+
+// `GridToolbarView` migrated into `LibraryHeaderView` — search,
+// filter, +, select, and the multi-select strip all live in the
+// masthead now, leaving the grid below the rule with content only.
 
 // MARK: - Breadcrumb bar
 
@@ -442,39 +260,13 @@ private struct BreadcrumbBar: View {
     }
 }
 
-// MARK: - Pinned notebooks strip
-
-private struct PinnedNotebooksStrip: View {
-    @ObservedObject var viewModel: LibraryViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
-            Text("Pinned")
-                .font(.inkCaption)
-                .foregroundColor(.inkTextTertiary)
-                .padding(.leading, 24)
-                .padding(.top, 24)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(viewModel.pinnedNotebooks) { notebook in
-                        NotebookCardView(notebook: notebook, viewModel: viewModel)
-                            .frame(width: 140, height: 168)
-                    }
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 16)
-            }
-
-            InkDivider()
-                .padding(.horizontal, 24)
-        }
-    }
-}
+// `PinnedNotebooksStrip` was removed when the grid moved to
+// single-context rendering. Pinned notebooks live in the sidebar's
+// PINNED section now.
 
 // MARK: - Move notebooks sheet (multi-select)
 
-private struct MoveNotebooksSheet: View {
+struct MoveNotebooksSheet: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
 

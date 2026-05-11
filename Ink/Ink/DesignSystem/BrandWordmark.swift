@@ -1,79 +1,176 @@
 import SwiftUI
 import UIKit
 
-/// The wordmark composition: a single lowercase letter followed by a
-/// full stop, set in Bricolage Grotesque Bold with -0.03em tracking.
-/// The letter colour is environment-aware (`Color.brandLetter`); the dot
-/// is the brand accent (`Color.brandDot`).
+/// The brand wordmark — the masthead identity element.
 ///
-/// Used in onboarding, the Library top-left greeting, the personalising
-/// transition, the Settings → About preview, and (rasterised) the app
-/// icons. Wherever the wordmark appears in the UI, it goes through this
-/// view — there is no second source of truth.
+/// Inline composition: the user's possessive name (heavy, large) sits
+/// next to a small lowercase "notes" with a brand-accent middle dot
+/// (`·`, U+00B7), all baseline-aligned. The name dominates; "notes·"
+/// is a recessive label that sits at the same baseline regardless of
+/// how large the name renders.
 ///
-/// Font fallback: if Bricolage Grotesque hasn't been bundled yet
-/// (`Resources/Fonts/BricolageGrotesque-VariableFont_*.ttf`), we fall
-/// back to the system bold so the layout still works during development.
-/// The icon-generation script does the same so placeholder PNGs render
-/// even before the font lands.
+/// Sizing is intrinsic — the caller passes the user's name and the
+/// wordmark picks the right tier. Long names step down through fixed
+/// tiers (72 → 68 → 60 → 52 → 44 → 38 pt); a `minimumScaleFactor`
+/// floor keeps the name above 28 pt so the hierarchy with the 18 pt
+/// "notes·" label never inverts.
+///
+/// Used by:
+///   • Library home masthead (`BrandWordmark(userName:)`)
+///   • App icons via `BrandIconRenderer` (single-letter preview)
+///   • Onboarding live preview (`BrandWordmark(letter:size:)`)
+///
+/// The splash and Settings → About compose their own treatments
+/// because their scale and stacking differ enough that bending the
+/// inline composition to fit them would compromise the masthead.
 struct BrandWordmark: View {
-    let letter: Character
-    let size: CGFloat
+
+    private enum Mode {
+        case inline(userName: String)
+        case letter(Character, CGFloat)
+    }
+
+    private let mode: Mode
+    private let onDarkBackground: Bool
+
+    /// The masthead inline composition: `[name]'s notes·` with the name
+    /// auto-sized by length and "notes·" pinned at 18 pt.
+    init(userName: String, onDarkBackground: Bool = false) {
+        self.mode = .inline(userName: userName)
+        self.onDarkBackground = onDarkBackground
+    }
+
+    /// Single-letter preview used by the onboarding live preview and
+    /// the icon renderer. Renders the lowercase letter + brand-accent
+    /// full stop at the requested size — no "notes" label, since this
+    /// is a typographic sketch rather than the full wordmark.
+    init(letter: Character, size: CGFloat) {
+        self.mode = .letter(letter, size)
+        self.onDarkBackground = false
+    }
 
     var body: some View {
+        switch mode {
+        case .inline(let name):
+            inlineBody(userName: name)
+        case .letter(let ch, let size):
+            letterBody(letter: ch, size: size)
+        }
+    }
+
+    // MARK: Inline composition
+
+    @ViewBuilder
+    private func inlineBody(userName: String) -> some View {
+        let possessive = NameFormatter.mastheadPossessive(for: userName)
+        let nameSize   = computedNameSize(for: userName)
+        // Baseline alignment carries through across name-size tiers
+        // automatically — `firstTextBaseline` aligns the bottoms of
+        // the largest line of text in each child, so the 18 pt
+        // "notes·" sits on the same baseline as a 72 pt "venu's" or a
+        // 38 pt long-name.
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(possessive)
+                .font(.system(size: nameSize, weight: .heavy))
+                .tracking(-0.05 * nameSize)
+                .foregroundStyle(nameColor)
+                .lineLimit(1)
+                .minimumScaleFactor(scaleFloor(for: nameSize))
+
+            HStack(spacing: 0) {
+                Text("notes")
+                    .foregroundStyle(notesColor)
+                Text("·")  // U+00B7 MIDDLE DOT
+                    .foregroundStyle(brandAccent)
+            }
+            .font(.system(size: 18, weight: .regular))
+            .tracking(-0.2)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Wordmark \(possessive) notes")
+    }
+
+    // MARK: Letter preview
+
+    @ViewBuilder
+    private func letterBody(letter: Character, size: CGFloat) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(String(letter).lowercased())
                 .font(BrandFont.wordmark(size: size))
-                .kerning(-0.03 * size)
-                .foregroundColor(.brandLetter)
-                .accessibilityHidden(true)
+                .tracking(-0.05 * size)
+                .foregroundStyle(Color.primary)
             Text(".")
                 .font(BrandFont.wordmark(size: size))
-                .foregroundColor(.brandDot)
-                .accessibilityHidden(true)
+                .foregroundStyle(Color.brandAccent)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Wordmark \(String(letter).lowercased()).")
+        .accessibilityHidden(true)
+    }
+
+    // MARK: Sizing
+
+    private func computedNameSize(for name: String) -> CGFloat {
+        switch NameFormatter.normalised(name).count {
+        case 0...4:   return 72
+        case 5...6:   return 68
+        case 7...8:   return 60
+        case 9...10:  return 52
+        case 11...12: return 44
+        default:      return 38
+        }
+    }
+
+    /// Hard floor at 28 pt — `minimumScaleFactor` is a fraction of the
+    /// chosen size, so we derive the floor from the size to guarantee
+    /// the name never shrinks into the 18 pt "notes·" label's range.
+    private func scaleFloor(for size: CGFloat) -> CGFloat {
+        max(28 / size, 0.5)
+    }
+
+    // MARK: Colours
+
+    private var nameColor: Color {
+        onDarkBackground ? .white : Color(hex: "#0a0a0a")
+    }
+
+    private var notesColor: Color {
+        onDarkBackground
+            ? Color.white.opacity(0.35)
+            : Color(hex: "#aaaaaa")
+    }
+
+    private var brandAccent: Color {
+        onDarkBackground ? Color(hex: "#0A84FF") : Color(hex: "#007AFF")
     }
 }
 
-// MARK: - Brand font
+// MARK: - Brand font (SF Pro system)
 
-/// Single source of truth for the wordmark typeface. Declared once so
-/// the SwiftUI `BrandWordmark` view and the CoreGraphics-based
-/// `BrandIconRenderer` resolve the same PostScript name (or fall back
-/// the same way).
+/// Single source of truth for the wordmark typeface. Resolves to SF Pro
+/// Heavy so both the SwiftUI view and the CoreGraphics icon renderer
+/// draw with identical metrics.
 enum BrandFont {
-
-    /// PostScript name expected on disk. Confirm with the actual
-    /// `BricolageGrotesque-VariableFont_*.ttf` you bundle — the variable
-    /// font ships a single PostScript name that the system reports;
-    /// adjust here if Apple's font tools surface a different one for
-    /// your specific file.
-    static let postScriptName = "BricolageGrotesque-Bold"
-
-    /// SwiftUI `Font` for the wordmark at a given pixel size, falling
-    /// back to system bold if Bricolage hasn't been registered.
     static func wordmark(size: CGFloat) -> Font {
-        if isBricolageRegistered {
-            return .custom(postScriptName, size: size)
-        }
-        return .system(size: size, weight: .bold, design: .default)
+        .system(size: size, weight: .heavy, design: .default)
     }
 
-    /// UIFont equivalent for code paths that need UIKit (the icon
-    /// renderer's CoreText draw path).
     static func wordmarkUIFont(size: CGFloat) -> UIFont {
-        if let f = UIFont(name: postScriptName, size: size) {
-            return f
-        }
-        return .systemFont(ofSize: size, weight: .bold)
+        .systemFont(ofSize: size, weight: .heavy)
     }
+}
 
-    /// Cached lookup — `UIFont(name:size:)` returns nil if the font
-    /// isn't registered, but we don't want to pay that lookup on every
-    /// SwiftUI body re-evaluation.
-    private static let isBricolageRegistered: Bool = {
-        UIFont(name: postScriptName, size: 12) != nil
-    }()
+// MARK: - Notebook header sizing
+
+/// Picks a wordmark size for the editor's notebook header — driven by
+/// the notebook title's character count. The masthead's wordmark sizes
+/// itself intrinsically (see `BrandWordmark`); only this title-driven
+/// surface still needs an external picker.
+enum WordmarkSizing {
+    static func notebookHeaderSize(for title: String) -> CGFloat {
+        switch title.count {
+        case 0...8:   return 22
+        case 9...14:  return 18
+        case 15...20: return 15
+        default:      return 13
+        }
+    }
 }

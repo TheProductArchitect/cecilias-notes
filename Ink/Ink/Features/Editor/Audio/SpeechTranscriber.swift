@@ -64,6 +64,41 @@ actor SpeechTranscriber {
 
     // MARK: - Post-recording file transcription
 
+    /// Run on-device speech recognition over an M4A file and return
+    /// the result without persisting anything. Used by the
+    /// transcript-only recording path (Settings: "Save audio clips"
+    /// off, "Generate transcripts" on) which discards the audio file
+    /// after extracting the transcript.
+    func transcribeFile(url: URL) async -> (text: String, segments: [TranscriptionSegment])? {
+        guard await requestSpeechPermission(),
+              let recognizer = makeSupportedRecognizer()
+        else { return nil }
+
+        let request = SFSpeechURLRecognitionRequest(url: url)
+        request.shouldReportPartialResults  = false
+        request.requiresOnDeviceRecognition = true
+        request.taskHint                    = Self.currentTaskHint()
+
+        return await withCheckedContinuation { cont in
+            recognizer.recognitionTask(with: request) { result, error in
+                guard let result, result.isFinal else {
+                    if error != nil { cont.resume(returning: nil) }
+                    return
+                }
+                let text = result.bestTranscription.formattedString
+                let segs = result.bestTranscription.segments.map {
+                    TranscriptionSegment(
+                        word:       $0.substring,
+                        startTime:  $0.timestamp,
+                        endTime:    $0.timestamp + $0.duration,
+                        confidence: $0.confidence
+                    )
+                }
+                cont.resume(returning: (text: text, segments: segs))
+            }
+        }
+    }
+
     /// Transcribes an M4A file then persists the result and amplitude data.
     /// Takes annotation `id` (not the model) to avoid cross-actor SwiftData access.
     /// All StorageService calls are dispatched back to the main actor.

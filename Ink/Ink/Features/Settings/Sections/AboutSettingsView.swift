@@ -1,134 +1,145 @@
 import SwiftUI
 
+/// Phase D redesign: editorial About section. Cecilia's brand moment
+/// lives here — the only place outside onboarding/splash where her
+/// name appears. Flat white surface, no cards, no icons.
 struct AboutSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
 
+    private static let hairlineColour = Color(
+        light: Color(hex: "#f5f5f5"),
+        dark:  Color(hex: "#1f1f1d")
+    )
+    private static let labelColour = Color(
+        light: Color(hex: "#999999"),
+        dark:  Color(hex: "#6a6a67")
+    )
+    private static let captionColour = Color(
+        light: Color(hex: "#bbbbbb"),
+        dark:  Color(hex: "#555553")
+    )
+
     var body: some View {
         ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
-                yourNameCard
-                infoCard
-                privacyCard
-                actionsCard
+            VStack(alignment: .leading, spacing: 32) {
+                brandSection
+                yourNameSection
+                privacySection
+                actionsSection
+                shortcutsSection
             }
-            .padding(Ink.Spacing.lg)
+            .padding(.horizontal, 24)
+            .padding(.top, 28)
+            .padding(.bottom, 28)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
-        .navigationTitle("About")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: Cecilia brand moment
+
+    private var brandSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // About scales below the masthead's tier system, so it
+            // composes its own small inline wordmark rather than going
+            // through `BrandWordmark` (whose name/notes size relation
+            // is calibrated for 38–72 pt names, not 17 pt).
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("cecilia's notes")
+                    .font(.system(size: 17, weight: .heavy))
+                    .tracking(-0.05 * 17)
+                    .foregroundStyle(Color.primary)
+                Text("·")
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(Color.brandAccent)
+            }
+            Text(viewModel.appVersion.lowercased())
+                .font(.system(size: 9))
+                .foregroundStyle(Self.labelColour)
+            Text("made with care. yours to keep.")
+                .font(.system(size: 11).italic())
+                .foregroundStyle(Self.captionColour)
+                .padding(.top, 6)
+        }
     }
 
     // MARK: Your Name
 
-    private var yourNameCard: some View {
-        YourNameCard()
-            .inkCard()
+    private var yourNameSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("your name")
+            YourNameCard()
+        }
     }
 
-    // MARK: App info
+    // MARK: Privacy line
 
-    private var infoCard: some View {
-        VStack(spacing: 0) {
+    private var privacySection: some View {
+        Text("no backend. no accounts. all data stays on your device.")
+            .font(.system(size: 11).italic())
+            .foregroundStyle(Self.captionColour)
+            .padding(.top, 4)
+    }
+
+    // MARK: Send feedback / Rate
+
+    private var actionsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            actionRow("send feedback") { sendFeedback() }
+            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            actionRow("rate cecilia's notes") { viewModel.requestReviewIfEligible() }
+            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+        }
+    }
+
+    private func actionRow(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack {
-                Label("Version", systemImage: "info.circle")
-                    .font(.inkBody)
-                    .foregroundColor(.inkTextPrimary)
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.brandAccent)
                 Spacer()
-                Text(viewModel.appVersion)
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkTextSecondary)
-                    .monospacedDigit()
             }
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
-
-            InkDivider()
-
-            NavigationLink {
-                KeyboardShortcutsView()
-            } label: {
-                HStack {
-                    Label("Keyboard Shortcuts", systemImage: "keyboard")
-                        .font(.inkBody)
-                        .foregroundColor(.inkTextPrimary)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.inkRowLabel)
-                        .foregroundColor(.inkTextTertiary)
-                }
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.vertical, Ink.Spacing.sm)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.inkPressable)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
         }
-        .inkCard()
+        .buttonStyle(.plain)
     }
 
-    // MARK: Privacy note
+    // MARK: Keyboard shortcuts entry
 
-    private var privacyCard: some View {
-        HStack(spacing: Ink.Spacing.md) {
-            Image(systemName: "lock.shield")
-                .font(.inkSectionIcon)
-                .foregroundColor(.inkTextSecondary)
-                .frame(width: 24)
-            Text("Ink has no backend. All data stays on your device.")
-                .font(.inkBody)
-                .foregroundColor(.inkTextSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private var shortcutsSection: some View {
+        NavigationLink {
+            KeyboardShortcutsView()
+        } label: {
+            HStack {
+                Text("keyboard shortcuts")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.brandAccent)
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            }
+            .contentShape(Rectangle())
         }
-        .padding(Ink.Spacing.md)
-        .inkCard()
+        .buttonStyle(.plain)
     }
 
-    // MARK: Actions
+    // MARK: Helpers
 
-    private var actionsCard: some View {
-        VStack(spacing: 0) {
-            // Send Feedback
-            Button {
-                sendFeedback()
-            } label: {
-                HStack {
-                    Label("Send Feedback", systemImage: "envelope")
-                        .font(.inkBody)
-                        .foregroundColor(.inkAccentPrimary)
-                    Spacer()
-                    Image(systemName: "arrow.up.right")
-                        .font(.inkTag)
-                        .foregroundColor(.inkTextTertiary)
-                }
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.vertical, Ink.Spacing.sm)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.inkPressable)
-
-            InkDivider()
-
-            // Rate Ink
-            Button {
-                viewModel.requestReviewIfEligible()
-            } label: {
-                HStack {
-                    Label("Rate Ink", systemImage: "star")
-                        .font(.inkBody)
-                        .foregroundColor(.inkAccentPrimary)
-                    Spacer()
-                }
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.vertical, Ink.Spacing.sm)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.inkPressable)
-        }
-        .inkCard()
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8))
+            .tracking(0.08)
+            .textCase(.uppercase)
+            .foregroundStyle(Self.labelColour)
     }
 
     private func sendFeedback() {
         let address = "feedback@ink.app"
-        let subject = "Ink Feedback — \(viewModel.appVersion)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let subject = "Cecilia's Notes Feedback — \(viewModel.appVersion)"
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         guard let url = URL(string: "mailto:\(address)?subject=\(subject)") else { return }
         UIApplication.shared.open(url)
     }
@@ -136,7 +147,9 @@ struct AboutSettingsView: View {
 
 // MARK: - KeyboardShortcutsView
 
-/// Placeholder for Stage 10. Lists shortcuts when populated.
+/// Lists keyboard shortcuts. Layout retained from earlier work — list
+/// styling matches the redesigned settings surface (flat white, no
+/// grouped table chrome).
 struct KeyboardShortcutsView: View {
     var body: some View {
         List {

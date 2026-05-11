@@ -380,8 +380,6 @@ struct MediaAttachmentOverlayView: View {
 
     @ViewBuilder
     private func contextMenu(for att: MediaAttachment, pageSize: CGSize) -> some View {
-        let layout = layouts[att.id] ?? MediaLayoutState(from: att)
-
         Button { fitToWidth(att, pageSize: pageSize) } label: {
             Label("Fit to Width", systemImage: "arrow.left.and.right")
         }

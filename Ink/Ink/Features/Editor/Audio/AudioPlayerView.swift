@@ -252,11 +252,17 @@ final class AudioPlayerController: ObservableObject {
 
     private func startProgressTimer() {
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            guard let self, let player = self.avPlayer else { return }
-            self.currentTime = player.currentTime
-            if !player.isPlaying {
-                self.isPlaying = false
-                self.stopProgressTimer()
+            // The Timer fires on the main run loop already, but its
+            // callback closure is `@Sendable`, so we hop explicitly to
+            // the main actor before mutating @Published state on the
+            // model. This is the Swift 6 concurrency requirement.
+            Task { @MainActor [weak self] in
+                guard let self, let player = self.avPlayer else { return }
+                self.currentTime = player.currentTime
+                if !player.isPlaying {
+                    self.isPlaying = false
+                    self.stopProgressTimer()
+                }
             }
         }
     }

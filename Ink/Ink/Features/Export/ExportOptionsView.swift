@@ -14,6 +14,11 @@ struct ExportOptionsView: View {
     @State private var options          = ExportOptions()
     @State private var customRange      = ""
     @State private var rangeError:      String?    = nil
+    /// Latched segmented-picker selection. Lives independent of
+    /// `options.pageRange` so tapping "Custom" with an empty input
+    /// still moves the picker — the typed text drives `pageRange`
+    /// validation; the tag drives the picker visual.
+    @State private var rangeTag:        Int        = 0
     @State private var previewImage:    UIImage?   = nil
     @State private var previewTask:     Task<Void, Never>? = nil
     @State private var exportState:     ExportViewState = .options
@@ -44,7 +49,10 @@ struct ExportOptionsView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        // Tall detent so the preview, page-range, quality, toggles
+        // and the pinned Export button are all visible at once — the
+        // medium detent forced the user to scroll past the toggles.
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear { schedulePreview() }
         .onChange(of: options.quality)    { _, _ in schedulePreview() }
@@ -56,15 +64,26 @@ struct ExportOptionsView: View {
     // MARK: - Options content
 
     private var optionsContent: some View {
-        ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
-                previewSection
-                pageRangeSection
-                qualitySection
-                togglesSection
-                exportButton
+        // Form scrolls; Export button is pinned outside the ScrollView
+        // so it stays visible at the medium detent and isn't buried
+        // behind the keyboard when editing the custom range.
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: Ink.Spacing.lg) {
+                    previewSection
+                    pageRangeSection
+                    qualitySection
+                    togglesSection
+                }
+                .padding(Ink.Spacing.lg)
             }
-            .padding(Ink.Spacing.lg)
+            Rectangle()
+                .fill(Color.inkBorderSubtle)
+                .frame(height: 0.5)
+            exportButton
+                .padding(.horizontal, Ink.Spacing.lg)
+                .padding(.vertical, Ink.Spacing.md)
+                .background(Color.inkBackgroundPrimary)
         }
     }
 
@@ -100,15 +119,13 @@ struct ExportOptionsView: View {
         VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             sectionHeader("Pages")
 
-            Picker("Page range", selection: Binding(
-                get: { rangeTag },
-                set: { applyRangeTag($0) }
-            )) {
+            Picker("Page range", selection: $rangeTag) {
                 Text("All").tag(0)
                 Text("Current").tag(1)
                 Text("Custom").tag(2)
             }
             .pickerStyle(.segmented)
+            .onChange(of: rangeTag) { _, tag in applyRangeTag(tag) }
 
             if rangeTag == 2 {
                 VStack(alignment: .leading, spacing: 4) {
@@ -319,19 +336,21 @@ struct ExportOptionsView: View {
 
     // MARK: - Range tag <-> ExportOptions sync
 
-    private var rangeTag: Int {
-        switch options.pageRange {
-        case .all:     return 0
-        case .current: return 1
-        case .range:   return 2
-        }
-    }
-
     private func applyRangeTag(_ tag: Int) {
         switch tag {
-        case 0:  options.pageRange = .all
-        case 1:  options.pageRange = .current(currentIndex)
-        default: validateCustomRange(customRange)
+        case 0:
+            options.pageRange = .all
+            rangeError = nil
+        case 1:
+            options.pageRange = .current(currentIndex)
+            rangeError = nil
+        default:
+            // Switching to "Custom" with no input shouldn't snap the
+            // picker back. Latched `rangeTag` keeps the segment on
+            // Custom; `validateCustomRange` either parses the typed
+            // value into `pageRange` or surfaces a `rangeError` that
+            // gates the Export button until valid input is entered.
+            validateCustomRange(customRange)
         }
     }
 
@@ -421,6 +440,9 @@ struct ExportOptionsView: View {
         let nb   = notebook
         let pgs  = pages
         let opts = options
+        // `pages` (`[Page]`) isn't Sendable, so capture only the count
+        // for the progress closure rather than the whole array.
+        let totalPagesCount = pgs.count
         exportTask = Task {
             do {
                 let result = try await ExportService.shared.exportNotebook(
@@ -428,7 +450,7 @@ struct ExportOptionsView: View {
                 ) { prog in
                     Task { @MainActor in
                         exportProgress  = prog
-                        completedPages  = Int(prog * Double(opts.pageRange.resolve(totalPages: pgs.count).count))
+                        completedPages  = Int(prog * Double(opts.pageRange.resolve(totalPages: totalPagesCount).count))
                     }
                 }
                 await MainActor.run {
@@ -452,18 +474,56 @@ struct ExportOptionsView: View {
 
     private func shareResult(_ result: ExportResult) {
         let vc = UIActivityViewController(activityItems: [result.fileURL], applicationActivities: nil)
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?
-            .rootViewController?.present(vc, animated: true)
+        // iPad popover anchor — required, otherwise UIKit raises.
+        if let pop = vc.popoverPresentationController,
+           let presenter = topmostPresentedViewController() {
+            pop.sourceView = presenter.view
+            pop.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.midY,
+                width: 0, height: 0
+            )
+            pop.permittedArrowDirections = []
+        }
+        topmostPresentedViewController()?.present(vc, animated: true)
     }
 
     private func saveToFiles(_ result: ExportResult) {
-        let picker = UIDocumentPickerViewController(forExporting: [result.fileURL])
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?
-            .rootViewController?.present(picker, animated: true)
+        // `asCopy: true` keeps the source file in place — the previous
+        // call moved it, leaving subsequent Share / Save attempts
+        // pointing at a missing URL. The picker must be presented
+        // from the topmost view controller (this view is itself in a
+        // sheet); presenting from `rootViewController` while another
+        // sheet is up causes UIKit to silently drop the presentation,
+        // which is why Save-to-Files appeared to "go through" without
+        // ever showing the Files picker.
+        let picker = UIDocumentPickerViewController(
+            forExporting: [result.fileURL],
+            asCopy: true
+        )
+        picker.shouldShowFileExtensions = true
+        topmostPresentedViewController()?.present(picker, animated: true)
+    }
+
+    /// Walks the key window's view-controller hierarchy to the
+    /// deepest currently-presented controller. Necessary because this
+    /// view is itself inside a sheet — presenting from the root
+    /// view-controller would attempt to present on a controller that
+    /// already has a `presentedViewController`, which UIKit refuses.
+    private func topmostPresentedViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive })
+                ?? UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: { $0.isKeyWindow })
+                ?? scene.windows.first,
+              var top = window.rootViewController
+        else { return nil }
+        while let presented = top.presentedViewController {
+            top = presented
+        }
+        return top
     }
 }
 

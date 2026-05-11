@@ -16,6 +16,11 @@ struct RecordingPanelView: View {
     @State private var elapsedTimer:      Timer?
     @State private var transcribeEnabled: Bool    = false
 
+    /// Both toggles in Settings → Audio. Read live so the recording
+    /// panel reflects current Settings without an editor restart.
+    @AppStorage("ink.audio.saveClips")    private var saveAudioClips: Bool = true
+    @AppStorage("ink.transcription.auto") private var autoTranscribe: Bool = true
+
     private let panelHeight: CGFloat = 180
 
     var body: some View {
@@ -105,6 +110,16 @@ struct RecordingPanelView: View {
                         )
                 }
                 .buttonStyle(.inkPressable)
+            }
+
+            if !saveAudioClips && !autoTranscribe {
+                // Recording is currently a no-op — surface the reason
+                // rather than silently discarding the user's voice.
+                Text("Audio and transcript are both off in Settings. Recordings won't be saved.")
+                    .font(.inkCaption)
+                    .foregroundColor(.inkTextTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, Ink.Spacing.md)
             }
 
             Button { dismiss() } label: {

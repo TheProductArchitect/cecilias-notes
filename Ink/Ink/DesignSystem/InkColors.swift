@@ -85,6 +85,15 @@ public extension UIColor {
     /// Use for the recording dot, mic-on indicator, etc.
     static let inkRecording = UIColor(hex: "#FF3B30")
 
+    // MARK: Canvas
+    /// Canvas host surface — white in light mode, `#1a1a1a` in dark
+    /// mode. Page templates and PencilKit strokes render on top.
+    static let inkCanvasBackground = UIColor { t in
+        t.userInterfaceStyle == .dark
+            ? UIColor(hex: "#1A1A1A")
+            : UIColor(hex: "#FFFFFF")
+    }
+
     // MARK: Hex convenience init
     convenience init(hex: String) {
         var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -121,6 +130,7 @@ public extension Color {
 
     static let inkDestructive = Color(UIColor.inkDestructive)
     static let inkRecording   = Color(UIColor.inkRecording)
+    static let inkCanvasBackground = Color(UIColor.inkCanvasBackground)
 
     // MARK: - Brand wordmark tokens
     //
@@ -142,4 +152,86 @@ public extension Color {
 
     /// Dot colour: the existing brand accent — fixed regardless of theme.
     static let brandDot = Color.inkAccentPrimary
+
+    /// Brand accent: Apple blue (#007AFF light / #0A84FF dark). Alias of
+    /// `inkAccentPrimary` exposed under the brand name for splash, home
+    /// header and About screen call-sites.
+    static let brandAccent = Color.inkAccentPrimary
+
+    // MARK: - Redesign tokens (Phase A foundation)
+    //
+    // Near-black/near-white anchors for places that need a fixed value
+    // regardless of theme (e.g. hard-coded ghost-letter overlays on
+    // light cover stock). `inkNearBlack` and `inkNearWhite` are
+    // intentionally non-adaptive — pair them with the surface they sit
+    // against, not with the system theme.
+
+    static let inkNearBlack = Color(hex: "#0a0a0a")
+    static let inkNearWhite = Color(hex: "#ffffff")
+
+    // MARK: Recessive opacity tokens
+    //
+    // Five rungs of low-contrast greys for sidebar labels, eyebrows,
+    // dividers, and other "present-but-quiet" text. The light values
+    // are the visible greys (#aaa…#ddd, lightest last). On dark mode
+    // the same hex values are darkened equivalents — sampled from the
+    // existing dark-grey ramp so contrast against the dark background
+    // stays comparable. They do not invert; they shift to the analogous
+    // dark-mode rung.
+
+    // Primary, quaternary, and quinary were tuned across two
+    // device-testing passes — the original rungs (`#aaaaaa…#dddddd`)
+    // sat right at the edge of legibility, and Phase D's contrast
+    // pass moved them firmly into "readable but recessive" territory.
+    // The dark-mode rungs are calibrated so light-mode-darker ↔
+    // dark-mode-lighter (more contrast against the surface).
+    static let inkRecessivePrimary = Color(
+        light: Color(hex: "#555555"),
+        dark:  Color(hex: "#a4a4a2")
+    )
+    static let inkRecessiveSecondary = Color(
+        light: Color(hex: "#bbbbbb"),
+        dark:  Color(hex: "#4d4d4b")
+    )
+    static let inkRecessiveTertiary = Color(
+        light: Color(hex: "#cccccc"),
+        dark:  Color(hex: "#3f3f3d")
+    )
+    static let inkRecessiveQuaternary = Color(
+        light: Color(hex: "#999999"),
+        dark:  Color(hex: "#6a6a67")
+    )
+    static let inkRecessiveQuinary = Color(
+        light: Color(hex: "#dddddd"),
+        dark:  Color(hex: "#2a2a28")
+    )
+}
+
+// MARK: - Color convenience initialisers
+
+public extension Color {
+    /// Hex string → Color. Accepts "#RRGGBB" or "RRGGBB". Invalid input
+    /// resolves to black (the rgb scanner returns 0).
+    init(hex: String) {
+        let cleaned = hex
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        let rgb = UInt64(cleaned, radix: 16) ?? 0
+        self.init(
+            red:   Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >>  8) & 0xFF) / 255,
+            blue:  Double( rgb        & 0xFF) / 255
+        )
+    }
+
+    /// Theme-adaptive Color built from explicit light / dark values.
+    /// Use for tokens whose dark-mode variant is *not* a simple
+    /// luminance flip of the light variant.
+    init(light: Color, dark: Color) {
+        self = Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(dark)
+                : UIColor(light)
+        })
+    }
 }

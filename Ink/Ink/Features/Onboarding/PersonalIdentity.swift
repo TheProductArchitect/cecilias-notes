@@ -7,26 +7,49 @@ import UIKit
 enum PersonalIdentity {
     static let nameKey               = "app.user.name"
     static let onboardingCompletedKey = "app.onboarding.completed"
+
+    /// App Group key the widget extension reads to render the
+    /// possessive in the brand wordmark. Must be kept in sync with
+    /// `nameKey` — every commit path that touches `nameKey` should
+    /// call `mirrorNameToAppGroup()` so the widget never lags the
+    /// app's identity.
+    static let appGroupNameKey = "user.displayName"
+    private static let appGroupSuite = "group.com.wave.venu.Ink"
+
+    /// Mirror the canonical user name into the App Group's shared
+    /// `UserDefaults` so the widget extension can read it. Falls
+    /// back to `nameKey` from `UserDefaults.standard` when no
+    /// explicit value is supplied — useful from app-launch hooks
+    /// that just want to make sure the App Group is in sync with
+    /// whatever the user previously committed. No-ops cleanly in
+    /// dev builds without the App Group entitlement.
+    static func mirrorNameToAppGroup(_ name: String? = nil) {
+        let resolved = name ?? UserDefaults.standard.string(forKey: nameKey) ?? ""
+        UserDefaults(suiteName: appGroupSuite)?
+            .set(resolved, forKey: appGroupNameKey)
+    }
 }
 
 // MARK: - Name validation
 
-/// Outcome of validating the onboarding TextField. The empty case is
-/// distinct from `invalid` because an empty input is an *accepted*
-/// completion — the user just opts out of personalisation. Only entries
-/// containing digits or emoji are rejected.
+/// Outcome of validating a name TextField. Onboarding now requires a
+/// name on first launch — the Continue button is disabled when input
+/// is empty, so this validator is only invoked on non-empty input.
+/// Empty input therefore falls through to `.invalid` (the defensive
+/// choice if a future caller forgets the gate); callers that want a
+/// "clear the name" path (Settings → About) should handle the
+/// empty case themselves before calling.
 enum NameValidationResult: Equatable {
-    /// Empty / whitespace only — accept silently, store no name.
-    case acceptEmpty
     /// Valid input. The associated value is the stored name (first
     /// whitespace-separated word, original casing preserved).
     case accept(String)
-    /// Contains digits or emoji. Show "Letters only, please." inline.
+    /// Empty input, or contains digits or emoji. Show
+    /// "Letters only, please." inline for the latter.
     case invalid
 }
 
 /// Runs the validation rules from the spec.
-///   • empty / whitespace → acceptEmpty
+///   • empty / whitespace               → invalid (callers must gate)
 ///   • any digit (U+0030…U+0039)        → invalid
 ///   • any extended-pictographic emoji   → invalid
 ///   • otherwise → accept(firstWord)
@@ -34,7 +57,7 @@ enum NameValidationResult: Equatable {
 /// Apostrophes, hyphens, diacritics, non-Latin letters all pass through.
 func validateName(_ input: String) -> NameValidationResult {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.isEmpty { return .acceptEmpty }
+    if trimmed.isEmpty { return .invalid }
 
     for scalar in trimmed.unicodeScalars {
         // Digits.
@@ -53,7 +76,7 @@ func validateName(_ input: String) -> NameValidationResult {
     let firstWord = trimmed.split(whereSeparator: { $0.isWhitespace })
         .first
         .map(String.init) ?? ""
-    if firstWord.isEmpty { return .acceptEmpty }
+    if firstWord.isEmpty { return .invalid }
     return .accept(firstWord)
 }
 

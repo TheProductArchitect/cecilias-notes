@@ -28,7 +28,9 @@ struct ExportRecord: Codable, Identifiable, Sendable {
         self.exportedAt    = exportedAt
     }
 
-    var fileExists: Bool {
+    /// `nonisolated` so the property reads cleanly from any actor —
+    /// `FileManager.default.fileExists(atPath:)` is thread-safe.
+    nonisolated var fileExists: Bool {
         FileManager.default.fileExists(atPath: fileURL.path)
     }
 

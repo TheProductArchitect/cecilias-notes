@@ -22,7 +22,7 @@ final class MediaImageCache {
         if let cached = cache.object(forKey: url as NSURL) { return cached }
         return await Task.detached(priority: .userInitiated) { [cache] () -> UIImage? in
             guard let image = UIImage(contentsOfFile: url.path) else { return nil }
-            cache.setObject(image, forKey: url as NSURL, cost: image.byteCount)
+            cache.setObject(image, forKey: url as NSURL, cost: image.uncheckedByteCount)
             return image
         }.value
     }
@@ -37,7 +37,9 @@ final class MediaImageCache {
 }
 
 private extension UIImage {
-    var byteCount: Int {
+    /// Cost estimate for `NSCache.setObject(_:forKey:cost:)`. Marked
+    /// `nonisolated` — see `PageThumbnailCache` for rationale.
+    nonisolated var uncheckedByteCount: Int {
         guard let cg = cgImage else { return 0 }
         return cg.height * cg.bytesPerRow
     }

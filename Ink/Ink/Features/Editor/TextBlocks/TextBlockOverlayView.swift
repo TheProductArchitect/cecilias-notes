@@ -86,56 +86,69 @@ struct TextBlockOverlayView: View {
         let ptRect  = layout.pointRect(pageSize: pageSize)
         let height  = blockHeights[block.id] ?? ptRect.height
 
-        VStack(spacing: 0) {
-            TextBlockView(
-                block:            block,
-                pageSize:         pageSize,
-                interactionState: state,
-                onHeightChange: { newHeight in
-                    blockHeights[block.id] = newHeight
-                },
-                onCommit: { attrString in
-                    commitBlock(block, attrString: attrString, layout: layout)
-                },
-                onBecomeActive: {
-                    activateBlock(block)
-                },
-                onRequestLink: { range in
-                    presentLinkPopover(for: block, range: range)
-                },
-                onRequestNextBlock: {
-                    focusNextTextBlock(after: block.id)
-                },
-                onRequestPreviousBlock: {
-                    focusPreviousTextBlock(before: block.id)
-                }
-            )
-        }
-        .frame(width: ptRect.width, height: height)
-        .background(blockBackground(state: state))
-        .overlay(blockBorder(state: state))
-        .position(x: ptRect.midX, y: ptRect.minY + height / 2)
-        .gesture(moveGesture(block: block, pageSize: pageSize))
-        .onTapGesture {
-            handleTap(on: block)
-        }
-        .overlay {
-            if state == .selected {
-                ResizeHandlesView(
-                    pageSize: pageSize,
-                    pointRect: CGRect(x: ptRect.origin.x, y: ptRect.minY,
-                                     width: ptRect.width, height: height),
-                    onResize: { handle, translation in
-                        handleResize(block: block, handle: handle,
-                                     translation: translation, pageSize: pageSize)
+        // Lecture-block routing. When the body's first line matches
+        // `lecture:<uuid>` we render `LectureBlockView` instead of
+        // the regular `TextBlockView`. The frame + position are
+        // owned by the same TextBlock layout math so the block sits
+        // exactly where the user dropped it — only the *contents*
+        // of the rectangle change. No move / resize / selection
+        // chrome for lecture blocks; the page is the scroll surface.
+        if let lectureId = LectureBlockView.parseRecordId(fromBody: block.content) {
+            LectureBlockView(recordId: lectureId, pageId: block.pageId)
+                .frame(width: ptRect.width, alignment: .topLeading)
+                .position(x: ptRect.midX, y: ptRect.minY + height / 2)
+        } else {
+            VStack(spacing: 0) {
+                TextBlockView(
+                    block:            block,
+                    pageSize:         pageSize,
+                    interactionState: state,
+                    onHeightChange: { newHeight in
+                        blockHeights[block.id] = newHeight
                     },
-                    onResizeEnded: {
-                        commitLayout(block: block, pageSize: pageSize)
+                    onCommit: { attrString in
+                        commitBlock(block, attrString: attrString, layout: layout)
+                    },
+                    onBecomeActive: {
+                        activateBlock(block)
+                    },
+                    onRequestLink: { range in
+                        presentLinkPopover(for: block, range: range)
+                    },
+                    onRequestNextBlock: {
+                        focusNextTextBlock(after: block.id)
+                    },
+                    onRequestPreviousBlock: {
+                        focusPreviousTextBlock(before: block.id)
                     }
                 )
             }
+            .frame(width: ptRect.width, height: height)
+            .background(blockBackground(state: state))
+            .overlay(blockBorder(state: state))
+            .position(x: ptRect.midX, y: ptRect.minY + height / 2)
+            .gesture(moveGesture(block: block, pageSize: pageSize))
+            .onTapGesture {
+                handleTap(on: block)
+            }
+            .overlay {
+                if state == .selected {
+                    ResizeHandlesView(
+                        pageSize: pageSize,
+                        pointRect: CGRect(x: ptRect.origin.x, y: ptRect.minY,
+                                         width: ptRect.width, height: height),
+                        onResize: { handle, translation in
+                            handleResize(block: block, handle: handle,
+                                         translation: translation, pageSize: pageSize)
+                        },
+                        onResizeEnded: {
+                            commitLayout(block: block, pageSize: pageSize)
+                        }
+                    )
+                }
+            }
+            // Deselect on tap outside — captured by the ZStack's clear layer below
         }
-        // Deselect on tap outside — captured by the ZStack's clear layer below
     }
 
     // MARK: - Backgrounds / borders

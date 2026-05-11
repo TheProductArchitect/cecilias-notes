@@ -4,36 +4,41 @@ import SwiftData
 @Model
 final class AudioAnnotation {
     // MARK: Identity
-    var id: UUID
+    var id: UUID = UUID()
 
     // MARK: Data
-    var pageId: UUID
+    var pageId: UUID = UUID()
     /// Denormalised from page.notebookId — required for building audio file URLs.
-    var notebookId: UUID
-    var fileName: String
-    var durationSeconds: Double
-    var fileSizeBytes: Int64
+    var notebookId: UUID = UUID()
+    var fileName: String = ""
+    var durationSeconds: Double = 0
+    var fileSizeBytes: Int64 = 0
     /// Plain-text transcription from on-device speech recognition.
     var transcription: String?
     /// Archived [TranscriptionSegment] for word-level highlighting.
     var transcriptionSegments: Data?
     /// True once updateTranscription has been called with a successful result.
-    var isTranscribed: Bool
+    var isTranscribed: Bool = false
     /// Archived [Float] RMS amplitudes, one per 50ms window. Used to render static waveform.
     var amplitudeData: Data?
 
     // MARK: Pin position — normalised 0.0–1.0 in page coordinate space
-    var pageX: Double
-    var pageY: Double
+    var pageX: Double = 0
+    var pageY: Double = 0
 
     // MARK: Timestamps
-    var recordedAt: Date
-    var createdAt: Date
-    var updatedAt: Date
+    var recordedAt: Date = Date()
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     // MARK: Soft delete
-    var isDeleted: Bool
+    var isDeleted: Bool = false
     var deletedAt: Date?
+
+    // MARK: Relationships
+    /// CloudKit-compatible back-reference to the owning page. The
+    /// `inverse:` on `Page.audioAnnotations` makes this bidirectional.
+    @Relationship var page: Page?
 
     // MARK: Init
     init(

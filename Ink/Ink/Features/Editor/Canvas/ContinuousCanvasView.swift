@@ -61,7 +61,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let host = UIView()
-        host.backgroundColor = .inkBackgroundSecondary
+        host.backgroundColor = .inkCanvasBackground
         host.isUserInteractionEnabled = true
 
         let scrollView = UIScrollView(frame: host.bounds)
@@ -91,18 +91,52 @@ struct ContinuousCanvasView: UIViewRepresentable {
         contentView.isUserInteractionEnabled = true
         scrollView.addSubview(contentView)
 
-        // Floating overlay layer — text/media/audio overlays for the
-        // currently active page. Re-parented to the active page host as
-        // the user scrolls.
-        let overlayLayer = UIView(frame: .zero)
+        // Floating overlay layer — hosts the audio-annotation pins for
+        // the active page. `AudioPassthroughContainer` lets empty-area
+        // taps fall through to PKCanvasView while still routing taps
+        // on actual SwiftUI pin views. Re-parented to the active page
+        // host as the user scrolls.
+        let overlayLayer = AudioPassthroughContainer(frame: .zero)
         overlayLayer.backgroundColor = .clear
         overlayLayer.isUserInteractionEnabled = true
         contentView.addSubview(overlayLayer)
 
-        context.coordinator.host         = host
-        context.coordinator.scrollView   = scrollView
-        context.coordinator.contentView  = contentView
-        context.coordinator.overlayLayer = overlayLayer
+        // Audio pin overlays are mounted PER-PAGE inside each
+        // `PageRenderer` below — the single global overlay that
+        // used to live here re-parented onto the active page via
+        // `installOverlayLayerIntoActivePage`, which lagged behind
+        // the scroll and made pins appear to drift relative to
+        // their pages. Per-page mounting eliminates the lag: each
+        // overlay is a child of its page renderer and scrolls with
+        // it mechanically.
+
+        // Sticky notes — second SwiftUI overlay sharing the same
+        // passthrough container. The view itself toggles its
+        // interactive surface (full-bleed placement layer vs.
+        // marker-only taps) based on `viewModel.selectedTool`.
+        let stickyHost = UIHostingController(
+            rootView: StickyNotesOverlayView(viewModel: viewModel)
+        )
+        stickyHost.view.backgroundColor = .clear
+        stickyHost.view.translatesAutoresizingMaskIntoConstraints = false
+        overlayLayer.addSubview(stickyHost.view)
+        NSLayoutConstraint.activate([
+            stickyHost.view.topAnchor.constraint(equalTo: overlayLayer.topAnchor),
+            stickyHost.view.leadingAnchor.constraint(equalTo: overlayLayer.leadingAnchor),
+            stickyHost.view.trailingAnchor.constraint(equalTo: overlayLayer.trailingAnchor),
+            stickyHost.view.bottomAnchor.constraint(equalTo: overlayLayer.bottomAnchor),
+        ])
+
+        context.coordinator.host             = host
+        context.coordinator.scrollView       = scrollView
+        context.coordinator.contentView      = contentView
+        context.coordinator.overlayLayer     = overlayLayer
+        // `audioPinsHost` is intentionally left nil — audio pin
+        // overlays now mount per-page inside each `PageRenderer`
+        // (see the page-mount loop below). The coordinator's
+        // `audioPinsHost` slot stays in the model for legacy
+        // diagnostics but isn't populated.
+        context.coordinator.stickyNotesHost  = stickyHost
 
         // Two-finger double tap → 100% zoom. The page-by-page two-finger
         // *swipe* navigation is intentionally absent — continuous scroll
@@ -200,11 +234,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
         weak var scrollView:   UIScrollView?
         weak var contentView:  UIView?
         weak var overlayLayer: UIView?
+        // Strong ref — UIHostingController keeps the SwiftUI overlay
+        // alive. Released when the coordinator deinits (i.e. when the
+        // editor view is dismissed).
+        var audioPinsHost: UIHostingController<AudioAnnotationPinsOverlayView>?
+        /// Strong ref to the sticky-notes hosting controller — same
+        /// pattern as `audioPinsHost`. Released when the coordinator
+        /// deinits.
+        var stickyNotesHost: UIHostingController<StickyNotesOverlayView>?
 
         struct PageHostState {
             let pageId: UUID
             var frame: CGRect              // in contentView coords
-            let renderer: PageRenderer     // always mounted
+            let renderer: PageRenderer     // always mounted (paper bg)
+            /// SwiftUI `TemplatePatternView` mounted inside the
+            /// renderer to paint the page's template pattern. Kept as
+            /// a strong ref alongside the renderer so the controller
+            /// outlives `mountCanvas` / `unmountCanvas` cycles.
+            var templateHost: UIHostingController<TemplatePatternView>
+            var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
             var isDirty: Bool = false
@@ -272,13 +320,123 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     width: baseSize.width,
                     height: h
                 )
-                let renderer = PageRenderer(pageSize: page.pageSize, template: page.backgroundTemplate)
+                let renderer = PageRenderer(pageSize: page.pageSize)
                 renderer.frame = frame
+
+                // PDF-backed pages draw the source PDF page on top of
+                // the paper; their template overlay is hidden (a PDF
+                // background and a template pattern shouldn't stack).
+                if let pdfIndex = page.pdfPageIndex,
+                   let sourceURL = viewModel.notebook.sourcePDFURL {
+                    renderer.updatePDFBacking(sourceURL: sourceURL, pageIndex: pdfIndex)
+                    // Wire the page id so the renderer can paint
+                    // `PDFTextAnnotationStore` records (highlights,
+                    // underlines, strikethroughs) on top of the PDF
+                    // background. Reactive to store changes via the
+                    // observer set up inside `attachPageId`.
+                    renderer.attachPageId(page.id)
+                    // Subscribe to the editor's pulse signal. Every
+                    // PDF-backed renderer observes the same
+                    // publisher; only the renderer whose page holds
+                    // the matching record actually animates.
+                    renderer.attachPulseSource(viewModel.$pulsingAnnotationId)
+                }
+
+                // Mount the SwiftUI template pattern inside the
+                // renderer so paper colour (UIKit, theme-aware) sits
+                // behind the pattern (SwiftUI Canvas, theme-agnostic).
+                let templateHost = UIHostingController(
+                    rootView: TemplatePatternView(template: page.backgroundTemplate)
+                )
+                templateHost.view.backgroundColor = .clear
+                templateHost.view.isUserInteractionEnabled = false
+                templateHost.view.isHidden = page.pdfPageIndex != nil
+                templateHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(templateHost.view)
+                NSLayoutConstraint.activate([
+                    templateHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    templateHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    templateHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    templateHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+
+                // Image attachments layer — sits ABOVE the
+                // background (template / PDF) and BELOW the
+                // PencilKit canvas. The hierarchy is non-negotiable
+                // per the architecture rule: PKCanvasView is always
+                // the topmost interactive layer so handwriting
+                // overwrites images cleanly.
+                let imagesHost = UIHostingController(
+                    rootView: ImageAttachmentsView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        pageSize: CGSize(width: baseSize.width, height: h)
+                    )
+                )
+                imagesHost.view.backgroundColor = .clear
+                imagesHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(imagesHost.view)
+                NSLayoutConstraint.activate([
+                    imagesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    imagesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    imagesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    imagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+
+                // Audio pin overlay — per-page, scoped to this
+                // page's id. Replaces the legacy single-overlay
+                // design that re-parented onto the active page and
+                // caused pins to drift on scroll. Lives in the
+                // page renderer's coordinate space so positions
+                // need no scroll-offset math.
+                let audioPinsHost = UIHostingController(
+                    rootView: AudioAnnotationPinsOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id
+                    )
+                )
+                audioPinsHost.view.backgroundColor = .clear
+                audioPinsHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(audioPinsHost.view)
+                NSLayoutConstraint.activate([
+                    audioPinsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    audioPinsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    audioPinsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    audioPinsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+
+                // Lecture-block overlay — per-page, renders the
+                // proper `LectureBlockView` (header / summary /
+                // transcript toggle / playback) in place of any
+                // `lecture:<uuid>` TextBlock on this page. The
+                // legacy routing path via `TextBlockOverlayView`
+                // is not mounted in the canvas hierarchy, so this
+                // overlay is the only render site for lecture
+                // blocks until that view is wired in.
+                let lectureHost = UIHostingController(
+                    rootView: LectureBlocksOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        pageSize: CGSize(width: baseSize.width, height: h)
+                    )
+                )
+                lectureHost.view.backgroundColor = .clear
+                lectureHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(lectureHost.view)
+                NSLayoutConstraint.activate([
+                    lectureHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    lectureHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    lectureHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    lectureHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
-                    pageId: page.id,
-                    frame: frame,
-                    renderer: renderer
+                    pageId:       page.id,
+                    frame:        frame,
+                    renderer:     renderer,
+                    templateHost: templateHost,
+                    template:     page.backgroundTemplate
                 ))
                 y += h + pageGap
             }
@@ -320,13 +478,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
             var needsLayoutRebuild = false
             for i in hosts.indices {
                 guard let page = page(for: hosts[i].pageId) else { continue }
-                let templateChanged   = hosts[i].renderer.template != page.backgroundTemplate
+                let templateChanged   = hosts[i].template != page.backgroundTemplate
                 let pageSizeChanged   = hosts[i].renderer.pageSize != page.pageSize
                 let effective         = effectiveHeight(for: page)
                 let extraHeightChanged = abs(hosts[i].frame.height - effective) > 0.5
-                if templateChanged || pageSizeChanged {
-                    hosts[i].renderer.update(pageSize: page.pageSize,
-                                             template: page.backgroundTemplate)
+                if pageSizeChanged {
+                    hosts[i].renderer.update(pageSize: page.pageSize)
+                }
+                if templateChanged {
+                    hosts[i].template = page.backgroundTemplate
+                    hosts[i].templateHost.rootView =
+                        TemplatePatternView(template: page.backgroundTemplate)
                 }
                 if pageSizeChanged || extraHeightChanged {
                     needsLayoutRebuild = true
@@ -460,6 +622,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
             contentView.addSubview(canvas)
             hosts[i].canvasView = canvas
+
+            // Keep the overlay layer (audio pins + sticky notes) above
+            // every newly-mounted canvas in z-order. Without this,
+            // PKCanvasView claims finger hit-tests inside its bounds
+            // and the overlays never see taps. Pencil events bypass
+            // the overlay via `AudioPassthroughContainer.hitTest`'s
+            // stylus check, so this doesn't block drawing.
+            if let overlayLayer { contentView.bringSubviewToFront(overlayLayer) }
 
             // Active-page binding — see updateActivePageFromScroll for the
             // primary ownership of `viewModel.canvasView`.
@@ -726,6 +896,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
             isStrokeInProgress = true
+            // Notify the redesigned header's state machine so it can
+            // slide out of the way as soon as drawing begins (or, if
+            // it was manually revealed, arm the 2-second grace re-hide).
+            viewModel.notifyHeaderStrokeBegan()
         }
 
         func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {

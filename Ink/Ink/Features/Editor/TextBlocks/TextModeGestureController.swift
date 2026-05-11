@@ -86,6 +86,14 @@ typealias TextModeGestureController = ContentLayerGestureController
 final class AudioPassthroughContainer: UIView {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard !isHidden, isUserInteractionEnabled, alpha > 0.01 else { return nil }
+        // Pencil: always pass through. Strokes belong to PKCanvasView
+        // below; the overlay is finger-only for sticky-note placement
+        // and pin taps. Without this guard, bringing the overlay
+        // above the canvas would block Pencil drawing.
+        if let touches = event?.allTouches,
+           touches.contains(where: { $0.type == .stylus }) {
+            return nil
+        }
         guard self.point(inside: point, with: event) else { return nil }
         for subview in subviews.reversed() {
             let converted = subview.convert(point, from: self)

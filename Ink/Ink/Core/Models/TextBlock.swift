@@ -4,30 +4,38 @@ import SwiftData
 @Model
 final class TextBlock {
     // MARK: Identity
-    var id: UUID
+    var id: UUID = UUID()
 
     // MARK: Data
-    var pageId: UUID
+    /// Raw foreign-key UUID — preserved for read paths that haven't
+    /// migrated to the `page` relationship. Always set in lockstep
+    /// with `page` when writing.
+    var pageId: UUID = UUID()
     /// Plain text — used for full-text search indexing only.
-    var content: String
+    var content: String = ""
     /// Archived NSAttributedString — the rendering source of truth.
     var richTextData: Data?
 
     // MARK: Layout — normalised 0.0–1.0 in page coordinate space
-    var x: Double
-    var y: Double
-    var width: Double
-    var height: Double
-    var rotation: Double  // radians
-    var zIndex: Int
+    var x: Double = 0
+    var y: Double = 0
+    var width: Double = 0
+    var height: Double = 0
+    var rotation: Double = 0  // radians
+    var zIndex: Int = 0
 
     // MARK: Timestamps
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     // MARK: Soft delete
-    var isDeleted: Bool
+    var isDeleted: Bool = false
     var deletedAt: Date?
+
+    // MARK: Relationships
+    /// CloudKit-compatible back-reference to the owning page. The
+    /// `inverse:` on `Page.textBlocks` makes this bidirectional.
+    @Relationship var page: Page?
 
     // MARK: Init
     init(pageId: UUID, x: Double, y: Double, width: Double, height: Double) {

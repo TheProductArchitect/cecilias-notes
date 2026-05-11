@@ -39,6 +39,14 @@ struct OnboardingView: View {
         return firstChar ?? "i"
     }
 
+    /// True when there is at least one non-whitespace character. The
+    /// onboarding flow now requires a name — Continue is disabled
+    /// until this is true, so empty submissions can't escape the
+    /// cover. Whitespace-only input also reads as empty.
+    private var isValidInput: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
         ZStack {
             Color.inkBackgroundPrimary.ignoresSafeArea()
@@ -102,8 +110,15 @@ struct OnboardingView: View {
                     .frame(height: 18)
             }
 
+            // Continue is disabled until the user types a non-empty
+            // name. `.disabled` suppresses the tap (no haptic, no
+            // press animation), and the 0.4 opacity mirrors the spec's
+            // visual disabled state.
             InkButton("Continue", style: .primary) { commit() }
                 .frame(maxWidth: 280)
+                .disabled(!isValidInput)
+                .opacity(isValidInput ? 1 : 0.4)
+                .animation(.inkSpring(InkSpring.fade), value: isValidInput)
 
             Spacer()
         }
@@ -114,13 +129,12 @@ struct OnboardingView: View {
     // MARK: Commit
 
     private func commit() {
-        switch validateName(inputText) {
-        case .acceptEmpty:
-            userName = ""
-            persistOnboardingCompleted()
-            // Empty input → no icon change, no transition. Just dismiss.
-            onComplete()
+        // The Continue button is disabled when input is empty, so we
+        // shouldn't reach `commit()` with whitespace-only text — but
+        // guard anyway in case `.onSubmit` fires from the keyboard.
+        guard isValidInput else { return }
 
+        switch validateName(inputText) {
         case .invalid:
             validationError = true
             HapticManager.shared.contextMenuOpened()  // light "nope" feedback
@@ -128,6 +142,10 @@ struct OnboardingView: View {
 
         case .accept(let firstWord):
             userName = firstWord
+            // Mirror to the App Group so the widget extension renders
+            // the user's possessive on the home screen, not the
+            // brand fallback "cecilia's notes·".
+            PersonalIdentity.mirrorNameToAppGroup(firstWord)
             // Persist completion **immediately** so the user is never
             // shown onboarding again, even if they kill the app during
             // the 1.4s personalising transition + icon-switch alert.
@@ -269,11 +287,22 @@ struct YourNameCard: View {
     }
 
     private func commit() {
-        switch validateName(buffer) {
-        case .acceptEmpty:
-            // Empty + commit = clear name. Reverts to default icon.
+        // Settings → About explicitly allows the user to *clear* their
+        // name (graceful fallback to "cecilia's." in the splash and a
+        // blank masthead). The shared validator now treats empty as
+        // `.invalid` to keep onboarding strict, so we handle the clear
+        // path here before delegating.
+        let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
             userName = ""
+            buffer   = ""
+            validationError = false
             updateAppIcon(for: "")
+            PersonalIdentity.mirrorNameToAppGroup("")
+            return
+        }
+
+        switch validateName(buffer) {
         case .invalid:
             validationError = true
             HapticManager.shared.contextMenuOpened()
@@ -281,6 +310,7 @@ struct YourNameCard: View {
             userName = firstWord
             buffer   = firstWord    // reflect normalisation
             updateAppIcon(for: firstWord)
+            PersonalIdentity.mirrorNameToAppGroup(firstWord)
         }
     }
 }

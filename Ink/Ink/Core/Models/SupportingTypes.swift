@@ -27,85 +27,113 @@ public enum PageSize: String, Codable, Sendable, CaseIterable {
 
 // MARK: - PageTemplate
 
-public enum PageTemplate: Codable, Sendable, Hashable {
+/// Flat enum of all 18 page templates organised across 5 categories.
+/// Backed by `String` raw value so SwiftData persists each template
+/// as a single token (`"narrowRuled"`) instead of a JSON blob — the
+/// rendering parameters (line spacing, dot size, etc.) are baked into
+/// the case rather than expressed as associated values.
+public enum PageTemplate: String, Codable, Sendable, Hashable, CaseIterable {
+
+    // Lined
     case blank
-    case lined(spacing: CGFloat)
-    case grid(spacing: CGFloat)
-    case dotGrid(spacing: CGFloat, dotSize: CGFloat)
+    case narrowRuled
+    case wideRuled
+    case collegeRuled
+    case twoColumn
+
+    // Dotted
+    case dotGrid5
+    case dotGrid10
+    case isoDots
+
+    // Grid
+    case squareGrid5
+    case squareGrid10
+    case engineeringGrid
+
+    // Specialised
     case cornell
     case music
+    case storyboard
+    case mindMap
 
-    private enum CodingKeys: String, CodingKey {
-        case type, spacing, dotSize
-    }
+    // Planning
+    case calendarWeek
+    case dayPlanner
+    case taskList
+    case habitTracker
 
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
+    public var category: TemplateCategory {
         switch self {
-        case .blank:
-            try c.encode("blank", forKey: .type)
-        case .lined(let s):
-            try c.encode("lined", forKey: .type)
-            try c.encode(s, forKey: .spacing)
-        case .grid(let s):
-            try c.encode("grid", forKey: .type)
-            try c.encode(s, forKey: .spacing)
-        case .dotGrid(let s, let d):
-            try c.encode("dotGrid", forKey: .type)
-            try c.encode(s, forKey: .spacing)
-            try c.encode(d, forKey: .dotSize)
-        case .cornell:
-            try c.encode("cornell", forKey: .type)
-        case .music:
-            try c.encode("music", forKey: .type)
+        case .blank, .narrowRuled, .wideRuled, .collegeRuled, .twoColumn:
+            return .lined
+        case .dotGrid5, .dotGrid10, .isoDots:
+            return .dotted
+        case .squareGrid5, .squareGrid10, .engineeringGrid:
+            return .grid
+        case .cornell, .music, .storyboard, .mindMap:
+            return .specialised
+        case .calendarWeek, .dayPlanner, .taskList, .habitTracker:
+            return .planning
         }
     }
 
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        switch try c.decode(String.self, forKey: .type) {
-        case "lined":
-            self = .lined(spacing: try c.decode(CGFloat.self, forKey: .spacing))
-        case "grid":
-            self = .grid(spacing: try c.decode(CGFloat.self, forKey: .spacing))
-        case "dotGrid":
-            self = .dotGrid(
-                spacing: try c.decode(CGFloat.self, forKey: .spacing),
-                dotSize: try c.decode(CGFloat.self, forKey: .dotSize)
-            )
-        case "cornell": self = .cornell
-        case "music":   self = .music
-        default:        self = .blank
+    public var displayName: String {
+        switch self {
+        case .blank:           return "blank"
+        case .narrowRuled:     return "narrow ruled"
+        case .wideRuled:       return "wide ruled"
+        case .collegeRuled:    return "college ruled"
+        case .twoColumn:       return "two column"
+        case .dotGrid5:        return "dot grid 5mm"
+        case .dotGrid10:       return "dot grid 10mm"
+        case .isoDots:         return "iso dots"
+        case .squareGrid5:     return "grid 5mm"
+        case .squareGrid10:    return "grid 10mm"
+        case .engineeringGrid: return "engineering"
+        case .cornell:         return "cornell"
+        case .music:           return "music"
+        case .storyboard:      return "storyboard"
+        case .mindMap:         return "mind map"
+        case .calendarWeek:    return "week"
+        case .dayPlanner:      return "day"
+        case .taskList:        return "tasks"
+        case .habitTracker:    return "habits"
         }
     }
 
     // MARK: String bridge (used by SwiftData stored properties)
 
-    /// JSON-encodes the template to a String that SwiftData can store natively.
-    var jsonString: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let str  = String(data: data, encoding: .utf8)
-        else { return "{\"type\":\"blank\"}" }
-        return str
-    }
+    /// `Notebook.defaultTemplateRaw` and `Page.backgroundTemplateRaw`
+    /// are stored as `String` columns. With the flat enum the bridge
+    /// is just the raw value — no JSON encoding required.
+    var jsonString: String { rawValue }
 
-    /// Decodes from a JSON string; returns `.blank` on any failure.
+    /// Decodes from a stored token. Returns `.blank` on any failure
+    /// (unknown raw values, empty string).
     static func from(jsonString: String) -> PageTemplate {
-        guard let data = jsonString.data(using: .utf8),
-              let val  = try? JSONDecoder().decode(PageTemplate.self, from: data)
-        else { return .blank }
-        return val
+        PageTemplate(rawValue: jsonString) ?? .blank
     }
+}
 
-    // Sensible defaults used in the library picker UI.
-    public static let defaults: [PageTemplate] = [
-        .blank,
-        .lined(spacing: 32),
-        .grid(spacing: 24),
-        .dotGrid(spacing: 24, dotSize: 2),
-        .cornell,
-        .music,
-    ]
+// MARK: - TemplateCategory
+
+public enum TemplateCategory: String, CaseIterable, Sendable, Hashable {
+    case lined
+    case dotted
+    case grid
+    case specialised
+    case planning
+
+    public var displayName: String {
+        switch self {
+        case .lined:       return "lined"
+        case .dotted:      return "dotted"
+        case .grid:        return "grid"
+        case .specialised: return "specialised"
+        case .planning:    return "planning"
+        }
+    }
 }
 
 // MARK: - CoverTexture
@@ -147,14 +175,42 @@ public struct TranscriptionSegment: Codable, Sendable, Hashable {
 public struct SearchResult: Sendable {
     public let notebookId: UUID
     public let pageId: UUID?
+    /// 1-based page number for matches inside a page (notebook-title
+    /// hits leave this nil). The library results UI surfaces this as
+    /// "page 7" beneath the notebook title.
+    public let pageNumber: Int?
+    /// ±40-char window around the match, with `… ` ellipsis when
+    /// truncated on either side. The query word itself is preserved
+    /// verbatim so the UI can find and bold it.
     public let context: String
     public let type: SearchResultType
+
+    public init(
+        notebookId: UUID,
+        pageId: UUID?      = nil,
+        pageNumber: Int?   = nil,
+        context: String,
+        type: SearchResultType
+    ) {
+        self.notebookId = notebookId
+        self.pageId     = pageId
+        self.pageNumber = pageNumber
+        self.context    = context
+        self.type       = type
+    }
 }
 
 public enum SearchResultType: Sendable {
+    case notebookTitle
     case textBlock
     case transcription
-    case notebookTitle
+    case handwriting
+    /// Hit inside a long-form lecture transcript (`LectureStore`).
+    /// Renders identically to `.transcription` in the UI — same
+    /// "Transcripts" section, same row style, same snippet. Kept as
+    /// a separate case so the source surface is unambiguous for
+    /// future filters / debugging.
+    case lectureTranscript
 }
 
 // MARK: - Storage info

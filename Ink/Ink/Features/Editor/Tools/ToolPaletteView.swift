@@ -27,30 +27,40 @@ struct ToolPaletteView: View {
     /// Which category, if any, is showing its variant picker popover.
     @State private var openVariantCategory: ToolCategory?
 
-    /// Per-orientation persisted edge. The default values match the spec
-    /// (top in portrait, right in landscape) and are written through to
-    /// UserDefaults on first read by SwiftUI.
-    @AppStorage("ink.toolbar.portraitEdge")  private var portraitEdgeRaw:  String = ToolbarEdgeBinding.portraitDefault.rawValue
-    @AppStorage("ink.toolbar.landscapeEdge") private var landscapeEdgeRaw: String = ToolbarEdgeBinding.landscapeDefault.rawValue
+    /// Per-notebook persisted edge — keyed by the notebook UUID per the
+    /// redesign spec. Replaces the older per-orientation pair (which
+    /// remembered different edges for landscape vs portrait): each
+    /// notebook now gets its own remembered position, read on appear
+    /// and written on drag-end. Default is `.right` (vertical pill on
+    /// the right edge — the closest snap-to-edge analogue of the spec's
+    /// "bottom-right" default for users who haven't moved it yet).
+    @State private var resolvedEdgeRaw: String = ToolbarEdge.right.rawValue
+    private var positionKey: String {
+        "toolbar.position.\(viewModel.notebook.id.uuidString)"
+    }
 
     @Namespace private var toolNamespace
 
-    private let paletteThickness: CGFloat = 48        // short axis of the pill
-    private let buttonSize:       CGFloat = 36
+    private let paletteThickness: CGFloat = 56        // short axis of the pill
+    /// 44pt buttons match Apple HIG's tap-target minimum and pair
+    /// with `.contentShape(Rectangle())` inside each Button's label
+    /// so Pencil taps register anywhere in the visible button area —
+    /// not just on the SF Symbol's glyph.
+    private let buttonSize:       CGFloat = 44
     private let edgePadding:      CGFloat = 12
-    /// Vertical space reserved at the top edge for `EditorToolbarView`
-    /// (52pt tall, see EditorToolbarView.toolbarHeight). The palette stays
-    /// below the toolbar's resting position even after it auto-hides, so
-    /// the user never sees the palette jump up when the toolbar fades.
-    private let topToolbarReserved: CGFloat = 52
+    /// Reserved vertical space at the top edge — equal to the cover-tone
+    /// header height (56pt) when the header is on screen, dropping to a
+    /// thin 3pt sliver when it has auto-hidden. Reactive so a manual
+    /// header reveal animates the palette downward instead of leaving
+    /// it tucked under the title.
+    private var topToolbarReserved: CGFloat {
+        viewModel.headerVisibility.isHeaderVisible ? 56 : 3
+    }
 
-    /// Resolved edge for the current orientation.
+    /// Resolved edge — read from `resolvedEdgeRaw` (per-notebook).
+    /// Falls back to `.right` if the persisted value can't decode.
     private var edge: ToolbarEdge {
-        let raw = ToolbarEdgeBinding.isLandscape(parentSize) ? landscapeEdgeRaw : portraitEdgeRaw
-        return ToolbarEdge(rawValue: raw) ??
-            (ToolbarEdgeBinding.isLandscape(parentSize)
-                ? ToolbarEdgeBinding.landscapeDefault
-                : ToolbarEdgeBinding.portraitDefault)
+        ToolbarEdge(rawValue: resolvedEdgeRaw) ?? .right
     }
 
     var body: some View {
@@ -65,6 +75,17 @@ struct ToolPaletteView: View {
         }
         .ignoresSafeArea(edges: .all)               // we manage insets manually
         .animation(.inkSpring(InkSpring.snappy), value: edge)
+        // Re-flow the palette when the header slides in or out so a
+        // top-edge palette doesn't end up sitting under the cover-tone
+        // header, and snaps back into place when the header hides.
+        .animation(.inkSpring(InkSpring.snappy),
+                   value: viewModel.headerVisibility.isHeaderVisible)
+        .onAppear {
+            // Hydrate from per-notebook UserDefaults on first paint.
+            if let stored = UserDefaults.standard.string(forKey: positionKey) {
+                resolvedEdgeRaw = stored
+            }
+        }
         .popover(isPresented: $viewModel.isShowingColorPicker) {
             ColorPickerView(viewModel: viewModel) {
                 viewModel.isShowingColorPicker = false
@@ -136,6 +157,18 @@ struct ToolPaletteView: View {
         toolButton(.lasso)
         toolButton(.ruler)
         toolButton(.text)
+        // Image tool — available on every notebook, slots between
+        // text and sticky-note per the import spec. Selection and
+        // manipulation only kick in when this tool is active; any
+        // other tool leaves images inert so handwriting can draw
+        // over them undisturbed.
+        toolButton(.image)
+        // Sticky-note tool surfaces only for PDF-backed notebooks.
+        // Non-PDF notebooks have inline text via `.text` and don't
+        // need anchored sticky comments.
+        if viewModel.notebook.isPDFBacked {
+            toolButton(.stickyNote)
+        }
 
         divider
         colourDot
@@ -147,28 +180,25 @@ struct ToolPaletteView: View {
 
     // MARK: Shape recognition toggle
 
-    /// Tap to toggle. Active state uses the accent colour.
+    /// Tap to toggle. Active state uses the brand accent.
     private var shapeRecognitionToggle: some View {
         Button {
             viewModel.shapeRecognitionEnabled.toggle()
             HapticManager.shared.toolSwitched()
         } label: {
-            ZStack {
-                if viewModel.shapeRecognitionEnabled {
-                    Circle()
-                        .fill(Color.inkAccentPrimary.opacity(0.18))
-                        .frame(width: 32, height: 32)
-                }
-                Image(systemName: "rectangle.dashed.badge.record")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(viewModel.shapeRecognitionEnabled
-                                     ? .inkAccentPrimary
-                                     : .inkTextSecondary)
-            }
-            .frame(width: buttonSize, height: buttonSize)
+            // Active state: icon turns brand accent — no fill circle.
+            // Phase D removed the filled-pill treatment to match the
+            // editorial restraint elsewhere ("select" in the grid
+            // toolbar uses colour-only too).
+            Image(systemName: "rectangle.dashed.badge.record")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(viewModel.shapeRecognitionEnabled
+                                 ? .brandAccent
+                                 : .inkRecessiveSecondary)
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
         .accessibilityLabel(
             viewModel.shapeRecognitionEnabled
                 ? "Shape Recognition: on"
@@ -238,19 +268,20 @@ struct ToolPaletteView: View {
 
     private var dot: some View {
         Circle()
-            .fill(Color.inkTextTertiary)
-            .frame(width: 3, height: 3)
+            .fill(Color.inkRecessiveTertiary)
+            .frame(width: 2, height: 2)
     }
 
     // MARK: Background
 
     private var paletteBackground: some View {
-        RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
-            .fill(Color.inkBackgroundElevated)
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(Color(.systemBackground).opacity(0.96))
             .overlay(
-                RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
-                    .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.inkRecessiveQuaternary, lineWidth: 0.5)
             )
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 2)
     }
 
     @ViewBuilder
@@ -280,39 +311,47 @@ struct ToolPaletteView: View {
         let isActive       = category.variants.contains(viewModel.selectedTool.identity)
 
         return Button {
-            handleCategoryTap(category, isActive: isActive)
+            handleCategoryTap(category)
         } label: {
+            // Phase D: active state is icon-colour-only (brand accent),
+            // no filled pill. The matched-geometry indicator is gone
+            // with the fill — there's nothing to slide between buttons
+            // any more.
             ZStack {
-                if isActive {
-                    Circle()
-                        .fill(Color.inkAccentPrimary.opacity(0.18))
-                        .frame(width: 32, height: 32)
-                        .matchedGeometryEffect(id: "activeToolIndicator", in: toolNamespace)
-                }
                 Image(systemName: currentVariant.systemImage)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(isActive ? .inkAccentPrimary : .inkTextSecondary)
+                    .foregroundColor(isActive ? .brandAccent : .inkRecessiveSecondary)
 
                 // "Has variants" affordance — small dot at the bottom-trailing
-                // corner. Skipped for highlighter (only one variant today).
+                // corner. Now appears on highlighter too (underline +
+                // strikethrough variants).
                 if category.variants.count > 1 {
                     Circle()
-                        .fill(Color.inkTextTertiary)
+                        .fill(Color.inkRecessiveTertiary)
                         .frame(width: 3, height: 3)
                         .offset(x: 11, y: 11)
                 }
             }
             .frame(width: buttonSize, height: buttonSize)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
-        // The variant picker is opened by tapping an *already-active*
-        // category (see `handleCategoryTap`). The previous build also
-        // mounted a `.simultaneousGesture(LongPressGesture)` here as a
-        // second access path; that gesture raced with the Button's
-        // tap recogniser and frequently ate the first tap, so most
-        // tool selections needed two taps. Dropped — single-tap to
-        // activate, second tap on an active category to open variants.
+        // Long-press → variant picker. `.highPriorityGesture` makes
+        // the long-press resolve *before* the Button's internal tap
+        // recogniser — so a hold reaches the variant picker without
+        // racing the Button. Quick taps fail the 0.4s threshold and
+        // still fall through to the Button's tap. The earlier
+        // `.onLongPressGesture` form sat downstream of the Button
+        // and never saw events on iOS 17+ because the Button's tap
+        // gesture absorbed the press first.
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.4)
+                .onEnded { _ in
+                    guard category.variants.count > 1 else { return }
+                    HapticManager.shared.contextMenuOpened()
+                    openVariantCategory = category
+                }
+        )
         .accessibilityLabel(A11y.toolLabel(name: category.displayName, isActive: isActive))
         .accessibilityHint(A11y.toolHint)
         // Variant picker popover anchored to this button.
@@ -327,15 +366,13 @@ struct ToolPaletteView: View {
         }
     }
 
-    private func handleCategoryTap(_ category: ToolCategory, isActive: Bool) {
-        if isActive && category.variants.count > 1 {
-            // Already-active category → open variant picker.
-            openVariantCategory = category
-            HapticManager.shared.toolSwitched()
-            return
-        }
-        // Inactive (or single-variant) category → activate its last-used variant.
+    private func handleCategoryTap(_ category: ToolCategory) {
+        // Tap always activates the category's last-used variant.
+        // Re-tapping an already-active category is a no-op (no flash,
+        // no animation churn). The variant picker is opened via
+        // long-press — see the gesture on `categoryButton`.
         let variant = ToolCategoryStore.lastVariant(for: category)
+        guard viewModel.selectedTool.identity != variant else { return }
         withAnimation(.inkSpring(InkSpring.precise)) {
             viewModel.selectTool(identity: variant)
         }
@@ -397,64 +434,50 @@ struct ToolPaletteView: View {
 
     // MARK: Tool button
 
+    @ViewBuilder
     private func toolButton(_ identity: InkTool.Identity) -> some View {
         let isActive = viewModel.selectedTool.identity == identity
-        return Button {
+        let core = Button {
             handleToolTap(identity)
         } label: {
-            ZStack {
-                if isActive {
-                    // matchedGeometry indicator slides between tools
-                    Circle()
-                        .fill(Color.inkAccentPrimary.opacity(0.18))
-                        .frame(width: 32, height: 32)
-                        .matchedGeometryEffect(id: "activeToolIndicator", in: toolNamespace)
-                }
-                Image(systemName: identity.systemImage)
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(isActive ? .inkAccentPrimary : .inkTextSecondary)
-            }
-            .frame(width: buttonSize, height: buttonSize)
+            // Phase D: icon-colour-only active state (no filled pill).
+            Image(systemName: identity.systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(isActive ? .brandAccent : .inkRecessiveSecondary)
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
         .accessibilityLabel(A11y.toolLabel(name: identity.displayName, isActive: isActive))
         .accessibilityHint(A11y.toolHint)
-        .contextMenu {
-            // Eraser: long-press → pick one of the three modes (and one-shot Erase Page).
-            if identity == .eraser, case .eraser(let mode) = viewModel.selectedTool {
-                Button {
-                    viewModel.selectedTool = .eraser(mode: .wholeStroke)
-                } label: {
-                    Label("Whole Stroke\(mode == .wholeStroke ? "  ✓" : "")", systemImage: "eraser")
-                }
-                Button {
-                    viewModel.selectedTool = .eraser(mode: .pixel)
-                } label: {
-                    Label("Pixel Eraser\(mode == .pixel ? "  ✓" : "")", systemImage: "eraser.line.dashed")
-                }
-                Divider()
-                Button(role: .destructive) {
-                    showErasePageConfirm = true
-                } label: {
-                    Label("Erase Page…", systemImage: "trash")
-                }
-            }
+
+        // Eraser is the only tool with a variant picker today
+        // (whole-stroke / pixel + erase-page). `.highPriorityGesture`
+        // makes the long-press resolve before the Button's tap so a
+        // hold reaches the picker; quick taps fail the threshold and
+        // fall through to the tap action. The earlier
+        // `.onLongPressGesture` placed after `.buttonStyle` never
+        // received events on iOS 17+ — the Button's tap recogniser
+        // consumed them first.
+        if identity == .eraser {
+            core
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.4)
+                        .onEnded { _ in
+                            HapticManager.shared.contextMenuOpened()
+                            showEraserPopover = true
+                        }
+                )
+        } else {
+            core
         }
     }
 
     private func handleToolTap(_ identity: InkTool.Identity) {
-        // Tapping the active eraser opens the eraser popover (mode picker + size).
-        if identity == .eraser, case .eraser = viewModel.selectedTool {
-            showEraserPopover = true
-            HapticManager.shared.toolSwitched()
-            return
-        }
-        // Tapping the active tool is a no-op
-        if viewModel.selectedTool.identity == identity { return }
-        // Switch via the view-model's identity-based API — it restores the
-        // tool's last-used colour/width/opacity from `ToolSettingsStore`.
-        // 0.2s spring with the matched-geometry indicator
+        // Tap always activates. Re-tapping an active tool is a no-op
+        // — the eraser mode picker (formerly opened by tap-when-active)
+        // moved to long-press. See `toolButton`.
+        guard viewModel.selectedTool.identity != identity else { return }
         withAnimation(.inkSpring(InkSpring.precise)) {
             viewModel.selectTool(identity: identity)
         }
@@ -479,10 +502,10 @@ struct ToolPaletteView: View {
                         .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
                 )
                 .opacity(viewModel.selectedTool.hasColour ? 1 : 0.3)
+                .frame(width: buttonSize, height: buttonSize)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .frame(width: buttonSize, height: buttonSize)
-        .inkTapTarget()
     }
 
     // MARK: Size controls
@@ -510,12 +533,12 @@ struct ToolPaletteView: View {
             viewModel.incrementWidth()
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.inkTextSecondary)
-                .frame(width: buttonSize, height: 24)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.inkRecessiveSecondary)
+                .frame(width: buttonSize, height: buttonSize / 2)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
         .disabled(!viewModel.selectedTool.hasWidth)
     }
 
@@ -524,13 +547,13 @@ struct ToolPaletteView: View {
             showSizePopover = true
         } label: {
             Text(formatWidth(viewModel.selectedTool.currentWidth))
-                .font(.inkCaption)
-                .foregroundColor(.inkTextPrimary)
+                .font(.system(size: 10, weight: .regular))
+                .foregroundColor(.inkRecessiveSecondary)
                 .monospacedDigit()
-                .frame(width: buttonSize, height: 20)
+                .frame(width: buttonSize, height: 24)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
     }
 
     private var sizeDecrementButton: some View {
@@ -538,12 +561,12 @@ struct ToolPaletteView: View {
             viewModel.decrementWidth()
         } label: {
             Image(systemName: "minus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.inkTextSecondary)
-                .frame(width: buttonSize, height: 24)
+                .font(.system(size: 14, weight: .regular))
+                .foregroundColor(.inkRecessiveSecondary)
+                .frame(width: buttonSize, height: buttonSize / 2)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
-        .inkTapTarget()
         .disabled(!viewModel.selectedTool.hasWidth)
     }
 
@@ -681,12 +704,11 @@ struct ToolPaletteView: View {
                 let release = value.location          // global point of release
                 let nearest = ToolbarEdge.nearestEdge(to: release, in: parentSize)
 
-                // Persist for the *current* orientation only.
-                if ToolbarEdgeBinding.isLandscape(parentSize) {
-                    landscapeEdgeRaw = nearest.rawValue
-                } else {
-                    portraitEdgeRaw  = nearest.rawValue
-                }
+                // Per-notebook persistence — same key the view re-reads
+                // on appear, so reopening the same notebook restores the
+                // edge the user left it on.
+                resolvedEdgeRaw = nearest.rawValue
+                UserDefaults.standard.set(nearest.rawValue, forKey: positionKey)
 
                 HapticManager.shared.dragReorderDropped()
 

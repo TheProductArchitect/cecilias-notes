@@ -4,45 +4,66 @@ import SwiftData
 @Model
 final class Page {
     // MARK: Identity
-    var id: UUID
+    var id: UUID = UUID()
 
     // MARK: Data
-    var notebookId: UUID
+    var notebookId: UUID = UUID()
     /// 1-indexed. Maintained by StorageService; never set directly by callers.
-    var pageNumber: Int
-    var pageSize: PageSize
+    var pageNumber: Int = 0
+    var pageSize: PageSize = PageSize.a4
     /// JSON-encoded PageTemplate stored as String — see Notebook.defaultTemplateRaw.
-    var backgroundTemplateRaw: String
+    var backgroundTemplateRaw: String = ""
 
     var backgroundTemplate: PageTemplate {
         get { .from(jsonString: backgroundTemplateRaw) }
         set { backgroundTemplateRaw = newValue.jsonString }
     }
+
+    /// When set, this page renders a page of the notebook's source
+    /// PDF as its background. The integer is the 0-based index into
+    /// the source PDF, *pinned to the page itself* — reordering the
+    /// page's `pageNumber` doesn't change which PDF page it shows.
+    /// Persisted in `PDFBackingStore` (UserDefaults) for the same
+    /// schema reasons as `coverTone` / `autoAddPagesOnScroll`.
+    var pdfPageIndex: Int? {
+        get { PDFBackingStore.pdfPageIndex(for: id) }
+        set { PDFBackingStore.setPDFPageIndex(newValue, for: id) }
+    }
     /// Serialised PKDrawing — written by StorageService.updatePageStrokes.
     var strokeData: Data?
     /// Byte count of strokeData; updated atomically with strokeData.
-    var strokeDataSize: Int
+    var strokeDataSize: Int = 0
 
     // Note: the auto-grow "extra height" for the last page in a
-    // notebook is *not* stored on the model. Adding it as a SwiftData
-    // column requires a versioned schema bump with scoped per-version
-    // model types (otherwise SwiftData crashes with "Duplicate version
-    // checksums"). For now the extension is stored sidecar in
-    // UserDefaults keyed by the page UUID — see `PageExtraHeightStore`
-    // — so the data layer stays unchanged.
+    // notebook is *not* stored on the model — `PageExtraHeightStore`
+    // (UserDefaults) keeps it sidecar. That's a per-device UI
+    // preference, not synced via CloudKit.
 
     // MARK: Timestamps
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     // MARK: Soft delete
-    var isDeleted: Bool
+    var isDeleted: Bool = false
     var deletedAt: Date?
 
     // MARK: Relationships
-    @Relationship(deleteRule: .cascade) var textBlocks: [TextBlock]
-    @Relationship(deleteRule: .cascade) var mediaAttachments: [MediaAttachment]
-    @Relationship(deleteRule: .cascade) var audioAnnotations: [AudioAnnotation]
+    //
+    // CloudKit-compatible bidirectional shape: `notebook` is the
+    // back-reference paired with `Notebook.pages`; the three child
+    // collections own their inverses on `TextBlock.page`,
+    // `MediaAttachment.page` and `AudioAnnotation.page`. The
+    // `notebookId` UUID column above remains for read paths.
+    @Relationship var notebook: Notebook?
+
+    @Relationship(deleteRule: .cascade, inverse: \TextBlock.page)
+    var textBlocks: [TextBlock]?
+
+    @Relationship(deleteRule: .cascade, inverse: \MediaAttachment.page)
+    var mediaAttachments: [MediaAttachment]?
+
+    @Relationship(deleteRule: .cascade, inverse: \AudioAnnotation.page)
+    var audioAnnotations: [AudioAnnotation]?
 
     // MARK: Init
     init(
@@ -62,8 +83,5 @@ final class Page {
         self.updatedAt          = Date()
         self.isDeleted          = false
         self.deletedAt          = nil
-        self.textBlocks         = []
-        self.mediaAttachments   = []
-        self.audioAnnotations   = []
     }
 }

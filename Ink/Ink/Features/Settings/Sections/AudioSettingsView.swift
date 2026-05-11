@@ -27,7 +27,7 @@ struct AudioSettingsView: View {
         ScrollView {
             VStack(spacing: Ink.Spacing.lg) {
                 localeCard
-                autoTranscribeCard
+                afterRecordingCard
                 qualityCard
             }
             .padding(Ink.Spacing.lg)
@@ -78,16 +78,55 @@ struct AudioSettingsView: View {
         .inkCard()
     }
 
-    // MARK: Auto-transcribe
+    // MARK: After-recording (save clip + auto-transcribe)
 
-    private var autoTranscribeCard: some View {
-        Toggle(isOn: $viewModel.autoTranscribe) {
-            Label("Auto-Transcribe", systemImage: "waveform.badge.mic")
-                .font(.inkBody)
-                .foregroundColor(.inkTextPrimary)
+    /// Two independent toggles. With both ON the recording produces an
+    /// audio pin and an attached transcript (default). With one OFF
+    /// the corresponding artefact is skipped at stop-time. With both
+    /// OFF a recording is discarded — the recording panel surfaces a
+    /// subtle reminder so the user understands why nothing was saved.
+    private var afterRecordingCard: some View {
+        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+            cardHeader("After Recording")
+
+            VStack(spacing: 0) {
+                Toggle(isOn: $viewModel.saveAudioClips) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Save audio clips")
+                            .font(.inkBody)
+                            .foregroundColor(.inkTextPrimary)
+                        Text("Keep the audio so you can play it back.")
+                            .font(.inkCaption)
+                            .foregroundColor(.inkTextTertiary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(.inkAccentPrimary)
+                .padding(.vertical, 10)
+
+                Divider()
+
+                Toggle(isOn: $viewModel.autoTranscribe) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Generate transcripts")
+                            .font(.inkBody)
+                            .foregroundColor(.inkTextPrimary)
+                        Text("Convert speech to text on-device.")
+                            .font(.inkCaption)
+                            .foregroundColor(.inkTextTertiary)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(.inkAccentPrimary)
+                .padding(.vertical, 10)
+            }
+
+            if !viewModel.saveAudioClips && !viewModel.autoTranscribe {
+                Text("With both off, recordings are discarded. Turn one on to keep something.")
+                    .font(.inkCaption)
+                    .foregroundColor(.inkTextTertiary)
+            }
         }
-        .toggleStyle(.switch)
-        .tint(.inkAccentPrimary)
         .padding(Ink.Spacing.md)
         .inkCard()
     }

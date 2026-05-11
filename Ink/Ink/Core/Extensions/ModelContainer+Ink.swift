@@ -3,21 +3,24 @@ import SwiftData
 
 extension ModelContainer {
 
-    /// Production container backed by ink.sqlite in Application Support/Ink/.
+    /// Production container backed by `ink.sqlite` in
+    /// Application Support/Ink/.
     ///
-    /// Schema migration: production-grade. `InkMigrationPlan` declares the
-    /// transition V2 → V3 (adds `Folder`, adds `Notebook.folderId`) as a
-    /// lightweight migration. SwiftData reads the on-disk schema, diffs it
-    /// against the current schema (V3), and applies `ALTER TABLE` for
-    /// additive changes — existing notebooks come back with `folderId = nil`
-    /// (i.e., directly under their subject), no data loss.
+    /// CloudKit private database — schema audited for compatibility
+    /// in Prompt 7 (every non-optional property has an inline
+    /// default, every parent-child relationship has a matching
+    /// `inverse:`). Conflict resolution is CloudKit's native
+    /// last-write-wins; no custom merge logic.
     ///
-    /// CloudKit is explicitly disabled: Ink's iCloud sync uses CloudDocuments
-    /// (iCloud Drive file presence) via `CloudSyncManager`, not CloudKit
-    /// Database. Without `cloudKitDatabase: .none`, SwiftData would auto-mirror
-    /// the store to CloudKit and reject the load because `Folder.parentSubjectId`
-    /// (non-optional) violates CloudKit's "all attributes must be optional or
-    /// have a default" rule.
+    /// **Graceful fallback to local-only.** If the CloudKit
+    /// container fails to register at runtime — entitlements
+    /// missing, wrong container ID, user not signed into iCloud,
+    /// device offline during first launch with sync enabled — we
+    /// re-init the container with `cloudKitDatabase: .none` so the
+    /// app never crashes at launch. The error is logged to the
+    /// console only; the user just sees a non-syncing app and
+    /// Settings → iCloud surfaces "sign in to iCloud to sync your
+    /// notes" via `CloudSyncManager`.
     static func inkContainer() throws -> ModelContainer {
         let storeURL = StorageService.inkDirectoryURL
             .appendingPathComponent("ink.sqlite")
@@ -26,23 +29,46 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // Use the V3 schema (current). The migration plan handles arrivals
-        // from V2.
-        let schema = Schema(versionedSchema: InkSchemaV3.self)
-        let config = ModelConfiguration(
+        // V4 = the CloudKit-compatible schema. Prompt 7 was an
+        // explicit fresh start with no backward-compatibility
+        // requirement, so there is no migration plan — see
+        // `InkSchemas.swift` for the duplicate-checksum trap that
+        // forced the collapse to a single version.
+        let schema = Schema(versionedSchema: InkSchemaV4.self)
+
+        // First attempt: CloudKit private database. The container
+        // identifier matches the iCloud capability provisioned in
+        // the app's entitlements.
+        let cloudConfig = ModelConfiguration(
             schema: schema,
             url: storeURL,
-            cloudKitDatabase: .none
+            cloudKitDatabase: .private("iCloud.com.wave.venu.Ink")
         )
-
-        return try ModelContainer(
-            for: schema,
-            migrationPlan: InkMigrationPlan.self,
-            configurations: config
-        )
+        do {
+            return try ModelContainer(
+                for: schema,
+                configurations: cloudConfig
+            )
+        } catch {
+            // Local-only fallback. Logged once at launch so a
+            // missing-entitlements regression is visible during
+            // development; no user-facing error surface.
+            #if DEBUG
+            print("[ModelContainer] CloudKit init failed, falling back to local: \(error)")
+            #endif
+            let localConfig = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(
+                for: schema,
+                configurations: localConfig
+            )
+        }
     }
 
-    /// In-memory container for unit tests — no disk I/O.
+    /// In-memory container for unit tests — no disk I/O, no CloudKit.
     static func inkTestContainer() throws -> ModelContainer {
         let schema = Schema([
             Subject.self,

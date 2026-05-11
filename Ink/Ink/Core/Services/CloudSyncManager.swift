@@ -8,17 +8,25 @@ final class CloudSyncManager: ObservableObject {
 
     @Published private(set) var isEnabled: Bool
     @Published private(set) var syncStatus: SyncStatus
+    /// Timestamp of the last successful sync. `nil` when the user has
+    /// never enabled sync (or has just toggled it on for the first
+    /// time and reconciliation hasn't completed).
+    @Published private(set) var lastSyncedAt: Date?
 
     enum SyncStatus: Equatable {
         case disabled
         case checking
         case upToDate
         case syncing(progress: Double)
+        /// iCloud account or network unreachable — writes still go to
+        /// local store; sync resumes when reachable.
+        case waitingForNetwork
         case error(String)
     }
 
-    // MARK: Persistence key
-    private static let enabledKey = "ink.icloud.sync.enabled"
+    // MARK: Persistence keys
+    private static let enabledKey      = "ink.icloud.sync.enabled"
+    private static let lastSyncedKey   = "ink.icloud.sync.lastSyncedAt"
 
     // MARK: Init
 
@@ -26,7 +34,19 @@ final class CloudSyncManager: ObservableObject {
         let persisted = UserDefaults.standard.bool(forKey: Self.enabledKey)
         self.isEnabled  = persisted
         self.syncStatus = persisted ? .checking : .disabled
+        if let interval = UserDefaults.standard.object(forKey: Self.lastSyncedKey) as? TimeInterval {
+            self.lastSyncedAt = Date(timeIntervalSince1970: interval)
+        } else {
+            self.lastSyncedAt = nil
+        }
         if persisted { Task { await self.reconcileAfterLaunch() } }
+    }
+
+    /// Stamp `lastSyncedAt` and persist. Called whenever the manager
+    /// transitions into `.upToDate` after a successful reconcile.
+    func markSyncCompleted(at date: Date = Date()) {
+        lastSyncedAt = date
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Self.lastSyncedKey)
     }
 
     // MARK: Public API
@@ -230,6 +250,7 @@ final class CloudSyncManager: ObservableObject {
                 return false
             }()
             syncStatus = .upToDate
+            markSyncCompleted()
             if wasSyncing { HapticManager.shared.iCloudSyncCompleted() }
         }
     }

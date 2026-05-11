@@ -2,18 +2,20 @@ import XCTest
 @testable import Ink
 
 /// Covers the validation rules the onboarding TextField applies to the
-/// user's name input. Empty / whitespace is an *accepted* completion;
-/// digits or emoji are rejected; otherwise the first whitespace-
-/// separated word is stored.
+/// user's name input. Onboarding now requires a name — empty input
+/// is `.invalid`, the Continue button is disabled until the field has
+/// a non-whitespace character, so this validator never sees empty in
+/// practice. Digits or emoji are rejected; otherwise the first
+/// whitespace-separated word is stored.
 final class OnboardingValidationTests: XCTestCase {
 
-    func test_emptyString_isAcceptedEmpty() {
-        XCTAssertEqual(validateName(""), .acceptEmpty)
+    func test_emptyString_isInvalid() {
+        XCTAssertEqual(validateName(""), .invalid)
     }
 
-    func test_whitespaceOnly_isAcceptedEmpty() {
-        XCTAssertEqual(validateName("   "), .acceptEmpty)
-        XCTAssertEqual(validateName("\n\t"), .acceptEmpty)
+    func test_whitespaceOnly_isInvalid() {
+        XCTAssertEqual(validateName("   "), .invalid)
+        XCTAssertEqual(validateName("\n\t"), .invalid)
     }
 
     func test_simpleName_isAccepted() {

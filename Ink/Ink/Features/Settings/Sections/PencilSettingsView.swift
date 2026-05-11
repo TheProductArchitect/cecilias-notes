@@ -37,23 +37,57 @@ struct PencilSettingsView: View {
 
     // MARK: Double-tap
 
+    /// List-row picker for the double-tap action. Replaces the
+    /// previous `.pickerStyle(.segmented)` form, which couldn't fit
+    /// four labels at the Settings sheet's typical width and squashed
+    /// surrounding cards.
     private var doubleTapCard: some View {
         VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             cardHeader("Double-Tap Action")
 
-            Picker("Double-tap", selection: $doubleTapAction) {
+            VStack(spacing: 0) {
                 ForEach(DoubleTapAction.allCases, id: \.rawValue) { action in
-                    Text(action.displayName).tag(action)
+                    doubleTapRow(action)
+
+                    if action != DoubleTapAction.allCases.last {
+                        Divider()
+                            .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                            .padding(.leading, Ink.Spacing.md)
+                    }
                 }
             }
-            .pickerStyle(.segmented)
+            .background(Color(.systemBackground))
 
-            Text("Overrides your system Pencil settings when using Ink.")
+            Text("Overrides your system Pencil settings when using Cecilia's Notes.")
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }
         .padding(Ink.Spacing.md)
         .inkCard()
+    }
+
+    private func doubleTapRow(_ action: DoubleTapAction) -> some View {
+        let isSelected = doubleTapAction == action
+        return Button {
+            doubleTapAction = action
+        } label: {
+            HStack {
+                Text(action.displayName)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.inkNearBlack)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.brandAccent)
+                }
+            }
+            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.inkPressable)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     // MARK: Toggles

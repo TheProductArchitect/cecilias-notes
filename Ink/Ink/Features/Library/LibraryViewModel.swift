@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -27,11 +28,20 @@ struct GroupedSearchResults {
     var notebookMatches:     [SearchResult] = []
     var textBlockMatches:    [SearchResult] = []
     var transcriptionMatches:[SearchResult] = []
+    var handwritingMatches:  [SearchResult] = []
 
     var isEmpty: Bool {
-        notebookMatches.isEmpty && textBlockMatches.isEmpty && transcriptionMatches.isEmpty
+        notebookMatches.isEmpty
+            && textBlockMatches.isEmpty
+            && transcriptionMatches.isEmpty
+            && handwritingMatches.isEmpty
     }
-    var total: Int { notebookMatches.count + textBlockMatches.count + transcriptionMatches.count }
+    var total: Int {
+        notebookMatches.count
+            + textBlockMatches.count
+            + transcriptionMatches.count
+            + handwritingMatches.count
+    }
 }
 
 // Used for drag-and-drop between card and sidebar row.
@@ -48,7 +58,29 @@ struct NotebookTransferID: Transferable, Codable {
 final class LibraryViewModel: ObservableObject {
 
     // MARK: Published state (spec)
-    @Published var selectedSubjectId: UUID?             // nil = All Notes
+
+    /// Which subset of notebooks the home grid is rendering. Drives
+    /// the sidebar's active-row indicator and the grid's content set.
+    /// Persisted across launches so a user returns to the same view.
+    @Published var selectedContext: LibraryContext = .recent
+
+    /// Convenience surface for call-sites that historically read or
+    /// wrote `selectedSubjectId`. Reads return the id when in subject
+    /// context, `nil` otherwise. Writes promote a non-nil id to
+    /// subject context, and `nil` writes drop back to `.allNotes` if
+    /// (and only if) the prior context was a subject — `.recent` and
+    /// `.allNotes` writes don't interfere.
+    var selectedSubjectId: UUID? {
+        get { selectedContext.subjectId }
+        set {
+            if let id = newValue {
+                selectedContext = .subject(id)
+            } else if case .subject = selectedContext {
+                selectedContext = .allNotes
+            }
+        }
+    }
+
     @Published var selectedNotebookId: UUID?
     @Published var searchText: String = ""
     @Published var sortOrder: NotebookSortOrder = .lastModified
@@ -61,6 +93,55 @@ final class LibraryViewModel: ObservableObject {
     @Published private(set) var notebooks:        [Notebook] = []
     @Published private(set) var pinnedNotebooks:  [Notebook] = []
 
+    /// Six most-recently-opened notebooks across all subjects. Driven
+    /// by `Notebook.lastAccessedAt`. Empty when the user has never
+    /// opened a notebook — the home screen hides the strip in that case.
+    @Published private(set) var recentNotebooks:   [Notebook] = []
+
+    /// Id of the single most-recently-opened notebook. Drives the blue
+    /// "active" dot top-right of `NotebookCardView`. `nil` when no
+    /// notebook has ever been opened.
+    var mostRecentNotebookId: UUID? { recentNotebooks.first?.id }
+
+    /// True when at least one subject exists. Notebooks must belong to
+    /// a subject — the sidebar's "+ new notebook" button is disabled
+    /// while this is false.
+    var canCreateNotebook: Bool { !subjects.isEmpty }
+
+    /// Folders only live inside a specific subject — `.recent` and
+    /// `.allNotes` contexts can't host them. Drives the disabled
+    /// state of the "New Folder" item in the grid toolbar's `+` menu.
+    var canCreateFolder: Bool {
+        if case .subject = selectedContext { return true }
+        return false
+    }
+
+    /// Wraps `createUntitledNotebookAndOpen` so it works from any
+    /// context. From `.recent` / `.allNotes` we promote the
+    /// `inferredSubjectIdForNewNotebook` (most-recent notebook's
+    /// subject → first subject) so the new notebook lands somewhere
+    /// meaningful and the sidebar visibly switches to that subject.
+    /// No-op when no subjects exist.
+    func createNotebookWithFallback() {
+        guard canCreateNotebook else { return }
+        if selectedSubjectId == nil,
+           let target = inferredSubjectIdForNewNotebook {
+            selectedSubjectId = target
+        }
+        createUntitledNotebookAndOpen()
+    }
+
+    /// Subject the sidebar's "+ new notebook" should land in when the
+    /// user isn't already inside a specific subject. Tries, in order:
+    /// the currently-selected subject, the subject of the most-recently-
+    /// opened notebook, the first subject in the list. Returns `nil`
+    /// only when no subjects exist at all.
+    var inferredSubjectIdForNewNotebook: UUID? {
+        if let selected = selectedSubjectId { return selected }
+        if let recentSubject = recentNotebooks.first?.subjectId { return recentSubject }
+        return subjects.first?.id
+    }
+
     /// Files-style folder navigation. Empty = at the subject's root.
     /// Top of the stack = current folder. Stack is reset whenever the
     /// selected subject changes.
@@ -69,6 +150,54 @@ final class LibraryViewModel: ObservableObject {
     /// Drives inline rename in the browser.
     @Published var renamingFolderId:   UUID?
     @Published private(set) var searchResults:    GroupedSearchResults?
+
+    /// Active tag filter. Empty set = no filter (all notebooks pass).
+    /// Multiple tags OR-combine: a notebook appears if it has ANY
+    /// selected tag. Session-only — never persisted, cleared on
+    /// app background.
+    @Published var activeTagFilters: Set<String> = []
+
+    var isTagFilterActive: Bool { !activeTagFilters.isEmpty }
+
+    /// Unique, sorted tag list across every (non-deleted) notebook
+    /// in the *current context* — driver for the filter sheet's
+    /// option list. Recomputed on demand; the library never has
+    /// more than a few hundred notebooks so the O(n × k) scan is
+    /// cheap.
+    func availableTagsInCurrentContext() -> [String] {
+        let pool: [Notebook]
+        switch selectedContext {
+        case .recent:           pool = storage.fetchRecentNotebooks(limit: 200)
+        case .allNotes:         pool = storage.fetchAllNotebooks()
+        case .subject(let id):  pool = storage.fetchNotebooks(subjectId: id)
+        }
+        var seen = Set<String>()
+        for nb in pool {
+            for tag in nb.tags where !tag.isEmpty {
+                seen.insert(tag)
+            }
+        }
+        return seen.sorted()
+    }
+
+    func toggleTagFilter(_ tag: String) {
+        if activeTagFilters.contains(tag) {
+            activeTagFilters.remove(tag)
+        } else {
+            activeTagFilters.insert(tag)
+        }
+        refresh()
+    }
+
+    func clearTagFilters() {
+        guard !activeTagFilters.isEmpty else { return }
+        activeTagFilters.removeAll()
+        refresh()
+    }
+    /// Set when the user taps a page-scoped search result. Read by
+    /// the editor's onAppear and translated into a `pendingScrollPageIndex`
+    /// so the editor lands on the matching page.
+    @Published var deepLinkPageId:                UUID?
     @Published private(set) var duplicatingIds:   Set<UUID> = []
     @Published var isSearchActive: Bool = false
     @Published var renamingSubjectId: UUID?     // drives inline rename in sidebar
@@ -85,10 +214,24 @@ final class LibraryViewModel: ObservableObject {
     // MARK: Internals
     private let storage: StorageService
     private var cancellables = Set<AnyCancellable>()
+    private static let contextKey = "library.lastSelectedContext"
 
     // MARK: Init
-    init(storage: StorageService = .shared) {
-        self.storage = storage
+    init(storage: StorageService? = nil) {
+        // Default `.shared` is nil-resolved inside the body so the
+        // `@MainActor`-isolated singleton is touched on the main actor
+        // rather than at the call-site (Swift 6 default-value
+        // isolation rules).
+        self.storage = storage ?? .shared
+
+        // Hydrate the selected context from UserDefaults. First-ever
+        // launch (no key) defaults to `.recent` — the redesign's
+        // "default home view" surface.
+        if let raw = UserDefaults.standard.string(forKey: Self.contextKey),
+           let restored = LibraryContext(rawString: raw) {
+            self.selectedContext = restored
+        }
+
         refresh()
 
         $searchText
@@ -96,15 +239,18 @@ final class LibraryViewModel: ObservableObject {
             .sink { [weak self] text in self?.performSearch(text) }
             .store(in: &cancellables)
 
-        // Clear selection mode AND reset the folder browser path when the
-        // subject changes — every subject opens at its own root.
-        $selectedSubjectId
+        // Clear selection state, reset folder browsing, refresh the
+        // grid, and persist whenever the context changes — covers
+        // both subject swaps and recent/all-notes toggles.
+        $selectedContext
             .dropFirst()
-            .sink { [weak self] _ in
-                self?.isSelecting = false
-                self?.selectedNotebookIds = []
-                self?.folderPath = []
-                self?.refresh()
+            .sink { [weak self] context in
+                guard let self else { return }
+                self.isSelecting = false
+                self.selectedNotebookIds = []
+                self.folderPath = []
+                UserDefaults.standard.set(context.rawString, forKey: Self.contextKey)
+                self.refresh()
             }
             .store(in: &cancellables)
 
@@ -143,16 +289,53 @@ final class LibraryViewModel: ObservableObject {
     // MARK: Refresh
 
     func refresh() {
+        // Kick off the search index refresh on every library refresh
+        // — it's idempotent and cheap for the synchronous metadata
+        // (title / TextBlock / transcript). Handwriting OCR is
+        // queued internally and runs on a detached Task, so this
+        // call never blocks the main actor for more than a fetch.
+        SearchIndexService.shared.refreshAll()
+        // Phase 4: one-shot embedding backfill on first launch with
+        // AI on. Idempotent — bails fast on subsequent launches via
+        // its UserDefaults flag.
+        SearchIndexService.shared.backfillEmbeddingsIfNeeded()
+
         subjects        = storage.fetchSubjects()
         folders         = storage.fetchAllFolders()
         let raw: [Notebook]
-        if let id = selectedSubjectId {
-            raw = storage.fetchNotebooks(subjectId: id)
-        } else {
+        switch selectedContext {
+        case .recent:
+            // Last 12 opened — order is the tracker's ordering
+            // (lastAccessedAt desc); skip the user's sort to preserve
+            // recency. The grid uses `notebooks` directly so this is
+            // what shows up.
+            raw = storage.fetchRecentNotebooks(limit: 12)
+            notebooks = applyTagFilter(raw)
+        case .allNotes:
             raw = storage.fetchAllNotebooks()
+            notebooks = sorted(applyTagFilter(raw))
+        case .subject(let id):
+            raw = storage.fetchNotebooks(subjectId: id)
+            notebooks = sorted(applyTagFilter(raw))
         }
-        notebooks       = sorted(raw)
-        pinnedNotebooks = notebooks.filter(\.isPinned)
+        pinnedNotebooks = storage.fetchPinnedNotebooks()
+        recentNotebooks = storage.fetchRecentNotebooks(limit: 6)
+    }
+
+    /// Apply the active tag filter to a notebook pool. Returns
+    /// `pool` unchanged when no filter is active. Tags are stored
+    /// inside `tagsRaw` as a `\u{001F}`-joined string, which
+    /// SwiftData's `#Predicate` can't iterate as an array — so the
+    /// filter step runs in memory. With a few hundred notebooks
+    /// this is sub-millisecond; if the library scale grows past
+    /// thousands of notebooks the fix is a sidecar `Tag` model.
+    private func applyTagFilter(_ pool: [Notebook]) -> [Notebook] {
+        guard !activeTagFilters.isEmpty else { return pool }
+        let filters = activeTagFilters
+        return pool.filter { nb in
+            for tag in nb.tags where filters.contains(tag) { return true }
+            return false
+        }
     }
 
     // MARK: Browser helpers (Files-style nesting)
@@ -411,20 +594,17 @@ final class LibraryViewModel: ObservableObject {
 
         let cover    = NotebookCover.from(rawValue: UserDefaults.standard.string(forKey: "ink.lastUsed.cover"))
         let pageSize: PageSize = {
-            // Backwards-compat: also honour the legacy "ink.newpage.size" key
-            // that the Settings → New Pages screen still writes to.
-            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize")
-                ?? UserDefaults.standard.string(forKey: "ink.newpage.size"),
+            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize"),
                let v = PageSize(rawValue: raw) { return v }
             return .a4
         }()
         let template: PageTemplate = {
-            let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.template")
-                ?? UserDefaults.standard.string(forKey: "ink.newpage.template")
-            if let raw,
-               let data = raw.data(using: .utf8),
-               let t    = try? JSONDecoder().decode(PageTemplate.self, from: data) { return t }
-            return .blank
+            // The flat enum persists as its String raw value via
+            // `PageTemplate.jsonString` — no JSON encoding wrapper.
+            // Decode by raw value rather than `JSONDecoder`.
+            guard let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.template")
+            else { return .blank }
+            return PageTemplate.from(jsonString: raw)
         }()
 
         createNotebook(
@@ -436,6 +616,171 @@ final class LibraryViewModel: ObservableObject {
             template:      template,
             folderId:      currentFolder?.id
         )
+    }
+
+    // MARK: - PDF import
+
+    @Published var isImporting:              Bool = false
+    @Published var importProgressCompleted:  Int  = 0
+    @Published var importProgressTotal:      Int  = 0
+
+    /// Set when a single-PDF import finishes — the LibraryView reads
+    /// this to auto-open the new notebook. For multi-PDF imports we
+    /// stay in the library so the user can see the whole batch.
+    @Published var pendingOpenAfterImport:   Notebook?
+
+    enum PDFImportError: LocalizedError {
+        case noSubject
+        case allFailed
+        case partial(succeeded: Int, total: Int)
+        case tooLarge(filename: String, bytes: Int64)
+        var errorDescription: String? {
+            switch self {
+            case .noSubject:
+                return "Create a subject first, then import PDFs into it."
+            case .allFailed:
+                return "Couldn't open any of the selected PDFs."
+            case .partial(let s, let t):
+                return "\(s) of \(t) PDFs imported. Some files couldn't be opened."
+            case .tooLarge(let name, let bytes):
+                let mb = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+                return "\"\(name)\" is \(mb) — over the 500MB import limit."
+            }
+        }
+    }
+
+    @Published var importError: PDFImportError?
+
+    /// Import each picked PDF as its own notebook. All land in the
+    /// currently-selected subject (or the inferred fallback). For a
+    /// single PDF the new notebook is opened automatically; for a
+    /// batch we surface progress and stay in the library.
+    func importPDFs(at urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        guard let subjectId = inferredSubjectIdForNewNotebook else {
+            await MainActor.run { importError = .noSubject }
+            return
+        }
+
+        await MainActor.run {
+            importProgressTotal = urls.count
+            importProgressCompleted = 0
+            isImporting = true
+            importError = nil
+        }
+
+        var firstNotebook: Notebook?
+        var successCount = 0
+
+        for (index, url) in urls.enumerated() {
+            if let nb = await importSinglePDF(at: url, subjectId: subjectId) {
+                successCount += 1
+                if firstNotebook == nil { firstNotebook = nb }
+            }
+            await MainActor.run { importProgressCompleted = index + 1 }
+        }
+
+        await MainActor.run {
+            isImporting = false
+            refresh()
+
+            if successCount == 0 {
+                importError = .allFailed
+            } else if successCount < urls.count {
+                importError = .partial(succeeded: successCount, total: urls.count)
+            }
+
+            // Auto-open the single-PDF case. Multi-PDF leaves the
+            // user in the library viewing the batch.
+            if urls.count == 1, let nb = firstNotebook {
+                pendingOpenAfterImport = nb
+            }
+        }
+    }
+
+    /// One PDF → one notebook. Copies the PDF into the notebook's
+    /// directory, creates a `Page` per PDF page, and records each
+    /// page's source-PDF index via `PDFBackingStore`. The
+    /// notebook's `pageSize` follows the user's last-used default;
+    /// PDF pages render at the source PDF's native bounds via
+    /// `PageRenderer` regardless of `pageSize`.
+    private func importSinglePDF(at url: URL, subjectId: UUID) async -> Notebook? {
+        // Bail on truly enormous files — anything over 500MB is more
+        // likely a user mis-pick than a real notebook.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let fileSize = (attrs?[.size] as? Int64) ?? 0
+        if fileSize > 500 * 1024 * 1024 {
+            await MainActor.run {
+                importError = .tooLarge(filename: url.lastPathComponent, bytes: fileSize)
+            }
+            return nil
+        }
+
+        let didStart = url.startAccessingSecurityScopedResource()
+        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+
+        guard let pdf = PDFDocument(url: url) else { return nil }
+        let pageCount = pdf.pageCount
+        guard pageCount > 0 else { return nil }
+
+        let rawName = url.deletingPathExtension().lastPathComponent
+        let cleanTitle = rawName
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = cleanTitle.isEmpty ? "Imported PDF" : cleanTitle
+
+        let cover = NotebookCover.from(rawValue:
+            UserDefaults.standard.string(forKey: "ink.lastUsed.cover"))
+        let pageSize: PageSize = {
+            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize"),
+               let v = PageSize(rawValue: raw) { return v }
+            return .a4
+        }()
+
+        // Create the notebook first (this seeds page 1). We'll add
+        // additional pages below and re-seed `pdfPageIndex` for every
+        // page so the seeded one becomes "PDF page 0".
+        guard let notebook = try? storage.createNotebook(
+            title:         title,
+            subjectId:     subjectId,
+            coverColorHex: cover.colorHex,
+            coverTexture:  cover.texture,
+            pageSize:      pageSize,
+            template:      .blank
+        ) else { return nil }
+
+        // Copy the source PDF into the notebook's directory.
+        let dest = StorageService.shared.sourcePDFURL(notebook.id)
+        do {
+            try FileManager.default.createDirectory(
+                at: dest.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.removeItem(at: dest)
+            }
+            try FileManager.default.copyItem(at: url, to: dest)
+        } catch {
+            try? storage.deleteNotebook(notebook)
+            return nil
+        }
+
+        // Map the seeded first page to PDF page 0; add the rest.
+        if let firstPage = (notebook.pages ?? []).first {
+            firstPage.pdfPageIndex = 0
+        }
+        for i in 1..<pageCount {
+            guard let page = try? storage.createPage(
+                in: notebook,
+                after: i,
+                pageSize: pageSize,
+                backgroundTemplate: .blank
+            ) else { continue }
+            page.pdfPageIndex = i
+        }
+
+        return notebook
     }
 
     func renameNotebook(_ notebook: Notebook, newTitle: String) {
@@ -571,13 +916,19 @@ final class LibraryViewModel: ObservableObject {
             searchResults = nil
             return
         }
-        let flat = storage.search(query: trimmed)
+        // SearchIndexService is the canonical search path — it
+        // covers handwriting OCR + titles + text blocks +
+        // transcripts via a single on-device index. Falls back
+        // gracefully (returns []) if the index hasn't loaded yet.
+        let flat = SearchIndexService.shared.search(query: trimmed)
         var grouped = GroupedSearchResults()
         for r in flat {
             switch r.type {
-            case .notebookTitle:  grouped.notebookMatches.append(r)
-            case .textBlock:      grouped.textBlockMatches.append(r)
-            case .transcription:  grouped.transcriptionMatches.append(r)
+            case .notebookTitle:      grouped.notebookMatches.append(r)
+            case .textBlock:          grouped.textBlockMatches.append(r)
+            case .transcription,
+                 .lectureTranscript:  grouped.transcriptionMatches.append(r)
+            case .handwriting:        grouped.handwritingMatches.append(r)
             }
         }
         searchResults = grouped

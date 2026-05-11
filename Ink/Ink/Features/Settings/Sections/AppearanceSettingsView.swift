@@ -2,200 +2,116 @@ import SwiftUI
 
 // MARK: - AppearanceSettingsView
 
+/// Phase D redesign: flat white surface, lowercase section labels,
+/// theme picker collapsed to two simple rectangles, resume toggle as
+/// a hairline-bottom row instead of a card.
 struct AppearanceSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
 
+    private static let hairlineColour = Color(
+        light: Color(hex: "#f5f5f5"),
+        dark:  Color(hex: "#1f1f1d")
+    )
+    private static let labelColour = Color(
+        light: Color(hex: "#999999"),
+        dark:  Color(hex: "#6a6a67")
+    )
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: Ink.Spacing.lg) {
-                sectionHeader("Theme")
-                ThemePickerView(themeManager: viewModel.themeManager)
-
-                sectionHeader("Behaviour")
-                resumeCard
+            VStack(alignment: .leading, spacing: 28) {
+                themeSection
+                resumeSection
             }
-            .padding(Ink.Spacing.lg)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 28)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
-        .navigationTitle("Appearance")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Color(.systemBackground))
     }
 
-    private var resumeCard: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Toggle(isOn: $viewModel.resumeEnabled) {
-                Label("Resume Where You Left Off", systemImage: "arrow.uturn.backward.circle")
-                    .font(.inkBody)
-                    .foregroundColor(.inkTextPrimary)
+    private var themeSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("theme")
+            HStack(alignment: .top, spacing: 16) {
+                themeOption(.light)
+                themeOption(.dark)
+                Spacer(minLength: 0)
             }
-            .toggleStyle(.switch)
-            .tint(.inkAccentPrimary)
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
-
-            Text("Reopen the last notebook at the page you were viewing.")
-                .font(.inkCaption)
-                .foregroundColor(.inkTextTertiary)
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.bottom, Ink.Spacing.sm)
         }
-        .inkCard()
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.inkSubhead)
-            .foregroundColor(.inkTextSecondary)
-    }
-}
-
-// MARK: - ThemePickerView
-
-/// ForEach(InkTheme.allCases) — adding a theme case requires zero structural changes here.
-struct ThemePickerView: View {
-    @ObservedObject var themeManager: ThemeManager
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Ink.Spacing.md) {
-            ForEach(InkTheme.allCases, id: \.rawValue) { theme in
-                ThemePreviewCard(
-                    theme: theme,
-                    isSelected: themeManager.theme == theme
-                ) {
-                    withAnimation(.inkSpring(InkSpring.snappy)) {
-                        themeManager.theme = theme
-                    }
+    private func themeOption(_ theme: InkTheme) -> some View {
+        let isSelected = viewModel.themeManager.theme == theme
+        return Button {
+            withAnimation(.inkSpring(InkSpring.snappy)) {
+                viewModel.themeManager.theme = theme
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    swatchFill(for: theme)
                 }
-            }
-            Spacer()
-        }
-    }
-}
-
-// MARK: - ThemePreviewCard
-
-private struct ThemePreviewCard: View {
-    let theme:      InkTheme
-    let isSelected: Bool
-    let onTap:      () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: Ink.Spacing.sm) {
-                ZStack(alignment: .topTrailing) {
-                    cardCanvas
-
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.inkSectionHero)
-                            .foregroundStyle(.white, Color.inkAccentPrimary)
-                            .padding(Ink.Spacing.sm)
-                    }
-                }
-                .frame(width: 160, height: 200)
-                .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous))
+                .frame(width: 80, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous)
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .strokeBorder(
-                            isSelected ? Color.inkAccentPrimary : Color.inkBorderDefault,
-                            lineWidth: isSelected ? 2 : 0.5
+                            isSelected
+                                ? Color.brandAccent
+                                : Self.hairlineColour,
+                            lineWidth: isSelected ? 1.5 : 0.5
                         )
                 )
-                Text(theme.displayName)
-                    .font(.inkFootnote)
-                    .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
+
+                Text(theme.rawValue)
+                    .font(.system(size: 9))
+                    .foregroundStyle(Self.labelColour)
             }
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(theme.rawValue) theme")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
-    // MARK: Card canvas
+    @ViewBuilder
+    private func swatchFill(for theme: InkTheme) -> some View {
+        switch theme {
+        case .light: Color.white
+        case .dark:  Color(hex: "#0a0a0a")
+        }
+    }
 
-    private var cardCanvas: some View {
-        ZStack {
-            theme.previewBackground
+    private var resumeSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("behaviour")
 
-            VStack(spacing: 0) {
-                // Simulated notebook card
-                notebookCard
-                    .padding(Ink.Spacing.md)
-                    .padding(.top, Ink.Spacing.sm)
-
-                // Stroke curves
-                strokeCanvas
-                    .frame(height: 60)
-                    .padding(.horizontal, Ink.Spacing.md)
-                    .padding(.bottom, Ink.Spacing.sm)
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("resume where you left off")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.inkNearBlack)
+                    Text("reopen the last notebook at the page you were viewing.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.inkRecessivePrimary)
+                }
+                Spacer()
+                Toggle("", isOn: $viewModel.resumeEnabled)
+                    .labelsHidden()
+                    .tint(.brandAccent)
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
             }
         }
     }
 
-    // Simulated mini notebook card inside the preview
-    private var notebookCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.xs) {
-            // Title line
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(theme.previewText)
-                .frame(width: 80, height: 6)
-
-            // Subtitle lines
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(theme.previewText.opacity(0.45))
-                .frame(width: 100, height: 4)
-
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(theme.previewText.opacity(0.45))
-                .frame(width: 72, height: 4)
-
-            Spacer().frame(height: Ink.Spacing.xs)
-
-            // Accent pill
-            RoundedRectangle(cornerRadius: Ink.Radius.full, style: .continuous)
-                .fill(theme.previewAccent)
-                .frame(width: 40, height: 8)
-        }
-        .padding(Ink.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.previewBackground.opacity(0.7))
-        .overlay(
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
-                .strokeBorder(theme.previewText.opacity(0.12), lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
-    }
-
-    // Three simulated bezier ink strokes
-    private var strokeCanvas: some View {
-        Canvas { ctx, size in
-            let stroke = theme.previewStroke
-            ctx.stroke(
-                curvePath(in: size, yFraction: 0.25, amplitude: 0.5),
-                with: .color(stroke),
-                style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
-            )
-            ctx.stroke(
-                curvePath(in: size, yFraction: 0.55, amplitude: -0.4),
-                with: .color(stroke.opacity(0.7)),
-                style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
-            )
-            ctx.stroke(
-                curvePath(in: size, yFraction: 0.82, amplitude: 0.3),
-                with: .color(stroke.opacity(0.45)),
-                style: StrokeStyle(lineWidth: 1.0, lineCap: .round, lineJoin: .round)
-            )
-        }
-    }
-
-    private func curvePath(in size: CGSize, yFraction: CGFloat, amplitude: CGFloat) -> Path {
-        let y    = size.height * yFraction
-        let cpY  = y + size.height * amplitude * 0.35
-        var path = Path()
-        path.move(to: CGPoint(x: 0, y: y))
-        path.addCurve(
-            to: CGPoint(x: size.width, y: y + size.height * amplitude * 0.1),
-            control1: CGPoint(x: size.width * 0.3, y: cpY),
-            control2: CGPoint(x: size.width * 0.7, y: y - cpY * 0.5)
-        )
-        return path
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8))
+            .tracking(0.08)
+            .textCase(.uppercase)
+            .foregroundStyle(Self.labelColour)
     }
 }

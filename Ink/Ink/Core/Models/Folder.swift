@@ -8,33 +8,44 @@ import SwiftData
 /// Hierarchy is now:
 ///   Subject → (Folder?) → Notebook
 ///
-/// A folder always lives inside a subject (`parentSubjectId` is non-optional).
-/// `parentFolderId` allows nesting; the UI caps depth at 3 to keep navigation
-/// sane. A notebook either sits directly under its subject (`folderId == nil`)
-/// or inside a folder.
+/// `parentSubjectId` is a raw UUID for read paths that haven't been
+/// migrated; the canonical CloudKit-compatible reference is the
+/// `subject` relationship below. Both stay in sync because every
+/// write site sets the UUID.
+/// `parentFolderId` allows nesting; the UI caps depth at 3 to keep
+/// navigation sane. A notebook either sits directly under its
+/// subject (`folderId == nil`) or inside a folder.
 ///
-/// 30-day soft-delete pattern matches `Subject`/`Notebook`/etc.: delete sets
-/// `isDeleted = true`, sweep reaper purges entries older than 30 days.
+/// 30-day soft-delete pattern matches `Subject`/`Notebook`/etc.:
+/// delete sets `isDeleted = true`, sweep reaper purges entries
+/// older than 30 days.
 @Model
 final class Folder {
     // MARK: Identity
-    var id: UUID
+    var id: UUID = UUID()
 
     // MARK: Data
-    var name: String
-    /// Always non-nil: every folder lives inside a subject.
-    var parentSubjectId: UUID
+    var name: String = ""
+    /// Raw foreign-key UUID — preserved for read paths that haven't
+    /// been migrated to the `subject` relationship. Always set in
+    /// lockstep with `subject` when writing.
+    var parentSubjectId: UUID = UUID()
     /// Nil = direct child of the subject. Non-nil = nested folder.
     var parentFolderId: UUID?
-    var sortOrder: Int
+    var sortOrder: Int = 0
 
     // MARK: Timestamps
-    var createdAt: Date
-    var updatedAt: Date
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
 
     // MARK: Soft delete
-    var isDeleted: Bool
+    var isDeleted: Bool = false
     var deletedAt: Date?
+
+    // MARK: Relationships
+    /// CloudKit-compatible back-reference to the owning subject.
+    /// The `inverse:` on `Subject.folders` makes this bidirectional.
+    @Relationship var subject: Subject?
 
     // MARK: Init
     init(

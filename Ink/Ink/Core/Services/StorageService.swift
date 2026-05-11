@@ -10,7 +10,16 @@ import UIKit
 final class StorageService: ObservableObject {
 
     // MARK: Singleton
-    static let shared = StorageService()
+    //
+    // `nonisolated(unsafe)` so the model layer's `nonisolated`
+    // computed properties (`Notebook.isPDFBacked`,
+    // `Notebook.sourcePDFURL`) can reach the singleton from any
+    // isolation context. The methods those properties call
+    // (`hasSourcePDF`, `sourcePDFURL`) are themselves `nonisolated`
+    // and only touch file metadata via `FileManager` — no
+    // `@MainActor` state is read, so the "unsafe" annotation is
+    // accurate but the practical risk is zero.
+    nonisolated(unsafe) static let shared: StorageService = MainActor.assumeIsolated { StorageService() }
 
     // MARK: Directory URLs
     //
@@ -53,7 +62,12 @@ final class StorageService: ObservableObject {
 
     // MARK: Core
 
-    private let container: ModelContainer
+    /// Exposed `internal` so the SwiftUI app root can inject the same
+    /// container into the environment via `.modelContainer(_:)` —
+    /// required for SwiftData `@Query` views (e.g. the sidebar's
+    /// per-subject count) to reactively track store changes without
+    /// going through the manual `LibraryViewModel.refresh()` cycle.
+    let container: ModelContainer
     private let context: ModelContext
 
     /// Designated init — callers pass a container for testability.
@@ -82,6 +96,41 @@ final class StorageService: ObservableObject {
               + "This is unrecoverable; the app cannot start without on-disk storage."
             )
         }
+    }
+
+    // MARK: - One-time backfill
+
+    /// Defensive recompute of `Notebook.totalPageCount` for every
+    /// non-deleted notebook. The mutation sites
+    /// (`createPage`/`deletePage`/`duplicateNotebook` etc.) keep the
+    /// denormalised count accurate going forward, but pre-existing
+    /// notebooks created before all those sites were wired could
+    /// hold a stale value. Runs once per device, gated by a
+    /// UserDefaults flag — subsequent launches skip the work.
+    private static let pageCountBackfillKey = "cache.pageCount.backfillCompleted.v1"
+
+    func runOneTimePageCountBackfillIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.pageCountBackfillKey) else { return }
+
+        let descriptor = FetchDescriptor<Notebook>(
+            predicate: #Predicate { $0.isDeleted == false }
+        )
+        guard let notebooks = try? context.fetch(descriptor) else {
+            return  // try again next launch
+        }
+
+        var dirty = false
+        for notebook in notebooks {
+            let live = (notebook.pages ?? []).filter { !$0.isDeleted }.count
+            if notebook.totalPageCount != live {
+                notebook.totalPageCount = live
+                dirty = true
+            }
+        }
+        if dirty { try? context.save() }
+
+        defaults.set(true, forKey: Self.pageCountBackfillKey)
     }
 }
 
@@ -122,6 +171,27 @@ private extension StorageService {
             total += size
         }
         return total
+    }
+}
+
+// MARK: - PDF backing (module-internal access)
+
+extension StorageService {
+
+    /// Path where an imported source PDF lives for a PDF-backed
+    /// notebook. Fixed filename so the renderer / exporter can find
+    /// it from a notebook id alone — there's at most one source PDF
+    /// per notebook. `nonisolated` so the `Notebook` model's
+    /// computed accessors (also nonisolated) can call this without
+    /// hopping to the main actor.
+    nonisolated func sourcePDFURL(_ notebookId: UUID) -> URL {
+        Self.notebooksDirectoryURL
+            .appendingPathComponent(notebookId.uuidString)
+            .appendingPathComponent("source.pdf")
+    }
+
+    nonisolated func hasSourcePDF(_ notebookId: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: sourcePDFURL(notebookId).path)
     }
 }
 
@@ -172,7 +242,7 @@ extension StorageService {
 
     /// Soft-deletes the subject and moves its notebooks to Uncategorised (subjectId = nil).
     func deleteSubject(_ subject: Subject) throws {
-        for notebook in subject.notebooks where !notebook.isDeleted {
+        for notebook in (subject.notebooks ?? []) where !notebook.isDeleted {
             notebook.subjectId = nil
             notebook.updatedAt = Date()
         }
@@ -206,7 +276,13 @@ extension StorageService {
             parentFolderId: parentFolderId,
             sortOrder: nextOrder
         )
+        // CloudKit syncs the relationship reference, not the raw
+        // `parentSubjectId` UUID — set both so cross-device fetches
+        // can resolve the folder's parent. Same pattern at every
+        // child-creation site below.
+        folder.subject = subject
         context.insert(folder)
+        subject.folders = (subject.folders ?? []) + [folder]
         try context.save()
         return folder
     }
@@ -388,12 +464,28 @@ extension StorageService {
         notebook.sortOrder = nextOrder
         context.insert(notebook)
 
-        // Link to subject relationship
+        // Link to subject relationship and pick a cover tone from the
+        // subject's rotation. Computed *before* we insert into the
+        // relationship so `existingNotebooks` doesn't already include
+        // this row.
         if let subjectId {
             let pred = #Predicate<Subject> { $0.id == subjectId && $0.isDeleted == false }
             if let subject = (try? context.fetch(FetchDescriptor(predicate: pred)))?.first {
-                subject.notebooks.append(notebook)
+                let assigned = CoverToneAssigner.tone(in: subject)
+                CoverToneStore.setTone(assigned, for: notebook.id)
+                // Set BOTH sides of the relationship explicitly.
+                // `subject.notebooks.append(...)` would normally pick
+                // up the inverse via SwiftData, but writing
+                // `notebook.subject` explicitly is the canonical form
+                // and ensures CloudKit syncs a resolvable record
+                // reference even if the inverse population is delayed.
+                notebook.subject = subject
+                subject.notebooks = (subject.notebooks ?? []) + [notebook]
             }
+        } else {
+            let existing = fetchNotebooksWithoutFolder(subjectId: nil)
+            let assigned = CoverToneAssigner.toneForUncategorised(existingNotebooks: existing)
+            CoverToneStore.setTone(assigned, for: notebook.id)
         }
 
         // Create first page
@@ -403,8 +495,9 @@ extension StorageService {
             pageSize: pageSize,
             backgroundTemplate: template
         )
+        page.notebook = notebook
         context.insert(page)
-        notebook.pages.append(page)
+        notebook.pages = (notebook.pages ?? []) + [page]
         notebook.totalPageCount = 1
 
         try context.save()
@@ -448,6 +541,44 @@ extension StorageService {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// Notebooks the user has actually opened, ordered by most recent
+    /// access. Backed by `RecentNotebooksTracker` (UserDefaults) so we
+    /// don't need a SwiftData schema change — adding a column to
+    /// `Notebook` collides with the staged-migration version checksum
+    /// (see the comment in `InkSchemas.swift`). The tracker survives
+    /// the app, but a deleted notebook drops out of the list because
+    /// the SwiftData fetch ignores its id.
+    func fetchRecentNotebooks(limit: Int) -> [Notebook] {
+        let recentIds = RecentNotebooksTracker.recentIdsNewestFirst()
+        guard !recentIds.isEmpty else { return [] }
+
+        // Single fetch of all live notebooks, then re-sorted in
+        // recent-access order. Cheaper than N predicate fetches and
+        // identical for any sane library size.
+        let descriptor = FetchDescriptor<Notebook>(
+            predicate: #Predicate { $0.isDeleted == false }
+        )
+        let live = (try? context.fetch(descriptor)) ?? []
+        let byId = Dictionary(uniqueKeysWithValues: live.map { ($0.id, $0) })
+
+        var out: [Notebook] = []
+        for id in recentIds {
+            if let nb = byId[id] {
+                out.append(nb)
+                if out.count == limit { break }
+            }
+        }
+        return out
+    }
+
+    /// Stamp a notebook as "just opened". Called when the editor opens
+    /// a notebook so it surfaces in the Library "recently opened"
+    /// section. Backed by UserDefaults — no SwiftData mutation, no
+    /// migration risk.
+    func markNotebookOpened(_ notebook: Notebook) {
+        RecentNotebooksTracker.markOpened(notebook.id)
+    }
+
     func updateNotebook(
         _ notebook: Notebook,
         title: String?,
@@ -468,8 +599,13 @@ extension StorageService {
         if let defaultTemplate { notebook.defaultTemplate = defaultTemplate }
         if let pinned = isPinned { notebook.isPinned = pinned }
         if let tags {
-            let validated = tags.prefix(5).map { String($0.prefix(20)) }
-            notebook.tags = Array(validated)
+            // Defence-in-depth — the UI runs every tag through
+            // `TagValidator`, but the storage layer also clamps so a
+            // direct mutation can't push past spec limits.
+            let clamped = tags
+                .prefix(TagValidator.maxTagsPerNotebook)
+                .map { String($0.prefix(TagValidator.maxTagLength)) }
+            notebook.tags = Array(clamped)
         }
         notebook.updatedAt = Date()
         try context.save()
@@ -482,10 +618,11 @@ extension StorageService {
         if let oldSubjectId = notebook.subjectId {
             let pred = #Predicate<Subject> { $0.id == oldSubjectId }
             if let old = (try? context.fetch(FetchDescriptor(predicate: pred)))?.first {
-                old.notebooks.removeAll { $0.id == notebook.id }
+                old.notebooks?.removeAll { $0.id == notebook.id }
             }
         }
         notebook.subjectId = subjectId
+        notebook.subject   = nil
         // Folders are scoped to a single subject — clear the folderId so
         // we never carry a stale reference across subjects.
         notebook.folderId  = nil
@@ -495,7 +632,8 @@ extension StorageService {
         if let subjectId {
             let pred = #Predicate<Subject> { $0.id == subjectId && $0.isDeleted == false }
             if let new = (try? context.fetch(FetchDescriptor(predicate: pred)))?.first {
-                new.notebooks.append(notebook)
+                notebook.subject = new
+                new.notebooks = (new.notebooks ?? []) + [notebook]
             }
         }
         try context.save()
@@ -507,7 +645,10 @@ extension StorageService {
         notebook.updatedAt = Date()
         try context.save()
         let id = notebook.id
-        Task { await SpotlightService.shared.removeNotebook(id: id) }
+        // Drop the in-memory search entry immediately; SpotlightService
+        // is hit inside removeNotebook(id:) too, so this also clears
+        // the OS-level Spotlight donation without a duplicate call.
+        SearchIndexService.shared.removeNotebook(id: id)
         scheduleWidgetSnapshot()
     }
 
@@ -527,7 +668,8 @@ extension StorageService {
         if let subjectId = notebook.subjectId {
             let pred = #Predicate<Subject> { $0.id == subjectId && $0.isDeleted == false }
             if let subject = (try? context.fetch(FetchDescriptor(predicate: pred)))?.first {
-                subject.notebooks.append(copy)
+                copy.subject = subject
+                subject.notebooks = (subject.notebooks ?? []) + [copy]
             }
         }
 
@@ -541,10 +683,11 @@ extension StorageService {
             )
             newPage.strokeData     = page.strokeData
             newPage.strokeDataSize = page.strokeDataSize
+            newPage.notebook       = copy
             context.insert(newPage)
-            copy.pages.append(newPage)
+            copy.pages = (copy.pages ?? []) + [newPage]
 
-            for block in page.textBlocks where !block.isDeleted {
+            for block in (page.textBlocks ?? []) where !block.isDeleted {
                 let newBlock = TextBlock(
                     pageId: newPage.id, x: block.x, y: block.y,
                     width: block.width, height: block.height
@@ -553,11 +696,12 @@ extension StorageService {
                 newBlock.richTextData = block.richTextData
                 newBlock.rotation     = block.rotation
                 newBlock.zIndex       = block.zIndex
+                newBlock.page         = newPage
                 context.insert(newBlock)
-                newPage.textBlocks.append(newBlock)
+                newPage.textBlocks = (newPage.textBlocks ?? []) + [newBlock]
             }
 
-            for attachment in page.mediaAttachments where !attachment.isDeleted {
+            for attachment in (page.mediaAttachments ?? []) where !attachment.isDeleted {
                 let newAtt = MediaAttachment(
                     pageId: newPage.id,
                     notebookId: copy.id,
@@ -573,14 +717,15 @@ extension StorageService {
                 newAtt.rotation = attachment.rotation
                 newAtt.zIndex   = attachment.zIndex
                 newAtt.caption  = attachment.caption
+                newAtt.page     = newPage
                 context.insert(newAtt)
-                newPage.mediaAttachments.append(newAtt)
+                newPage.mediaAttachments = (newPage.mediaAttachments ?? []) + [newAtt]
 
                 try await copyFile(from: mediaURL(for: attachment), to: mediaURL(for: newAtt))
                 try await copyFile(from: thumbnailURL(for: attachment), to: thumbnailURL(for: newAtt))
             }
 
-            for annotation in page.audioAnnotations where !annotation.isDeleted {
+            for annotation in (page.audioAnnotations ?? []) where !annotation.isDeleted {
                 let newAnn = AudioAnnotation(
                     pageId: newPage.id,
                     notebookId: copy.id,
@@ -593,14 +738,15 @@ extension StorageService {
                 newAnn.transcription         = annotation.transcription
                 newAnn.transcriptionSegments = annotation.transcriptionSegments
                 newAnn.recordedAt            = annotation.recordedAt
+                newAnn.page                  = newPage
                 context.insert(newAnn)
-                newPage.audioAnnotations.append(newAnn)
+                newPage.audioAnnotations = (newPage.audioAnnotations ?? []) + [newAnn]
 
                 try await copyFile(from: audioURL(for: annotation), to: audioURL(for: newAnn))
             }
         }
 
-        copy.totalPageCount = copy.pages.count
+        copy.totalPageCount = (copy.pages ?? []).count
         try context.save()
         try ensureDir(notebookDir(copy.id))
         scheduleSpotlightReindex(for: copy)
@@ -663,12 +809,24 @@ extension StorageService {
             pageSize: pageSize ?? notebook.pageSize,
             backgroundTemplate: backgroundTemplate ?? notebook.defaultTemplate
         )
+        newPage.notebook = notebook
         context.insert(newPage)
-        notebook.pages.append(newPage)
-        notebook.totalPageCount = notebook.pages.filter { !$0.isDeleted }.count
+        notebook.pages = (notebook.pages ?? []) + [newPage]
+        notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
         notebook.updatedAt      = Date()
         try context.save()
         return newPage
+    }
+
+    /// Fetch a single page by ID. Used by background services (e.g.
+    /// `SearchIndexService`'s OCR pass) that need to re-resolve a
+    /// page from disk after a debounce window.
+    func fetchPage(id: UUID) -> Page? {
+        var descriptor = FetchDescriptor<Page>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first
     }
 
     func fetchPages(in notebook: Notebook) -> [Page] {
@@ -714,12 +872,18 @@ extension StorageService {
 
         // Update notebook count
         if let nb = notebookById(notebookId) {
-            nb.totalPageCount = nb.pages.filter { !$0.isDeleted }.count
+            nb.totalPageCount = (nb.pages ?? []).filter { !$0.isDeleted }.count
             nb.updatedAt      = Date()
         }
         try context.save()
     }
 
+    /// INTENTIONAL: `duplicatePage` is a lightweight copy — strokes
+    /// and text blocks only. Media attachments and audio annotations
+    /// belong to the notebook, not to an individual page copy, so
+    /// they are not duplicated when a single page is duplicated.
+    /// Notebook-level duplication (`duplicateNotebook`) does carry
+    /// media + audio across.
     func duplicatePage(_ page: Page) throws -> Page {
         guard let notebook = notebookById(page.notebookId) else {
             throw InkStorageError.notebookNotFound
@@ -740,10 +904,11 @@ extension StorageService {
         )
         newPage.strokeData     = page.strokeData
         newPage.strokeDataSize = page.strokeDataSize
+        newPage.notebook       = notebook
         context.insert(newPage)
-        notebook.pages.append(newPage)
+        notebook.pages = (notebook.pages ?? []) + [newPage]
 
-        for block in page.textBlocks where !block.isDeleted {
+        for block in (page.textBlocks ?? []) where !block.isDeleted {
             let nb = TextBlock(
                 pageId: newPage.id, x: block.x, y: block.y,
                 width: block.width, height: block.height
@@ -752,11 +917,12 @@ extension StorageService {
             nb.richTextData = block.richTextData
             nb.rotation     = block.rotation
             nb.zIndex       = block.zIndex
+            nb.page         = newPage
             context.insert(nb)
-            newPage.textBlocks.append(nb)
+            newPage.textBlocks = (newPage.textBlocks ?? []) + [nb]
         }
 
-        notebook.totalPageCount = notebook.pages.filter { !$0.isDeleted }.count
+        notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
         notebook.updatedAt      = Date()
         try context.save()
         return newPage
@@ -811,10 +977,11 @@ extension StorageService {
             width: normalizedRect.width,
             height: normalizedRect.height
         )
-        let maxZ = (page.textBlocks.map(\.zIndex).max() ?? -1) + 1
+        let maxZ = ((page.textBlocks ?? []).map(\.zIndex).max() ?? -1) + 1
         block.zIndex = maxZ
+        block.page   = page
         context.insert(block)
-        page.textBlocks.append(block)
+        page.textBlocks = (page.textBlocks ?? []) + [block]
         page.updatedAt = Date()
         try context.save()
         return block
@@ -845,6 +1012,32 @@ extension StorageService {
         block.deletedAt = Date()
         block.updatedAt = Date()
         try context.save()
+    }
+
+    /// Persist a recording transcript as a standalone `TextBlock` —
+    /// used when Settings has "Save audio clips" off but
+    /// "Generate transcripts" on, so there's no `AudioAnnotation` to
+    /// hang the transcript on. Drops the block in the upper-left
+    /// quadrant at a sensible default size; the user can move/resize
+    /// after the fact like any other text block.
+    @discardableResult
+    func createTextBlock(on page: Page, content: String) throws -> TextBlock {
+        let block = TextBlock(
+            pageId: page.id,
+            x:      0.06,
+            y:      0.08,
+            width:  0.45,
+            height: 0.18
+        )
+        block.content     = content
+        let maxZ          = ((page.textBlocks ?? []).map(\.zIndex).max() ?? -1) + 1
+        block.zIndex      = maxZ
+        block.page        = page
+        context.insert(block)
+        page.textBlocks = (page.textBlocks ?? []) + [block]
+        page.updatedAt    = Date()
+        try context.save()
+        return block
     }
 }
 
@@ -880,11 +1073,12 @@ extension StorageService {
             height: normalizedRect.height
         )
 
-        let zMax = (page.mediaAttachments.map(\.zIndex).max() ?? -1) + 1
+        let zMax = ((page.mediaAttachments ?? []).map(\.zIndex).max() ?? -1) + 1
         attachment.zIndex = zMax
+        attachment.page   = page
 
         context.insert(attachment)
-        page.mediaAttachments.append(attachment)
+        page.mediaAttachments = (page.mediaAttachments ?? []) + [attachment]
         page.updatedAt = Date()
 
         // Write files on background task
@@ -1001,9 +1195,10 @@ extension StorageService {
             height: normalizedRect.height
         )
         attachment.id     = id
-        attachment.zIndex = (page.mediaAttachments.map(\.zIndex).max() ?? -1) + 1
+        attachment.zIndex = ((page.mediaAttachments ?? []).map(\.zIndex).max() ?? -1) + 1
+        attachment.page   = page
         context.insert(attachment)
-        page.mediaAttachments.append(attachment)
+        page.mediaAttachments = (page.mediaAttachments ?? []) + [attachment]
         page.updatedAt = Date()
         try context.save()
         return attachment
@@ -1053,8 +1248,9 @@ extension StorageService {
             pageX: Double(point.x),
             pageY: Double(point.y)
         )
+        annotation.page = page
         context.insert(annotation)
-        page.audioAnnotations.append(annotation)
+        page.audioAnnotations = (page.audioAnnotations ?? []) + [annotation]
         page.updatedAt = Date()
         try context.save()
         return annotation
@@ -1103,8 +1299,9 @@ extension StorageService {
             pageX:           Double(point.x),
             pageY:           Double(point.y)
         )
+        annotation.page = page
         context.insert(annotation)
-        page.audioAnnotations.append(annotation)
+        page.audioAnnotations = (page.audioAnnotations ?? []) + [annotation]
         page.updatedAt = Date()
         try context.save()
         return annotation
@@ -1368,6 +1565,47 @@ extension StorageService {
     private func purgeNotebookFiles(_ notebook: Notebook) {
         let dir = notebookDir(notebook.id)
         try? FileManager.default.removeItem(at: dir)
+        // Side-channel stores live in UserDefaults — wipe entries for
+        // every page in the purged notebook so the dictionaries don't
+        // accumulate orphaned mappings over time.
+        let pageIds = (notebook.pages ?? []).map(\.id)
+        PDFBackingStore.forget(pageIds: pageIds)
+        StickyNoteStore.forget(pageIds: pageIds)
+        // PDF text annotations (highlight / underline / strikethrough)
+        // ride the same side-channel pattern — wipe them so a
+        // reaper-purged notebook doesn't leave orphaned annotation
+        // records keyed to pages that no longer exist.
+        PDFTextAnnotationStore.forget(pageIds: pageIds)
+        // Image attachments — the store also removes the on-disk
+        // image files under `Documents/media/<notebookId>/` so the
+        // reaper-purge sweep doesn't leave orphaned pixels behind.
+        MediaAttachmentStore.forget(pageIds: pageIds)
+        // Belt-and-braces: drop the per-notebook media directory
+        // wholesale in case any files lingered (e.g. records that
+        // failed to persist). Safe to remove a non-existent path.
+        try? FileManager.default.removeItem(
+            at: MediaAttachmentStore.mediaDirectory(for: notebook.id)
+        )
+        // Lecture records live in UserDefaults; their audio files
+        // sit under `notebookDir/audio/` and are already swept by
+        // the `removeItem(at: dir)` above. `forget(pageIds:)` is
+        // still called so the per-page dictionary doesn't retain
+        // orphaned record metadata.
+        LectureStore.forget(pageIds: pageIds)
+        // AI caches — summary in UserDefaults, embedding in a
+        // Documents/embeddings/<uuid>.bin file. Both live on-device
+        // and the notebook being permanently removed means both
+        // should disappear too.
+        IntelligenceCache.clearSummaries(for: [notebook.id])
+        IntelligenceCache.clearDismissedTags(for: [notebook.id])
+        IntelligenceCache.clearEmbeddings(for: [notebook.id])
+        // Per-notebook UserDefaults side-channels not already
+        // wiped above. Cover tone, preferences, and recent-opened
+        // tracker all live in `UserDefaults.standard`.
+        CoverToneStore.forget(notebook.id)
+        NotebookPreferencesStore.forget(notebook.id)
+        RecentNotebooksTracker.forget(notebook.id)
+        SearchIndexService.shared.removeNotebook(id: notebook.id)
     }
 }
 
@@ -1435,3 +1673,106 @@ private extension UIImage {
         }
     }
 }
+
+// MARK: - DEBUG synthetic data
+//
+// Lives in this file so it can reach the private `context`. Compiled
+// out of release builds entirely; the Settings entry point is itself
+// `#if DEBUG`-gated.
+
+#if DEBUG
+extension StorageService {
+
+    /// Generate `count` synthetic notebooks distributed across at
+    /// least 5 subjects. Each notebook gets 1–30 pages, a random
+    /// `createdAt` in the last 30 days, and a random `updatedAt` in
+    /// the last 7 days, so library sort/grouping has realistic input.
+    /// Bypasses the per-call save / Spotlight reindex / widget
+    /// snapshot scheduling that `createNotebook(...)` performs —
+    /// those overheads aren't part of what the perf test exercises.
+    func generateSyntheticNotebooks(count: Int) throws {
+        let subjectNames = ["University", "Personal", "Work", "Ideas", "Travel"]
+        var subjects = fetchSubjects()
+        let palette  = InkColorPresets.subjectColors
+
+        while subjects.count < 5 {
+            let idx = subjects.count
+            let s = Subject(
+                name:      subjectNames[idx],
+                colorHex:  palette[idx % palette.count],
+                sortOrder: idx
+            )
+            context.insert(s)
+            subjects.append(s)
+        }
+
+        let now = Date()
+        let day = TimeInterval(86_400)
+        var usedTitles = Set(fetchAllNotebooks().map(\.title))
+
+        for i in 0..<count {
+            let subject = subjects[i % subjects.count]
+            let base    = NotebookNameGenerator.names.randomElement() ?? "Synthetic"
+            var title = "\(base) \(i + 1)"
+            while usedTitles.contains(title) { title += "·" }
+            usedTitles.insert(title)
+
+            let createdAt = now.addingTimeInterval(-Double.random(in: 0...30 * day))
+            let updatedAt = now.addingTimeInterval(-Double.random(in: 0...7 * day))
+            let coverHex  = palette.randomElement() ?? "#FFFFFF"
+
+            let nb = Notebook(
+                title:           title,
+                subjectId:       subject.id,
+                coverColorHex:   coverHex,
+                coverTexture:    .none,
+                pageSize:        .a4,
+                defaultTemplate: .blank
+            )
+            nb.createdAt = createdAt
+            nb.updatedAt = updatedAt
+            nb.sortOrder = ((subject.notebooks ?? []).last?.sortOrder ?? -1) + 1
+            nb.subject   = subject
+
+            context.insert(nb)
+            subject.notebooks = (subject.notebooks ?? []) + [nb]
+
+            let pageCount = Int.random(in: 1...30)
+            for p in 0..<pageCount {
+                let page = Page(
+                    notebookId:         nb.id,
+                    pageNumber:         p + 1,
+                    pageSize:           .a4,
+                    backgroundTemplate: .blank
+                )
+                page.notebook = nb
+                context.insert(page)
+                nb.pages = (nb.pages ?? []) + [page]
+            }
+            nb.totalPageCount = pageCount
+
+            let tone = CoverToneAssigner.tone(in: subject)
+            CoverToneStore.setTone(tone, for: nb.id)
+
+            // Batch save — keeps memory steady at 1000-notebook scale.
+            if i % 100 == 99 {
+                try context.save()
+            }
+        }
+        try context.save()
+    }
+
+    /// Hard wipe of every notebook and subject in the store. Intended
+    /// for clearing synthetic data between perf runs — destructive
+    /// enough that the Settings entry is labelled accordingly.
+    func wipeAllSyntheticData() throws {
+        for nb in fetchAllNotebooks() {
+            context.delete(nb)
+        }
+        for s in fetchSubjects() {
+            context.delete(s)
+        }
+        try context.save()
+    }
+}
+#endif

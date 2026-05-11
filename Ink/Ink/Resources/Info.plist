@@ -15,7 +15,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
-    <string>wave notes app</string>
+    <string>Cecilia's Notes</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
@@ -23,7 +23,7 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>$(PRODUCT_NAME)</string>
+    <string>CeciliasNotes</string>
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
@@ -60,18 +60,34 @@
         <string>arm64</string>
     </array>
 
+    <!-- Background modes:
+         • `audio` — lecture mode keeps recording when the screen
+           locks or the user switches apps. Speech recognition still
+           pauses (Apple constraint); the audio file is intact.
+         • `remote-notification` — CloudKit silent pushes deliver
+           record-change notifications to the SwiftData mirror.
+           Required by `cloudKitDatabase: .private(...)` — without
+           it, CloudKit raises "BUG IN CLIENT OF CLOUDKIT: CloudKit
+           push notifications require the 'remote-notification'
+           background mode in your info plist." at launch. -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>remote-notification</string>
+    </array>
+
     <!-- Privacy usage descriptions -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>Ink records audio for your notes. Recordings are stored on your device and never uploaded.</string>
+    <string>Cecilia's Notes records audio for your notes. Recordings are stored on your device and never uploaded.</string>
 
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Ink transcribes your recordings locally on your device using Apple's speech recognition.</string>
+    <string>Cecilia's Notes transcribes your recordings locally on your device using Apple's speech recognition.</string>
 
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>Ink lets you insert photos from your photo library into your notes.</string>
+    <string>Cecilia's Notes lets you insert photos from your photo library into your notes.</string>
 
     <key>NSCameraUsageDescription</key>
-    <string>Ink lets you photograph and insert images directly into your notes.</string>
+    <string>Cecilia's Notes lets you photograph and insert images directly into your notes.</string>
 
     <!-- Deep link URL scheme -->
     <key>CFBundleURLTypes</key>
@@ -100,15 +116,13 @@
         <string>InkLaunchBackground</string>
     </dict>
 
-    <!-- Bundled custom fonts. Drop the .ttf into Resources/Fonts/ and add
-         the file to the Ink target's "Copy Bundle Resources" build phase
-         (or rely on the file-system synchronized group). The
-         BrandWordmark / BrandIconRenderer code falls back to system bold
-         if the font isn't registered. -->
+    <!-- No bundled custom fonts. The brand uses SF Pro Display
+         exclusively (per the design system); the earlier
+         BricolageGrotesque reference here was stale — the .ttf was
+         never bundled and the runtime font registration was failing
+         every launch with `FontParser could not open filePath ...`. -->
     <key>UIAppFonts</key>
-    <array>
-        <string>Fonts/BricolageGrotesque-VariableFont_opsz,wdth,wght.ttf</string>
-    </array>
+    <array/>
 
     <!-- Personal Identity: alternate app icons keyed by first letter.
          The 26 icon files (Icon-a.png … Icon-z.png at every iOS-required

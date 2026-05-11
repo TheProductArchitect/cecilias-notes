@@ -1,32 +1,64 @@
 import SwiftUI
 
+/// Notebook card — typographic, no thumbnail. The notebook *is* its
+/// cover tone: background and text colour come straight off
+/// `NotebookCoverTone`, a ghost letter sits behind the title bleeding
+/// off the bottom-right edge, and a single blue dot in the top-right
+/// marks the most-recently-opened notebook across the whole library.
+///
+/// Functionality preserved from the previous design: inline rename,
+/// pin / unpin, multi-select, drag-to-move, context menu, plus a new
+/// "Change Cover" entry that opens the `CoverTonePickerView`.
 struct NotebookCardView: View {
     let notebook: Notebook
     @ObservedObject var viewModel: LibraryViewModel
 
-    @State private var isHovered        = false
-    @State private var isEditingTitle   = false
-    @State private var titleBuffer      = ""
+    @State private var isHovered          = false
+    @State private var isEditingTitle     = false
+    @State private var titleBuffer        = ""
+    @State private var isShowingCoverPicker = false
     @FocusState private var titleFocused: Bool
+    /// 300ms debounced auto-save while the user is typing. Keeps the
+    /// in-progress title persisted if the user backgrounds the app
+    /// mid-edit, without writing on every keystroke.
+    @State private var titleAutosaveTask: Task<Void, Never>?
+
+    private static let cornerRadius: CGFloat = 3
+    private static let borderColor   = Color(hex: "#ebebeb")
 
     private var isSelected: Bool { viewModel.selectedNotebookIds.contains(notebook.id) }
     private var isDuplicating: Bool { viewModel.duplicatingIds.contains(notebook.id) }
 
+    /// True only for the single notebook the user opened most recently.
+    /// Drives the blue accent dot in the top-right corner.
+    private var isMostRecent: Bool {
+        viewModel.mostRecentNotebookId == notebook.id
+    }
+
+    private var tone: NotebookCoverTone { notebook.coverTone }
+
+    /// Recessive colour paired with the tone. On dark covers the
+    /// supporting copy reads against `Color.white`; on light, against
+    /// `Color.black`. The opacity rungs land on top of those.
+    private func recessive(_ alpha: Double) -> Color {
+        tone.isLight
+            ? Color.black.opacity(alpha)
+            : Color.white.opacity(alpha)
+    }
+
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             cardBody
             overlays
         }
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .overlay(border)
+        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .scaleEffect(isHovered && !viewModel.isSelecting ? 1.01 : 1.0)
-        .overlay(selectionRing)
-        .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
         .onHover { hovered in
             withAnimation(.inkSpring(InkSpring.precise)) { isHovered = hovered }
         }
         .onTapGesture {
-            // Title-tap consumes its own gesture (Button below); this fires for
-            // the rest of the card surface.
             if isEditingTitle { return }
             if viewModel.isSelecting {
                 withAnimation(.inkSpring(InkSpring.snappy)) {
@@ -37,11 +69,12 @@ struct NotebookCardView: View {
             }
         }
         .contextMenu { contextMenu }
-        // Note: a `.simultaneousGesture(LongPressGesture)` used to live
-        // here to pre-warm the haptic engine for context-menu open
-        // latency. It also raced pencil taps and consumed the first one,
-        // forcing a second tap to open notebooks. Removed — `.contextMenu`
-        // fires its own haptic and the warm-up gain is invisible.
+        .popover(isPresented: $isShowingCoverPicker, arrowEdge: .top) {
+            CoverTonePickerView(notebook: notebook) {
+                isShowingCoverPicker = false
+                viewModel.refresh()
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.notebookLabel(
             title: notebook.title,
@@ -56,50 +89,173 @@ struct NotebookCardView: View {
     // MARK: Card body
 
     private var cardBody: some View {
-        VStack(spacing: 0) {
-            coverArea
-            infoArea
+        ZStack {
+            tone.background
+
+            // Ghost letter behind everything else, bleeds bottom-right.
+            GhostLetter(
+                character: notebook.title.first ?? "?",
+                size: 96,
+                onDarkBackground: !tone.isLight
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .offset(x: 18, y: 18)
+            .clipped()
+            .accessibilityHidden(true)
+
+            VStack(spacing: 0) {
+                topRow
+                Spacer(minLength: 0)
+                bottomBlock
+            }
+            .padding(.top, 12)
+            .padding(.horizontal, 11)
+            .padding(.bottom, 11)
         }
-        .background(Color.inkBackgroundElevated)
-        .overlay(
-            RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
-                .strokeBorder(
-                    isHovered ? Color.inkBorderDefault : Color.inkBorderSubtle,
-                    lineWidth: 0.5
-                )
+    }
+
+    // MARK: Top row
+
+    private var topRow: some View {
+        HStack(spacing: 6) {
+            if notebook.isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 7.5, weight: .regular))
+                    .foregroundStyle(recessive(tone.isLight ? 0.4 : 0.5))
+                    .accessibilityHidden(true)
+            }
+
+            Text(subjectLabel)
+                .font(.system(size: 7.5, weight: .regular))
+                .tracking(0.08)
+                .textCase(.uppercase)
+                .foregroundStyle(recessive(tone.isLight ? 0.4 : 0.5))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            // Active-state dot. Always rendered so layout doesn't
+            // shift between cards — just transparent when this isn't
+            // the most-recent notebook.
+            Circle()
+                .fill(Color.brandAccent)
+                .frame(width: 5, height: 5)
+                .opacity(isMostRecent ? 1 : 0)
+        }
+    }
+
+    private var subjectLabel: String {
+        if let id = notebook.subjectId,
+           let s = viewModel.subjects.first(where: { $0.id == id }) {
+            return s.name.lowercased()
+        }
+        return "uncategorised"
+    }
+
+    // MARK: Bottom block (title + meta)
+
+    private var bottomBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            titleView
+
+            // AI summary — present only when Apple Intelligence is on
+            // AND a cached summary exists. Graceful absence
+            // otherwise (no spinner, no placeholder copy). 2-line
+            // cap with a soft right fade for editorial polish.
+            if let summary = aiSummary {
+                Text(summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(recessive(0.55))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .black, location: 0),
+                                .init(color: .black, location: 0.85),
+                                .init(color: .clear, location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .padding(.top, 2)
+            }
+
+            Text(pageCountLabel)
+                .font(.system(size: 8, weight: .regular))
+                .foregroundStyle(recessive(0.5))
+
+            Text(lastOpenedLabel)
+                .font(.system(size: 8, weight: .regular).italic())
+                .foregroundStyle(recessive(0.4))
+                .opacity(lastOpenedLabel.isEmpty ? 0 : 1)
+
+            tagsRow
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var aiSummary: String? {
+        guard IntelligenceService.shared.canRun else { return nil }
+        return IntelligenceCache.summary(
+            for: notebook.id,
+            notebookUpdatedAt: notebook.updatedAt
         )
     }
 
-    // MARK: Cover (top 60%)
-
-    private var coverArea: some View {
-        ZStack(alignment: .bottomLeading) {
-            // Base colour
-            Color(UIColor(hex: notebook.coverColorHex))
-
-            // Texture overlay
-            CoverTextureCanvas(texture: notebook.coverTexture)
-
-            // Thumbnail (full bleed over colour + texture)
-            if let data = notebook.thumbnailData, let img = UIImage(data: data) {
-                Image(uiImage: img)
-                    .resizable()
-                    .scaledToFill()
+    /// Reserved 20pt slot beneath the metadata so card heights stay
+    /// uniform whether a notebook has tags or not. Renders up to 2
+    /// tag pills + a "+N more" recessive label; spec says "up to 3"
+    /// but 3 pills overflow the card width at the 10pt size, so we
+    /// render 2 + overflow which mirrors how Reminders / Notion do
+    /// it. Empty tag arrays show an invisible spacer.
+    private var tagsRow: some View {
+        let allTags    = notebook.tags
+        let visible    = Array(allTags.prefix(2))
+        let overflow   = max(0, allTags.count - visible.count)
+        return HStack(spacing: 4) {
+            ForEach(visible, id: \.self) { tag in
+                Text(tag)
+                    .font(.system(size: 7))
+                    .lineLimit(1)
+                    .foregroundStyle(tagPillForeground)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(tagPillBackground))
             }
-
-            // Page count badge
-            Text("\(notebook.totalPageCount)p")
-                .font(.inkCaption)
-                .foregroundColor(.white)
-                .padding(.horizontal, Ink.Spacing.xs)
-                .padding(.vertical, 2)
-                .background(Color.black.opacity(0.35))
-                .clipShape(Capsule())
-                .padding(Ink.Spacing.xs)
+            if overflow > 0 {
+                Text("+\(overflow) more")
+                    .font(.system(size: 7, weight: .regular).italic())
+                    .foregroundStyle(recessive(0.5))
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 200 * 0.60)  // 60% of card height
-        .clipped()
+        .frame(height: 20)
+        .opacity(allTags.isEmpty ? 0 : 1)
+        .accessibilityLabel(allTags.isEmpty
+            ? Text("")
+            : Text("Tags: \(allTags.joined(separator: ", "))")
+        )
+    }
+
+    /// Tag pills are typographic only — they invert against the
+    /// cover tone so they read on both light and dark covers.
+    private var tagPillForeground: Color {
+        tone.isLight ? Color.white : Color.black.opacity(0.85)
+    }
+
+    private var tagPillBackground: Color {
+        tone.isLight ? Color.black.opacity(0.65) : Color.white.opacity(0.85)
+    }
+
+    private var pageCountLabel: String {
+        notebook.totalPageCount == 1 ? "1 page" : "\(notebook.totalPageCount) pages"
+    }
+
+    private var lastOpenedLabel: String {
+        guard let date = RecentNotebooksTracker.lastOpened(notebook.id) else { return "" }
+        return relativeShort(for: date)
     }
 
     // MARK: Inline-editable title
@@ -108,8 +264,9 @@ struct NotebookCardView: View {
     private var titleView: some View {
         if isEditingTitle {
             TextField("Untitled", text: $titleBuffer)
-                .font(.inkSubhead)
-                .foregroundColor(.inkTextPrimary)
+                .font(.system(size: 19, weight: .heavy))
+                .tracking(-0.5)
+                .foregroundStyle(tone.textColor)
                 .textFieldStyle(.plain)
                 .focused($titleFocused)
                 .submitLabel(.done)
@@ -118,116 +275,114 @@ struct NotebookCardView: View {
                 .onChange(of: titleFocused) { _, focused in
                     if !focused { commitTitle() }
                 }
-                // Subtle highlight matches the spec's "only a subtle highlight when focused".
+                .onChange(of: titleBuffer) { _, newValue in
+                    scheduleAutosave(newValue)
+                }
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
                 .background(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.inkAccentSecondary.opacity(0.5))
+                        .fill(Color.brandAccent.opacity(0.18))
                 )
         } else {
             Button {
                 guard !viewModel.isSelecting else { return }
                 titleBuffer = notebook.title
                 isEditingTitle = true
-                // Defer focus to next runloop so the TextField exists first.
                 DispatchQueue.main.async { titleFocused = true }
             } label: {
                 Text(notebook.title)
-                    .font(.inkSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .font(.system(size: 19, weight: .heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(tone.textColor)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.plain)
         }
     }
 
     private func commitTitle() {
+        titleAutosaveTask?.cancel()
+        titleAutosaveTask = nil
         let trimmed = titleBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, trimmed != notebook.title {
             viewModel.renameNotebook(notebook, newTitle: trimmed)
         }
+        // Empty buffer falls through: the existing notebook.title is
+        // left untouched, so the user effectively reverts by clearing.
         isEditingTitle = false
         titleFocused = false
     }
 
-    // MARK: Info area (bottom 40%)
-
-    private var infoArea: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.micro) {
-            titleView
-
-            // Subject name — only visible in All Notes (no subject filter active)
-            if viewModel.selectedSubjectId == nil,
-               let subjectId = notebook.subjectId,
-               let subject = viewModel.subjects.first(where: { $0.id == subjectId }) {
-                Text(subject.name)
-                    .font(.inkCaption)
-                    .foregroundColor(.inkTextSecondary)
-                    .lineLimit(1)
+    /// 300ms debounce — coalesces keystrokes into a single rename so
+    /// SwiftData isn't hit on every character but a backgrounded app
+    /// preserves the in-progress title.
+    private func scheduleAutosave(_ buffered: String) {
+        titleAutosaveTask?.cancel()
+        let id = notebook.id
+        titleAutosaveTask = Task { [weak viewModel] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            let trimmed = buffered.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty,
+                  let viewModel,
+                  let nb = viewModel.notebook(id: id),
+                  trimmed != nb.title
+            else { return }
+            await MainActor.run {
+                viewModel.renameNotebook(nb, newTitle: trimmed)
             }
-
-            Spacer(minLength: 0)
-
-            Text(notebook.updatedAt.inkRelative)
-                .font(.inkCaption)
-                .foregroundColor(.inkTextTertiary)
         }
-        .padding(Ink.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 200 * 0.40)
+    }
+
+    // MARK: Border
+
+    @ViewBuilder
+    private var border: some View {
+        if tone.requiresBorder {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(Self.borderColor, lineWidth: 0.5)
+        }
+        if isSelected {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(Color.brandAccent, lineWidth: 1.5)
+        }
     }
 
     // MARK: Overlays
 
     @ViewBuilder
     private var overlays: some View {
-        // Loading spinner during duplicate
         if isDuplicating {
             Color.black.opacity(0.25)
-                .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
             ProgressView()
                 .progressViewStyle(.circular)
                 .tint(.white)
         }
 
-        // Pin indicator
-        if notebook.isPinned && !viewModel.isSelecting {
-            Image(systemName: "pin.fill")
-                .font(.system(size: 11))
-                .fontWeight(.medium)
-                .foregroundColor(.white.opacity(0.85))
-                .padding(Ink.Spacing.xs)
-                .background(Color.black.opacity(0.3))
-                .clipShape(Circle())
-                .padding(Ink.Spacing.xs)
-        }
-
-        // Multi-select checkbox — backed by a translucent black disc instead of a shadow,
-        // so the checkmark stays legible over any cover colour without breaking the no-shadow rule.
         if viewModel.isSelecting {
-            ZStack {
-                Circle()
-                    .fill(Color.black.opacity(0.22))
-                    .frame(width: 26, height: 26)
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .fontWeight(.medium)
-                    .foregroundColor(isSelected ? .inkAccentPrimary : .white)
+            VStack {
+                HStack {
+                    Spacer()
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.22))
+                            .frame(width: 22, height: 22)
+                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundStyle(isSelected ? Color.brandAccent : Color.white)
+                    }
+                    .padding(8)
+                }
+                Spacer()
             }
-            .padding(Ink.Spacing.xs)
             .transition(.scale.combined(with: .opacity))
         }
-    }
-
-    private var selectionRing: some View {
-        RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
-            .strokeBorder(
-                isSelected ? Color.inkAccentPrimary : Color.clear,
-                lineWidth: 2
-            )
     }
 
     // MARK: Context menu
@@ -246,6 +401,12 @@ struct NotebookCardView: View {
             DispatchQueue.main.async { titleFocused = true }
         } label: {
             Label("Rename", systemImage: "pencil")
+        }
+
+        Button {
+            isShowingCoverPicker = true
+        } label: {
+            Label("Change Cover", systemImage: "paintpalette")
         }
 
         Button {
@@ -279,7 +440,6 @@ struct NotebookCardView: View {
             }
         }
 
-        // Move into / out of a folder within the current subject.
         if let subjectId = notebook.subjectId {
             let foldersInSubject = viewModel.topLevelFolders(in: subjectId)
             if !foldersInSubject.isEmpty || notebook.folderId != nil {
@@ -318,24 +478,23 @@ struct NotebookCardView: View {
     }
 }
 
-// MARK: - Date formatting
+// MARK: - Relative date helper
 
-extension Date {
-    var inkRelative: String {
-        let now      = Date()
-        let interval = now.timeIntervalSince(self)
-        let calendar = Calendar.current
+/// Lowercase relative date suited to the recessive bottom-of-card line.
+/// "today" / "yesterday" / "n days ago" / "n weeks ago" / "1 mar".
+/// `Date.inkRelative` (used elsewhere) returns capitalised forms — this
+/// mirror is local so the card's typography stays lowercase throughout.
+private func relativeShort(for date: Date) -> String {
+    let cal = Calendar.current
+    if cal.isDateInToday(date)     { return "today" }
+    if cal.isDateInYesterday(date) { return "yesterday" }
 
-        if interval < 60            { return "Just now" }
-        if interval < 3_600         { return "\(Int(interval / 60)) min ago" }
-        if calendar.isDateInToday(self) { return "Today" }
-        if calendar.isDateInYesterday(self) { return "Yesterday" }
+    let interval = Date().timeIntervalSince(date)
+    let days     = Int(interval / 86_400)
+    if days < 7        { return "\(days) days ago" }
+    if days < 28       { return "\(days / 7) weeks ago" }
 
-        let days = Int(interval / 86_400)
-        if days < 7                 { return "\(days) days ago" }
-
-        let f        = DateFormatter()
-        f.dateFormat = "d MMM"
-        return f.string(from: self)
-    }
+    let f = DateFormatter()
+    f.dateFormat = "d MMM"
+    return f.string(from: date).lowercased()
 }

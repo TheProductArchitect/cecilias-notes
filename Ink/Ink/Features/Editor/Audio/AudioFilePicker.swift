@@ -63,7 +63,6 @@ struct AudioFilePicker: UIViewControllerRepresentable {
             await MainActor.run { viewModel.recordingState = .processing }
 
             let annotationId = UUID()
-            let page         = await MainActor.run { viewModel.currentPage }
             let destURL = await MainActor.run {
                 viewModel.audioDirURL().appendingPathComponent(annotationId.uuidString + ".m4a")
             }
@@ -85,29 +84,35 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 let fileSize = (try? FileManager.default.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
                 let pinPoint = CGPoint(x: 0.1, y: 0.1)
 
-                let annotation = await MainActor.run {
+                // Insert on the main actor and surface only the
+                // notebook-id (Sendable UUID) — `AudioAnnotation` is a
+                // SwiftData persistent model and not Sendable, so we
+                // can't return it across the actor boundary.
+                let inserted: UUID? = await MainActor.run {
                     viewModel.insertAudioFile(
                         annotationId: annotationId,
                         fileName: annotationId.uuidString + ".m4a",
                         duration: duration,
                         fileSizeBytes: fileSize,
                         at: pinPoint
-                    )
+                    )?.id
                 }
 
                 await MainActor.run {
                     viewModel.recordingState = .idle
                 }
-                guard let annotation else { return }
+                guard let insertedId = inserted else { return }
 
                 // Background transcription
                 let shouldTranscribe = await MainActor.run { viewModel.isTranscriptionEnabled }
                 if shouldTranscribe {
                     let capturedURL = destURL
-                    let capturedId  = annotation.id
+                    let capturedId  = insertedId
                     Task.detached(priority: .utility) { [weak viewModel] in
                         await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
-                        await MainActor.run { viewModel?.refreshCurrentPageAudioAnnotations() }
+                        await MainActor.run { [weak viewModel] in
+                            viewModel?.refreshCurrentPageAudioAnnotations()
+                        }
                     }
                 }
             } catch {

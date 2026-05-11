@@ -19,13 +19,55 @@ struct EditorView: View {
     @State private var canUndo: Bool = false
     @State private var canRedo: Bool = false
     @State private var undoTimer: Timer?
+    @State private var isShowingCoverPicker: Bool = false
+    /// Queued PDF URL passed in by Library "Import PDF…". Consumed
+    /// once on first appear and cleared so a re-render doesn't double
+    /// import.
+    @State private var pendingImportPDFURL: URL?
+    /// Search-result deep link — opens the notebook scrolled to the
+    /// page this id belongs to. Cleared after the first scroll.
+    @State private var pendingDeepLinkPageId: UUID?
 
-    init(notebook: Notebook, onDismiss: @escaping () -> Void) {
+    init(
+        notebook: Notebook,
+        importPDFURL: URL? = nil,
+        deepLinkPageId: UUID? = nil,
+        onDismiss: @escaping () -> Void
+    ) {
         _viewModel = StateObject(wrappedValue: EditorViewModel(notebook: notebook))
         self.onDismiss = onDismiss
+        _pendingImportPDFURL   = State(initialValue: importPDFURL)
+        _pendingDeepLinkPageId = State(initialValue: deepLinkPageId)
     }
 
     var body: some View {
+        ZStack {
+            editorBody
+                .opacity(viewModel.activeLectureRecorder == nil ? 1 : 0)
+                .allowsHitTesting(viewModel.activeLectureRecorder == nil)
+
+            // Lecture mode takes over the full screen. The editor
+            // stays mounted underneath (opacity 0) so PKCanvasView /
+            // page state / unsaved strokes are preserved exactly —
+            // dismissing the lecture view restores the editor with
+            // every overlay, scroll position and pen mode intact.
+            if let recorder = viewModel.activeLectureRecorder {
+                LectureRecordingView(
+                    recorder: recorder,
+                    onStop: { record in
+                        withAnimation(.inkSpring(InkSpring.smooth)) {
+                            viewModel.endLectureMode(with: record)
+                        }
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(200)
+            }
+        }
+        .animation(.inkSpring(InkSpring.smooth), value: viewModel.activeLectureRecorder != nil)
+    }
+
+    private var editorBody: some View {
         GeometryReader { proxy in
             ZStack(alignment: .top) {
                 // 1. Canvas (full screen) + text block overlay (inside scroll/zoom space)
@@ -93,9 +135,58 @@ struct EditorView: View {
                     .allowsHitTesting(!viewModel.isFocusMode)
                 }
 
-                // 5. Top toolbar — hidden in Focus Mode
-                if !viewModel.isFullScreen {
+                // 5. Notebook header — auto-hides on first stroke per the
+                // redesigned `HeaderVisibility` state machine. When
+                // hidden, only a 3pt cover-tone bar remains at the top
+                // of the canvas as the visual return indicator, with a
+                // 44pt-tall invisible gesture overlay layered above it
+                // — the 3pt bar is too small to tap reliably, so the
+                // overlay catches taps and short downward swipes
+                // anywhere in the top 44pt.
+                //
+                // `PKCanvasView` claims gestures on its own surface, so
+                // any tap-to-reveal recogniser attached to the canvas
+                // never fires. The overlay below sits *above* the canvas
+                // in the ZStack and only mounts when the header is
+                // hidden, so it doesn't steal taps from header buttons.
+                if !viewModel.isFullScreen
+                    && !viewModel.headerVisibility.isHeaderVisible {
                     VStack(spacing: 0) {
+                        // Cover-tone fills the status-bar zone *and*
+                        // the 3pt return-bar sliver in one continuous
+                        // band so the chrome reads as the cropped edge
+                        // of a hidden header rather than as two stacked
+                        // strips.
+                        Rectangle()
+                            .fill(viewModel.notebook.coverTone.background)
+                            .frame(height: proxy.safeAreaInsets.top + 3)
+                        Spacer()
+                    }
+                    .ignoresSafeArea(edges: .top)
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(false)        // visual only
+
+                    VStack(spacing: 0) {
+                        topEdgeRevealOverlay
+                        Spacer()
+                    }
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(!viewModel.isFocusMode)
+                }
+
+                if !viewModel.isFullScreen
+                    && viewModel.headerVisibility.isHeaderVisible {
+                    VStack(spacing: 0) {
+                        // Explicit cover-tone band that paints the
+                        // status-bar zone in cover tone. Without this,
+                        // the ZStack's `inkBackgroundSecondary` shows
+                        // through the safe area (near-black `#1C1C1A`
+                        // in dark mode) and reads as a separate "system
+                        // nav bar" above the editor's cover-tone header.
+                        viewModel.notebook.coverTone.background
+                            .frame(height: proxy.safeAreaInsets.top)
+                            .frame(maxWidth: .infinity)
+
                         EditorToolbarView(
                             viewModel: viewModel,
                             onBack: { onDismiss() },
@@ -112,10 +203,14 @@ struct EditorView: View {
                             onMoreMenuPageSettings: showPageSettings,
                             onMoreMenuFullScreen: toggleFullScreen,
                             onMoreMenuInsertMedia: { viewModel.mediaInsertCoordinator.insertPhotos() },
-                            onToggleRecordingPanel: toggleRecordingPanel
+                            onToggleRecordingPanel: toggleRecordingPanel,
+                            onStartLecture: { Task { await viewModel.startLectureMode() } },
+                            onOpenCoverPicker: { isShowingCoverPicker = true }
                         )
+                        .transition(.move(edge: .top).combined(with: .opacity))
                         Spacer()
                     }
+                    .ignoresSafeArea(edges: .top)
                     .opacity(viewModel.isFocusMode ? 0 : 1)
                     .allowsHitTesting(!viewModel.isFocusMode)
                 }
@@ -279,17 +374,13 @@ struct EditorView: View {
                     .zIndex(80)
                 }
 
-                // 6. Persistent back button + top-edge restorer.
-                //    The back button itself is ALWAYS in the hierarchy, hit-testable
-                //    regardless of toolbar visibility. Previously this was gated on
-                //    `!isToolbarVisible`, which created a race window during the
-                //    toolbar's auto-hide animation: the toolbar's allowsHitTesting
-                //    flipped to false immediately while SwiftUI deferred inserting
-                //    this overlay by one runloop tick (due to .transition), so a tap
-                //    landing in that window hit nothing and the user had to tap twice.
-                //    Visually it sits underneath the toolbar's own back button and is
-                //    only revealed when the toolbar fades out.
-                if !viewModel.isFullScreen {
+                // 6. Standalone back chip — only mounted when the header
+                //    is hidden, so the toolbar's own back button claims
+                //    the tap whenever the header is up. A frosted
+                //    material chip plus a fade/slide transition keep
+                //    the swap from the toolbar's chevron feeling abrupt.
+                if !viewModel.isFullScreen
+                    && !viewModel.headerVisibility.isHeaderVisible {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack {
                             Button {
@@ -302,35 +393,21 @@ struct EditorView: View {
                                     .frame(width: 36, height: 36)
                                     .background(
                                         Circle()
-                                            .fill(Color.inkBackgroundElevated.opacity(0.88))
-                                            // Hide the chip background when the
-                                            // toolbar is showing; only the toolbar's
-                                            // own back button is visible then.
-                                            .opacity(viewModel.isToolbarVisible ? 0 : 1)
+                                            .fill(.regularMaterial)
                                     )
-                                    .opacity(viewModel.isToolbarVisible ? 0 : 1)
                             }
                             .buttonStyle(.inkPressable)
                             .padding(.leading, Ink.Spacing.md)
                             .padding(.top, Ink.Spacing.sm)
-                            // When the toolbar is up, let *its* back button
-                            // claim the tap. When it's hidden (or fading out),
-                            // this button takes over — both flip at T=0 with
-                            // `isToolbarVisible`, so there is no race window.
-                            .allowsHitTesting(!viewModel.isToolbarVisible)
-                            .accessibilityHidden(viewModel.isToolbarVisible)
+                            .accessibilityLabel("Back")
 
-                            // Top-edge restorer — only present when the toolbar is
-                            // hidden, so it doesn't fight the toolbar's own gestures.
-                            if !viewModel.isToolbarVisible {
-                                Color.clear
-                                    .frame(height: 60)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { viewModel.resetToolbarTimer() }
-                            }
+                            Spacer()
                         }
                         Spacer()
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .opacity(viewModel.isFocusMode ? 0 : 1)
+                    .allowsHitTesting(!viewModel.isFocusMode)
                 }
 
                 // Full-screen exit tap
@@ -397,9 +474,41 @@ struct EditorView: View {
             }
             .background(Color.inkBackgroundSecondary.ignoresSafeArea())
         }
+        // Suppress any inherited system navigation bar — the cover-tone
+        // header is the editor's only top chrome. Without this, an
+        // ancestral NavigationSplitView can still surface a system nav
+        // bar through `.fullScreenCover` on iPadOS, leaving the title
+        // double-rendered (small system style above + heavy cover-tone
+        // style below).
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         // Media picker sheets
         .sheet(item: $viewModel.activeMediaSource) { source in
             mediaPickerSheet(for: source)
+        }
+        // Image-attachment import picker. `imageImportRequest`
+        // carries the normalised tap location so the resulting
+        // record lands where the user touched. The picker
+        // self-dismisses; we still clear the request on the
+        // SwiftUI side so a second tap re-presents cleanly.
+        .sheet(item: $viewModel.imageImportRequest) { request in
+            ImageImportPicker(
+                isPresented: .constant(true),
+                onPicked: { image, ext in
+                    viewModel.commitImportedImage(
+                        image,
+                        fileExtension: ext,
+                        at: request
+                    )
+                    viewModel.imageImportRequest = nil
+                }
+            )
+            .onDisappear {
+                // Catches the user dismissing the dialog without
+                // selecting a source. Without this the request id
+                // sticks and the next tap is a no-op.
+                viewModel.imageImportRequest = nil
+            }
         }
         // Audio file picker sheet
         .sheet(isPresented: $viewModel.isShowingAudioFilePicker) {
@@ -408,6 +517,12 @@ struct EditorView: View {
             }
         }
         // Export options sheet
+        .sheet(isPresented: $isShowingCoverPicker) {
+            CoverTonePickerView(notebook: viewModel.notebook) {
+                isShowingCoverPicker = false
+            }
+            .presentationDetents([.medium])
+        }
         .sheet(isPresented: $viewModel.isShowingExportSheet) {
             ExportOptionsView(
                 notebook: viewModel.notebook,
@@ -432,6 +547,28 @@ struct EditorView: View {
             // freshly-created notebook we haven't already pilled this session.
             withAnimation(.inkSpring(InkSpring.smooth)) {
                 viewModel.markCustomisePillIfFresh()
+            }
+            // Search deep-link: scroll to the page that produced the
+            // result. Resolves the pageId to its current index in the
+            // notebook's pages array (reordering means the same page
+            // id can sit at a different index than when it was indexed).
+            if let pageId = pendingDeepLinkPageId,
+               let idx = viewModel.pages.firstIndex(where: { $0.id == pageId }) {
+                pendingDeepLinkPageId = nil
+                viewModel.pendingScrollPageIndex = idx
+            }
+        }
+        .task {
+            // Library "Import PDF…" hand-off: rasterise each PDF page
+            // onto its own notebook page using the editor's existing
+            // media-insert pipeline. Consumed once and cleared so a
+            // view re-render doesn't double-import.
+            if let url = pendingImportPDFURL {
+                pendingImportPDFURL = nil
+                let coordinator = viewModel.mediaInsertCoordinator
+                let didStart = url.startAccessingSecurityScopedResource()
+                await coordinator.handlePickedFileURLs([url])
+                if didStart { url.stopAccessingSecurityScopedResource() }
             }
         }
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isCustomisePanelOpen)
@@ -588,11 +725,13 @@ struct EditorView: View {
     private func undo() {
         viewModel.canvasView?.undoManager?.undo()
         viewModel.scheduleAutosave()
+        viewModel.pulseInteraction(.undoRedo)
     }
 
     private func redo() {
         viewModel.canvasView?.undoManager?.redo()
         viewModel.scheduleAutosave()
+        viewModel.pulseInteraction(.undoRedo)
     }
 
     private func togglePageStrip() {
@@ -621,6 +760,33 @@ struct EditorView: View {
 
     private func deleteCurrentPage() {
         viewModel.deletePage(viewModel.currentPage)
+    }
+
+    // MARK: Top-edge gesture overlay (header reveal)
+
+    /// Invisible 44pt-tall surface that catches taps and short downward
+    /// swipes when the header is hidden, calling
+    /// `viewModel.revealHeaderManually()`. The 3pt visible bar is the
+    /// indicator; this is the *target*. Without `.contentShape`, an
+    /// empty `Color.clear` view is not hit-testable.
+    private var topEdgeRevealOverlay: some View {
+        Color.clear
+            .frame(height: 44)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                viewModel.revealHeaderManually()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        guard value.translation.height > 20 else { return }
+                        viewModel.revealHeaderManually()
+                    }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Show header")
+            .accessibilityAddTraits(.isButton)
     }
 
     private func toggleRecordingPanel() {

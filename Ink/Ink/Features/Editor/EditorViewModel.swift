@@ -41,7 +41,39 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Toolbar / chrome visibility
     @Published var isToolbarVisible: Bool = true
-    @Published var isShowingPageStrip: Bool = false
+
+    /// Three-state visibility for the redesigned notebook header. The
+    /// header drops as soon as the user starts writing; the user can
+    /// reveal it again by tapping the 3pt return bar at the top of the
+    /// canvas or swiping down from the top edge, after which it hides
+    /// itself again two seconds into resumed writing.
+    @Published var headerVisibility: HeaderVisibility = .visible
+    private var headerManualReHideTask: Task<Void, Never>?
+
+    /// Reasons the header should stay visible regardless of stroke
+    /// activity. While any reason is active the auto-hide path is
+    /// suppressed; when the last one ends, a 3-second grace timer keeps
+    /// the header up so the user can read what just happened
+    /// (recording finished, share sheet dismissed, etc.) before it
+    /// drops back. Sources opening these interactions are also expected
+    /// to bring a hidden header back into view via
+    /// `beginInteraction(_:)`.
+    enum InteractionReason: Hashable {
+        case recordingPanel
+        case undoRedo
+        case customisePanel
+        case shareSheet
+        case pageStrip
+    }
+    @Published private(set) var activeInteractions: Set<InteractionReason> = []
+    private var interactionGraceTask: Task<Void, Never>?
+    @Published var isShowingPageStrip: Bool = false {
+        didSet {
+            guard oldValue != isShowingPageStrip else { return }
+            if isShowingPageStrip { beginInteraction(.pageStrip) }
+            else                  { endInteraction(.pageStrip) }
+        }
+    }
     @Published var isFullScreen: Bool = false
     private var toolbarHideTask: Task<Void, Never>?
 
@@ -74,6 +106,131 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Drawing accessor — set by CanvasContainerView coordinator after makeUIView
     weak var canvasView: PKCanvasView?
+
+    /// Pending image-import request. Non-nil triggers the import
+    /// picker sheet; the embedded normalised coordinates drive the
+    /// placement of the resulting `MediaAttachmentRecord`. Cleared
+    /// once the picker dismisses, regardless of whether an image
+    /// was actually selected.
+    @Published var imageImportRequest: ImageImportRequest?
+
+    /// Tap-location + presentation flag for the image picker.
+    /// Codable-free — purely a transport struct between the
+    /// canvas overlay and `EditorView`'s `.sheet(item:)`.
+    struct ImageImportRequest: Identifiable {
+        let id = UUID()
+        /// 0–1 in current page coordinates. The `.center` and
+        /// drag-drop entry points pre-fill this; the floating
+        /// toolbar entry uses `.center` (0.5, 0.5) so a fresh
+        /// import lands centred on the visible page.
+        let normalizedX: Double
+        let normalizedY: Double
+    }
+
+    /// Open the import picker centred on the current page. Called
+    /// by the floating toolbar's image tool button — the canvas-
+    /// overlay tap-to-place path uses the tap location directly.
+    func requestImageImportCentred() {
+        imageImportRequest = ImageImportRequest(normalizedX: 0.5, normalizedY: 0.5)
+    }
+
+    /// Commit a picked image to disk + the side-channel store. The
+    /// file is written under `Documents/media/<notebookId>/`; the
+    /// record is sized to ~60% of page width preserving aspect
+    /// ratio, positioned so its centre lands on
+    /// `(normalizedX, normalizedY)`. Runs the disk write on a
+    /// detached task — the architecture rule for file I/O.
+    func commitImportedImage(
+        _ image: UIImage,
+        fileExtension ext: String,
+        at request: ImageImportRequest
+    ) {
+        let attachmentId = UUID()
+        let safeExt = ext.isEmpty ? "jpg" : ext.lowercased()
+        let fileName = "\(attachmentId.uuidString).\(safeExt)"
+        let dir = MediaAttachmentStore.mediaDirectory(for: notebook.id)
+        let absoluteURL = dir.appendingPathComponent(fileName)
+
+        // Resolve the documents-relative path once — the record
+        // stores the relative form so a sandbox relocate doesn't
+        // invalidate the reference.
+        let docs = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0].path
+        let relativePath: String
+        if absoluteURL.path.hasPrefix(docs) {
+            relativePath = String(
+                absoluteURL.path
+                    .dropFirst(docs.count)
+                    .drop(while: { $0 == "/" })
+            )
+        } else {
+            // Fallback — should never happen given the directory
+            // above is in Documents, but the safe branch keeps the
+            // record valid even if the constant changes.
+            relativePath = "media/\(notebook.id.uuidString)/\(fileName)"
+        }
+
+        // Encode + write off the main actor.
+        Task.detached(priority: .userInitiated) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let data: Data?
+            switch safeExt {
+            case "png":  data = image.pngData()
+            default:     data = image.jpegData(compressionQuality: 0.85)
+            }
+            guard let data else { return }
+            try? data.write(to: absoluteURL, options: .atomic)
+        }
+
+        // Aspect-preserving fit to ~60% of page width. Falls back
+        // to a 60×40 box when the image has zero dimensions
+        // (shouldn't happen — UIImagePickerController and
+        // PHPickerViewController guarantee non-zero).
+        let pixelWidth  = max(1, image.size.width)
+        let pixelHeight = max(1, image.size.height)
+        let aspect = pixelHeight / pixelWidth
+        let targetW: Double = 0.6
+        let targetH: Double = Double(aspect) * targetW
+
+        let record = MediaAttachmentRecord(
+            id: attachmentId,
+            pageId: currentPage.id,
+            notebookId: notebook.id,
+            relativeFilePath: relativePath,
+            normalizedX: max(0, min(1 - targetW, request.normalizedX - targetW / 2)),
+            normalizedY: max(0, min(1 - targetH, request.normalizedY - targetH / 2)),
+            normalizedWidth:  targetW,
+            normalizedHeight: targetH,
+            rotationDegrees: 0,
+            originalWidth: Double(pixelWidth),
+            originalHeight: Double(pixelHeight),
+            createdAt: Date(),
+            updatedAt: Date(),
+            deletedAt: nil
+        )
+        MediaAttachmentStore.save(record)
+    }
+
+    /// Annotation pulse signal. Set to a `PDFTextAnnotationRecord.id`
+    /// or `StickyNoteRecord.id` to make that mark pulse once on the
+    /// canvas (scale 1.0 → 1.1 → 1.0 over 0.3s). The annotation list
+    /// sheet's row tap drives this after the page-scroll settles.
+    /// `PageRenderer` (Combine-subscribed via `attachPulseSource`) and
+    /// `StickyNoteMarker` (SwiftUI `@ObservedObject`) both read this
+    /// — single source of truth for both surfaces.
+    @Published var pulsingAnnotationId: UUID?
+
+    /// PDF annotation writer for the current notebook session, or
+    /// `nil` when the notebook isn't PDF-backed. Instantiated lazily
+    /// the first time it's read so non-PDF notebooks pay zero cost.
+    /// The writer mirrors the in-app `PDFTextAnnotationStore` into
+    /// the source PDF on disk via a debounced detached task.
+    lazy var pdfAnnotationWriter: PDFAnnotationWriter? = {
+        guard notebook.isPDFBacked,
+              let url = notebook.sourcePDFURL
+        else { return nil }
+        return PDFAnnotationWriter(notebookId: notebook.id, sourceURL: url)
+    }()
 
     /// Stroke count on the active canvas — used for VoiceOver labels.
     var strokeCount: Int { canvasView?.drawing.strokes.count ?? 0 }
@@ -120,14 +277,28 @@ final class EditorViewModel: ObservableObject {
     func openCustomisePanel() {
         isCustomisePillVisible = false
         isCustomisePanelOpen   = true
+        beginInteraction(.customisePanel)
+        // Surface AI suggestions for the user as they enter the
+        // editing surface. Both methods are idempotent — they no-op
+        // when conditions aren't met (AI off, already generated this
+        // session, dismissed flag set, etc.).
+        maybeGenerateTitleSuggestion()
+        maybeGenerateTagSuggestions()
     }
 
     func closeCustomisePanel() {
         isCustomisePanelOpen = false
+        endInteraction(.customisePanel)
     }
 
     // MARK: Export
-    @Published var isShowingExportSheet: Bool = false
+    @Published var isShowingExportSheet: Bool = false {
+        didSet {
+            guard oldValue != isShowingExportSheet else { return }
+            if isShowingExportSheet { beginInteraction(.shareSheet) }
+            else                    { endInteraction(.shareSheet) }
+        }
+    }
 
     // MARK: Page navigation animation
     @Published var pageSwapInFlight: Bool = false        // shown only if swap exceeds 100ms
@@ -161,8 +332,53 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Audio annotations
     @Published private(set) var currentPageAudioAnnotations: [AudioAnnotation] = []
+
+    // MARK: Sticky notes
+    //
+    // Side-channel storage (`StickyNoteStore`) keeps the V3 schema
+    // unchanged. The overlay reads `currentPageStickyNotes` and
+    // re-renders whenever this view-model bumps the array — which
+    // happens after every add / edit / delete via `refreshCurrentPageStickyNotes`.
+
+    @Published private(set) var currentPageStickyNotes: [StickyNoteRecord] = []
+
+    // MARK: Lecture mode (Pass A)
+    //
+    // When `activeLectureRecorder` is non-nil the editor view swaps
+    // its body for `LectureRecordingView`. Stop returns the saved
+    // record so the editor can drop the post-stop placeholder
+    // TextBlock on the page.
+
+    @Published var activeLectureRecorder: LectureRecorder?
+    /// When non-nil, the SwiftUI popover for this sticky note is open
+    /// and the body field is focused.
+    @Published var editingStickyNoteId: UUID?
+
+    // MARK: AI — suggested title (Phase 2)
+
+    /// Latest AI-generated title proposal for an untitled notebook.
+    /// Surfaced as a pill under the title TextField in the customise
+    /// panel; cleared once the user either accepts it or commits a
+    /// manual title.
+    @Published private(set) var suggestedTitle: String?
+    private var hasGeneratedTitleSuggestion = false
+
+    /// True when the notebook's current title is a stock placeholder
+    /// the AI is allowed to overwrite. Generator-named notebooks
+    /// (e.g. "Brain Dump") are user-chosen even if playful, so we
+    /// only count empty / "Untitled" as eligible.
+    private var titleLooksLikePlaceholder: Bool {
+        let trimmed = notebook.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.lowercased() == "untitled"
+    }
     @Published var playingAnnotationId:         UUID?     = nil
-    @Published var isRecordingPanelVisible:     Bool      = false
+    @Published var isRecordingPanelVisible:     Bool      = false {
+        didSet {
+            guard oldValue != isRecordingPanelVisible else { return }
+            if isRecordingPanelVisible { beginInteraction(.recordingPanel) }
+            else                       { endInteraction(.recordingPanel) }
+        }
+    }
     @Published var recordingState:              RecordingState = .idle
     /// Defaults from `ink.transcription.auto` (Settings → Audio & Transcription).
     /// User can also override per-recording via the panel toggle while recording.
@@ -217,16 +433,21 @@ final class EditorViewModel: ObservableObject {
 
     init(
         notebook: Notebook,
-        storage: StorageService = .shared,
+        // Default `.shared` is nil-resolved inside the body so the
+        // `@MainActor`-isolated singleton is touched on the main actor
+        // rather than at the call-site (Swift 6 default-value
+        // isolation rules).
+        storage: StorageService? = nil,
         userDefaults: UserDefaults = .standard,
         theme: InkTheme = .light
     ) {
         self.notebook        = notebook
-        self.storage         = storage
+        let resolvedStorage  = storage ?? .shared
+        self.storage         = resolvedStorage
         self.userDefaults    = userDefaults
         self.theme           = theme
 
-        let fetched = storage.fetchPages(in: notebook)
+        let fetched = resolvedStorage.fetchPages(in: notebook)
         // SwiftData should always return at least one page (createNotebook seeds one),
         // but guard for safety.
         self.pages            = fetched.isEmpty ? [] : fetched
@@ -253,6 +474,12 @@ final class EditorViewModel: ObservableObject {
         userDefaults.set(notebook.id.uuidString, forKey: "ink.resume.lastNotebookId")
         userDefaults.set(self.currentPageIndex, forKey: "ink.resume.lastPageIndex")
 
+        // Track the open for the Library "recently opened" section.
+        // Persisted via StorageService so the change survives a
+        // force-quit between this open and the first save inside the
+        // editor.
+        resolvedStorage.markNotebookOpened(notebook)
+
         // Persist page navigation, debounced once per second to avoid UserDefaults churn
         // during fast multi-page jumps.
         $currentPageIndex
@@ -268,13 +495,71 @@ final class EditorViewModel: ObservableObject {
         refreshCurrentPageTextBlocks()
         refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
+        refreshCurrentPageStickyNotes()
+
+        // App-background flush for the PDF annotation writer. We
+        // bypass the 3s debounce on background to guarantee no
+        // in-flight annotations are lost if the user backgrounds
+        // mid-session. No-op for non-PDF notebooks (writer is nil).
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
     }
 
     deinit {
         // Tasks captured [weak self] — they will be no-ops after dealloc.
         toolbarHideTask?.cancel()
+        headerManualReHideTask?.cancel()
         saveTask?.cancel()
         savedFlashTask?.cancel()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Background-notification handler. `@objc` so it can be
+    /// targeted by `NotificationCenter.addObserver(selector:)`.
+    @objc private func handleAppBackground() {
+        guard let writer = pdfAnnotationWriter else { return }
+        Task { @MainActor in
+            await writer.flushImmediately()
+        }
+    }
+
+    /// Editor view should call this on dismiss so any pending
+    /// annotation write is flushed before the writer is torn down
+    /// with the view model.
+    func flushPDFAnnotationsImmediately() async {
+        guard let writer = pdfAnnotationWriter else { return }
+        await writer.flushImmediately()
+    }
+
+    /// Jump to `pageNumber` (1-indexed), then briefly pulse the
+    /// annotation with the given id. Used by the annotation list
+    /// sheet's row tap. 0.4s delay before pulse fires lets the
+    /// scroll settle so the user sees the highlight in its
+    /// final-rendered position. The pulse itself runs ~0.3s, after
+    /// which `pulsingAnnotationId` is cleared.
+    func revealAnnotation(id: UUID, pageNumber: Int) {
+        if let pageIndex = pages.firstIndex(where: { $0.pageNumber == pageNumber }) {
+            // Reuse the existing search-result navigation path —
+            // `goToPage` updates the published index AND publishes
+            // `pendingScrollPageIndex` so the canvas scroll catches up.
+            _ = goToPage(index: pageIndex)
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard let self else { return }
+            self.pulsingAnnotationId = id
+            try? await Task.sleep(for: .milliseconds(350))
+            // Only clear if it's still the same id — a second tap
+            // landing during the 350ms window shouldn't be cancelled
+            // out by the previous tap's cleanup.
+            if self.pulsingAnnotationId == id {
+                self.pulsingAnnotationId = nil
+            }
+        }
     }
 
     // MARK: - Persisted state
@@ -327,6 +612,122 @@ final class EditorViewModel: ObservableObject {
         toolbarHideTask?.cancel()
         if !isToolbarVisible {
             withAnimation(.inkSpring(InkSpring.fade)) { isToolbarVisible = true }
+        }
+    }
+
+    // MARK: - Header visibility (redesigned auto-hide)
+
+    /// Notify the visibility state machine that the user has begun a
+    /// PencilKit stroke. Drives the spec'd transitions:
+    ///   • `.visible`        → `.hiddenWhileWriting` immediately
+    ///   • `.visibleManual`  → `.hiddenWhileWriting` 2 seconds later,
+    ///     to "not fight the user" who just revealed the bar.
+    ///   • `.hiddenWhileWriting` → no-op.
+    ///
+    /// Suppressed entirely when the per-notebook auto-hide preference
+    /// is off, when an interaction (mic, share, customise panel, page
+    /// strip, undo/redo) is active, or while the 3-second post-
+    /// interaction grace window is still running.
+    func notifyHeaderStrokeBegan() {
+        guard notebook.autoHideHeader else { return }
+        guard activeInteractions.isEmpty else { return }
+        guard interactionGraceTask == nil else { return }
+        switch headerVisibility {
+        case .visible:
+            withAnimation(.inkSpring(InkSpring.snappy)) {
+                headerVisibility = .hiddenWhileWriting
+            }
+        case .visibleManual:
+            // First stroke after a manual reveal arms the 2-second
+            // re-hide. If a previous re-hide is already armed, replace
+            // it so the timer always counts from the latest stroke.
+            headerManualReHideTask?.cancel()
+            headerManualReHideTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled, let self else { return }
+                await MainActor.run {
+                    withAnimation(.inkSpring(InkSpring.snappy)) {
+                        self.headerVisibility = .hiddenWhileWriting
+                    }
+                }
+            }
+        case .hiddenWhileWriting:
+            break
+        }
+    }
+
+    /// User tapped the 3pt return bar or swiped down from the top edge.
+    /// Promotes the header back into view; subsequent stroke activity
+    /// will re-hide after a 2-second grace window.
+    func revealHeaderManually() {
+        headerManualReHideTask?.cancel()
+        withAnimation(.inkSpring(InkSpring.snappy)) {
+            headerVisibility = .visibleManual
+        }
+    }
+
+    /// Mark the start of an interaction that should keep the header
+    /// visible — mic recording, share sheet, customise panel, page
+    /// strip, an undo/redo button tap. While any interaction is
+    /// active, stroke-driven auto-hide is suppressed and any pending
+    /// re-hide / grace timer is cancelled. If the header is currently
+    /// hidden, it slides back into view so the user can see the chrome
+    /// that the interaction relates to.
+    func beginInteraction(_ reason: InteractionReason) {
+        interactionGraceTask?.cancel()
+        interactionGraceTask = nil
+        headerManualReHideTask?.cancel()
+        activeInteractions.insert(reason)
+        if !headerVisibility.isHeaderVisible {
+            withAnimation(.inkSpring(InkSpring.snappy)) {
+                headerVisibility = .visibleManual
+            }
+        }
+    }
+
+    /// Mark the end of an interaction. When the last interaction ends,
+    /// the header stays visible for an additional 3 seconds — the
+    /// post-interaction grace window — then drops if auto-hide is
+    /// enabled. Calling `beginInteraction(_:)` again during the grace
+    /// window cancels the pending hide.
+    func endInteraction(_ reason: InteractionReason) {
+        activeInteractions.remove(reason)
+        guard activeInteractions.isEmpty else { return }
+        interactionGraceTask?.cancel()
+        interactionGraceTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, let self else { return }
+            await MainActor.run {
+                self.interactionGraceTask = nil
+                guard self.notebook.autoHideHeader,
+                      self.activeInteractions.isEmpty else { return }
+                withAnimation(.inkSpring(InkSpring.snappy)) {
+                    self.headerVisibility = .hiddenWhileWriting
+                }
+            }
+        }
+    }
+
+    /// Briefly mark an interaction so the bar persists for the 3s
+    /// grace window — used by undo/redo button taps which have no
+    /// "open" / "close" lifecycle of their own.
+    func pulseInteraction(_ reason: InteractionReason) {
+        beginInteraction(reason)
+        endInteraction(reason)
+    }
+
+    /// Called when the per-notebook `autoHideHeader` preference flips.
+    /// When the user disables auto-hide, snap the header back into
+    /// view immediately and cancel any pending re-hide work.
+    func notifyAutoHidePreferenceChanged() {
+        guard !notebook.autoHideHeader else { return }
+        headerManualReHideTask?.cancel()
+        interactionGraceTask?.cancel()
+        interactionGraceTask = nil
+        if !headerVisibility.isHeaderVisible {
+            withAnimation(.inkSpring(InkSpring.snappy)) {
+                headerVisibility = .visible
+            }
         }
     }
 
@@ -424,18 +825,30 @@ final class EditorViewModel: ObservableObject {
         lastTool     = current
     }
 
+    /// Pencil double-tap "toggle eraser": ping-pongs between the
+    /// eraser and whatever tool the user was on before. Each toggle
+    /// swaps `selectedTool` ↔ `lastTool` so repeated double-taps
+    /// alternate (pen → eraser → pen → eraser …). A manual tool
+    /// change via the palette already updates `lastTool` through
+    /// `selectTool(_:)`, so toggling after a manual swap returns to
+    /// the most-recently-chosen non-eraser tool — not a stale entry.
+    /// First-ever toggle with no prior history falls back to the
+    /// default pen.
     func toggleEraser() {
         if case .eraser = selectedTool {
-            // Cycle whole-stroke ↔ pixel. .page is a one-shot action, not part of the cycle.
-            if case .eraser(.pixel) = selectedTool {
-                selectedTool = .eraser(mode: .wholeStroke)
+            let current = selectedTool
+            if let previous = lastTool {
+                selectedTool = previous
+                lastTool     = current
             } else {
-                selectedTool = .eraser(mode: .pixel)
+                selectedTool = InkTool.Defaults.pen(theme: theme)
+                lastTool     = current
             }
         } else {
             lastTool     = selectedTool
             selectedTool = InkTool.Defaults.eraser
         }
+        HapticManager.shared.toolSwitched()
     }
 
     func cycleEraserMode() {
@@ -468,6 +881,17 @@ final class EditorViewModel: ObservableObject {
         // commit (or get blown away) when the user starts drawing again.
         if pendingShapeUndo != nil { dismissShapePill() }
 
+        // Highlighter-family interception runs first. When the just-
+        // committed stroke passes over selectable PDF text, the
+        // detection routine replaces the stroke with a
+        // `PDFTextAnnotationRecord` (highlight / underline /
+        // strikethrough) and returns. Non-highlighter tools and
+        // strokes over blank space fall through to the rest of this
+        // method unchanged.
+        if selectedTool.isHighlighterFamily, notebook.isPDFBacked {
+            attemptHighlighterTextDetection()
+        }
+
         guard shapeRecognitionEnabled, canvasView != nil else { return }
         shapeRecognitionTask?.cancel()
         shapeRecognitionTask = Task { [weak self] in
@@ -487,7 +911,7 @@ final class EditorViewModel: ObservableObject {
         // hop back to the main actor for the canvas mutation.
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let shape = await ShapeRecognizer.recognize(lastStroke) else { return }
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 self?.applyRecognisedShape(shape, replacing: lastStroke)
             }
         }
@@ -753,6 +1177,7 @@ final class EditorViewModel: ObservableObject {
         refreshCurrentPageTextBlocks()
         refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
+        refreshCurrentPageStickyNotes()
         pendingScrollPageIndex = newIndex
         return true
     }
@@ -791,27 +1216,19 @@ final class EditorViewModel: ObservableObject {
     /// True iff `currentPageIndex` is the last page in the notebook.
     var isOnLastPage: Bool { currentPageIndex == pages.count - 1 }
 
-    /// Reads `ink.newpage.autoAdd` from UserDefaults. Default is `true` (matches
-    /// the SettingsViewModel `@AppStorage` default).
-    var autoAddEnabled: Bool {
-        UserDefaults.standard.object(forKey: "ink.newpage.autoAdd") as? Bool ?? true
-    }
+    /// Per-notebook auto-add flag, persisted via `AutoAddPagesStore`.
+    /// Default is `true` — most users want infinite scroll. The
+    /// customise panel exposes a toggle to flip this per notebook.
+    var autoAddEnabled: Bool { notebook.autoAddPagesOnScroll }
 
-    /// Page size from global Settings, falling back to the notebook's own setting.
-    private var globalPageSize: PageSize {
-        guard let raw = UserDefaults.standard.string(forKey: "ink.newpage.size"),
-              let size = PageSize(rawValue: raw) else { return notebook.pageSize }
-        return size
-    }
+    /// Page size used when appending a new page mid-notebook. The
+    /// global Settings → New Pages section was removed; new pages now
+    /// follow the notebook's own page size.
+    private var globalPageSize: PageSize { notebook.pageSize }
 
-    /// Template from global Settings, falling back to the notebook's own setting.
-    private var globalTemplate: PageTemplate {
-        guard let raw = UserDefaults.standard.string(forKey: "ink.newpage.template"),
-              let data = raw.data(using: .utf8),
-              let template = try? JSONDecoder().decode(PageTemplate.self, from: data)
-        else { return notebook.defaultTemplate }
-        return template
-    }
+    /// Template used when appending a new page mid-notebook. Mirrors
+    /// `globalPageSize` — follows the notebook's own template.
+    private var globalTemplate: PageTemplate { notebook.defaultTemplate }
 
     func goToPreviousPage() {
         guard currentPageIndex > 0 else { return }
@@ -862,24 +1279,131 @@ final class EditorViewModel: ObservableObject {
         refreshCurrentPageTextBlocks()
         refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
+        refreshCurrentPageStickyNotes()
     }
 
     func refreshCurrentPageTextBlocks() {
-        currentPageTextBlocks = currentPage.textBlocks
+        currentPageTextBlocks = (currentPage.textBlocks ?? [])
             .filter { !$0.isDeleted }
             .sorted { $0.zIndex < $1.zIndex }
     }
 
     func refreshCurrentPageAttachments() {
-        currentPageAttachments = currentPage.mediaAttachments
+        currentPageAttachments = (currentPage.mediaAttachments ?? [])
             .filter { !$0.isDeleted }
             .sorted { $0.zIndex < $1.zIndex }
     }
 
     func refreshCurrentPageAudioAnnotations() {
-        currentPageAudioAnnotations = currentPage.audioAnnotations
+        currentPageAudioAnnotations = (currentPage.audioAnnotations ?? [])
             .filter { !$0.isDeleted }
             .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    // MARK: - Sticky notes
+
+    /// Pull the latest sticky notes for the current page out of
+    /// `StickyNoteStore` and republish so the canvas overlay
+    /// re-renders.
+    func refreshCurrentPageStickyNotes() {
+        currentPageStickyNotes = StickyNoteStore.notes(for: currentPage.id)
+    }
+
+    /// Place a fresh sticky note at the given normalised position.
+    /// Immediately puts the popover into "editing" mode so the user
+    /// can type — placement and editing are a single user-perceived
+    /// gesture.
+    func addStickyNote(at normalised: CGPoint) {
+        let record = StickyNoteStore.add(
+            pageId:      currentPage.id,
+            normalizedX: Double(normalised.x.clamped01),
+            normalizedY: Double(normalised.y.clamped01)
+        )
+        refreshCurrentPageStickyNotes()
+        editingStickyNoteId = record.id
+    }
+
+    func updateStickyNoteBody(id: UUID, body: String) {
+        StickyNoteStore.updateBody(id: id, pageId: currentPage.id, body: body)
+        refreshCurrentPageStickyNotes()
+    }
+
+    // MARK: - Lecture mode
+
+    /// Mic-button menu → "Lecture". Spins up a fresh
+    /// `LectureRecorder`, publishes it so the editor view swaps to
+    /// `LectureRecordingView`, and kicks off recording. Failures
+    /// (mic denied, engine couldn't start) clear the recorder
+    /// silently — the user is back to the editor with no recording.
+    func startLectureMode() async {
+        guard activeLectureRecorder == nil else { return }
+        let recorder = LectureRecorder()
+        do {
+            try await recorder.start(
+                pageId:     currentPage.id,
+                notebookId: notebook.id
+            )
+            activeLectureRecorder = recorder
+        } catch {
+            // Microphone denied or engine failure — surface via the
+            // existing media-error banner so the user knows. Spec
+            // says "never break existing recording" so we just bail.
+            mediaError = AppError.humanize(error)
+            activeLectureRecorder = nil
+        }
+    }
+
+    /// Called by `LectureRecordingView.onStop` after the user
+    /// confirms "end". Inserts the post-stop placeholder TextBlock,
+    /// kicks the search index to ingest the transcript, and drops
+    /// the recorder so the editor view restores.
+    func endLectureMode(with record: LectureRecord?) {
+        defer { activeLectureRecorder = nil }
+        guard let record else { return }
+
+        // Placeholder TextBlock body is just the marker — Pass B's
+        // `LectureBlockView` looks up the full record from
+        // `LectureStore` via the UUID suffix. Earlier passes also
+        // appended a duration display line and (briefly) the full
+        // transcript; both are gone here because the block view
+        // renders title + duration + summary + transcript from the
+        // record itself. Old serialised TextBlocks with the extra
+        // lines continue to parse — `LectureBlockView` ignores
+        // everything after the first line.
+        let content = "lecture:\(record.id.uuidString)"
+        _ = try? storage.createTextBlock(on: currentPage, content: content)
+        refreshCurrentPageTextBlocks()
+
+        // Bump the search index synchronously so the transcript is
+        // searchable as soon as the user tries to find it. The pass
+        // pulls from `LectureStore` for the lecture transcript field.
+        SearchIndexService.shared.rebuildSynchronousMetadata(for: notebook)
+
+        // Pass B — kick off AI summary generation on a detached
+        // utility task. Silent no-op on iOS 18 / when canRun is
+        // false; the editor never surfaces an "AI unavailable"
+        // placeholder. The completion writes the updated record
+        // back into `LectureStore`, which posts
+        // `.lectureRecordUpdated` so `LectureBlockView` swaps
+        // "summarising…" for the generated content live.
+        Task.detached(priority: .utility) {
+            await IntelligenceService.shared.generateLectureSummary(for: record)
+        }
+    }
+
+    private func formatLectureDuration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m) min" }
+        return "\(total) sec"
+    }
+
+    func deleteStickyNote(id: UUID) {
+        StickyNoteStore.softDelete(id: id, pageId: currentPage.id)
+        if editingStickyNoteId == id { editingStickyNoteId = nil }
+        refreshCurrentPageStickyNotes()
     }
 
     // MARK: - Overlay-view StorageService wrappers
@@ -1049,27 +1573,77 @@ final class EditorViewModel: ObservableObject {
                 recordingState = .idle
                 return
             }
-            let pinPoint = CGPoint(x: 0.15, y: 0.15)
-            let annotation = try StorageService.shared.insertAudioFile(
-                to: currentPage,
-                annotationId: id,
-                fileName: id.uuidString + ".m4a",
-                duration: result.duration,
-                fileSizeBytes: result.fileSizeBytes,
-                at: pinPoint
-            )
-            refreshCurrentPageAudioAnnotations()
-            pendingRecordingURL = nil
-            pendingRecordingId  = nil
-            recordingState      = .idle
-            isRecordingPanelVisible = false
 
-            if isTranscriptionEnabled {
+            // Read both toggles fresh at stop-time so Settings changes
+            // apply immediately. The per-recording `isTranscriptionEnabled`
+            // override (the panel's "Transcribe" switch) gates further;
+            // the master "Save audio clips" toggle has no per-recording
+            // override since it's an always-on default.
+            let saveAudio  = UserDefaults.standard.object(forKey: "ink.audio.saveClips") as? Bool ?? true
+            let transcribe = isTranscriptionEnabled
+
+            // Both off — nothing to keep. Discard the temp file and
+            // dismiss; the panel already showed the "both off" hint.
+            guard saveAudio || transcribe else {
+                try? FileManager.default.removeItem(at: url)
+                pendingRecordingURL = nil
+                pendingRecordingId  = nil
+                recordingState      = .idle
+                isRecordingPanelVisible = false
+                return
+            }
+
+            if saveAudio {
+                let pinPoint = CGPoint(x: 0.15, y: 0.15)
+                let annotation = try StorageService.shared.insertAudioFile(
+                    to: currentPage,
+                    annotationId: id,
+                    fileName: id.uuidString + ".m4a",
+                    duration: result.duration,
+                    fileSizeBytes: result.fileSizeBytes,
+                    at: pinPoint
+                )
+                refreshCurrentPageAudioAnnotations()
+                pendingRecordingURL = nil
+                pendingRecordingId  = nil
+                recordingState      = .idle
+                isRecordingPanelVisible = false
+
+                if transcribe {
+                    let capturedURL = url
+                    let capturedId  = annotation.id
+                    Task.detached(priority: .utility) { [weak self] in
+                        await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
+                        await MainActor.run { [weak self] in
+                            self?.refreshCurrentPageAudioAnnotations()
+                        }
+                    }
+                }
+            } else {
+                // Transcript-only path: run the recogniser over the
+                // temp file, save the text as a standalone TextBlock,
+                // then delete the audio file. No `AudioAnnotation`
+                // exists to hang the transcript on.
                 let capturedURL = url
-                let capturedId  = annotation.id
+                let capturedPage = currentPage
+                pendingRecordingURL = nil
+                pendingRecordingId  = nil
+                recordingState      = .idle
+                isRecordingPanelVisible = false
+
                 Task.detached(priority: .utility) { [weak self] in
-                    await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
-                    await MainActor.run { self?.refreshCurrentPageAudioAnnotations() }
+                    let result = await SpeechTranscriber.shared.transcribeFile(url: capturedURL)
+                    try? FileManager.default.removeItem(at: capturedURL)
+                    guard let text = result?.text, !text.isEmpty else { return }
+                    // Hop to MainActor as a Task (not `MainActor.run`)
+                    // and forward `self` through the closure capture
+                    // list so Swift 6 strict-concurrency doesn't flag
+                    // the var-capture of weak self into the
+                    // synchronously-evaluated `MainActor.run` body.
+                    await Task { @MainActor [weak self] in
+                        _ = try? StorageService.shared.createTextBlock(on: capturedPage, content: text)
+                        self?.refreshCurrentPageTextBlocks()
+                    }.value
                 }
             }
         } catch {
@@ -1097,6 +1671,116 @@ final class EditorViewModel: ObservableObject {
             objectWillChange.send()
         } catch {
             showError(.storageFailed(action: "rename notebook", underlying: error))
+        }
+    }
+
+    // MARK: AI — title / tag suggestions
+
+    /// Generate a 2–5 word title suggestion if the conditions match:
+    /// AI is on, title is a placeholder, the notebook has enough
+    /// content, and we haven't already suggested once this session.
+    func maybeGenerateTitleSuggestion() {
+        guard IntelligenceService.shared.canRun else { return }
+        guard titleLooksLikePlaceholder else { return }
+        guard !hasGeneratedTitleSuggestion else { return }
+        hasGeneratedTitleSuggestion = true
+        let id = notebook.id
+        Task { @MainActor [weak self] in
+            let text = SearchIndexService.shared.combinedText(for: id)
+            let proposed = await IntelligenceService.shared.suggestTitle(from: text)
+            guard let proposed,
+                  let self,
+                  self.notebook.id == id,
+                  self.titleLooksLikePlaceholder
+            else { return }
+            self.suggestedTitle = proposed
+        }
+    }
+
+    /// Apply the proposed title and dismiss the pill.
+    func applySuggestedTitle() {
+        guard let proposed = suggestedTitle else { return }
+        renameNotebook(proposed)
+        suggestedTitle = nil
+    }
+
+    func dismissSuggestedTitle() {
+        suggestedTitle = nil
+    }
+
+    // MARK: AI — suggested tags
+
+    @Published private(set) var suggestedTags: [String] = []
+    private var hasGeneratedTagSuggestion = false
+
+    /// Generate 1–3 tag suggestions when the notebook has enough
+    /// content (>50 words) and the user hasn't already dismissed
+    /// the banner for this notebook. Tags that already exist on the
+    /// notebook are filtered out before surfacing.
+    func maybeGenerateTagSuggestions() {
+        guard IntelligenceService.shared.canRun else { return }
+        guard !hasGeneratedTagSuggestion else { return }
+        guard !IntelligenceCache.tagsDismissed(for: notebook.id) else { return }
+        // Already has tags — no suggestion needed.
+        guard notebook.tags.isEmpty else { return }
+        hasGeneratedTagSuggestion = true
+
+        let id = notebook.id
+        Task { @MainActor [weak self] in
+            let text = SearchIndexService.shared.combinedText(for: id)
+            let raw = await IntelligenceService.shared.suggestTags(from: text)
+            // Defence-in-depth: even though IntelligenceService
+            // pre-normalises, run each through the project's
+            // canonical TagValidator so we never end up with
+            // invalid tags (emoji, digits, over-length) downstream.
+            let existing = self?.notebook.tags ?? []
+            var validated: [String] = []
+            for candidate in raw {
+                if case .success(let normal) = TagValidator.validate(
+                    candidate, against: existing + validated
+                ) {
+                    validated.append(normal)
+                }
+            }
+            guard let self, self.notebook.id == id, !validated.isEmpty
+            else { return }
+            self.suggestedTags = validated
+        }
+    }
+
+    func applyAllSuggestedTags() {
+        guard !suggestedTags.isEmpty else { return }
+        var updated = notebook.tags
+        for tag in suggestedTags where !updated.contains(tag) {
+            updated.append(tag)
+        }
+        notebook.tags = updated
+        persistTags()
+        suggestedTags = []
+    }
+
+    func dismissSuggestedTags() {
+        IntelligenceCache.markTagsDismissed(for: notebook.id)
+        suggestedTags = []
+    }
+
+    /// Persist the notebook's current `tags` array via the standard
+    /// updateNotebook path. The Customise panel mutates `tags`
+    /// directly on the model (cheap), then asks the view-model to
+    /// flush — SwiftData is the source of truth for full-text
+    /// search, library filtering, and the grid cards.
+    func persistTags() {
+        do {
+            try storage.updateNotebook(
+                notebook,
+                title:         nil,
+                coverColorHex: nil,
+                isPinned:      nil,
+                tags:          notebook.tags
+            )
+            objectWillChange.send()
+        } catch {
+            showError(.storageFailed(action: "update tags", underlying: error))
         }
     }
 
@@ -1142,7 +1826,7 @@ final class EditorViewModel: ObservableObject {
             )
             // Apply to the first page only when empty — preserves drawings
             // on existing notebooks where the user re-enters the panel.
-            if let first = notebook.pages.first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
+            if let first = (notebook.pages ?? []).first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
                first.strokeData == nil || first.strokeDataSize == 0 {
                 first.pageSize  = size
                 first.updatedAt = Date()
@@ -1165,7 +1849,7 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
-            if let first = notebook.pages.first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
+            if let first = (notebook.pages ?? []).first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
                first.strokeData == nil || first.strokeDataSize == 0 {
                 first.backgroundTemplate = template
                 first.updatedAt          = Date()
@@ -1215,6 +1899,16 @@ final class EditorViewModel: ObservableObject {
             saveStatus = .saved
             scheduleSavedFlash()
             scheduleThumbnailRegeneration(for: page, drawing: drawing)
+            // Re-OCR the page for full-text search. Debounced by 2s
+            // inside `SearchIndexService.scheduleOCR` — bursts of
+            // stroke saves coalesce into one Vision pass per page.
+            SearchIndexService.shared.scheduleOCR(
+                notebookId: page.notebookId,
+                pageId:     page.id
+            )
+            IntelligenceService.shared.scheduleSummary(notebookId: page.notebookId)
+            maybeGenerateTitleSuggestion()
+            maybeGenerateTagSuggestions()
         } catch {
             saveStatus = .error(error.localizedDescription)
         }
@@ -1242,6 +1936,13 @@ final class EditorViewModel: ObservableObject {
             saveStatus = .saved
             scheduleSavedFlash()
             scheduleThumbnailRegeneration(for: page, drawing: drawing)
+            SearchIndexService.shared.scheduleOCR(
+                notebookId: page.notebookId,
+                pageId:     page.id
+            )
+            IntelligenceService.shared.scheduleSummary(notebookId: page.notebookId)
+            maybeGenerateTitleSuggestion()
+            maybeGenerateTagSuggestions()
         } catch {
             saveStatus = .error(error.localizedDescription)
         }

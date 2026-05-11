@@ -7,25 +7,41 @@
     - In Signing & Capabilities, the App Groups + iCloud capabilities must be
       added (this file alone won't enable them — Xcode also writes the
       provisioning-profile entries when you toggle the capability checkbox).
+    - The iCloud capability must have BOTH "iCloud Documents" and "CloudKit"
+      services checked in Xcode. CloudKit is required by SwiftData's
+      `cloudKitDatabase: .private(...)` configuration; iCloud Documents is
+      required by the existing `CloudSyncManager` ubiquity-container flow.
+    - The CloudKit container `iCloud.com.wave.venu.Ink` must exist in the
+      Apple Developer account's CloudKit Dashboard (Xcode auto-creates it
+      the first time the capability is added).
     - The InkWidget extension target needs its own .entitlements file with
       ONLY the `com.apple.security.application-groups` array (same value).
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- iCloud Drive (CloudDocuments service) -->
+    <!-- iCloud services: CloudKit (SwiftData record sync) + CloudDocuments
+         (CloudSyncManager file-presence sync). Both are required. -->
     <key>com.apple.developer.icloud-services</key>
     <array>
+        <string>CloudKit</string>
         <string>CloudDocuments</string>
     </array>
     <key>com.apple.developer.icloud-container-identifiers</key>
     <array>
-        <string>iCloud.com.ink.app</string>
+        <string>iCloud.com.wave.venu.Ink</string>
     </array>
     <key>com.apple.developer.ubiquity-container-identifiers</key>
     <array>
-        <string>iCloud.com.ink.app</string>
+        <string>iCloud.com.wave.venu.Ink</string>
     </array>
+
+    <!-- Key-value store identifier (used for any cross-device flags that
+         don't need the full CloudKit record-sync path — currently unused
+         by the app but provisioned so it's available without an entitlement
+         change later). -->
+    <key>com.apple.developer.ubiquity-kvstore-identifier</key>
+    <string>$(TeamIdentifierPrefix)com.wave.venu.Ink</string>
 
     <!-- App Group (shared with InkWidget) -->
     <key>com.apple.security.application-groups</key>

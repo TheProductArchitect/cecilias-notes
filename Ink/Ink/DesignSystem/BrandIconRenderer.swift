@@ -46,14 +46,12 @@ enum BrandIconRenderer {
             let letterChar = String(letter).lowercased()
             let dotChar    = "."
 
-            // Sizing: letter cap-height ≈ 60% of icon height. Bricolage's
-            // cap-height-to-em ratio is ~0.7, so font size ≈ 0.6 / 0.7 ≈ 0.86.
-            // We err slightly smaller so descender-free glyphs (a, c, e, m,
-            // n, o, r, s, u, v, w, x, z) and ascender glyphs (b, d, f, h,
-            // k, l, t) both sit inside the safe area.
-            let fontSize  = size * 0.78
+            // Sizing: SF Pro Bold at ~0.7× icon height keeps both
+            // ascender and descender glyphs comfortably inside the safe
+            // area for the rounded-rect mask.
+            let fontSize  = size * 0.7
             let baseFont  = BrandFont.wordmarkUIFont(size: fontSize)
-            let kern      = -0.03 * fontSize
+            let kern: CGFloat = 0
 
             let letterColour = UIColor(hex: letterHex)
             // brandDot resolves to the existing accent — keep the call

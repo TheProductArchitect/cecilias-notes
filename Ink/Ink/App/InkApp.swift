@@ -1,5 +1,6 @@
 import Combine
 import CoreSpotlight
+import SwiftData
 import SwiftUI
 
 @main
@@ -14,6 +15,22 @@ struct InkApp: App {
     @AppStorage("ink.resume.lastNotebookId") private var lastNotebookIdString: String = ""
 
     init() {
+        // Register Apple Intelligence's master toggle as ON-by-default
+        // *without* persisting the value. `UserDefaults.register`
+        // installs a fallback that's returned when the key is absent
+        // from the user's domain — every read of
+        // `intelligence.enabled` on a fresh install gets `true`, but
+        // nothing is written to disk until the user explicitly
+        // toggles it in Settings → Intelligence. Once they do, that
+        // choice is permanent: register doesn't shadow a written
+        // value, and we never overwrite `intelligence.enabled`
+        // programmatically anywhere else. Net result on iOS 26
+        // devices with Apple Intelligence: summaries / suggestions /
+        // Ask My Notes are live on first launch with zero setup.
+        UserDefaults.standard.register(defaults: [
+            "intelligence.enabled": true,
+        ])
+
         // Disable UIScrollView's default 150ms gesture-arbitration delay
         // so buttons inside scroll views (Settings cards, library search
         // results, etc.) fire on the first tap rather than the second.
@@ -70,12 +87,25 @@ struct InkApp: App {
                 .environmentObject(storageService)
                 .environmentObject(cloudSync)
                 .environmentObject(deepLink)
+                // Inject the same `ModelContainer` the StorageService
+                // owns so SwiftUI `@Query` views (sidebar's per-subject
+                // count, future Phase 2 grid pagination) read from the
+                // exact same store the manual `StorageService` API
+                // writes to. Without this, `@Query` finds no container
+                // in the environment and crashes.
+                .modelContainer(storageService.container)
                 .onAppear {
                     themeManager.applyTheme()
                     // Session-scoped values that should not survive a relaunch:
                     // - pixel-eraser size (resets to the user's Settings default
                     //   each time the app cold-starts).
                     UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize.session")
+
+                    // One-time defensive recompute of `totalPageCount`
+                    // for any pre-existing notebooks whose denormalised
+                    // count drifted from the live page list. Gated by a
+                    // UserDefaults flag — subsequent launches no-op.
+                    storageService.runOneTimePageCountBackfillIfNeeded()
 
                     // Defer the resume check by one runloop tick so a
                     // cold-launch `ink://quick-capture` URL has time to

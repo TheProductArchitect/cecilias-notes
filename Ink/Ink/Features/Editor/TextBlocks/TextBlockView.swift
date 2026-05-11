@@ -14,23 +14,53 @@ final class InkTextView: UITextView {
     var onShiftTab:   (() -> Void)?
 
     override var keyCommands: [UIKeyCommand]? {
+        // iOS 13+ replacement for the deprecated
+        // `init(input:modifierFlags:action:discoverabilityTitle:)`.
+        // `title:` doubles as the discoverability label (the OS
+        // shows it in the ⌘-hold HUD on iPad).
         [
-            UIKeyCommand(input: "b", modifierFlags: .command,
-                         action: #selector(cmdBold), discoverabilityTitle: "Bold"),
-            UIKeyCommand(input: "i", modifierFlags: .command,
-                         action: #selector(cmdItalic), discoverabilityTitle: "Italic"),
-            UIKeyCommand(input: "u", modifierFlags: .command,
-                         action: #selector(cmdUnderline), discoverabilityTitle: "Underline"),
-            UIKeyCommand(input: "k", modifierFlags: .command,
-                         action: #selector(cmdLink), discoverabilityTitle: "Link"),
-            UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [],
-                         action: #selector(cmdEscape)),
-            UIKeyCommand(input: "\t", modifierFlags: [],
+            UIKeyCommand(title: "Bold",
+                         image: nil,
+                         action: #selector(cmdBold),
+                         input: "b",
+                         modifierFlags: .command,
+                         propertyList: nil),
+            UIKeyCommand(title: "Italic",
+                         image: nil,
+                         action: #selector(cmdItalic),
+                         input: "i",
+                         modifierFlags: .command,
+                         propertyList: nil),
+            UIKeyCommand(title: "Underline",
+                         image: nil,
+                         action: #selector(cmdUnderline),
+                         input: "u",
+                         modifierFlags: .command,
+                         propertyList: nil),
+            UIKeyCommand(title: "Link",
+                         image: nil,
+                         action: #selector(cmdLink),
+                         input: "k",
+                         modifierFlags: .command,
+                         propertyList: nil),
+            UIKeyCommand(title: "",
+                         image: nil,
+                         action: #selector(cmdEscape),
+                         input: UIKeyCommand.inputEscape,
+                         modifierFlags: [],
+                         propertyList: nil),
+            UIKeyCommand(title: "Indent / Next Block",
+                         image: nil,
                          action: #selector(cmdTab),
-                         discoverabilityTitle: "Indent / Next Block"),
-            UIKeyCommand(input: "\t", modifierFlags: .shift,
+                         input: "\t",
+                         modifierFlags: [],
+                         propertyList: nil),
+            UIKeyCommand(title: "Outdent / Previous Block",
+                         image: nil,
                          action: #selector(cmdShiftTab),
-                         discoverabilityTitle: "Outdent / Previous Block"),
+                         input: "\t",
+                         modifierFlags: .shift,
+                         propertyList: nil),
         ]
     }
 
@@ -266,15 +296,29 @@ extension TextBlockView {
 
         /// In .idle and .selected states, intercept link taps and open them in
         /// SFSafariViewController. In .editing state, do nothing — let the user
-        /// continue editing the underlying text. This is the canonical pattern
-        /// for non-editing UITextViews.
-        func textView(_ textView: UITextView,
-                      shouldInteractWith URL: URL,
-                      in characterRange: NSRange,
-                      interaction: UITextItemInteraction) -> Bool {
-            guard currentState != .editing else { return true }
-            presentSafari(for: URL)
-            return false
+        /// continue editing the underlying text.
+        ///
+        /// iOS 17+ replacement for the deprecated
+        /// `textView(_:shouldInteractWith:in:interaction:)`. Returning a
+        /// non-nil action with the empty handler suppresses the default
+        /// open-in-Safari behaviour; in editing mode we forward
+        /// `defaultAction` to preserve text selection / cursor placement.
+        func textView(
+            _ textView: UITextView,
+            primaryActionFor textItem: UITextItem,
+            defaultAction: UIAction
+        ) -> UIAction? {
+            // Only intercept URL items — everything else falls
+            // through to the default action.
+            guard case .link(let url) = textItem.content else {
+                return defaultAction
+            }
+            if currentState == .editing {
+                return defaultAction
+            }
+            return UIAction(title: "") { [weak self] _ in
+                self?.presentSafari(for: url)
+            }
         }
 
         private func presentSafari(for url: URL) {
