@@ -79,7 +79,7 @@ struct ToolSettingsStore: Codable, Equatable {
     /// Builds an `CeciliasNotesTool` for `identity`, restoring persisted settings if
     /// available. Falls back to `CeciliasNotesTool.Defaults.forIdentity(_:theme:)` for
     /// any field that isn't stored.
-    func tool(for identity: CeciliasNotesTool.Identity, theme: CeciliasNotesTheme) -> CeciliasNotesTool {
+    func tool(for identity: CeciliasNotesTool.Identity, theme: Theme) -> CeciliasNotesTool {
         let baseDefault = CeciliasNotesTool.Defaults.forIdentity(identity, theme: theme)
         guard let stored = settings[identity.rawValue] else { return baseDefault }
         let colour = UIColor(hex: stored.colourHex)

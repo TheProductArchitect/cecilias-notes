@@ -32,6 +32,7 @@ struct DebugSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                themeSection
                 generatorsSection
                 wipeSection
                 if let statusLine {
@@ -55,6 +56,50 @@ struct DebugSettingsView: View {
                             .scaleEffect(1.5)
                             .tint(.white)
                     }
+            }
+        }
+    }
+
+    // MARK: Theme switcher (Phase B verification)
+
+    /// Temporary debug-only theme toggle. Lets us verify the new
+    /// ThemeManager + Theme value type flips chrome correctly before
+    /// Phase D migrates the ~542 call sites off the inkX namespace.
+    /// The proper Theme picker lives in Settings → Appearance and will
+    /// be wired to the new manager in Phase F (or earlier — it's
+    /// already routed in Phase B). This row stays so we have a fast
+    /// in-app switch during development.
+    private var themeSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("theme (Phase B debug)")
+            VStack(spacing: 0) {
+                ForEach(Theme.all) { theme in
+                    let isSelected = viewModel.themeManager.current.id == theme.id
+                    Button {
+                        withAnimation {
+                            viewModel.themeManager.setTheme(theme)
+                        }
+                    } label: {
+                        HStack {
+                            Text(theme.displayName)
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.inkTextPrimary)
+                            Spacer()
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.brandAccent)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(Self.hairlineColour)
+                                .frame(height: 0.5)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }

@@ -231,7 +231,7 @@ struct StyleGuideView: View {
             sectionHeader("Theme")
 
             HStack(spacing: CeciliasNotes.Spacing.md) {
-                ForEach(CeciliasNotesTheme.allCases, id: \.rawValue) { theme in
+                ForEach(Theme.all) { theme in
                     themeCard(theme)
                 }
             }
@@ -319,29 +319,30 @@ struct StyleGuideView: View {
         }
     }
 
-    private func themeCard(_ theme: CeciliasNotesTheme) -> some View {
-        let isSelected = themeManager.theme == theme
+    private func themeCard(_ theme: Theme) -> some View {
+        let isSelected = themeManager.current.id == theme.id
 
         return Button {
             withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
-                themeManager.theme = theme
+                themeManager.setTheme(theme)
             }
         } label: {
             VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
-                // Mini preview
+                // Mini preview — reads directly from Theme struct fields
+                // (no preview helper indirection in the new design).
                 RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                    .fill(theme.previewBackground)
+                    .fill(theme.background)
                     .frame(height: 72)
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 4) {
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(theme.previewText)
+                                .fill(theme.foreground)
                                 .frame(width: 48, height: 6)
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(theme.previewText.opacity(0.4))
+                                .fill(theme.foreground.opacity(0.4))
                                 .frame(width: 64, height: 4)
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(theme.previewAccent)
+                                .fill(theme.accent)
                                 .frame(width: 32, height: 4)
                         }
                         .padding(CeciliasNotes.Spacing.sm)

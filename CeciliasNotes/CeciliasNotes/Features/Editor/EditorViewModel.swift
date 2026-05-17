@@ -511,7 +511,7 @@ final class EditorViewModel: ObservableObject {
     /// One blob per app — see `ToolSettingsStore`. Snapshotted on every
     /// selectedTool mutation, restored on identity-switch.
     private var toolSettings = ToolSettingsStore.load()
-    private let theme: CeciliasNotesTheme
+    private let theme: Theme
 
     // MARK: Init
 
@@ -523,7 +523,7 @@ final class EditorViewModel: ObservableObject {
         // isolation rules).
         storage: StorageService? = nil,
         userDefaults: UserDefaults = .standard,
-        theme: CeciliasNotesTheme = .light
+        theme: Theme = .default
     ) {
         self.notebook        = notebook
         let resolvedStorage  = storage ?? .shared
@@ -692,7 +692,7 @@ final class EditorViewModel: ObservableObject {
         static let pencilDoubleTap     = "ink.pencil.doubletap"
     }
 
-    private func loadPersistedState(theme: CeciliasNotesTheme) {
+    private func loadPersistedState(theme: Theme) {
         // Recent colours
         if let hexes = userDefaults.array(forKey: StorageKeys.recentColours) as? [String] {
             recentColours = hexes.map { UIColor(hex: $0) }

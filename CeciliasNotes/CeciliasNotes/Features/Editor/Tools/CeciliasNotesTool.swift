@@ -1,5 +1,6 @@
 import Foundation
 import PencilKit
+import SwiftUI
 import UIKit
 
 // MARK: - CeciliasNotesTool
@@ -279,30 +280,34 @@ enum CeciliasNotesTool: Equatable {
     // MARK: Defaults
 
     enum Defaults {
-        private static func ceciliasNotesColour(_ theme: CeciliasNotesTheme) -> UIColor {
-            theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
+        /// Default ink colour for a fresh stroke. Reads from the theme so
+        /// switching themes affects new strokes; existing strokes keep
+        /// their stored colour (Step 1 territory once strokes become
+        /// PageElements).
+        private static func defaultInk(_ theme: Theme) -> UIColor {
+            UIColor(theme.defaultInkColor)
         }
 
-        static func pen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .pen(colour: ceciliasNotesColour(theme), width: 2, opacity: 1.0)
+        static func pen(theme: Theme) -> CeciliasNotesTool {
+            .pen(colour: defaultInk(theme), width: 2, opacity: 1.0)
         }
-        static func fountainPen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .fountainPen(colour: ceciliasNotesColour(theme), width: 2, opacity: 1.0)
+        static func fountainPen(theme: Theme) -> CeciliasNotesTool {
+            .fountainPen(colour: defaultInk(theme), width: 2, opacity: 1.0)
         }
-        static func monoline(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .monoline(colour: ceciliasNotesColour(theme), width: 2)
+        static func monoline(theme: Theme) -> CeciliasNotesTool {
+            .monoline(colour: defaultInk(theme), width: 2)
         }
-        static func marker(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .marker(colour: ceciliasNotesColour(theme), width: 6)
+        static func marker(theme: Theme) -> CeciliasNotesTool {
+            .marker(colour: defaultInk(theme), width: 6)
         }
-        static func brush(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .brush(colour: ceciliasNotesColour(theme), width: 6, opacity: 0.85)
+        static func brush(theme: Theme) -> CeciliasNotesTool {
+            .brush(colour: defaultInk(theme), width: 6, opacity: 0.85)
         }
-        static func crayon(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .crayon(colour: ceciliasNotesColour(theme), width: 5)
+        static func crayon(theme: Theme) -> CeciliasNotesTool {
+            .crayon(colour: defaultInk(theme), width: 5)
         }
-        static func pencil(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .pencil(colour: ceciliasNotesColour(theme), width: 3, opacity: 1.0)
+        static func pencil(theme: Theme) -> CeciliasNotesTool {
+            .pencil(colour: defaultInk(theme), width: 3, opacity: 1.0)
         }
         static let highlighter: CeciliasNotesTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
         static let eraser: CeciliasNotesTool = .eraser(mode: .wholeStroke)
@@ -314,7 +319,7 @@ enum CeciliasNotesTool: Equatable {
 
         /// Build a default for any identity. Used by the palette when the
         /// per-tool persistence has nothing stored for that identity yet.
-        static func forIdentity(_ id: Identity, theme: CeciliasNotesTheme) -> CeciliasNotesTool {
+        static func forIdentity(_ id: Identity, theme: Theme) -> CeciliasNotesTool {
             switch id {
             case .pen:          return pen(theme: theme)
             case .fountainPen:  return fountainPen(theme: theme)

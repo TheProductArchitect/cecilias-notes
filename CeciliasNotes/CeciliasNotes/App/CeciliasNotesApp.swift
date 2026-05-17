@@ -125,6 +125,17 @@ struct CeciliasNotesApp: App {
                 .environmentObject(storageService)
                 .environmentObject(cloudSync)
                 .environmentObject(deepLink)
+                // Step 0.75: inject the Theme value type via @Environment
+                // so any view can read `@Environment(\.theme) var theme`.
+                // Also drive `.preferredColorScheme(_:)` from the chosen
+                // theme — that flips the trait collection, which makes
+                // the existing dynamic-provider tokens in
+                // CeciliasNotesColors.swift respond before Phase D
+                // migrates them off the inkX namespace.
+                .environment(\.theme, themeManager.current)
+                .preferredColorScheme(
+                    themeManager.current.interfaceStyle == .dark ? .dark : .light
+                )
                 // Inject the same `ModelContainer` the StorageService
                 // owns so SwiftUI `@Query` views (sidebar's per-subject
                 // count, future Phase 2 grid pagination) read from the
@@ -133,7 +144,6 @@ struct CeciliasNotesApp: App {
                 // in the environment and crashes.
                 .modelContainer(storageService.container)
                 .onAppear {
-                    themeManager.applyTheme()
                     // Session-scoped values that should not survive a relaunch:
                     // - pixel-eraser size (resets to the user's Settings default
                     //   each time the app cold-starts).

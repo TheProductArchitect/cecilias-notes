@@ -34,23 +34,24 @@ struct AppearanceSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("theme")
             HStack(alignment: .top, spacing: 16) {
-                themeOption(.light)
-                themeOption(.dark)
+                ForEach(Theme.all) { theme in
+                    themeOption(theme)
+                }
                 Spacer(minLength: 0)
             }
         }
     }
 
-    private func themeOption(_ theme: CeciliasNotesTheme) -> some View {
-        let isSelected = viewModel.themeManager.theme == theme
+    private func themeOption(_ theme: Theme) -> some View {
+        let isSelected = viewModel.themeManager.current.id == theme.id
         return Button {
             withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
-                viewModel.themeManager.theme = theme
+                viewModel.themeManager.setTheme(theme)
             }
         } label: {
             VStack(spacing: 8) {
                 ZStack {
-                    swatchFill(for: theme)
+                    theme.background
                 }
                 .frame(width: 80, height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
@@ -64,22 +65,14 @@ struct AppearanceSettingsView: View {
                         )
                 )
 
-                Text(theme.rawValue)
+                Text(theme.displayName.lowercased())
                     .font(.system(size: 9))
                     .foregroundStyle(Self.labelColour)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(theme.rawValue) theme")
+        .accessibilityLabel("\(theme.displayName) theme")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    }
-
-    @ViewBuilder
-    private func swatchFill(for theme: CeciliasNotesTheme) -> some View {
-        switch theme {
-        case .light: Color.white
-        case .dark:  Color(hex: "#0a0a0a")
-        }
     }
 
     private var resumeSection: some View {
