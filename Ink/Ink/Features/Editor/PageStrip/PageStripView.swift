@@ -36,7 +36,7 @@ struct PageStripView: View {
     private var content: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Ink.Spacing.sm) {
+                HStack(spacing: CeciliasNotes.Spacing.sm) {
                     ForEach(Array(viewModel.pages.enumerated()), id: \.element.id) { index, page in
                         PageStripThumbnail(
                             page: page,
@@ -67,7 +67,7 @@ struct PageStripView: View {
                                 .foregroundColor(.inkAccentPrimary)
                                 .frame(width: thumbWidth, height: thumbHeight)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                                    RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                                         .strokeBorder(
                                             Color.inkAccentPrimary,
                                             style: StrokeStyle(lineWidth: 0.5, dash: [4, 4])
@@ -77,12 +77,12 @@ struct PageStripView: View {
                     }
                     .buttonStyle(.inkPressable)
                 }
-                .padding(.horizontal, Ink.Spacing.lg)
-                .padding(.vertical, Ink.Spacing.md)
+                .padding(.horizontal, CeciliasNotes.Spacing.lg)
+                .padding(.vertical, CeciliasNotes.Spacing.md)
             }
             .onChange(of: viewModel.currentPageIndex) { _, newIndex in
                 guard newIndex < viewModel.pages.count else { return }
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     proxy.scrollTo(viewModel.pages[newIndex].id, anchor: .center)
                 }
             }
@@ -110,7 +110,7 @@ private struct PageStripThumbnail: View {
         VStack(spacing: 4) {
             ZStack {
                 // Paper background
-                RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                     .fill(Color(UIColor(hex: "#FAFAF8")))
 
                 if let image {
@@ -120,9 +120,9 @@ private struct PageStripThumbnail: View {
                 }
             }
             .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                     .strokeBorder(
                         isCurrent ? Color.inkAccentPrimary : Color.inkBorderSubtle,
                         lineWidth: isCurrent ? 2 : 0.5

@@ -23,7 +23,7 @@ final class StorageServiceTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeSubject(name: String = "Science") throws -> Subject {
-        try service.createSubject(name: name, colorHex: InkColorPresets.subjectColors[0])
+        try service.createSubject(name: name, colorHex: CeciliasNotesColorPresets.subjectColors[0])
     }
 
     private func makeNotebook(subjectId: UUID? = nil, title: String = "Test Notebook") throws -> Notebook {
@@ -47,7 +47,7 @@ final class StorageServiceTests: XCTestCase {
 
     func test_createSubject_enforces_name_max_50_chars() {
         let longName = String(repeating: "A", count: 51)
-        XCTAssertThrowsError(try service.createSubject(name: longName, colorHex: InkColorPresets.subjectColors[0]))
+        XCTAssertThrowsError(try service.createSubject(name: longName, colorHex: CeciliasNotesColorPresets.subjectColors[0]))
     }
 
     func test_createSubject_rejects_invalid_colorHex() {

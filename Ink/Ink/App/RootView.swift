@@ -73,7 +73,7 @@ struct RootView: View {
         // skip-splash optimisation depends on the previous session
         // having torn down through a normal lifecycle — without
         // that, we can't trust any session-state. See `LaunchRecovery`
-        // in `InkApp.swift`.
+        // in `CeciliasNotesApp.swift`.
         guard LaunchRecovery.previousShutdownWasClean else {
             _phase = State(initialValue: .splash)
             _splashMode = State(initialValue: .full)

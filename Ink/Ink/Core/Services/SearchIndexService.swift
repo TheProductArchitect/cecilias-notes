@@ -623,7 +623,7 @@ final class SearchIndexService {
     /// description + keyword tokens drawn from the OCR + TextBlock
     /// text. Lookups in the OS-wide search bar match those tokens
     /// and deep-link back into the notebook via
-    /// `InkApp.onContinueUserActivity`.
+    /// `CeciliasNotesApp.onContinueUserActivity`.
     private func donateToSpotlight(_ notebook: Notebook) {
         let entry = index[notebook.id]
         let combined = entry?.pages.values

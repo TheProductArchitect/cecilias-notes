@@ -42,7 +42,7 @@ struct RadialToolWheel: View {
             if reduceMotion {
                 visible = true
             } else {
-                withAnimation(.inkSpring(InkSpring.snappy)) { visible = true }
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { visible = true }
             }
         }
     }
@@ -86,7 +86,7 @@ struct RadialToolWheel: View {
 /// is data-driven — Settings → Apple Pencil customisation can later let
 /// the user override the default eight (TODO).
 enum WheelItem: Hashable {
-    case tool(InkTool.Identity)
+    case tool(CeciliasNotesTool.Identity)
     case undo
     case redo
     case toggleFocus

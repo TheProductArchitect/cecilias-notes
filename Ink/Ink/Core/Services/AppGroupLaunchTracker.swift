@@ -13,7 +13,7 @@ import Foundation
 ///     time isn't `Date.now` (e.g. tests, scenario reproduction).
 ///
 /// Lives in the App Group (`group.com.wave.venu.Ink`) so both the
-/// main app and the InkWidget extension see the same value. The
+/// main app and the CeciliasNotesWidget extension see the same value. The
 /// widget doesn't use this directly today but the spec calls for it
 /// to be readable from the extension.
 ///

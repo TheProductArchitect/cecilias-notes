@@ -82,7 +82,7 @@ struct LibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .inkCommandSearch)) { _ in
                 Task { @MainActor in
-                    withAnimation(.inkSpring(InkSpring.smooth)) { viewModel.isSearchActive = true }
+                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { viewModel.isSearchActive = true }
                 }
             }
             .onChange(of: deepLink.pendingQuickCapture) { _, pending in
@@ -122,7 +122,7 @@ struct LibraryView: View {
         .overlay(alignment: .top) {
             if let message = viewModel.error?.errorDescription {
                 MediaErrorBanner(message: message) { viewModel.error = nil }
-                    .padding(.top, Ink.Spacing.md)
+                    .padding(.top, CeciliasNotes.Spacing.md)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(99)
             }
@@ -144,7 +144,7 @@ struct LibraryView: View {
                 .zIndex(98)
             }
         }
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isImporting)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isImporting)
         .alert(
             "Couldn't import",
             isPresented: Binding(
@@ -157,12 +157,12 @@ struct LibraryView: View {
         } message: { err in
             Text(err.errorDescription ?? "Some PDFs couldn't be imported.")
         }
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.error)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.error)
         .background(Color(.systemBackground))
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
         .ignoresSafeArea(.keyboard, edges: keyboardObserver.isFloatingKeyboard ? .bottom : [])
-        .animation(reduceMotion ? nil : .inkSpring(InkSpring.snappy), value: isSidebarVisible)
+        .animation(reduceMotion ? nil : .inkSpring(CeciliasNotesSpring.snappy), value: isSidebarVisible)
         .sheet(isPresented: $isShowingRecentExports) {
             RecentExportsView { notebookId in
                 isShowingRecentExports = false

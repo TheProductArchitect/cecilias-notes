@@ -56,14 +56,14 @@ struct NotebookCardView: View {
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .scaleEffect(isHovered && !viewModel.isSelecting ? 1.01 : 1.0)
         .onHover { hovered in
-            withAnimation(.inkSpring(InkSpring.precise)) { isHovered = hovered }
+            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
         }
         .onTapGesture {
             #if DEBUG
             print("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
             #endif
             if viewModel.isSelecting {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.toggleSelection(notebook)
                 }
             } else {
@@ -361,7 +361,7 @@ struct NotebookCardView: View {
         }
 
         Button {
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.togglePin(notebook)
             }
         } label: {
@@ -414,7 +414,7 @@ struct NotebookCardView: View {
 
         Button(role: .destructive) {
             HapticManager.shared.notebookDeleted()
-            withAnimation(.inkSpring(InkSpring.smooth)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                 viewModel.deleteNotebook(notebook)
             }
         } label: {

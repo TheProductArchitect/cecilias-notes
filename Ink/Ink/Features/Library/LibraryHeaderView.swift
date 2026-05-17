@@ -90,7 +90,7 @@ struct LibraryHeaderView: View {
         .sheet(isPresented: $isShowingAskSheet) {
             AskMyNotesView(libraryViewModel: viewModel)
         }
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSelecting)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
         .onAppear { greeting = GreetingPicker.pick() }
     }
 
@@ -157,7 +157,7 @@ struct LibraryHeaderView: View {
         HStack(spacing: 4) {
             // Search
             Button {
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.isSearchActive.toggle()
                     if !viewModel.isSearchActive { viewModel.deactivateSearch() }
                 }
@@ -302,7 +302,7 @@ struct LibraryHeaderView: View {
             // recessive ring otherwise. Matches the icon-only
             // pattern of every other button in this strip.
             Button {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.isSelecting.toggle()
                 }
             } label: {
@@ -356,7 +356,7 @@ struct LibraryHeaderView: View {
                 .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("delete") {
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.deleteSelectedNotebooks()
                 }
             }
@@ -365,7 +365,7 @@ struct LibraryHeaderView: View {
             .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("done") {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.isSelecting = false
                     viewModel.selectedNotebookIds = []
                 }

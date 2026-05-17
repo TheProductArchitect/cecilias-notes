@@ -3,11 +3,11 @@ import Combine
 
 // MARK: - Theme definition
 
-public enum InkTheme: String, CaseIterable, Codable {
+public enum CeciliasNotesTheme: String, CaseIterable, Codable {
     case light = "light"
     case dark  = "dark"
     // Designed for extension — add .sepia, .highContrast etc here in future.
-    // ThemePickerView uses ForEach(InkTheme.allCases) so adding a theme
+    // ThemePickerView uses ForEach(CeciliasNotesTheme.allCases) so adding a theme
     // requires zero structural changes to the UI.
 
     public var colorScheme: ColorScheme {
@@ -63,12 +63,12 @@ public final class ThemeManager: ObservableObject {
     /// Swift 5.10. Public callers go through the `theme` computed property below.
     /// UserDefaults key remains `ink.theme`, so persisted values from previous
     /// builds round-trip unchanged.
-    @AppStorage("ink.theme") private var storedTheme: String = InkTheme.light.rawValue
+    @AppStorage("ink.theme") private var storedTheme: String = CeciliasNotesTheme.light.rawValue
 
     /// Public theme accessor. Setter manually fires `objectWillChange` so any
     /// SwiftUI views observing this `@StateObject` / `@EnvironmentObject` re-render.
-    public var theme: InkTheme {
-        get { InkTheme(rawValue: storedTheme) ?? .light }
+    public var theme: CeciliasNotesTheme {
+        get { CeciliasNotesTheme(rawValue: storedTheme) ?? .light }
         set {
             objectWillChange.send()
             storedTheme = newValue.rawValue

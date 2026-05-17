@@ -16,10 +16,10 @@ enum ToolCategoryStore {
 
     /// Returns the last-used variant for `category`, or its default if the
     /// user has never picked a variant in this category yet.
-    static func lastVariant(for category: ToolCategory) -> InkTool.Identity {
+    static func lastVariant(for category: ToolCategory) -> CeciliasNotesTool.Identity {
         let map = loadMap()
         if let raw      = map[category.rawValue],
-           let identity = InkTool.Identity(rawValue: raw),
+           let identity = CeciliasNotesTool.Identity(rawValue: raw),
            category.variants.contains(identity) {
             return identity
         }
@@ -28,7 +28,7 @@ enum ToolCategoryStore {
 
     /// Records `identity` as the last-used variant for its category.
     /// No-op for identities that don't belong to a category (eraser, lasso, …).
-    static func setLastVariant(_ identity: InkTool.Identity) {
+    static func setLastVariant(_ identity: CeciliasNotesTool.Identity) {
         guard let category = identity.category else { return }
         var map = loadMap()
         map[category.rawValue] = identity.rawValue

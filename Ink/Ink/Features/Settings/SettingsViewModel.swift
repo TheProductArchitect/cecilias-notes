@@ -6,7 +6,7 @@ import SwiftUI
 
 // MARK: - Persisted enums
 
-/// Mirror of `PencilDoubleTapAction` (in Editor/Tools/InkTool.swift) — must use the
+/// Mirror of `PencilDoubleTapAction` (in Editor/Tools/CeciliasNotesTool.swift) — must use the
 /// same raw values so the @AppStorage key `ink.pencil.doubletap` round-trips
 /// between Settings (writer) and EditorViewModel (reader).
 enum DoubleTapAction: String, CaseIterable {
@@ -114,7 +114,7 @@ final class SettingsViewModel: ObservableObject {
     // MARK: - Pencil Pro squeeze (iOS 17.5+)
 
     /// User's choice for the Apple Pencil Pro squeeze gesture.
-    /// Registered with a `"palette"` default in `InkApp.init`; the
+    /// Registered with a `"palette"` default in `CeciliasNotesApp.init`; the
     /// AppStorage default here is the same so a fresh field read
     /// without the register-defaults still resolves correctly.
     @AppStorage("pencil.squeeze.action") var squeezeAction: SqueezeAction = .palette
@@ -197,7 +197,7 @@ final class SettingsViewModel: ObservableObject {
 
     /// Reads the persisted storage metrics cache, if any. Used by
     /// both `SettingsViewModel.init` (to pre-populate `storageInfo`
-    /// for instant first paint) and the `InkApp` background warmup
+    /// for instant first paint) and the `CeciliasNotesApp` background warmup
     /// (which checks whether a warm cache already exists so it can
     /// skip the recompute when the user hasn't been away long).
     static func readStorageCache() -> (info: StorageInfo, cachedAt: Date?)? {
@@ -218,7 +218,7 @@ final class SettingsViewModel: ObservableObject {
     /// Persists the storage metrics cache. Safe to call from any
     /// thread — `UserDefaults` is its own concurrency boundary, and
     /// the JSON encoder is stateless. Called both from the foreground
-    /// `loadStorageMetrics` path and the `InkApp` background warmup.
+    /// `loadStorageMetrics` path and the `CeciliasNotesApp` background warmup.
     static func persistStorageCache(_ info: StorageInfo, at date: Date = Date()) {
         let entry = StorageCacheEntry(
             total:    info.totalBytes,
@@ -240,7 +240,7 @@ final class SettingsViewModel: ObservableObject {
         // first paint of Settings → Storage shows real numbers
         // instead of a placeholder. `loadStorageMetrics` still runs
         // on appear and overwrites with fresh values. The background
-        // warmup in `InkApp` keeps the cache fresh even when the user
+        // warmup in `CeciliasNotesApp` keeps the cache fresh even when the user
         // hasn't visited Settings recently.
         if let (info, cachedAt) = Self.readStorageCache() {
             self.storageInfo         = info

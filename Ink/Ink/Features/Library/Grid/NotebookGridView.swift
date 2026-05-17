@@ -13,7 +13,7 @@ struct NotebookGridView: View {
                 // Breadcrumb only shows when the user is *inside* a folder.
                 if !viewModel.folderPath.isEmpty {
                     BreadcrumbBar(viewModel: viewModel)
-                    InkDivider()
+                    CeciliasNotesDivider()
                 }
                 gridArea
             }
@@ -31,9 +31,9 @@ struct NotebookGridView: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         )
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSearchActive)
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isSelecting)
-        .animation(.inkSpring(InkSpring.snappy), value: viewModel.folderPath.map(\.id))
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSearchActive)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
+        .animation(.inkSpring(CeciliasNotesSpring.snappy), value: viewModel.folderPath.map(\.id))
     }
 
     // MARK: Grid
@@ -66,8 +66,8 @@ struct NotebookGridView: View {
                 .padding(.top, 24)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
-                .animation(.inkSpring(InkSpring.smooth), value: levelFolders.map(\.id))
-                .animation(.inkSpring(InkSpring.smooth), value: levelNotebooks.map(\.id))
+                .animation(.inkSpring(CeciliasNotesSpring.smooth), value: levelFolders.map(\.id))
+                .animation(.inkSpring(CeciliasNotesSpring.smooth), value: levelNotebooks.map(\.id))
             }
             // Scrolling the grid dismisses any open inline-rename
             // keyboard immediately. Works for floating + docked
@@ -145,7 +145,7 @@ struct NotebookGridView: View {
     private var searchArea: some View {
         VStack(spacing: 0) {
             // Search bar
-            HStack(spacing: Ink.Spacing.sm) {
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
                 Image(systemName: "magnifyingglass")
                     .fontWeight(.medium)
                     .foregroundColor(.inkTextTertiary)
@@ -164,15 +164,15 @@ struct NotebookGridView: View {
                     .buttonStyle(.inkPressable)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
             .frame(height: 44)
             .background(Color.inkBackgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous))
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
             .transition(.move(edge: .top).combined(with: .opacity))
 
-            InkDivider()
+            CeciliasNotesDivider()
 
             if viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Spacer()
@@ -302,9 +302,9 @@ private struct BreadcrumbBar: View {
     @ObservedObject var viewModel: LibraryViewModel
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.xs) {
+        HStack(spacing: CeciliasNotes.Spacing.xs) {
             Button {
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.navigateUp()
                 }
             } label: {
@@ -321,7 +321,7 @@ private struct BreadcrumbBar: View {
                 HStack(spacing: 4) {
                     // Subject root crumb
                     Button {
-                        withAnimation(.inkSpring(InkSpring.snappy)) {
+                        withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                             viewModel.navigateToSubjectRoot()
                         }
                     } label: {
@@ -345,7 +345,7 @@ private struct BreadcrumbBar: View {
                                 .foregroundColor(.inkTextPrimary)
                         } else {
                             Button {
-                                withAnimation(.inkSpring(InkSpring.snappy)) {
+                                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                                     viewModel.navigateToBreadcrumb(index: idx)
                                 }
                             } label: {

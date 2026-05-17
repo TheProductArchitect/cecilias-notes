@@ -90,7 +90,7 @@ final class StorageService: ObservableObject {
         )
     }
 
-    /// Convenience init used by the singleton and InkApp. Container failure is
+    /// Convenience init used by the singleton and CeciliasNotesApp. Container failure is
     /// genuinely terminal (no DB → no app), so we surface a precondition with a
     /// clear message rather than a bare `try!`.
     private convenience init() {
@@ -102,7 +102,7 @@ final class StorageService: ObservableObject {
             // file is corrupt or Application Support is unwritable — unrecoverable
             // at startup. A descriptive crash is more useful than a zombie app.
             preconditionFailure( // Safe: terminal startup failure
-                "Failed to open the Ink SwiftData container: \(error). "
+                "Failed to open the CeciliasNotes SwiftData container: \(error). "
               + "This is unrecoverable; the app cannot start without on-disk storage."
             )
         }
@@ -164,7 +164,7 @@ private extension StorageService {
         do {
             try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         } catch {
-            throw InkStorageError.fileWriteFailed(error)
+            throw CeciliasNotesStorageError.fileWriteFailed(error)
         }
     }
 
@@ -210,10 +210,10 @@ extension StorageService {
 extension StorageService {
 
     func createSubject(name: String, colorHex: String) throws -> Subject {
-        guard name.count <= 50 else { throw InkStorageError.fileSizeLimitExceeded }
-        guard InkColorPresets.subjectColors.contains(colorHex) else {
-            throw InkStorageError.fileWriteFailed(
-                NSError(domain: "Ink", code: 1,
+        guard name.count <= 50 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
+        guard CeciliasNotesColorPresets.subjectColors.contains(colorHex) else {
+            throw CeciliasNotesStorageError.fileWriteFailed(
+                NSError(domain: "CeciliasNotes", code: 1,
                         userInfo: [NSLocalizedDescriptionKey: "Invalid subject colour hex: \(colorHex)"])
             )
         }
@@ -247,13 +247,13 @@ extension StorageService {
 
     func updateSubject(_ subject: Subject, name: String?, colorHex: String?) throws {
         if let name {
-            guard name.count <= 50 else { throw InkStorageError.fileSizeLimitExceeded }
+            guard name.count <= 50 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
             subject.name = name
         }
         if let colorHex {
-            guard InkColorPresets.subjectColors.contains(colorHex) else {
-                throw InkStorageError.fileWriteFailed(
-                    NSError(domain: "Ink", code: 1,
+            guard CeciliasNotesColorPresets.subjectColors.contains(colorHex) else {
+                throw CeciliasNotesStorageError.fileWriteFailed(
+                    NSError(domain: "CeciliasNotes", code: 1,
                             userInfo: [NSLocalizedDescriptionKey: "Invalid colour hex"])
                 )
             }
@@ -319,7 +319,7 @@ extension StorageService {
     /// Creates a folder under `subject`, optionally nested inside `parentFolderId`.
     /// Soft-deleted folders aren't fetched, so reusing a name across deletes is fine.
     func createFolder(name: String, in subject: Subject, parentFolderId: UUID? = nil) throws -> Folder {
-        guard name.count <= 50 else { throw InkStorageError.fileSizeLimitExceeded }
+        guard name.count <= 50 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
         let nextOrder = (fetchFolders(in: subject.id).map(\.sortOrder).max() ?? -1) + 1
         let folder = Folder(
             name: name,
@@ -360,7 +360,7 @@ extension StorageService {
     func updateFolder(_ folder: Folder, name: String) throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 50 else {
-            throw InkStorageError.fileSizeLimitExceeded
+            throw CeciliasNotesStorageError.fileSizeLimitExceeded
         }
         folder.name      = trimmed
         folder.updatedAt = Date()
@@ -501,7 +501,7 @@ extension StorageService {
         pageSize: PageSize,
         template: PageTemplate
     ) throws -> Notebook {
-        guard title.count <= 80 else { throw InkStorageError.fileSizeLimitExceeded }
+        guard title.count <= 80 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
 
         let notebook = Notebook(
             title: title,
@@ -646,7 +646,7 @@ extension StorageService {
         defaultTemplate: PageTemplate? = nil
     ) throws {
         if let title {
-            guard title.count <= 80 else { throw InkStorageError.fileSizeLimitExceeded }
+            guard title.count <= 80 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
             notebook.title = title
         }
         if let colorHex = coverColorHex { notebook.coverColorHex = colorHex }
@@ -831,7 +831,7 @@ extension StorageService {
             // Coordinator-wrapped when destination is in the iCloud container.
             try Self.copyFile(at: src, to: dst)
         } catch {
-            throw InkStorageError.fileWriteFailed(error)
+            throw CeciliasNotesStorageError.fileWriteFailed(error)
         }
     }
 }
@@ -938,7 +938,7 @@ extension StorageService {
     /// media + audio across.
     func duplicatePage(_ page: Page) throws -> Page {
         guard let notebook = notebookById(page.notebookId) else {
-            throw InkStorageError.notebookNotFound
+            throw CeciliasNotesStorageError.notebookNotFound
         }
         let insertAfter  = page.pageNumber
         let existingPages = fetchPages(in: notebook)
@@ -982,11 +982,11 @@ extension StorageService {
 
     func movePage(_ page: Page, to targetPageNumber: Int) throws {
         guard let notebook = notebookById(page.notebookId) else {
-            throw InkStorageError.notebookNotFound
+            throw CeciliasNotesStorageError.notebookNotFound
         }
         let pages = fetchPages(in: notebook)
         guard targetPageNumber >= 1 && targetPageNumber <= pages.count else {
-            throw InkStorageError.pageNumberInvalid
+            throw CeciliasNotesStorageError.pageNumberInvalid
         }
 
         let currentNumber = page.pageNumber
@@ -1347,7 +1347,7 @@ extension StorageService {
                 try fm.removeItem(at: exportsDir)
                 try fm.createDirectory(at: exportsDir, withIntermediateDirectories: true)
             } catch {
-                throw InkStorageError.fileWriteFailed(error)
+                throw CeciliasNotesStorageError.fileWriteFailed(error)
             }
         }
     }
@@ -1366,7 +1366,7 @@ extension StorageService {
                 try fm.removeItem(at: aDir)
                 try fm.createDirectory(at: aDir, withIntermediateDirectories: true)
             } catch {
-                throw InkStorageError.fileWriteFailed(error)
+                throw CeciliasNotesStorageError.fileWriteFailed(error)
             }
         }
         // Soft-delete all AudioRecord rows (Phase 5A+5C Step 3 —
@@ -1621,7 +1621,7 @@ extension StorageService {
     func generateSyntheticNotebooks(count: Int) throws {
         let subjectNames = ["University", "Personal", "Work", "Ideas", "Travel"]
         var subjects = fetchSubjects()
-        let palette  = InkColorPresets.subjectColors
+        let palette  = CeciliasNotesColorPresets.subjectColors
 
         while subjects.count < 5 {
             let idx = subjects.count

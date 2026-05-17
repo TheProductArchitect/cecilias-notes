@@ -55,7 +55,7 @@ struct EditorView: View {
                 LectureRecordingView(
                     recorder: recorder,
                     onStop: { record in
-                        withAnimation(.inkSpring(InkSpring.smooth)) {
+                        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                             viewModel.endLectureMode(with: record)
                         }
                     }
@@ -64,7 +64,7 @@ struct EditorView: View {
                 .zIndex(200)
             }
         }
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.activeLectureRecorder != nil)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.activeLectureRecorder != nil)
     }
 
     private var editorBody: some View {
@@ -103,7 +103,7 @@ struct EditorView: View {
                         safeAreaInsets: proxy.safeAreaInsets
                     )
                     .opacity(viewModel.isFocusMode ? 0.3 : 1.0)
-                    .animation(.inkSpring(InkSpring.fade), value: viewModel.isFocusMode)
+                    .animation(.inkSpring(CeciliasNotesSpring.fade), value: viewModel.isFocusMode)
                 }
 
                 // 3. Page strip (bottom) — fully hidden in Focus Mode
@@ -125,9 +125,9 @@ struct EditorView: View {
                         HStack {
                             Spacer()
                             MinimapView(viewModel: viewModel)
-                                .padding(.trailing, Ink.Spacing.lg)
+                                .padding(.trailing, CeciliasNotes.Spacing.lg)
                                 .padding(.bottom,
-                                         viewModel.isShowingPageStrip ? 156 : Ink.Spacing.lg)
+                                         viewModel.isShowingPageStrip ? 156 : CeciliasNotes.Spacing.lg)
                         }
                     }
                     .transition(.opacity)
@@ -235,7 +235,7 @@ struct EditorView: View {
                                 onTap:     { viewModel.openCustomisePanel() },
                                 onDismiss: { viewModel.dismissCustomisePill() }
                             )
-                            .padding(.trailing, Ink.Spacing.md)
+                            .padding(.trailing, CeciliasNotes.Spacing.md)
                             .padding(.top, proxy.safeAreaInsets.top + 60)  // below toolbar
                         }
                         Spacer()
@@ -252,7 +252,7 @@ struct EditorView: View {
                         .contentShape(Rectangle())
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.inkSpring(InkSpring.smooth)) {
+                            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                                 viewModel.closeCustomisePanel()
                             }
                         }
@@ -278,7 +278,7 @@ struct EditorView: View {
                         Button {
                             viewModel.undoShapeReplacement()
                         } label: {
-                            HStack(spacing: Ink.Spacing.xs) {
+                            HStack(spacing: CeciliasNotes.Spacing.xs) {
                                 Image(systemName: "arrow.uturn.backward")
                                     .font(.inkSubhead)
                                     .fontWeight(.semibold)
@@ -287,7 +287,7 @@ struct EditorView: View {
                                     .fontWeight(.semibold)
                             }
                             .foregroundColor(.white)
-                            .padding(.horizontal, Ink.Spacing.md)
+                            .padding(.horizontal, CeciliasNotes.Spacing.md)
                             .padding(.vertical, 8)
                             .background(
                                 Capsule()
@@ -313,15 +313,15 @@ struct EditorView: View {
                             Button {
                                 viewModel.toggleFocusMode()
                             } label: {
-                                HStack(spacing: Ink.Spacing.xs) {
+                                HStack(spacing: CeciliasNotes.Spacing.xs) {
                                     Image(systemName: "xmark")
                                         .font(.inkCaption)
                                     Text("Exit Focus")
                                         .font(.inkCaption)
                                 }
                                 .foregroundColor(.inkTextPrimary)
-                                .padding(.horizontal, Ink.Spacing.sm)
-                                .padding(.vertical, Ink.Spacing.xs)
+                                .padding(.horizontal, CeciliasNotes.Spacing.sm)
+                                .padding(.vertical, CeciliasNotes.Spacing.xs)
                                 .background(
                                     Capsule()
                                         .fill(Color.inkBackgroundElevated.opacity(0.85))
@@ -329,8 +329,8 @@ struct EditorView: View {
                             }
                             .buttonStyle(.inkPressable)
                             .opacity(0.6)
-                            .padding(.top, proxy.safeAreaInsets.top + Ink.Spacing.sm)
-                            .padding(.trailing, Ink.Spacing.md)
+                            .padding(.top, proxy.safeAreaInsets.top + CeciliasNotes.Spacing.sm)
+                            .padding(.trailing, CeciliasNotes.Spacing.md)
                         }
                         Spacer()
                     }
@@ -406,8 +406,8 @@ struct EditorView: View {
                                     )
                             }
                             .buttonStyle(.inkPressable)
-                            .padding(.leading, Ink.Spacing.md)
-                            .padding(.top, Ink.Spacing.sm)
+                            .padding(.leading, CeciliasNotes.Spacing.md)
+                            .padding(.top, CeciliasNotes.Spacing.sm)
                             .accessibilityLabel("Back")
 
                             Spacer()
@@ -428,7 +428,7 @@ struct EditorView: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            withAnimation(.inkSpring(InkSpring.smooth)) {
+                            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                                 viewModel.isFullScreen = false
                                 viewModel.resetToolbarTimer()
                             }
@@ -449,7 +449,7 @@ struct EditorView: View {
                 if viewModel.mediaInsertCoordinator.isProcessing {
                     Color.black.opacity(0.25)
                         .ignoresSafeArea()
-                    VStack(spacing: Ink.Spacing.sm) {
+                    VStack(spacing: CeciliasNotes.Spacing.sm) {
                         ProgressView(value: viewModel.mediaInsertCoordinator.processingProgress)
                             .tint(.white)
                             .frame(width: 200)
@@ -457,9 +457,9 @@ struct EditorView: View {
                             .font(.inkCaption)
                             .foregroundColor(.white)
                     }
-                    .padding(Ink.Spacing.lg)
+                    .padding(CeciliasNotes.Spacing.lg)
                     .background(Color.inkBackgroundElevated.opacity(0.9))
-                    .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
                 }
 
                 // Error banner — slides from top.
@@ -593,13 +593,13 @@ struct EditorView: View {
                 // via the one-shot registry so re-opening doesn't repeat.
                 if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
                     viewModel.pendingCustomiseNameFocus = true
-                    withAnimation(.inkSpring(InkSpring.smooth)) {
+                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                         viewModel.isCustomisePanelOpen = true
                     }
                 } else {
                     // Surface the floating Customise pill iff this is a
                     // freshly-created notebook we haven't pilled this session.
-                    withAnimation(.inkSpring(InkSpring.smooth)) {
+                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                         viewModel.markCustomisePillIfFresh()
                     }
                 }
@@ -625,8 +625,8 @@ struct EditorView: View {
                 if didStart { url.stopAccessingSecurityScopedResource() }
             }
         }
-        .animation(.inkSpring(InkSpring.smooth), value: viewModel.isCustomisePanelOpen)
-        .animation(.inkSpring(InkSpring.fade),   value: viewModel.isCustomisePillVisible)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isCustomisePanelOpen)
+        .animation(.inkSpring(CeciliasNotesSpring.fade),   value: viewModel.isCustomisePillVisible)
         .onDisappear {
             #if DEBUG
             print("[ImageInsert] 3. EditorView.onDisappear fired — editor is being torn down")
@@ -651,13 +651,13 @@ struct EditorView: View {
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
         ) { _ in
             Task { @MainActor in
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.keyboardVisibleHeight = 0
                 }
             }
         }
         // ⌘W / ⌘⇧E / ⌘P / ⌘N / ⌘F come from the WindowGroup .commands modifier
-        // (see InkCommands) and arrive as notifications.
+        // (see CeciliasNotesCommands) and arrive as notifications.
         .onReceive(NotificationCenter.default.publisher(for: .inkCommandCloseNotebook)) { _ in
             Task { @MainActor in
                 viewModel.prepareForDismissal()
@@ -671,7 +671,7 @@ struct EditorView: View {
             printNotebook()
         }
         // Per-screen shortcuts that should be disabled outside the editor stay
-        // as hidden Buttons here. These don't appear in InkCommands deliberately.
+        // as hidden Buttons here. These don't appear in CeciliasNotesCommands deliberately.
         .background(
             VStack(spacing: 0) {
                 Button("Undo")     { undo() }
@@ -803,14 +803,14 @@ struct EditorView: View {
     }
 
     private func togglePageStrip() {
-        withAnimation(.inkSpring(InkSpring.smooth)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isShowingPageStrip.toggle()
         }
         viewModel.resetToolbarTimer()
     }
 
     private func toggleFullScreen() {
-        withAnimation(.inkSpring(InkSpring.smooth)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isFullScreen.toggle()
             if viewModel.isFullScreen {
                 viewModel.isShowingPageStrip = false
@@ -858,7 +858,7 @@ struct EditorView: View {
     }
 
     private func toggleRecordingPanel() {
-        withAnimation(.inkSpring(InkSpring.smooth)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isRecordingPanelVisible.toggle()
         }
         viewModel.resetToolbarTimer()

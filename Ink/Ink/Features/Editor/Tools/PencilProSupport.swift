@@ -77,11 +77,11 @@ enum SqueezeToolChoice: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// Maps to the canonical `InkTool.Identity` the editor's
+    /// Maps to the canonical `CeciliasNotesTool.Identity` the editor's
     /// `selectTool(identity:)` consumes. "Sketch pencil" routes to
     /// `.crayon` — that's the textured pencil variant in this
     /// app's tool taxonomy.
-    var identity: InkTool.Identity {
+    var identity: CeciliasNotesTool.Identity {
         switch self {
         case .pencil:       return .pencil
         case .highlighter:  return .highlighter

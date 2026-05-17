@@ -211,10 +211,10 @@ struct TextBlockOverlayView: View {
     @ViewBuilder
     private func blockBorder(state: TextBlockInteractionState) -> some View {
         if state == .editing {
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
         } else if state == .selected {
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .strokeBorder(Color.inkAccentPrimary.opacity(0.5), lineWidth: 1)
         } else {
             EmptyView()

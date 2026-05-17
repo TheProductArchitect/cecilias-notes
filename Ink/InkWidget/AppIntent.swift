@@ -1,6 +1,6 @@
 //
 //  AppIntent.swift
-//  InkWidget
+//  CeciliasNotesWidget
 //
 //  Created by Venu gopinath Nukavarapu on 5/7/26.
 //

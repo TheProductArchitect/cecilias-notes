@@ -1,6 +1,6 @@
 import CoreGraphics
 
-public enum Ink {
+public enum CeciliasNotes {
 
     public enum Spacing {
         public static let micro: CGFloat = 2

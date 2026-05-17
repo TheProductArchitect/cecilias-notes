@@ -23,7 +23,7 @@ import SwiftData
 // V5 (Phase 5A+5C Step 2 — lectures): adds `LectureRecord` as a
 // SwiftData entity. The corresponding UserDefaults JSON store
 // (`lecture.store.v1`) is wiped on first launch under V5 by the
-// gate in `InkAppDelegate`.
+// gate in `CeciliasNotesAppDelegate`.
 
 enum InkSchemaV5: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }

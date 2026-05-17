@@ -8,7 +8,7 @@ import UIKit
 ///   • Edge is persisted **per orientation** in two `@AppStorage` keys.
 ///   • Layout switches automatically: top/bottom → HStack, left/right → VStack.
 ///   • Dragging follows the finger; releasing snaps to the nearest edge for
-///     the *current* orientation, animated with `InkSpring.snappy`.
+///     the *current* orientation, animated with `CeciliasNotesSpring.snappy`.
 struct ToolPaletteView: View {
     @ObservedObject var viewModel: EditorViewModel
 
@@ -79,11 +79,11 @@ struct ToolPaletteView: View {
                 .offset(x: dragOffset.width, y: dragOffset.height)
         }
         .ignoresSafeArea(edges: .all)               // we manage insets manually
-        .animation(.inkSpring(InkSpring.snappy), value: edge)
+        .animation(.inkSpring(CeciliasNotesSpring.snappy), value: edge)
         // Re-flow the palette when the header slides in or out so a
         // top-edge palette doesn't end up sitting under the cover-tone
         // header, and snaps back into place when the header hides.
-        .animation(.inkSpring(InkSpring.snappy),
+        .animation(.inkSpring(CeciliasNotesSpring.snappy),
                    value: viewModel.headerVisibility.isHeaderVisible)
         .onAppear {
             // Hydrate from per-notebook UserDefaults on first paint.
@@ -135,13 +135,13 @@ struct ToolPaletteView: View {
         let content = paletteContents
         switch edge.axis {
         case .vertical:
-            VStack(spacing: Ink.Spacing.xs) { content }
-                .padding(.vertical, Ink.Spacing.sm)
+            VStack(spacing: CeciliasNotes.Spacing.xs) { content }
+                .padding(.vertical, CeciliasNotes.Spacing.sm)
                 .frame(width: paletteThickness)
                 .background(paletteBackground)
         case .horizontal:
-            HStack(spacing: Ink.Spacing.xs) { content }
-                .padding(.horizontal, Ink.Spacing.sm)
+            HStack(spacing: CeciliasNotes.Spacing.xs) { content }
+                .padding(.horizontal, CeciliasNotes.Spacing.sm)
                 .frame(height: paletteThickness)
                 .background(paletteBackground)
         }
@@ -387,7 +387,7 @@ struct ToolPaletteView: View {
         // long-press — see the gesture on `categoryButton`.
         let variant = ToolCategoryStore.lastVariant(for: category)
         guard viewModel.selectedTool.identity != variant else { return }
-        withAnimation(.inkSpring(InkSpring.precise)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: variant)
         }
         HapticManager.shared.toolSwitched()
@@ -399,32 +399,32 @@ struct ToolPaletteView: View {
             Text(category.displayName)
                 .font(.inkSubhead)
                 .foregroundColor(.inkTextSecondary)
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.top, Ink.Spacing.md)
-                .padding(.bottom, Ink.Spacing.sm)
+                .padding(.horizontal, CeciliasNotes.Spacing.md)
+                .padding(.top, CeciliasNotes.Spacing.md)
+                .padding(.bottom, CeciliasNotes.Spacing.sm)
 
             ForEach(category.variants, id: \.rawValue) { variant in
                 variantRow(variant, in: category)
                 if variant != category.variants.last {
-                    InkDivider()
-                        .padding(.leading, Ink.Spacing.md + 22 + Ink.Spacing.sm)
+                    CeciliasNotesDivider()
+                        .padding(.leading, CeciliasNotes.Spacing.md + 22 + CeciliasNotes.Spacing.sm)
                 }
             }
         }
-        .padding(.bottom, Ink.Spacing.sm)
+        .padding(.bottom, CeciliasNotes.Spacing.sm)
         .frame(width: 220)
     }
 
-    private func variantRow(_ variant: InkTool.Identity, in category: ToolCategory) -> some View {
+    private func variantRow(_ variant: CeciliasNotesTool.Identity, in category: ToolCategory) -> some View {
         let isSelected = viewModel.selectedTool.identity == variant
         return Button {
-            withAnimation(.inkSpring(InkSpring.precise)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
                 viewModel.selectTool(identity: variant)
             }
             HapticManager.shared.toolSwitched()
             openVariantCategory = nil
         } label: {
-            HStack(spacing: Ink.Spacing.sm) {
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
                 Image(systemName: variant.systemImage)
                     .font(.inkBody)
                     .foregroundColor(isSelected ? .inkAccentPrimary : .inkTextSecondary)
@@ -439,8 +439,8 @@ struct ToolPaletteView: View {
                         .foregroundColor(.inkAccentPrimary)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
@@ -449,7 +449,7 @@ struct ToolPaletteView: View {
     // MARK: Tool button
 
     @ViewBuilder
-    private func toolButton(_ identity: InkTool.Identity) -> some View {
+    private func toolButton(_ identity: CeciliasNotesTool.Identity) -> some View {
         let isActive = viewModel.selectedTool.identity == identity
         // The image button's glyph follows the persisted variant
         // (`tool.image.variant`), so the user can see whether a tap
@@ -571,7 +571,7 @@ struct ToolPaletteView: View {
         )
     }
 
-    private func handleToolTap(_ identity: InkTool.Identity) {
+    private func handleToolTap(_ identity: CeciliasNotesTool.Identity) {
         // The image button is special: every tap (active or not) fires
         // the picker matching the persisted variant in addition to
         // selecting the tool. This collapses the previous two-step
@@ -579,7 +579,7 @@ struct ToolPaletteView: View {
         // matches the spec for Feature 6.
         if identity == .image {
             if viewModel.selectedTool.identity != .image {
-                withAnimation(.inkSpring(InkSpring.precise)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
                     viewModel.selectTool(identity: .image)
                 }
             }
@@ -591,14 +591,14 @@ struct ToolPaletteView: View {
         // — the eraser mode picker (formerly opened by tap-when-active)
         // moved to long-press. See `toolButton`.
         guard viewModel.selectedTool.identity != identity else { return }
-        withAnimation(.inkSpring(InkSpring.precise)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: identity)
         }
         HapticManager.shared.toolSwitched()
     }
 
     // identity.systemImage / identity.displayName replaced the old
-    // iconName / toolName helpers — see InkTool.Identity.
+    // iconName / toolName helpers — see CeciliasNotesTool.Identity.
 
     // MARK: Colour dot
 
@@ -698,7 +698,7 @@ struct ToolPaletteView: View {
             if case .eraser(let m) = viewModel.selectedTool { return m }
             return .wholeStroke
         }()
-        return VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             Text("Eraser")
                 .font(.inkSubhead)
                 .foregroundColor(.inkTextSecondary)
@@ -711,13 +711,13 @@ struct ToolPaletteView: View {
                 erasePageRow
             }
             .background(Color.inkBackgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
 
             // Pixel-eraser size is no longer user-configurable —
             // the "Adjust size in the toolbar" caption that used
             // to live here is gone with the slider.
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .frame(width: 260)
     }
 
@@ -738,8 +738,8 @@ struct ToolPaletteView: View {
                 }
             }
             .foregroundColor(.inkTextPrimary)
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
@@ -759,8 +759,8 @@ struct ToolPaletteView: View {
                 Spacer()
             }
             .foregroundColor(.inkDestructive)
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
         .buttonStyle(.inkPressable)
@@ -775,7 +775,7 @@ struct ToolPaletteView: View {
         let step:  Double               = 0.5
         let title: String               = "Width"
 
-        return VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(title)
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
@@ -796,7 +796,7 @@ struct ToolPaletteView: View {
                     .frame(width: 36, alignment: .trailing)
             }
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .frame(width: 240)
     }
 
@@ -824,7 +824,7 @@ struct ToolPaletteView: View {
 
                 // Spring back. The dragOffset reset is what makes the pill
                 // visually fly to its new edge — alignment is already updated.
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     dragOffset = .zero
                 }
             }

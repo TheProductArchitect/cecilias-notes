@@ -18,7 +18,7 @@ struct ColorPickerView: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             // Recent
             if !viewModel.recentColours.isEmpty {
                 section(title: "Recent") {
@@ -66,7 +66,7 @@ struct ColorPickerView: View {
                 opacitySlider
             }
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .frame(width: 280)
         .background(Color.inkBackgroundElevated)
         .presentationCompactAdaptation(.popover)

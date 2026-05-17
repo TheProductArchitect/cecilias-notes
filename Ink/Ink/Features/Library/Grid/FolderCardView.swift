@@ -17,11 +17,11 @@ struct FolderCardView: View {
     private var itemCount: Int { viewModel.itemCount(in: folder) }
 
     var body: some View {
-        VStack(spacing: Ink.Spacing.sm) {
+        VStack(spacing: CeciliasNotes.Spacing.sm) {
             // Folder glyph fills the upper portion of the card so a folder
             // and a notebook cover read as siblings at the same grid size.
             ZStack {
-                RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
                     .fill(Color.inkBackgroundSecondary)
 
                 Image(systemName: itemCount == 0 ? "folder" : "folder.fill")
@@ -34,7 +34,7 @@ struct FolderCardView: View {
                     VStack {
                         HStack {
                             Spacer()
-                            InkBadge("\(itemCount)", style: .count)
+                            CeciliasNotesBadge("\(itemCount)", style: .count)
                                 .padding(8)
                         }
                         Spacer()
@@ -64,17 +64,17 @@ struct FolderCardView: View {
                     .truncationMode(.tail)
             }
         }
-        .padding(Ink.Spacing.sm)
+        .padding(CeciliasNotes.Spacing.sm)
         .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
         .scaleEffect(isHovered ? 1.01 : 1.0)
         .onHover { hovered in
-            withAnimation(.inkSpring(InkSpring.precise)) { isHovered = hovered }
+            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
         }
-        .contentShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
         .onTapGesture {
             if isRenaming { return }
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.navigate(into: folder)
             }
         }
@@ -95,7 +95,7 @@ struct FolderCardView: View {
             if landed { HapticManager.shared.dragReorderDropped() }
             return true
         } isTargeted: { targeted in
-            withAnimation(.inkSpring(InkSpring.precise)) { isDropTarget = targeted }
+            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isDropTarget = targeted }
         }
         .onChange(of: viewModel.renamingFolderId) { _, id in
             if id == folder.id { beginRename() }
@@ -138,11 +138,11 @@ struct FolderCardView: View {
 
     @ViewBuilder
     private var background: some View {
-        RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
+        RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
             .fill(isDropTarget ? Color.inkAccentSecondary : Color.clear)
             .overlay(
                 isDropTarget
-                    ? RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
+                    ? RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
                         .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
                     : nil
             )

@@ -47,7 +47,7 @@ struct RecentExportsView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: Ink.Spacing.md) {
+        VStack(spacing: CeciliasNotes.Spacing.md) {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(.inkTextTertiary)
@@ -86,7 +86,7 @@ struct RecentExportsView: View {
                 showMissingAlert = true
             }
         } label: {
-            HStack(spacing: Ink.Spacing.md) {
+            HStack(spacing: CeciliasNotes.Spacing.md) {
                 Image(systemName: record.fileExists ? "doc.richtext" : "doc.richtext.fill")
                     .font(.system(size: 24, weight: .light))
                     .foregroundColor(record.fileExists ? .inkAccentPrimary : .inkTextTertiary)
@@ -98,7 +98,7 @@ struct RecentExportsView: View {
                         .foregroundColor(.inkTextPrimary)
                         .lineLimit(1)
 
-                    HStack(spacing: Ink.Spacing.xs) {
+                    HStack(spacing: CeciliasNotes.Spacing.xs) {
                         Text(record.formattedDate)
                         Text("·")
                         Text(record.formattedSize)

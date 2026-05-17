@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-    Info.plist for the main Ink target.
+    Info.plist for the main CeciliasNotes target.
 
     Required Xcode setup:
     - Set this file as the target's Info.plist (Build Settings → Info.plist File).

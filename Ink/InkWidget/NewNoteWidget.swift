@@ -3,7 +3,7 @@ import WidgetKit
 
 // MARK: - Cecilia's Notes — widget set
 //
-// Five widget configurations, all driven by `InkWidgetProvider`'s
+// Five widget configurations, all driven by `CeciliasNotesWidgetProvider`'s
 // `NotebookEntry`:
 //
 //   • Home small      — quick-capture tile with the brand mark.
@@ -39,7 +39,7 @@ struct HomeSmallNewNoteWidget: Widget {
     let kind: String = "CeciliasNotes.HomeSmallNewNote"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: InkWidgetProvider()) { entry in
+        StaticConfiguration(kind: kind, provider: CeciliasNotesWidgetProvider()) { entry in
             HomeSmallView(entry: entry)
                 .containerBackground(for: .widget) { Color.cnBackground }
         }
@@ -78,7 +78,7 @@ struct HomeMediumRecentsWidget: Widget {
     let kind: String = "CeciliasNotes.HomeMediumRecents"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: InkWidgetProvider()) { entry in
+        StaticConfiguration(kind: kind, provider: CeciliasNotesWidgetProvider()) { entry in
             HomeMediumView(entry: entry)
                 .containerBackground(for: .widget) { Color.cnBackground }
         }
@@ -165,7 +165,7 @@ struct LockCircularNewNoteWidget: Widget {
     let kind: String = "CeciliasNotes.LockCircularNewNote"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: InkWidgetProvider()) { _ in
+        StaticConfiguration(kind: kind, provider: CeciliasNotesWidgetProvider()) { _ in
             LockCircularView()
                 .containerBackground(.fill.tertiary, for: .widget)
         }
@@ -210,7 +210,7 @@ struct LockRectangularLastNotebookWidget: Widget {
     let kind: String = "CeciliasNotes.LockRectangularLastNotebook"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: InkWidgetProvider()) { entry in
+        StaticConfiguration(kind: kind, provider: CeciliasNotesWidgetProvider()) { entry in
             LockRectangularView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }
@@ -241,7 +241,7 @@ struct LockInlineRecentWidget: Widget {
     let kind: String = "CeciliasNotes.LockInlineRecent"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: InkWidgetProvider()) { entry in
+        StaticConfiguration(kind: kind, provider: CeciliasNotesWidgetProvider()) { entry in
             LockInlineView(entry: entry)
         }
         .configurationDisplayName("Cecilia's Notes — Recent Notebook")

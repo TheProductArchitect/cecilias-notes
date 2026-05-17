@@ -1,6 +1,6 @@
 import SwiftUI
 
-public enum InkSpring {
+public enum CeciliasNotesSpring {
     public static let snappy  = Animation.spring(response: 0.28, dampingFraction: 0.82)
     public static let smooth  = Animation.spring(response: 0.40, dampingFraction: 0.85)
     public static let bouncy  = Animation.spring(response: 0.35, dampingFraction: 0.70)

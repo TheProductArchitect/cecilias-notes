@@ -26,7 +26,7 @@ import UIKit
 /// synchronously (cheap; just walks the current stack) and then
 /// dispatch the actual `print` work to a background utility queue.
 ///
-/// Install once from `InkApp.init`:
+/// Install once from `CeciliasNotesApp.init`:
 /// ```swift
 /// #if DEBUG
 /// HostingHierarchyDiagnostics.installOnce()
@@ -35,7 +35,7 @@ import UIKit
 enum HostingHierarchyDiagnostics {
 
     /// Feature flag — defaults OFF. The `_UIReparentingView` warning
-    /// was conclusively traced to SwiftUI itself (zero Ink frames in
+    /// was conclusively traced to SwiftUI itself (zero Cecilia's Notes frames in
     /// every captured stack — parents are always
     /// `_UIHostingView` / `_UIContextMenuView` /
     /// `PresentationHostingController`). It's a cosmetic Apple-side
@@ -67,11 +67,11 @@ enum HostingHierarchyDiagnostics {
                   #selector(UIView.ink_diag_didAddSubview(_:))
               )
         else {
-            print("[InkDiag] Failed to install — selectors not found.")
+            print("[CeciliasNotesDiag] Failed to install — selectors not found.")
             return
         }
         method_exchangeImplementations(original, swizzled)
-        print("[InkDiag] Hosting hierarchy diagnostics installed (didAddSubview).")
+        print("[CeciliasNotesDiag] Hosting hierarchy diagnostics installed (didAddSubview).")
     }
 }
 
@@ -103,15 +103,15 @@ extension UIView {
         let ownerClass    = owningVC.map { NSStringFromClass(type(of: $0)) } ?? "<no VC>"
 
         HostingHierarchyDiagnostics.logQueue.async {
-            print("[InkDiag] FOUND _UIReparentingView add")
-            print("[InkDiag] parent view: \(parentClass)")
-            print("[InkDiag] parent VC:   \(ownerClass)")
-            print("[InkDiag] subview:     \(subviewClassName)")
-            print("[InkDiag] call stack:")
+            print("[CeciliasNotesDiag] FOUND _UIReparentingView add")
+            print("[CeciliasNotesDiag] parent view: \(parentClass)")
+            print("[CeciliasNotesDiag] parent VC:   \(ownerClass)")
+            print("[CeciliasNotesDiag] subview:     \(subviewClassName)")
+            print("[CeciliasNotesDiag] call stack:")
             for line in frames.prefix(25) {
-                print("[InkDiag]   \(line)")
+                print("[CeciliasNotesDiag]   \(line)")
             }
-            print("[InkDiag] ──")
+            print("[CeciliasNotesDiag] ──")
         }
     }
 }

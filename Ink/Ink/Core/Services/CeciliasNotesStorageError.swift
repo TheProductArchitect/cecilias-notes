@@ -1,6 +1,6 @@
 import Foundation
 
-public enum InkStorageError: LocalizedError {
+public enum CeciliasNotesStorageError: LocalizedError {
     case modelContextUnavailable
     case fileWriteFailed(Error)
     case fileSizeLimitExceeded

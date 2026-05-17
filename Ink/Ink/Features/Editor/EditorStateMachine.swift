@@ -6,7 +6,7 @@ import SwiftUI
 /// axis to `EditorViewModel.selectedTool`. Phase 5E pragmatic
 /// scope (the saved memory captures why we kept it narrower than
 /// the original spec): tool **identity + settings** still live on
-/// `InkTool` because every reader in the codebase pulls per-tool
+/// `CeciliasNotesTool` because every reader in the codebase pulls per-tool
 /// colour / width / opacity / eraser-mode from there; replacing
 /// them with a flat enum would force ~500 lines of indirection
 /// across the tool palette, color picker, width slider, eraser
@@ -77,7 +77,7 @@ final class EditorStateMachine: ObservableObject {
     /// tool" path. Mirrors what `EditorViewModel.lastTool` already
     /// tracks; kept here so the squeeze logic has one place to read
     /// from when the squeeze handler eventually migrates fully.
-    @Published private(set) var previousToolIdentity: InkTool.Identity = .pen
+    @Published private(set) var previousToolIdentity: CeciliasNotesTool.Identity = .pen
 
     // MARK: - Lifecycle
 
@@ -132,7 +132,7 @@ final class EditorStateMachine: ObservableObject {
     /// `EditorViewModel.selectTool` before it overwrites
     /// `selectedTool`. The squeeze-restore path reads
     /// `previousToolIdentity` to bounce back.
-    func notePreviousTool(_ identity: InkTool.Identity) {
+    func notePreviousTool(_ identity: CeciliasNotesTool.Identity) {
         previousToolIdentity = identity
     }
 
@@ -151,7 +151,7 @@ final class EditorStateMachine: ObservableObject {
     ///
     /// The canvas coordinator passes the tool-side signal in
     /// because `EditorStateMachine` deliberately doesn't store the
-    /// `InkTool` itself — see the type-level doc.
+    /// `CeciliasNotesTool` itself — see the type-level doc.
     func canvasIsInteractive(toolIsDrawing: Bool) -> Bool {
         toolIsDrawing && mode.isDrawing
     }

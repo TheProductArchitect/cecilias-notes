@@ -73,13 +73,13 @@ struct EditorToolbarView: View {
         // the interactive row stays inside the safe area.
         HStack(alignment: .center, spacing: 0) {
             identityCluster
-            Spacer(minLength: Ink.Spacing.md)
+            Spacer(minLength: CeciliasNotes.Spacing.md)
             actionCluster
             metaCluster
             SaveStatusIndicator(status: viewModel.saveStatus)
-                .padding(.leading, Ink.Spacing.sm)
+                .padding(.leading, CeciliasNotes.Spacing.sm)
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
         .frame(height: toolbarHeight)
         .frame(maxWidth: .infinity)
         .background(alignment: .trailing) {
@@ -324,7 +324,7 @@ struct EditorToolbarView: View {
                     .foregroundStyle(recessive(0.15))
             }
         }
-        .padding(.leading, Ink.Spacing.md)
+        .padding(.leading, CeciliasNotes.Spacing.md)
     }
 
     private var pageCountLabel: String {

@@ -29,7 +29,7 @@ struct SaveStatusIndicator: View {
         }
         .font(.system(size: 14, weight: .medium))
         .frame(width: 22, height: 22)
-        .inkAnimation(InkSpring.smooth, value: indicatorKey)
+        .inkAnimation(CeciliasNotesSpring.smooth, value: indicatorKey)
     }
 
     /// A simple key for animation comparison — we don't want to animate

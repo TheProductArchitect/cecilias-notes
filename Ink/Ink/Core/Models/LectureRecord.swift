@@ -7,7 +7,7 @@ import SwiftData
 ///
 /// CloudKit compatibility rules followed (the container is configured
 /// with `cloudKitDatabase: .private("iCloud.com.wave.venu.Ink")` —
-/// see `ModelContainer+Ink.swift`):
+/// see `ModelContainer+CeciliasNotes.swift`):
 ///   • Every property has an inline default. CloudKit refuses entities
 ///     whose required properties lack defaults — the sync schema
 ///     validator rejects the model at registration time otherwise.

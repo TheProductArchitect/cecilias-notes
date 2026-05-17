@@ -61,22 +61,22 @@ struct OnboardingView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.inkSpring(InkSpring.smooth), value: isPersonalising)
+        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: isPersonalising)
     }
 
     // MARK: Form
 
     private var onboardingForm: some View {
-        VStack(spacing: Ink.Spacing.xl) {
+        VStack(spacing: CeciliasNotes.Spacing.xl) {
             Spacer()
 
             // Live wordmark preview — the moment that sells personalisation.
             BrandWordmark(letter: previewLetter, size: 96)
-                .inkAnimation(InkSpring.snappy, value: previewLetter)
+                .inkAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
                 .frame(height: 120)
                 .accessibilityLabel("Wordmark preview")
 
-            VStack(spacing: Ink.Spacing.md) {
+            VStack(spacing: CeciliasNotes.Spacing.md) {
                 Text("What should we call this?")
                     .font(.inkHeadline)
                     .foregroundColor(.inkTextPrimary)
@@ -116,15 +116,15 @@ struct OnboardingView: View {
             // name. `.disabled` suppresses the tap (no haptic, no
             // press animation), and the 0.4 opacity mirrors the spec's
             // visual disabled state.
-            InkButton("Continue", style: .primary) { commit() }
+            CeciliasNotesButton("Continue", style: .primary) { commit() }
                 .frame(maxWidth: 280)
                 .disabled(!isValidInput)
                 .opacity(isValidInput ? 1 : 0.4)
-                .animation(.inkSpring(InkSpring.fade), value: isValidInput)
+                .animation(.inkSpring(CeciliasNotesSpring.fade), value: isValidInput)
 
             Spacer()
         }
-        .padding(.horizontal, Ink.Spacing.xl)
+        .padding(.horizontal, CeciliasNotes.Spacing.xl)
         .onAppear { fieldFocused = true }
     }
 
@@ -201,7 +201,7 @@ private struct PersonalisingTransition: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: Ink.Spacing.xl) {
+        VStack(spacing: CeciliasNotes.Spacing.xl) {
             Spacer()
             BrandWordmark(letter: letter, size: 120)
                 .scaleEffect(pulse, anchor: .bottomTrailing)
@@ -240,10 +240,10 @@ struct YourNameCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
-            HStack(alignment: .center, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
+            HStack(alignment: .center, spacing: CeciliasNotes.Spacing.md) {
                 BrandWordmark(letter: previewLetter, size: 36)
-                    .inkAnimation(InkSpring.snappy, value: previewLetter)
+                    .inkAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
                     .frame(width: 56, height: 44, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -266,8 +266,8 @@ struct YourNameCard: View {
                         }
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.sm)
 
             // Reserved-height row for either the validation error or
             // the helper subtitle. Toggling between them keeps the card
@@ -282,8 +282,8 @@ struct YourNameCard: View {
                 }
             }
             .font(.inkCaption)
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.bottom, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.bottom, CeciliasNotes.Spacing.sm)
         }
         .onAppear { buffer = userName }
     }

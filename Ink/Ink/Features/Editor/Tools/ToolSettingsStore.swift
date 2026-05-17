@@ -3,12 +3,12 @@ import UIKit
 
 // MARK: - ToolSettings
 
-/// Per-tool persisted settings. One entry per `InkTool.Identity`. The tool's
+/// Per-tool persisted settings. One entry per `CeciliasNotesTool.Identity`. The tool's
 /// associated values (`colour`, `width`, `opacity`) are reconstructed from
 /// the entry when the user switches tools.
 ///
 /// `colourHex` round-trips through `UIColor(hex:)`; the existing pattern in
-/// `InkColors.swift`. Width and opacity are plain numbers.
+/// `CeciliasNotesColors.swift`. Width and opacity are plain numbers.
 struct ToolSettings: Codable, Equatable {
     var colourHex: String
     var width: CGFloat
@@ -29,7 +29,7 @@ struct ToolSettings: Codable, Equatable {
 /// access is serialised by the main actor where the editor lives.
 struct ToolSettingsStore: Codable, Equatable {
 
-    /// Settings keyed by `InkTool.Identity.rawValue`. A missing key means
+    /// Settings keyed by `CeciliasNotesTool.Identity.rawValue`. A missing key means
     /// "use the default for that identity".
     var settings: [String: ToolSettings] = [:]
 
@@ -54,17 +54,17 @@ struct ToolSettingsStore: Codable, Equatable {
 
     // MARK: Lookup
 
-    func settings(for identity: InkTool.Identity) -> ToolSettings? {
+    func settings(for identity: CeciliasNotesTool.Identity) -> ToolSettings? {
         settings[identity.rawValue]
     }
 
-    mutating func set(_ entry: ToolSettings, for identity: InkTool.Identity) {
+    mutating func set(_ entry: ToolSettings, for identity: CeciliasNotesTool.Identity) {
         settings[identity.rawValue] = entry
     }
 
-    /// Snapshot the current associated values of an `InkTool` into a
+    /// Snapshot the current associated values of an `CeciliasNotesTool` into a
     /// persisted entry. No-op for tools without colour/width/opacity.
-    mutating func snapshot(_ tool: InkTool) {
+    mutating func snapshot(_ tool: CeciliasNotesTool) {
         guard tool.hasColour || tool.hasWidth else { return }
         let entry = ToolSettings(
             colourHex: tool.currentColour.hexString,
@@ -76,11 +76,11 @@ struct ToolSettingsStore: Codable, Equatable {
 
     // MARK: Apply
 
-    /// Builds an `InkTool` for `identity`, restoring persisted settings if
-    /// available. Falls back to `InkTool.Defaults.forIdentity(_:theme:)` for
+    /// Builds an `CeciliasNotesTool` for `identity`, restoring persisted settings if
+    /// available. Falls back to `CeciliasNotesTool.Defaults.forIdentity(_:theme:)` for
     /// any field that isn't stored.
-    func tool(for identity: InkTool.Identity, theme: InkTheme) -> InkTool {
-        let baseDefault = InkTool.Defaults.forIdentity(identity, theme: theme)
+    func tool(for identity: CeciliasNotesTool.Identity, theme: CeciliasNotesTheme) -> CeciliasNotesTool {
+        let baseDefault = CeciliasNotesTool.Defaults.forIdentity(identity, theme: theme)
         guard let stored = settings[identity.rawValue] else { return baseDefault }
         let colour = UIColor(hex: stored.colourHex)
 

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - AppError
 
-/// User-facing error type for the few moments where Ink absolutely needs to
+/// User-facing error type for the few moments where Cecilia's Notes absolutely needs to
 /// tell the user something went wrong.
 ///
 /// Cases name the *user-visible action* (not the underlying API), so view

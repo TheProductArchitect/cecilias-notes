@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - InkCommands
+// MARK: - CeciliasNotesCommands
 
 /// Real keyboard shortcuts surfaced via `WindowGroup.commands`.
 ///
@@ -10,7 +10,7 @@ import SwiftUI
 /// Per-screen shortcuts (e.g. ⌘Z undo, ⌘← prev page) are intentionally NOT
 /// surfaced here — they live on the editor's own buttons via
 /// `.keyboardShortcut(...)` so the system disables them outside the editor.
-struct InkCommands: Commands {
+struct CeciliasNotesCommands: Commands {
 
     let deepLink: DeepLinkRouter
 

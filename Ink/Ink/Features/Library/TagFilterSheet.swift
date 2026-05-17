@@ -31,7 +31,7 @@ struct TagFilterSheet: View {
                         VStack(spacing: 0) {
                             ForEach(tags, id: \.self) { tag in
                                 tagRow(tag)
-                                InkDivider().padding(.leading, 20)
+                                CeciliasNotesDivider().padding(.leading, 20)
                             }
                         }
                     }

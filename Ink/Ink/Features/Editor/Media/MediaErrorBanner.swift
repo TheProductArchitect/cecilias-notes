@@ -12,7 +12,7 @@ struct MediaErrorBanner: View {
     @State private var visible = false
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.sm) {
+        HStack(spacing: CeciliasNotes.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white)
@@ -35,17 +35,17 @@ struct MediaErrorBanner: View {
             .buttonStyle(.inkPressable)
             .inkTapTarget()
         }
-        .padding(.horizontal, Ink.Spacing.md)
-        .padding(.vertical, Ink.Spacing.sm)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
                 .fill(Color(UIColor(hex: "#CC2B2B")))
         )
-        .padding(.horizontal, Ink.Spacing.lg)
+        .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .offset(y: visible ? 0 : -100)
         .opacity(visible ? 1 : 0)
         .onAppear {
-            withAnimation(.inkSpring(InkSpring.snappy)) { visible = true }
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { visible = true }
             Task {
                 try? await Task.sleep(for: .seconds(4))
                 dismiss()
@@ -54,7 +54,7 @@ struct MediaErrorBanner: View {
     }
 
     private func dismiss() {
-        withAnimation(.inkSpring(InkSpring.smooth)) { visible = false }
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { visible = false }
         Task {
             try? await Task.sleep(for: .seconds(0.35))
             await MainActor.run { onDismiss() }

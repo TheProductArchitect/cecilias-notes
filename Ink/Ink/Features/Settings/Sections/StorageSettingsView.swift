@@ -15,7 +15,7 @@ struct StorageSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
+            VStack(spacing: CeciliasNotes.Spacing.lg) {
                 metricsRow
                 if let staleness = cacheStalenessCaption {
                     Text(staleness)
@@ -26,7 +26,7 @@ struct StorageSettingsView: View {
                 mediaStorageBreakdown
                 actionsCard
             }
-            .padding(Ink.Spacing.lg)
+            .padding(CeciliasNotes.Spacing.lg)
         }
         .background(Color.inkBackgroundSecondary.ignoresSafeArea())
         .navigationTitle("Storage")
@@ -108,14 +108,14 @@ struct StorageSettingsView: View {
                 bytes: mediaDiagnostics?.imageBytes,
                 icon: "photo"
             )
-            InkDivider()
+            CeciliasNotesDivider()
             breakdownRow(
                 label: "Audio recordings",
                 count: mediaDiagnostics?.audioCount,
                 bytes: mediaDiagnostics?.audioBytes,
                 icon: "waveform"
             )
-            InkDivider()
+            CeciliasNotesDivider()
             breakdownRow(
                 label: "Lecture recordings",
                 count: mediaDiagnostics?.lectureCount,
@@ -133,7 +133,7 @@ struct StorageSettingsView: View {
         bytes: Int64?,
         icon: String
     ) -> some View {
-        HStack(spacing: Ink.Spacing.sm) {
+        HStack(spacing: CeciliasNotes.Spacing.sm) {
             Image(systemName: icon)
                 .font(.inkSectionIcon)
                 .foregroundColor(.inkTextSecondary)
@@ -153,7 +153,7 @@ struct StorageSettingsView: View {
                     .foregroundStyle(Color.inkRecessiveTertiary)
             }
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
     }
 
     private func loadMediaDiagnostics() async {
@@ -168,7 +168,7 @@ struct StorageSettingsView: View {
     // MARK: Metric cards
 
     private var metricsRow: some View {
-        HStack(spacing: Ink.Spacing.sm) {
+        HStack(spacing: CeciliasNotes.Spacing.sm) {
             metricCard(
                 title: "Total Used",
                 bytes: viewModel.storageInfo?.totalBytes,
@@ -188,7 +188,7 @@ struct StorageSettingsView: View {
     }
 
     private func metricCard(title: String, bytes: Int64?, icon: String) -> some View {
-        VStack(spacing: Ink.Spacing.xs) {
+        VStack(spacing: CeciliasNotes.Spacing.xs) {
             Image(systemName: icon)
                 .font(.inkSectionIcon)
                 .foregroundColor(.inkTextSecondary)
@@ -215,7 +215,7 @@ struct StorageSettingsView: View {
                 .foregroundColor(.inkTextSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 
@@ -240,7 +240,7 @@ struct StorageSettingsView: View {
                 showClearExportsAlert = true
             }
 
-            InkDivider()
+            CeciliasNotesDivider()
 
             // Clear audio
             let audioBytes = viewModel.storageInfo?.audioBytes ?? 0
@@ -260,13 +260,13 @@ struct StorageSettingsView: View {
                 showClearAudioAlert = true
             }
 
-            InkDivider()
+            CeciliasNotesDivider()
 
             // View in Files
             Button {
                 openInFiles()
             } label: {
-                HStack(spacing: Ink.Spacing.md) {
+                HStack(spacing: CeciliasNotes.Spacing.md) {
                     Image(systemName: "folder")
                         .font(.inkMidIcon)
                         .foregroundColor(.inkAccentPrimary)
@@ -279,8 +279,8 @@ struct StorageSettingsView: View {
                         .font(.inkTag)
                         .foregroundColor(.inkTextTertiary)
                 }
-                .padding(.horizontal, Ink.Spacing.md)
-                .padding(.vertical, Ink.Spacing.sm)
+                .padding(.horizontal, CeciliasNotes.Spacing.md)
+                .padding(.vertical, CeciliasNotes.Spacing.sm)
             }
             .buttonStyle(.inkPressable)
         }
@@ -298,14 +298,14 @@ struct StorageSettingsView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: disabled ? {} : action) {
-            HStack(spacing: Ink.Spacing.md) {
+            HStack(spacing: CeciliasNotes.Spacing.md) {
                 Image(systemName: icon)
                     .font(.inkMidIcon)
                     .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: Ink.Spacing.xs) {
+                    HStack(spacing: CeciliasNotes.Spacing.xs) {
                         Text(title)
                             .font(.inkBody)
                             .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
@@ -328,8 +328,8 @@ struct StorageSettingsView: View {
                     ProgressView().scaleEffect(0.75)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
-            .padding(.vertical, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.sm)
         }
         .buttonStyle(.inkPressable)
         .disabled(disabled || isLoading)

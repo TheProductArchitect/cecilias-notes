@@ -90,8 +90,8 @@ final class EditorViewModel: ObservableObject {
     @Published var squeezeWheelCentre: CGPoint?
 
     // MARK: Tool state
-    @Published var selectedTool: InkTool
-    @Published private(set) var lastTool: InkTool?         // for "switch between two tools"
+    @Published var selectedTool: CeciliasNotesTool
+    @Published private(set) var lastTool: CeciliasNotesTool?         // for "switch between two tools"
 
     // MARK: State machine (Phase 5E)
     //
@@ -511,7 +511,7 @@ final class EditorViewModel: ObservableObject {
     /// One blob per app — see `ToolSettingsStore`. Snapshotted on every
     /// selectedTool mutation, restored on identity-switch.
     private var toolSettings = ToolSettingsStore.load()
-    private let theme: InkTheme
+    private let theme: CeciliasNotesTheme
 
     // MARK: Init
 
@@ -523,7 +523,7 @@ final class EditorViewModel: ObservableObject {
         // isolation rules).
         storage: StorageService? = nil,
         userDefaults: UserDefaults = .standard,
-        theme: InkTheme = .light
+        theme: CeciliasNotesTheme = .light
     ) {
         self.notebook        = notebook
         let resolvedStorage  = storage ?? .shared
@@ -692,7 +692,7 @@ final class EditorViewModel: ObservableObject {
         static let pencilDoubleTap     = "ink.pencil.doubletap"
     }
 
-    private func loadPersistedState(theme: InkTheme) {
+    private func loadPersistedState(theme: CeciliasNotesTheme) {
         // Recent colours
         if let hexes = userDefaults.array(forKey: StorageKeys.recentColours) as? [String] {
             recentColours = hexes.map { UIColor(hex: $0) }
@@ -749,13 +749,13 @@ final class EditorViewModel: ObservableObject {
     func resetToolbarTimer() {
         toolbarHideTask?.cancel()
         if !isToolbarVisible {
-            withAnimation(.inkSpring(InkSpring.fade)) { isToolbarVisible = true }
+            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
         }
         toolbarHideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3.5))
             guard !Task.isCancelled, let self else { return }
             await MainActor.run {
-                withAnimation(.inkSpring(InkSpring.fade)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
                     self.isToolbarVisible = false
                 }
             }
@@ -765,7 +765,7 @@ final class EditorViewModel: ObservableObject {
     func keepToolbarVisible() {
         toolbarHideTask?.cancel()
         if !isToolbarVisible {
-            withAnimation(.inkSpring(InkSpring.fade)) { isToolbarVisible = true }
+            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
         }
     }
 
@@ -788,7 +788,7 @@ final class EditorViewModel: ObservableObject {
         guard interactionGraceTask == nil else { return }
         switch headerVisibility {
         case .visible:
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .hiddenWhileWriting
             }
         case .visibleManual:
@@ -800,7 +800,7 @@ final class EditorViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, let self else { return }
                 await MainActor.run {
-                    withAnimation(.inkSpring(InkSpring.snappy)) {
+                    withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                         self.headerVisibility = .hiddenWhileWriting
                     }
                 }
@@ -815,7 +815,7 @@ final class EditorViewModel: ObservableObject {
     /// will re-hide after a 2-second grace window.
     func revealHeaderManually() {
         headerManualReHideTask?.cancel()
-        withAnimation(.inkSpring(InkSpring.snappy)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
             headerVisibility = .visibleManual
         }
     }
@@ -833,7 +833,7 @@ final class EditorViewModel: ObservableObject {
         headerManualReHideTask?.cancel()
         activeInteractions.insert(reason)
         if !headerVisibility.isHeaderVisible {
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .visibleManual
             }
         }
@@ -855,7 +855,7 @@ final class EditorViewModel: ObservableObject {
                 self.interactionGraceTask = nil
                 guard self.notebook.autoHideHeader,
                       self.activeInteractions.isEmpty else { return }
-                withAnimation(.inkSpring(InkSpring.snappy)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                     self.headerVisibility = .hiddenWhileWriting
                 }
             }
@@ -879,7 +879,7 @@ final class EditorViewModel: ObservableObject {
         interactionGraceTask?.cancel()
         interactionGraceTask = nil
         if !headerVisibility.isHeaderVisible {
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .visible
             }
         }
@@ -888,7 +888,7 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Focus Mode
 
     func toggleFocusMode() {
-        withAnimation(.inkSpring(InkSpring.smooth)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
             isFocusMode.toggle()
         }
     }
@@ -905,7 +905,7 @@ final class EditorViewModel: ObservableObject {
     /// from interfering with each other.
 
     /// Stash for the press-and-hold tool path. `nil` between squeezes.
-    private var savedToolBeforeSqueeze: InkTool?
+    private var savedToolBeforeSqueeze: CeciliasNotesTool?
 
     /// Squeeze BEGIN — fires when the user presses the squeeze sensor.
     /// `.tool` action: snapshot current tool and switch to chosen tool.
@@ -1003,7 +1003,7 @@ final class EditorViewModel: ObservableObject {
     /// machine. If squeeze wrote `lastTool`, releasing the squeeze would
     /// leave `lastTool` pointing at the squeeze tool, so the next double-tap
     /// would toggle to the squeeze tool instead of the user's prior choice.
-    func selectTool(_ tool: InkTool, tracksLastTool: Bool = true) {
+    func selectTool(_ tool: CeciliasNotesTool, tracksLastTool: Bool = true) {
         if tool.identity != selectedTool.identity {
             // Snapshot the *outgoing* tool before we overwrite selectedTool.
             toolSettings.snapshot(selectedTool)
@@ -1019,7 +1019,7 @@ final class EditorViewModel: ObservableObject {
     /// Switch to a tool by identity — looks up persisted per-tool settings
     /// (`ToolSettingsStore`) and falls back to defaults. This is what the
     /// tool palette should call when the user taps a tool button.
-    func selectTool(identity: InkTool.Identity, tracksLastTool: Bool = true) {
+    func selectTool(identity: CeciliasNotesTool.Identity, tracksLastTool: Bool = true) {
         let restored = toolSettings.tool(for: identity, theme: theme)
         selectTool(restored, tracksLastTool: tracksLastTool)
         // Remember this variant as the category's current pick.
@@ -1062,12 +1062,12 @@ final class EditorViewModel: ObservableObject {
                 selectedTool = previous
                 lastTool     = current
             } else {
-                selectedTool = InkTool.Defaults.pen(theme: theme)
+                selectedTool = CeciliasNotesTool.Defaults.pen(theme: theme)
                 lastTool     = current
             }
         } else {
             lastTool     = selectedTool
-            selectedTool = InkTool.Defaults.eraser
+            selectedTool = CeciliasNotesTool.Defaults.eraser
         }
         HapticManager.shared.toolSwitched()
     }
@@ -1169,7 +1169,7 @@ final class EditorViewModel: ObservableObject {
         }
         canvas.undoManager?.setActionName("Recognise Shape")
 
-        withAnimation(.inkSpring(InkSpring.fade)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
             pendingShapeUndo = PendingShapeReplacement(
                 originalStroke: lastStroke,
                 replacementStrokeIndex: replacementIndex
@@ -1184,7 +1184,7 @@ final class EditorViewModel: ObservableObject {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation(.inkSpring(InkSpring.fade)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
                     self?.pendingShapeUndo = nil
                 }
             }
@@ -1211,7 +1211,7 @@ final class EditorViewModel: ObservableObject {
     private func dismissShapePill() {
         shapePillDismissTask?.cancel()
         shapePillDismissTask = nil
-        withAnimation(.inkSpring(InkSpring.fade)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
             pendingShapeUndo = nil
         }
     }
@@ -1320,7 +1320,7 @@ final class EditorViewModel: ObservableObject {
     // Pixel-eraser size mutator removed — the Settings slider
     // that drove the legacy `ink.eraser.pixelSize` /
     // `ink.eraser.pixelSize.session` keys is gone; the eraser
-    // uses a fixed 24pt width baked into `InkTool.makePKTool`.
+    // uses a fixed 24pt width baked into `CeciliasNotesTool.makePKTool`.
 
     func setOpacity(_ opacity: CGFloat) {
         selectedTool = selectedTool.withOpacity(opacity)

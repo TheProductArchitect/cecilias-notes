@@ -7,7 +7,7 @@ import Foundation
 /// the shared App Group container after every notebook save (debounced 2s).
 ///
 /// **Required Xcode setup:**
-/// - Both the main app and the `InkWidget` extension target must list the same
+/// - Both the main app and the `CeciliasNotesWidget` extension target must list the same
 ///   App Group (`group.com.{yourcompany}.ink`) under
 ///   "Signing & Capabilities → App Groups".
 /// - The bundle identifier inside `Self.appGroup` must be the one configured.
@@ -56,7 +56,7 @@ actor WidgetDataWriter {
         }
     }
 
-    /// Reads the snapshot. Used by `InkWidgetProvider`.
+    /// Reads the snapshot. Used by `CeciliasNotesWidgetProvider`.
     static func read() -> [NotebookSummary] {
         guard let url = containerURL,
               let data = try? Data(contentsOf: url),

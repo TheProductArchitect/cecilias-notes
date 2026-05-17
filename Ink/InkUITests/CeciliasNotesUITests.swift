@@ -2,13 +2,13 @@ import XCTest
 
 /// XCUITest suite covering critical happy-path flows. Every test launches
 /// `XCUIApplication` with the `-uiTesting` argument, which causes
-/// `InkApp.init` to wipe persisted state and force `Resume` off — so each
+/// `CeciliasNotesApp.init` to wipe persisted state and force `Resume` off — so each
 /// test starts in a deterministic onboarding-first state.
 ///
 /// On first launch the onboarding cover is presented unconditionally;
 /// the helper `completeOnboarding(name:in:)` types a name and taps
 /// Continue so the rest of a test can assume the Library is visible.
-final class InkUITests: XCTestCase {
+final class CeciliasNotesUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // UI tests should fail fast when an expected element doesn't appear.

@@ -1,6 +1,6 @@
 //
-//  InkWidgetControl.swift
-//  InkWidget
+//  CeciliasNotesWidgetControl.swift
+//  CeciliasNotesWidget
 //
 //  Created by Venu gopinath Nukavarapu on 5/7/26.
 //
@@ -9,7 +9,7 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
-struct InkWidgetControl: ControlWidget {
+struct CeciliasNotesWidgetControl: ControlWidget {
     static let kind: String = "com.wave.venu.InkWidget"
 
     var body: some ControlWidgetConfiguration {
@@ -30,7 +30,7 @@ struct InkWidgetControl: ControlWidget {
     }
 }
 
-extension InkWidgetControl {
+extension CeciliasNotesWidgetControl {
     struct Value {
         var isRunning: Bool
         var name: String
@@ -38,12 +38,12 @@ extension InkWidgetControl {
 
     struct Provider: AppIntentControlValueProvider {
         func previewValue(configuration: TimerConfiguration) -> Value {
-            InkWidgetControl.Value(isRunning: false, name: configuration.timerName)
+            CeciliasNotesWidgetControl.Value(isRunning: false, name: configuration.timerName)
         }
 
         func currentValue(configuration: TimerConfiguration) async throws -> Value {
             let isRunning = true // Check if the timer is running
-            return InkWidgetControl.Value(isRunning: isRunning, name: configuration.timerName)
+            return CeciliasNotesWidgetControl.Value(isRunning: isRunning, name: configuration.timerName)
         }
     }
 }

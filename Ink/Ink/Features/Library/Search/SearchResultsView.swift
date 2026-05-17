@@ -37,7 +37,7 @@ struct SearchResultsView: View {
                                           showHandwritingBadge: true)
                         }
                     }
-                    .padding(.bottom, Ink.Spacing.xl)
+                    .padding(.bottom, CeciliasNotes.Spacing.xl)
                 }
                 .scrollDismissesKeyboard(.interactively)
             }
@@ -72,15 +72,15 @@ struct SearchResultsView: View {
                     showHandwritingBadge: showHandwritingBadge,
                     viewModel: viewModel
                 )
-                InkDivider()
+                CeciliasNotesDivider()
                     .padding(.leading, 56)
             }
         } header: {
             Text(title)
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
-                .padding(.horizontal, Ink.Spacing.lg)
-                .padding(.vertical, Ink.Spacing.sm)
+                .padding(.horizontal, CeciliasNotes.Spacing.lg)
+                .padding(.vertical, CeciliasNotes.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.inkBackgroundPrimary)
         }
@@ -117,7 +117,7 @@ private struct SearchResultRow: View {
                     .fill(notebook.flatMap { Color(UIColor(hex: $0.coverColorHex)) }
                           ?? Color.inkTextTertiary)
                     .frame(width: 2)
-                    .padding(.trailing, Ink.Spacing.md)
+                    .padding(.trailing, CeciliasNotes.Spacing.md)
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -154,9 +154,9 @@ private struct SearchResultRow: View {
                     .font(.system(size: 12))
                     .fontWeight(.medium)
                     .foregroundColor(.inkTextTertiary)
-                    .padding(.leading, Ink.Spacing.sm)
+                    .padding(.leading, CeciliasNotes.Spacing.sm)
             }
-            .padding(.horizontal, Ink.Spacing.lg)
+            .padding(.horizontal, CeciliasNotes.Spacing.lg)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }

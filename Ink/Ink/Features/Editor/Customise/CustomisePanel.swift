@@ -101,8 +101,8 @@ struct CustomisePanel: View {
         .background(
             UnevenRoundedRectangle(
                 cornerRadii: .init(
-                    topLeading: 0, bottomLeading: Ink.Radius.lg,
-                    bottomTrailing: Ink.Radius.lg, topTrailing: 0
+                    topLeading: 0, bottomLeading: CeciliasNotes.Radius.lg,
+                    bottomTrailing: CeciliasNotes.Radius.lg, topTrailing: 0
                 ),
                 style: .continuous
             )

@@ -24,7 +24,7 @@ struct MinimapView: View {
     var body: some View {
         ZStack {
             // Page paper background
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .fill(Color.inkBackgroundElevated)
 
             if let thumbnail {
@@ -50,9 +50,9 @@ struct MinimapView: View {
             }
         }
         .frame(width: mapWidth, height: mapHeight)
-        .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
         )
         .onAppear { loadThumbnail() }

@@ -15,7 +15,7 @@ struct NotebookEntry: TimelineEntry {
 /// minutes (Apple's policy permits the system to coalesce these). The
 /// system also reloads when the main app calls
 /// `WidgetCenter.shared.reloadTimelines(ofKind:)`.
-struct InkWidgetProvider: TimelineProvider {
+struct CeciliasNotesWidgetProvider: TimelineProvider {
 
     func placeholder(in context: Context) -> NotebookEntry {
         NotebookEntry(date: Date(), primary: .placeholder, recents: NotebookSummary.placeholders)

@@ -4,7 +4,7 @@ import SwiftData
 import SwiftUI
 
 @main
-struct InkApp: App {
+struct CeciliasNotesApp: App {
     /// UIApplicationDelegate-level crash-recovery + shutdown wiring.
     /// Phase 5D: the `app.shutdown.clean` flag now lives at this
     /// layer rather than the SwiftUI scenePhase observer. SwiftUI's
@@ -15,7 +15,7 @@ struct InkApp: App {
     /// every shutdown path that the OS gives us a chance to observe.
     /// Force-quit + crash leave the gate at `false`, which is the
     /// signal the next launch reads to force-route to library home.
-    @UIApplicationDelegateAdaptor(InkAppDelegate.self) private var appDelegate
+    @UIApplicationDelegateAdaptor(CeciliasNotesAppDelegate.self) private var appDelegate
 
     @StateObject private var themeManager   = ThemeManager()
     @StateObject private var storageService = StorageService.shared
@@ -29,7 +29,7 @@ struct InkApp: App {
     // existing installs but are no longer read or written.
 
     init() {
-        // Crash-recovery gate is established by `InkAppDelegate`
+        // Crash-recovery gate is established by `CeciliasNotesAppDelegate`
         // BEFORE SwiftUI instantiates this struct — see
         // `application(_:didFinishLaunchingWithOptions:)`. By the
         // time `init` runs, `LaunchRecovery.previousShutdownWasClean`
@@ -92,7 +92,7 @@ struct InkApp: App {
 
     /// Wipe persisted state for UI tests. Visible to test infra via the
     /// "-uiTesting" launch argument, and (in DEBUG) to engineering tools.
-    /// Runs in `InkApp.init` BEFORE the StorageService singleton resolves
+    /// Runs in `CeciliasNotesApp.init` BEFORE the StorageService singleton resolves
     /// its container, so we can also remove the on-disk SwiftData store
     /// — otherwise notebooks from a prior test run collide with elements
     /// the next test queries by label.
@@ -197,9 +197,9 @@ struct InkApp: App {
                     deepLink.handle(url)
                 }
         }
-        .commands { InkCommands(deepLink: deepLink) }
+        .commands { CeciliasNotesCommands(deepLink: deepLink) }
         // Phase 5D: shutdown-clean writes moved to
-        // `InkAppDelegate.applicationDidEnterBackground` /
+        // `CeciliasNotesAppDelegate.applicationDidEnterBackground` /
         // `applicationWillTerminate`. SwiftUI's scenePhase observer
         // can be racy under sheet transitions; the UIKit lifecycle
         // callbacks are the OS-guaranteed signals.
@@ -210,7 +210,7 @@ struct InkApp: App {
 // MARK: - LaunchRecovery
 
 /// Cross-launch shutdown gate. Snapshotted in
-/// `InkAppDelegate.application(_:didFinishLaunchingWithOptions:)`
+/// `CeciliasNotesAppDelegate.application(_:didFinishLaunchingWithOptions:)`
 /// from the `app.shutdown.clean` UserDefault. The delegate flips the
 /// persisted value to `false` immediately; the delegate's
 /// `applicationDidEnterBackground` / `applicationWillTerminate`
@@ -229,10 +229,10 @@ enum LaunchRecovery {
     nonisolated(unsafe) static var previousShutdownWasClean: Bool = true
 }
 
-// MARK: - InkAppDelegate
+// MARK: - CeciliasNotesAppDelegate
 
 /// `UIApplicationDelegate` shim that owns the crash-recovery gate.
-/// Wired into `InkApp` via `@UIApplicationDelegateAdaptor`. Three
+/// Wired into `CeciliasNotesApp` via `@UIApplicationDelegateAdaptor`. Three
 /// callbacks matter:
 ///
 ///   • `application(_:didFinishLaunchingWithOptions:)` — snapshots
@@ -240,7 +240,7 @@ enum LaunchRecovery {
 ///     `false`, and (when the previous run was dirty) clears any
 ///     stale resume pointers so the next session can't restore into
 ///     a broken editor state. This runs BEFORE SwiftUI instantiates
-///     `InkApp`, so `LaunchRecovery.previousShutdownWasClean` is
+///     `CeciliasNotesApp`, so `LaunchRecovery.previousShutdownWasClean` is
 ///     populated by the time the first `RootView` body evaluates.
 ///
 ///   • `applicationDidEnterBackground(_:)` — flips the flag to
@@ -256,7 +256,7 @@ enum LaunchRecovery {
 ///     for the rare paths where iOS calls this directly (e.g.
 ///     low-memory termination of a foreground app). Not all
 ///     termination paths route through this method.
-final class InkAppDelegate: NSObject, UIApplicationDelegate {
+final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
     private static let shutdownKey = "app.shutdown.clean"
     /// Phase 5A+5C Step 2: one-shot wipe gate. When this is absent

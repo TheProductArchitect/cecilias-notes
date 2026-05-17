@@ -2,11 +2,11 @@ import Foundation
 import PencilKit
 import UIKit
 
-// MARK: - InkTool
+// MARK: - CeciliasNotesTool
 
 /// User-facing tool model. Maps to a `PKTool` in `CanvasContainerView`.
-/// Associated values are the *current* settings; defaults live in `InkTool.defaults`.
-enum InkTool: Equatable {
+/// Associated values are the *current* settings; defaults live in `CeciliasNotesTool.defaults`.
+enum CeciliasNotesTool: Equatable {
     // Inking — each maps to a PKInkingTool ink type.
     case pen(colour: UIColor, width: CGFloat, opacity: CGFloat)
     case fountainPen(colour: UIColor, width: CGFloat, opacity: CGFloat)
@@ -236,7 +236,7 @@ enum InkTool: Equatable {
 
     // MARK: Mutators
 
-    func withColour(_ colour: UIColor) -> InkTool {
+    func withColour(_ colour: UIColor) -> CeciliasNotesTool {
         switch self {
         case .pen(_, let w, let o):          return .pen(colour: colour, width: w, opacity: o)
         case .fountainPen(_, let w, let o):  return .fountainPen(colour: colour, width: w, opacity: o)
@@ -250,7 +250,7 @@ enum InkTool: Equatable {
         }
     }
 
-    func withWidth(_ width: CGFloat) -> InkTool {
+    func withWidth(_ width: CGFloat) -> CeciliasNotesTool {
         let clamped = max(0.5, min(20, width))
         switch self {
         case .pen(let c, _, let o):          return .pen(colour: c, width: clamped, opacity: o)
@@ -265,7 +265,7 @@ enum InkTool: Equatable {
         }
     }
 
-    func withOpacity(_ opacity: CGFloat) -> InkTool {
+    func withOpacity(_ opacity: CGFloat) -> CeciliasNotesTool {
         let clamped = max(0.1, min(1.0, opacity))
         switch self {
         case .pen(let c, let w, _):          return .pen(colour: c, width: w, opacity: clamped)
@@ -279,42 +279,42 @@ enum InkTool: Equatable {
     // MARK: Defaults
 
     enum Defaults {
-        private static func inkColour(_ theme: InkTheme) -> UIColor {
+        private static func inkColour(_ theme: CeciliasNotesTheme) -> UIColor {
             theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
         }
 
-        static func pen(theme: InkTheme) -> InkTool {
+        static func pen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .pen(colour: inkColour(theme), width: 2, opacity: 1.0)
         }
-        static func fountainPen(theme: InkTheme) -> InkTool {
+        static func fountainPen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .fountainPen(colour: inkColour(theme), width: 2, opacity: 1.0)
         }
-        static func monoline(theme: InkTheme) -> InkTool {
+        static func monoline(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .monoline(colour: inkColour(theme), width: 2)
         }
-        static func marker(theme: InkTheme) -> InkTool {
+        static func marker(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .marker(colour: inkColour(theme), width: 6)
         }
-        static func brush(theme: InkTheme) -> InkTool {
+        static func brush(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .brush(colour: inkColour(theme), width: 6, opacity: 0.85)
         }
-        static func crayon(theme: InkTheme) -> InkTool {
+        static func crayon(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .crayon(colour: inkColour(theme), width: 5)
         }
-        static func pencil(theme: InkTheme) -> InkTool {
+        static func pencil(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             .pencil(colour: inkColour(theme), width: 3, opacity: 1.0)
         }
-        static let highlighter: InkTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
-        static let eraser: InkTool = .eraser(mode: .wholeStroke)
-        static let lasso: InkTool = .lasso
-        static let ruler: InkTool = .ruler
-        static let text: InkTool  = .text
-        static let stickyNote: InkTool = .stickyNote
-        static let image: InkTool = .image
+        static let highlighter: CeciliasNotesTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
+        static let eraser: CeciliasNotesTool = .eraser(mode: .wholeStroke)
+        static let lasso: CeciliasNotesTool = .lasso
+        static let ruler: CeciliasNotesTool = .ruler
+        static let text: CeciliasNotesTool  = .text
+        static let stickyNote: CeciliasNotesTool = .stickyNote
+        static let image: CeciliasNotesTool = .image
 
         /// Build a default for any identity. Used by the palette when the
         /// per-tool persistence has nothing stored for that identity yet.
-        static func forIdentity(_ id: Identity, theme: InkTheme) -> InkTool {
+        static func forIdentity(_ id: Identity, theme: CeciliasNotesTheme) -> CeciliasNotesTool {
             switch id {
             case .pen:          return pen(theme: theme)
             case .fountainPen:  return fountainPen(theme: theme)
@@ -336,7 +336,7 @@ enum InkTool: Equatable {
 
     // MARK: PKTool mapping
 
-    /// Builds the `PKTool` corresponding to this InkTool.
+    /// Builds the `PKTool` corresponding to this CeciliasNotesTool.
     /// Note: `.ruler` is not a PKTool — it toggles `canvasView.isRulerActive`.
     func makePKTool() -> PKTool {
         switch self {

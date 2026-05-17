@@ -69,20 +69,20 @@ struct ExportOptionsView: View {
         // behind the keyboard when editing the custom range.
         VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: Ink.Spacing.lg) {
+                VStack(spacing: CeciliasNotes.Spacing.lg) {
                     previewSection
                     pageRangeSection
                     qualitySection
                     togglesSection
                 }
-                .padding(Ink.Spacing.lg)
+                .padding(CeciliasNotes.Spacing.lg)
             }
             Rectangle()
                 .fill(Color.inkBorderSubtle)
                 .frame(height: 0.5)
             exportButton
-                .padding(.horizontal, Ink.Spacing.lg)
-                .padding(.vertical, Ink.Spacing.md)
+                .padding(.horizontal, CeciliasNotes.Spacing.lg)
+                .padding(.vertical, CeciliasNotes.Spacing.md)
                 .background(Color.inkBackgroundPrimary)
         }
     }
@@ -91,7 +91,7 @@ struct ExportOptionsView: View {
 
     private var previewSection: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
                 .fill(Color.inkBackgroundSecondary)
                 .frame(height: 140)
 
@@ -105,7 +105,7 @@ struct ExportOptionsView: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
                     )
-                    .transition(.opacity.animation(.inkSpring(InkSpring.precise)))
+                    .transition(.opacity.animation(.inkSpring(CeciliasNotesSpring.precise)))
             } else {
                 ProgressView()
                     .tint(.inkAccentPrimary)
@@ -116,7 +116,7 @@ struct ExportOptionsView: View {
     // MARK: - Page range
 
     private var pageRangeSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             sectionHeader("Pages")
 
             Picker("Page range", selection: $rangeTag) {
@@ -133,11 +133,11 @@ struct ExportOptionsView: View {
                         .font(.inkBody)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.done)
-                        .padding(Ink.Spacing.sm)
+                        .padding(CeciliasNotes.Spacing.sm)
                         .background(Color.inkBackgroundSecondary)
-                        .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                                 .stroke(rangeError != nil ? Color.inkDestructive : Color.inkBorderSubtle, lineWidth: 0.5)
                         )
                         .onChange(of: customRange) { _, v in validateCustomRange(v) }
@@ -155,7 +155,7 @@ struct ExportOptionsView: View {
     // MARK: - Quality
 
     private var qualitySection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             sectionHeader("Quality")
 
             Picker("Quality", selection: $options.quality) {
@@ -175,9 +175,9 @@ struct ExportOptionsView: View {
     private var togglesSection: some View {
         VStack(spacing: 0) {
             toggleRow("Include page numbers", systemImage: "number", value: $options.includePageNumbers)
-            InkDivider()
+            CeciliasNotesDivider()
             toggleRow("Include cover page",   systemImage: "doc.richtext",    value: $options.includeCoverPage)
-            InkDivider()
+            CeciliasNotesDivider()
             toggleRow("Include audio transcripts", systemImage: "waveform",   value: $options.includeTranscriptions)
         }
         .inkCard()
@@ -186,7 +186,7 @@ struct ExportOptionsView: View {
     // MARK: - Export button
 
     private var exportButton: some View {
-        InkButton("Export PDF", style: .primary) {
+        CeciliasNotesButton("Export PDF", style: .primary) {
             guard rangeError == nil else { return }
             startExport()
         }
@@ -197,7 +197,7 @@ struct ExportOptionsView: View {
     // MARK: - Progress content
 
     private var progressContent: some View {
-        VStack(spacing: Ink.Spacing.xl) {
+        VStack(spacing: CeciliasNotes.Spacing.xl) {
             Spacer()
 
             ZStack {
@@ -210,7 +210,7 @@ struct ExportOptionsView: View {
                     .stroke(Color.inkAccentPrimary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: 80, height: 80)
                     .rotationEffect(.degrees(-90))
-                    .animation(.inkSpring(InkSpring.smooth), value: exportProgress)
+                    .animation(.inkSpring(CeciliasNotesSpring.smooth), value: exportProgress)
 
                 Text("\(Int(exportProgress * 100))%")
                     .font(.inkCaption)
@@ -225,7 +225,7 @@ struct ExportOptionsView: View {
 
             Button("Cancel") {
                 exportTask?.cancel()
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     exportState = .options
                 }
             }
@@ -235,19 +235,19 @@ struct ExportOptionsView: View {
 
             Spacer()
         }
-        .padding(Ink.Spacing.lg)
+        .padding(CeciliasNotes.Spacing.lg)
     }
 
     // MARK: - Success content
 
     private var successContent: some View {
-        VStack(spacing: Ink.Spacing.lg) {
+        VStack(spacing: CeciliasNotes.Spacing.lg) {
             Spacer()
 
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
                 .foregroundColor(.inkAccentPrimary)
-                .inkAnimation(InkSpring.snappy, value: exportState == .success)
+                .inkAnimation(CeciliasNotesSpring.snappy, value: exportState == .success)
 
             if let result = exportResult {
                 VStack(spacing: 4) {
@@ -259,13 +259,13 @@ struct ExportOptionsView: View {
                         .foregroundColor(.inkTextSecondary)
                 }
 
-                VStack(spacing: Ink.Spacing.sm) {
-                    InkButton("Share…", style: .primary) {
+                VStack(spacing: CeciliasNotes.Spacing.sm) {
+                    CeciliasNotesButton("Share…", style: .primary) {
                         shareResult(result)
                     }
                     .frame(maxWidth: .infinity)
 
-                    InkButton("Save to Files…", style: .secondary) {
+                    CeciliasNotesButton("Save to Files…", style: .secondary) {
                         saveToFiles(result)
                     }
                     .frame(maxWidth: .infinity)
@@ -279,13 +279,13 @@ struct ExportOptionsView: View {
 
             Spacer()
         }
-        .padding(Ink.Spacing.lg)
+        .padding(CeciliasNotes.Spacing.lg)
     }
 
     // MARK: - Error content
 
     private var errorContent: some View {
-        VStack(spacing: Ink.Spacing.lg) {
+        VStack(spacing: CeciliasNotes.Spacing.lg) {
             Spacer()
 
             Image(systemName: "exclamationmark.circle")
@@ -297,8 +297,8 @@ struct ExportOptionsView: View {
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
 
-            InkButton("Try Again", style: .primary) {
-                withAnimation(.inkSpring(InkSpring.smooth)) {
+            CeciliasNotesButton("Try Again", style: .primary) {
+                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
                     exportState = .options
                 }
             }
@@ -311,7 +311,7 @@ struct ExportOptionsView: View {
 
             Spacer()
         }
-        .padding(Ink.Spacing.lg)
+        .padding(CeciliasNotes.Spacing.lg)
     }
 
     // MARK: - Helpers
@@ -330,8 +330,8 @@ struct ExportOptionsView: View {
         }
         .toggleStyle(.switch)
         .tint(.inkAccentPrimary)
-        .padding(.horizontal, Ink.Spacing.md)
-        .padding(.vertical, Ink.Spacing.sm)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
 
     // MARK: - Range tag <-> ExportOptions sync
@@ -436,7 +436,7 @@ struct ExportOptionsView: View {
 
     private func startExport() {
         completedPages = 0
-        withAnimation(.inkSpring(InkSpring.smooth)) { exportState = .exporting }
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { exportState = .exporting }
         let nb   = notebook
         let pgs  = pages
         let opts = options
@@ -455,7 +455,7 @@ struct ExportOptionsView: View {
                 }
                 await MainActor.run {
                     exportResult = result
-                    withAnimation(.inkSpring(InkSpring.snappy)) { exportState = .success }
+                    withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { exportState = .success }
                     HapticManager.shared.exportCompleted()
                 }
             } catch is CancellationError {
@@ -463,7 +463,7 @@ struct ExportOptionsView: View {
             } catch {
                 await MainActor.run {
                     exportError = error.localizedDescription
-                    withAnimation(.inkSpring(InkSpring.smooth)) { exportState = .error }
+                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { exportState = .error }
                     HapticManager.shared.exportFailed()
                 }
             }

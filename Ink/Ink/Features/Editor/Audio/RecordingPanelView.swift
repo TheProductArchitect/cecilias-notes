@@ -50,16 +50,16 @@ struct RecordingPanelView: View {
     }
 
     private var panel: some View {
-        VStack(spacing: Ink.Spacing.md) {
+        VStack(spacing: CeciliasNotes.Spacing.md) {
             stateContent
         }
-        .padding(.horizontal, Ink.Spacing.lg)
-        .padding(.top, Ink.Spacing.lg)
-        .padding(.bottom, Ink.Spacing.xl)
+        .padding(.horizontal, CeciliasNotes.Spacing.lg)
+        .padding(.top, CeciliasNotes.Spacing.lg)
+        .padding(.bottom, CeciliasNotes.Spacing.xl)
         .frame(maxWidth: .infinity)
         .frame(height: panelHeight)
         .background(
-            RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
                 .fill(Color.inkBackgroundElevated)
                 .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: -2)
         )
@@ -68,12 +68,12 @@ struct RecordingPanelView: View {
     // MARK: - Idle state
 
     private var idleContent: some View {
-        VStack(spacing: Ink.Spacing.sm) {
+        VStack(spacing: CeciliasNotes.Spacing.sm) {
             Text("Record Audio")
                 .font(.inkHeadline)
                 .foregroundColor(.inkTextPrimary)
 
-            HStack(spacing: Ink.Spacing.lg) {
+            HStack(spacing: CeciliasNotes.Spacing.lg) {
                 if transcribeEnabled {
                     Toggle(isOn: $viewModel.isTranscriptionEnabled) {
                         Text("Transcribe")
@@ -119,7 +119,7 @@ struct RecordingPanelView: View {
                     .font(.inkCaption)
                     .foregroundColor(.inkTextTertiary)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, Ink.Spacing.md)
+                    .padding(.horizontal, CeciliasNotes.Spacing.md)
             }
 
             Button { dismiss() } label: {
@@ -134,7 +134,7 @@ struct RecordingPanelView: View {
     // MARK: - Recording state
 
     private var recordingContent: some View {
-        VStack(spacing: Ink.Spacing.sm) {
+        VStack(spacing: CeciliasNotes.Spacing.sm) {
             HStack {
                 Text(formatElapsed(elapsedSeconds))
                     .font(.inkMono)
@@ -169,7 +169,7 @@ struct RecordingPanelView: View {
     // MARK: - Processing state
 
     private var processingContent: some View {
-        VStack(spacing: Ink.Spacing.md) {
+        VStack(spacing: CeciliasNotes.Spacing.md) {
             ProgressView()
                 .progressViewStyle(.circular)
                 .tint(.inkAccentPrimary)
@@ -215,7 +215,7 @@ struct RecordingPanelView: View {
     // MARK: - Helpers
 
     private func dismiss() {
-        withAnimation(.inkSpring(InkSpring.smooth)) {
+        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isRecordingPanelVisible = false
         }
     }

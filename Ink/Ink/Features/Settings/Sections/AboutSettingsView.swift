@@ -195,10 +195,10 @@ struct KeyboardShortcutsView: View {
             Text(keys)
                 .font(.inkMono)
                 .foregroundColor(.inkTextSecondary)
-                .padding(.horizontal, Ink.Spacing.xs)
-                .padding(.vertical, Ink.Spacing.micro)
+                .padding(.horizontal, CeciliasNotes.Spacing.xs)
+                .padding(.vertical, CeciliasNotes.Spacing.micro)
                 .background(Color.inkBackgroundSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         }
     }
 }

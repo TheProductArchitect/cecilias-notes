@@ -224,7 +224,7 @@ public struct StorageInfo: Sendable {
 
 // MARK: - Subject color presets (12 curated values)
 
-public enum InkColorPresets {
+public enum CeciliasNotesColorPresets {
     public static let subjectColors: [String] = [
         "#FF3B30", "#FF9500", "#FFCC00", "#34C759",
         "#00C7BE", "#30B0C7", "#007AFF", "#5856D6",

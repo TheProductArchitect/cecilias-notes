@@ -9,35 +9,35 @@ struct StyleGuideView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: Ink.Spacing.xl, pinnedViews: []) {
+                LazyVStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xl, pinnedViews: []) {
                     colorsSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     typographySection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     spacingSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     buttonsSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     textFieldSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     badgesSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     emptyStateSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     themeSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     animationSection
-                    InkDivider().padding(.horizontal, Ink.Spacing.md)
+                    CeciliasNotesDivider().padding(.horizontal, CeciliasNotes.Spacing.md)
                     iconPreviewSection
                 }
-                .padding(.vertical, Ink.Spacing.lg)
+                .padding(.vertical, CeciliasNotes.Spacing.lg)
             }
             .background(Color.inkBackgroundPrimary)
             .navigationTitle("Style Guide")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    InkBadge("DEBUG", style: .accent)
+                    CeciliasNotesBadge("DEBUG", style: .accent)
                 }
             }
         }
@@ -46,7 +46,7 @@ struct StyleGuideView: View {
     // MARK: Sections
 
     private var colorsSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("Colour Tokens")
 
             colorGroup("Background", swatches: [
@@ -77,11 +77,11 @@ struct StyleGuideView: View {
                 ("destructive", .inkDestructive),
             ])
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var typographySection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             sectionHeader("Typography")
 
             Group {
@@ -97,24 +97,24 @@ struct StyleGuideView: View {
                 typeRow(".inkMono",     sample: "let x: Int = 42",       font: .inkMono)
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var spacingSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("Spacing & Radius")
 
-            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+            VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
                 ForEach([
-                    ("micro", Ink.Spacing.micro),
-                    ("xs",    Ink.Spacing.xs),
-                    ("sm",    Ink.Spacing.sm),
-                    ("md",    Ink.Spacing.md),
-                    ("lg",    Ink.Spacing.lg),
-                    ("xl",    Ink.Spacing.xl),
-                    ("xxl",   Ink.Spacing.xxl),
+                    ("micro", CeciliasNotes.Spacing.micro),
+                    ("xs",    CeciliasNotes.Spacing.xs),
+                    ("sm",    CeciliasNotes.Spacing.sm),
+                    ("md",    CeciliasNotes.Spacing.md),
+                    ("lg",    CeciliasNotes.Spacing.lg),
+                    ("xl",    CeciliasNotes.Spacing.xl),
+                    ("xxl",   CeciliasNotes.Spacing.xxl),
                 ], id: \.0) { name, value in
-                    HStack(spacing: Ink.Spacing.sm) {
+                    HStack(spacing: CeciliasNotes.Spacing.sm) {
                         Text(".\(name)")
                             .font(.inkMono)
                             .foregroundColor(.inkTextSecondary)
@@ -133,16 +133,16 @@ struct StyleGuideView: View {
             Text("Radius tokens")
                 .font(.inkFootnote)
                 .foregroundColor(.inkTextTertiary)
-                .padding(.top, Ink.Spacing.sm)
+                .padding(.top, CeciliasNotes.Spacing.sm)
 
-            HStack(spacing: Ink.Spacing.md) {
+            HStack(spacing: CeciliasNotes.Spacing.md) {
                 ForEach([
-                    ("sm",   Ink.Radius.sm),
-                    ("md",   Ink.Radius.md),
-                    ("lg",   Ink.Radius.lg),
-                    ("xl",   Ink.Radius.xl),
+                    ("sm",   CeciliasNotes.Radius.sm),
+                    ("md",   CeciliasNotes.Radius.md),
+                    ("lg",   CeciliasNotes.Radius.lg),
+                    ("xl",   CeciliasNotes.Radius.xl),
                 ], id: \.0) { name, value in
-                    VStack(spacing: Ink.Spacing.xs) {
+                    VStack(spacing: CeciliasNotes.Spacing.xs) {
                         RoundedRectangle(cornerRadius: value, style: .continuous)
                             .fill(Color.inkBackgroundSecondary)
                             .overlay(
@@ -157,22 +157,22 @@ struct StyleGuideView: View {
                 }
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var buttonsSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
-            sectionHeader("InkButton")
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            sectionHeader("CeciliasNotesButton")
 
-            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
-                HStack(spacing: Ink.Spacing.sm) {
-                    InkButton("Primary", style: .primary) {}
-                    InkButton("Secondary", style: .secondary) {}
-                    InkButton("Ghost", style: .ghost) {}
+            VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
+                HStack(spacing: CeciliasNotes.Spacing.sm) {
+                    CeciliasNotesButton("Primary", style: .primary) {}
+                    CeciliasNotesButton("Secondary", style: .secondary) {}
+                    CeciliasNotesButton("Ghost", style: .ghost) {}
                 }
-                HStack(spacing: Ink.Spacing.sm) {
-                    InkButton("Destructive", style: .destructive) {}
-                    InkButton("Loading", style: .primary, isLoading: isButtonLoading) {
+                HStack(spacing: CeciliasNotes.Spacing.sm) {
+                    CeciliasNotesButton("Destructive", style: .destructive) {}
+                    CeciliasNotesButton("Loading", style: .primary, isLoading: isButtonLoading) {
                         isButtonLoading.toggle()
                     }
                     .onAppear {
@@ -184,35 +184,35 @@ struct StyleGuideView: View {
                 }
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var textFieldSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
-            sectionHeader("InkTextField")
-            InkTextField("Note title…", text: $sampleText, icon: "pencil", maxLength: 80)
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            sectionHeader("CeciliasNotesTextField")
+            CeciliasNotesTextField("Note title…", text: $sampleText, icon: "pencil", maxLength: 80)
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var badgesSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
-            sectionHeader("InkBadge")
-            HStack(spacing: Ink.Spacing.sm) {
-                InkBadge("Default", style: .default)
-                InkBadge("Accent",  style: .accent)
-                InkBadge("42",      style: .count)
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            sectionHeader("CeciliasNotesBadge")
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
+                CeciliasNotesBadge("Default", style: .default)
+                CeciliasNotesBadge("Accent",  style: .accent)
+                CeciliasNotesBadge("42",      style: .count)
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var emptyStateSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
-            sectionHeader("InkEmptyState")
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            sectionHeader("CeciliasNotesEmptyState")
             HStack {
                 Spacer()
-                InkEmptyState(
+                CeciliasNotesEmptyState(
                     icon: "doc.text",
                     title: "No notes yet",
                     subtitle: "Tap the pen to start your first note.",
@@ -221,48 +221,48 @@ struct StyleGuideView: View {
                 Spacer()
             }
             .inkCard()
-            .padding(.vertical, Ink.Spacing.md)
+            .padding(.vertical, CeciliasNotes.Spacing.md)
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var themeSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("Theme")
 
-            HStack(spacing: Ink.Spacing.md) {
-                ForEach(InkTheme.allCases, id: \.rawValue) { theme in
+            HStack(spacing: CeciliasNotes.Spacing.md) {
+                ForEach(CeciliasNotesTheme.allCases, id: \.rawValue) { theme in
                     themeCard(theme)
                 }
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     private var iconPreviewSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("App Icon")
             IconPreviewView()
         }
     }
 
     private var animationSection: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.md) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("Animation Presets")
             Text("Reduce Motion: \(UIAccessibility.isReduceMotionEnabled ? "ON — springs replaced with crossfade" : "OFF — springs active")")
                 .font(.inkFootnote)
                 .foregroundColor(UIAccessibility.isReduceMotionEnabled ? .inkDestructive : .inkTextSecondary)
 
             ForEach([
-                ("snappy",  InkSpring.snappy,  "response 0.28 / damping 0.82"),
-                ("smooth",  InkSpring.smooth,  "response 0.40 / damping 0.85"),
-                ("bouncy",  InkSpring.bouncy,  "response 0.35 / damping 0.70"),
-                ("precise", InkSpring.precise, "response 0.22 / damping 0.90"),
+                ("snappy",  CeciliasNotesSpring.snappy,  "response 0.28 / damping 0.82"),
+                ("smooth",  CeciliasNotesSpring.smooth,  "response 0.40 / damping 0.85"),
+                ("bouncy",  CeciliasNotesSpring.bouncy,  "response 0.35 / damping 0.70"),
+                ("precise", CeciliasNotesSpring.precise, "response 0.22 / damping 0.90"),
             ], id: \.0) { name, animation, description in
                 AnimationRow(name: name, animation: animation, description: description)
             }
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     // MARK: Helpers
@@ -274,13 +274,13 @@ struct StyleGuideView: View {
     }
 
     private func colorGroup(_ groupName: String, swatches: [(String, Color)]) -> some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.xs) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xs) {
             Text(groupName)
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Ink.Spacing.sm) {
+                HStack(spacing: CeciliasNotes.Spacing.sm) {
                     ForEach(swatches, id: \.0) { name, color in
                         colorSwatch(name: name, color: color)
                     }
@@ -290,11 +290,11 @@ struct StyleGuideView: View {
     }
 
     private func colorSwatch(name: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.xs) {
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xs) {
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .fill(color)
                 .overlay(
-                    RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                    RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                         .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
                 )
                 .frame(width: 64, height: 40)
@@ -308,7 +308,7 @@ struct StyleGuideView: View {
     }
 
     private func typeRow(_ token: String, sample: String, font: Font) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: Ink.Spacing.md) {
+        HStack(alignment: .firstTextBaseline, spacing: CeciliasNotes.Spacing.md) {
             Text(token)
                 .font(.inkMono)
                 .foregroundColor(.inkTextTertiary)
@@ -319,17 +319,17 @@ struct StyleGuideView: View {
         }
     }
 
-    private func themeCard(_ theme: InkTheme) -> some View {
+    private func themeCard(_ theme: CeciliasNotesTheme) -> some View {
         let isSelected = themeManager.theme == theme
 
         return Button {
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 themeManager.theme = theme
             }
         } label: {
-            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+            VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
                 // Mini preview
-                RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                     .fill(theme.previewBackground)
                     .frame(height: 72)
                     .overlay(alignment: .topLeading) {
@@ -344,10 +344,10 @@ struct StyleGuideView: View {
                                 .fill(theme.previewAccent)
                                 .frame(width: 32, height: 4)
                         }
-                        .padding(Ink.Spacing.sm)
+                        .padding(CeciliasNotes.Spacing.sm)
                     }
                     .overlay(
-                        RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+                        RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                             .strokeBorder(
                                 isSelected ? Color.inkAccentPrimary : Color.inkBorderDefault,
                                 lineWidth: isSelected ? 2 : 0.5
@@ -373,7 +373,7 @@ private struct AnimationRow: View {
     @State private var isAnimating = false
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.md) {
+        HStack(spacing: CeciliasNotes.Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(".\(name)")
                     .font(.inkMono)
@@ -386,7 +386,7 @@ private struct AnimationRow: View {
 
             Spacer()
 
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .fill(Color.inkAccentPrimary)
                 .frame(width: 32, height: 32)
                 .offset(x: isAnimating ? 24 : -24)
@@ -403,7 +403,7 @@ private struct AnimationRow: View {
                     .frame(width: 44, height: 44)
             }
         }
-        .padding(Ink.Spacing.sm)
+        .padding(CeciliasNotes.Spacing.sm)
         .inkCard()
         .onAppear {
             Task {

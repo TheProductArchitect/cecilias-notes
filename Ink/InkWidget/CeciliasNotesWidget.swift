@@ -1,10 +1,10 @@
 //
-//  InkWidget.swift
-//  InkWidget
+//  CeciliasNotesWidget.swift
+//  CeciliasNotesWidget
 //
 //  Holds the cross-target wire format used by `WidgetDataWriter` in
 //  the main app and by every widget in this bundle to read recents
-//  from the App Group's JSON snapshot. The legacy `InkWidget` /
+//  from the App Group's JSON snapshot. The legacy `CeciliasNotesWidget` /
 //  `QuickCaptureWidget` configurations that used to live here were
 //  retired during the design-language refresh — see
 //  `NewNoteWidget.swift` for the current widget set.

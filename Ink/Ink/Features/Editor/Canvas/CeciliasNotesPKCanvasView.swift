@@ -27,7 +27,7 @@ import UIKit
 /// `touchesBegan/Moved/Ended` on the canvas, not a hover recogniser.
 ///
 /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
-final class InkPKCanvasView: PKCanvasView {
+final class CeciliasNotesPKCanvasView: PKCanvasView {
 
     override func addGestureRecognizer(_ gestureRecognizer: UIGestureRecognizer) {
         if gestureRecognizer is UIHoverGestureRecognizer {

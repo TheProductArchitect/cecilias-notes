@@ -10,7 +10,7 @@ import SwiftUI
 ///     (1.0 → 1.05 → 1.0 over 600ms) to draw the eye. Pulse is skipped
 ///     when Reduce Motion is on.
 ///   • Auto-dismiss: 5s after first appearance, the pill fades out via
-///     `InkSpring.fade`. Owned here so the view is the single source of
+///     `CeciliasNotesSpring.fade`. Owned here so the view is the single source of
 ///     truth for the timing.
 struct CustomisePill: View {
     let onTap: () -> Void
@@ -21,7 +21,7 @@ struct CustomisePill: View {
     @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
-        HStack(spacing: Ink.Spacing.xs) {
+        HStack(spacing: CeciliasNotes.Spacing.xs) {
             // Accent dot + sparkle icon — accent dot lives behind the icon
             // for a touch of colour without taking space.
             ZStack {
@@ -54,7 +54,7 @@ struct CustomisePill: View {
             .buttonStyle(.inkPressable)
             .accessibilityLabel("Dismiss customise pill")
         }
-        .padding(.leading, Ink.Spacing.sm)
+        .padding(.leading, CeciliasNotes.Spacing.sm)
         .padding(.trailing, 4)
         .padding(.vertical, 6)
         .background(
@@ -89,7 +89,7 @@ struct CustomisePill: View {
         dismissTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            withAnimation(.inkSpring(InkSpring.fade)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
                 onDismiss()
             }
         }

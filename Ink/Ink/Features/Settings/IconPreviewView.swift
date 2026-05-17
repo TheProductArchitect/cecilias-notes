@@ -13,7 +13,7 @@ struct IconPreviewView: View {
     private let letters:  [Character] = ["a", "i", "n", "s", "z"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.lg) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.lg) {
             ForEach(letters, id: \.self) { letter in
                 sectionHeader(String(letter).uppercased())
                 iconRow(letter: letter)
@@ -24,14 +24,14 @@ struct IconPreviewView: View {
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }
-        .padding(.horizontal, Ink.Spacing.md)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
 
     @ViewBuilder
     private func iconRow(letter: Character) -> some View {
-        HStack(alignment: .bottom, spacing: Ink.Spacing.md) {
+        HStack(alignment: .bottom, spacing: CeciliasNotes.Spacing.md) {
             ForEach(sizes, id: \.self) { px in
-                VStack(spacing: Ink.Spacing.xs) {
+                VStack(spacing: CeciliasNotes.Spacing.xs) {
                     Image(uiImage: BrandIconRenderer.render(letter: letter, size: px))
                         .interpolation(.high)
                         .frame(width: min(px, 120), height: min(px, 120))

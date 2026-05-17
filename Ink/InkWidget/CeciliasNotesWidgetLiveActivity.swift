@@ -1,6 +1,6 @@
 //
-//  InkWidgetLiveActivity.swift
-//  InkWidget
+//  CeciliasNotesWidgetLiveActivity.swift
+//  CeciliasNotesWidget
 //
 //  Created by Venu gopinath Nukavarapu on 5/7/26.
 //
@@ -9,7 +9,7 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-struct InkWidgetAttributes: ActivityAttributes {
+struct CeciliasNotesWidgetAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         // Dynamic stateful properties about your activity go here!
         var emoji: String
@@ -19,9 +19,9 @@ struct InkWidgetAttributes: ActivityAttributes {
     var name: String
 }
 
-struct InkWidgetLiveActivity: Widget {
+struct CeciliasNotesWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: InkWidgetAttributes.self) { context in
+        ActivityConfiguration(for: CeciliasNotesWidgetAttributes.self) { context in
             // Lock screen/banner UI goes here
             VStack {
                 Text("Hello \(context.state.emoji)")
@@ -56,25 +56,25 @@ struct InkWidgetLiveActivity: Widget {
     }
 }
 
-extension InkWidgetAttributes {
-    fileprivate static var preview: InkWidgetAttributes {
-        InkWidgetAttributes(name: "World")
+extension CeciliasNotesWidgetAttributes {
+    fileprivate static var preview: CeciliasNotesWidgetAttributes {
+        CeciliasNotesWidgetAttributes(name: "World")
     }
 }
 
-extension InkWidgetAttributes.ContentState {
-    fileprivate static var smiley: InkWidgetAttributes.ContentState {
-        InkWidgetAttributes.ContentState(emoji: "😀")
+extension CeciliasNotesWidgetAttributes.ContentState {
+    fileprivate static var smiley: CeciliasNotesWidgetAttributes.ContentState {
+        CeciliasNotesWidgetAttributes.ContentState(emoji: "😀")
      }
      
-     fileprivate static var starEyes: InkWidgetAttributes.ContentState {
-         InkWidgetAttributes.ContentState(emoji: "🤩")
+     fileprivate static var starEyes: CeciliasNotesWidgetAttributes.ContentState {
+         CeciliasNotesWidgetAttributes.ContentState(emoji: "🤩")
      }
 }
 
-#Preview("Notification", as: .content, using: InkWidgetAttributes.preview) {
-   InkWidgetLiveActivity()
+#Preview("Notification", as: .content, using: CeciliasNotesWidgetAttributes.preview) {
+   CeciliasNotesWidgetLiveActivity()
 } contentStates: {
-    InkWidgetAttributes.ContentState.smiley
-    InkWidgetAttributes.ContentState.starEyes
+    CeciliasNotesWidgetAttributes.ContentState.smiley
+    CeciliasNotesWidgetAttributes.ContentState.starEyes
 }

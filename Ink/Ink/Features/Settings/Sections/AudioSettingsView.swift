@@ -25,12 +25,12 @@ struct AudioSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
+            VStack(spacing: CeciliasNotes.Spacing.lg) {
                 localeCard
                 afterRecordingCard
                 qualityCard
             }
-            .padding(Ink.Spacing.lg)
+            .padding(CeciliasNotes.Spacing.lg)
         }
         .background(Color.inkBackgroundSecondary.ignoresSafeArea())
         .navigationTitle("Audio & Transcription")
@@ -49,7 +49,7 @@ struct AudioSettingsView: View {
     // MARK: Locale
 
     private var localeCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             cardHeader("Transcription Language")
 
             Button {
@@ -64,9 +64,9 @@ struct AudioSettingsView: View {
                         .font(.inkRowLabel)
                         .foregroundColor(.inkTextTertiary)
                 }
-                .padding(Ink.Spacing.sm)
+                .padding(CeciliasNotes.Spacing.sm)
                 .background(Color.inkBackgroundSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
             }
             .buttonStyle(.inkPressable)
 
@@ -74,7 +74,7 @@ struct AudioSettingsView: View {
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 
@@ -86,7 +86,7 @@ struct AudioSettingsView: View {
     /// OFF a recording is discarded — the recording panel surfaces a
     /// subtle reminder so the user understands why nothing was saved.
     private var afterRecordingCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             cardHeader("After Recording")
 
             VStack(spacing: 0) {
@@ -127,14 +127,14 @@ struct AudioSettingsView: View {
                     .foregroundColor(.inkTextTertiary)
             }
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 
     // MARK: Quality
 
     private var qualityCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             cardHeader("Transcription Quality")
 
             Picker("Quality", selection: $transcriptionQuality) {
@@ -148,7 +148,7 @@ struct AudioSettingsView: View {
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 

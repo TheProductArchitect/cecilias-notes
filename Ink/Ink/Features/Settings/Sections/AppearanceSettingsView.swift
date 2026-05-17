@@ -41,10 +41,10 @@ struct AppearanceSettingsView: View {
         }
     }
 
-    private func themeOption(_ theme: InkTheme) -> some View {
+    private func themeOption(_ theme: CeciliasNotesTheme) -> some View {
         let isSelected = viewModel.themeManager.theme == theme
         return Button {
-            withAnimation(.inkSpring(InkSpring.snappy)) {
+            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.themeManager.theme = theme
             }
         } label: {
@@ -75,7 +75,7 @@ struct AppearanceSettingsView: View {
     }
 
     @ViewBuilder
-    private func swatchFill(for theme: InkTheme) -> some View {
+    private func swatchFill(for theme: CeciliasNotesTheme) -> some View {
         switch theme {
         case .light: Color.white
         case .dark:  Color(hex: "#0a0a0a")

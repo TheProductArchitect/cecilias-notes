@@ -101,14 +101,14 @@ struct CoverTexturePreview: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .fill(Color.inkAccentPrimary.opacity(0.7))
             CoverTextureCanvas(texture: texture)
-                .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         }
         .frame(width: 52, height: 52)
         .overlay(
-            RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .strokeBorder(
                     isSelected ? Color.inkAccentPrimary : Color.inkBorderDefault,
                     lineWidth: isSelected ? 2 : 0.5

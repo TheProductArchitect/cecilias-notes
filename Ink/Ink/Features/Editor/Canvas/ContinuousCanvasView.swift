@@ -71,7 +71,7 @@ private final class CanvasHostView: UIView {
 /// Vertical-stack writing surface.
 ///
 /// Lays every page out vertically inside one `UIScrollView` with
-/// `Ink.Spacing.lg` gaps (~24pt) of editor background between pages.
+/// `CeciliasNotes.Spacing.lg` gaps (~24pt) of editor background between pages.
 /// Pinch-zoom zooms the stack together so all pages scale as one
 /// document. Each page is its fixed `page.pageSize.pointSize` — the
 /// previous auto-extend-last-page / scroll-mode machinery was
@@ -343,7 +343,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         var suppressZoomUpdate = false
         private var suppressActivePageUpdates = false
         private var isStrokeInProgress = false
-        var appliedTool: InkTool?
+        var appliedTool: CeciliasNotesTool?
         /// Throttle for auto-add-page-on-bottom-stroke. Without this a
         /// flurry of short strokes near the bottom of the last page would
         /// spawn multiple pages back-to-back.
@@ -771,12 +771,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let page = page(for: hosts[i].pageId) else { return }
             let frame = hosts[i].frame
 
-            // `InkPKCanvasView` overrides `addGestureRecognizer` to
+            // `CeciliasNotesPKCanvasView` overrides `addGestureRecognizer` to
             // reject `UIHoverGestureRecognizer` at install time —
             // prevents the iPadOS 17.5+ Pencil-hover layout pass that
             // shifted rendered strokes. See
             // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
-            let canvas = InkPKCanvasView(frame: frame)
+            let canvas = CeciliasNotesPKCanvasView(frame: frame)
             canvas.delegate = self
             canvas.backgroundColor = .clear
             canvas.isOpaque = false
@@ -825,7 +825,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             #endif
 
             // Hover-recogniser rejection happens inside
-            // `InkPKCanvasView.addGestureRecognizer`. No post-hoc walk
+            // `CeciliasNotesPKCanvasView.addGestureRecognizer`. No post-hoc walk
             // is required — see the subclass's header comment.
 
             contentView.addSubview(canvas)
@@ -921,7 +921,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // MARK: Tool / drawing-policy propagation
 
-        func applyToolToAll(_ tool: InkTool) {
+        func applyToolToAll(_ tool: CeciliasNotesTool) {
             if appliedTool == tool { return }
             appliedTool = tool
             for h in hosts {
@@ -970,7 +970,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// its SwiftUI body has no interactive content. Re-ordering the
         /// SwiftUI hosting views per the active tool puts the right
         /// overlay's tap-catcher first in the responder chain. See Bug 4.
-        func promoteActiveOverlayToFront(for tool: InkTool) {
+        func promoteActiveOverlayToFront(for tool: CeciliasNotesTool) {
             for h in hosts {
                 let renderer = h.renderer
                 switch true {
@@ -994,7 +994,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
-        private func applyTool(_ tool: InkTool, to canvasView: PKCanvasView) {
+        private func applyTool(_ tool: CeciliasNotesTool, to canvasView: PKCanvasView) {
             switch tool {
             case .ruler:
                 canvasView.isRulerActive = true

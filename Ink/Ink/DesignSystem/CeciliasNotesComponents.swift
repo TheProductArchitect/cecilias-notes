@@ -1,23 +1,23 @@
 import SwiftUI
 
-// MARK: - InkButton
+// MARK: - CeciliasNotesButton
 
-public enum InkButtonStyle {
+public enum CeciliasNotesButtonStyle {
     case primary
     case secondary
     case ghost
     case destructive
 }
 
-public struct InkButton: View {
+public struct CeciliasNotesButton: View {
     let label: String
-    let style: InkButtonStyle
+    let style: CeciliasNotesButtonStyle
     let isLoading: Bool
     let action: () -> Void
 
     public init(
         _ label: String,
-        style: InkButtonStyle = .primary,
+        style: CeciliasNotesButtonStyle = .primary,
         isLoading: Bool = false,
         action: @escaping () -> Void
     ) {
@@ -42,10 +42,10 @@ public struct InkButton: View {
                 }
             }
             .frame(minWidth: 44, minHeight: 44)
-            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
             .background(background)
             .overlay(border)
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous))
         }
         .disabled(isLoading)
     }
@@ -66,7 +66,7 @@ public struct InkButton: View {
     @ViewBuilder private var border: some View {
         switch style {
         case .secondary:
-            RoundedRectangle(cornerRadius: Ink.Radius.md, style: .continuous)
+            RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
                 .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
         default:
             EmptyView()
@@ -83,9 +83,9 @@ public struct InkButton: View {
     }
 }
 
-// MARK: - InkTextField
+// MARK: - CeciliasNotesTextField
 
-public struct InkTextField: View {
+public struct CeciliasNotesTextField: View {
     let placeholder: String
     @Binding var text: String
     let icon: String?
@@ -107,7 +107,7 @@ public struct InkTextField: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: Ink.Spacing.sm) {
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
                 if let icon {
                     Image(systemName: icon)
                         .symbolRenderingMode(.hierarchical)
@@ -130,12 +130,12 @@ public struct InkTextField: View {
                         .monospacedDigit()
                 }
             }
-            .padding(.horizontal, Ink.Spacing.sm)
+            .padding(.horizontal, CeciliasNotes.Spacing.sm)
 
             Rectangle()
                 .fill(isFocused ? Color.inkAccentPrimary : Color.inkBorderDefault)
                 .frame(height: 0.5)
-                .inkAnimation(InkSpring.precise, value: isFocused)
+                .inkAnimation(CeciliasNotesSpring.precise, value: isFocused)
         }
         .onChange(of: text) { _, newValue in
             if let maxLength, newValue.count > maxLength {
@@ -147,37 +147,37 @@ public struct InkTextField: View {
 
 // MARK: - .inkCard() modifier
 
-private struct InkCardModifier: ViewModifier {
+private struct CeciliasNotesCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Color.inkBackgroundElevated)
             .overlay(
-                RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous)
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
                     .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
             )
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.lg, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
     }
 }
 
 public extension View {
     func inkCard() -> some View {
-        modifier(InkCardModifier())
+        modifier(CeciliasNotesCardModifier())
     }
 }
 
-// MARK: - InkBadge
+// MARK: - CeciliasNotesBadge
 
-public enum InkBadgeStyle {
+public enum CeciliasNotesBadgeStyle {
     case `default`
     case accent
     case count
 }
 
-public struct InkBadge: View {
+public struct CeciliasNotesBadge: View {
     let text: String
-    let style: InkBadgeStyle
+    let style: CeciliasNotesBadgeStyle
 
-    public init(_ text: String, style: InkBadgeStyle = .default) {
+    public init(_ text: String, style: CeciliasNotesBadgeStyle = .default) {
         self.text = text
         self.style = style
     }
@@ -187,8 +187,8 @@ public struct InkBadge: View {
             .font(style == .count ? .inkCaption : .inkFootnote)
             .fontWeight(style == .count ? .semibold : .regular)
             .foregroundColor(foregroundColor)
-            .padding(.horizontal, style == .count ? Ink.Spacing.xs : Ink.Spacing.sm)
-            .padding(.vertical, Ink.Spacing.micro)
+            .padding(.horizontal, style == .count ? CeciliasNotes.Spacing.xs : CeciliasNotes.Spacing.sm)
+            .padding(.vertical, CeciliasNotes.Spacing.micro)
             .background(background)
             .clipShape(Capsule())
     }
@@ -210,9 +210,9 @@ public struct InkBadge: View {
     }
 }
 
-// MARK: - InkDivider
+// MARK: - CeciliasNotesDivider
 
-public struct InkDivider: View {
+public struct CeciliasNotesDivider: View {
     public init() {}
 
     public var body: some View {
@@ -223,9 +223,9 @@ public struct InkDivider: View {
     }
 }
 
-// MARK: - InkEmptyState
+// MARK: - CeciliasNotesEmptyState
 
-public struct InkEmptyState: View {
+public struct CeciliasNotesEmptyState: View {
     let icon: String
     let title: String
     let subtitle: String
@@ -244,14 +244,14 @@ public struct InkEmptyState: View {
     }
 
     public var body: some View {
-        VStack(spacing: Ink.Spacing.md) {
+        VStack(spacing: CeciliasNotes.Spacing.md) {
             Image(systemName: icon)
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 44))
                 .fontWeight(.medium)
                 .foregroundColor(.inkTextTertiary)
 
-            VStack(spacing: Ink.Spacing.xs) {
+            VStack(spacing: CeciliasNotes.Spacing.xs) {
                 Text(title)
                     .font(.inkTitle2)
                     .foregroundColor(.inkTextSecondary)
@@ -264,11 +264,11 @@ public struct InkEmptyState: View {
             }
 
             if let action {
-                InkButton(action.label, style: .primary, action: action.handler)
-                    .padding(.top, Ink.Spacing.sm)
+                CeciliasNotesButton(action.label, style: .primary, action: action.handler)
+                    .padding(.top, CeciliasNotes.Spacing.sm)
             }
         }
-        .padding(Ink.Spacing.xl)
+        .padding(CeciliasNotes.Spacing.xl)
         .frame(maxWidth: 320)
     }
 }

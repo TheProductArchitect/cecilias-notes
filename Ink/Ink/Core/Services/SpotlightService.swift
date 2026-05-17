@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// index entry immediately.
 ///
 /// Deep-link contract: `uniqueIdentifier == "ink.notebook.{uuid}"`.
-/// `InkApp.onContinueUserActivity` parses this and routes to the editor.
+/// `CeciliasNotesApp.onContinueUserActivity` parses this and routes to the editor.
 actor SpotlightService {
 
     static let shared = SpotlightService()
@@ -65,7 +65,7 @@ actor SpotlightService {
         }
     }
 
-    /// Removes ALL Ink-domain entries (e.g. on account reset, signing out of iCloud).
+    /// Removes ALL CeciliasNotes-domain entries (e.g. on account reset, signing out of iCloud).
     func removeAllNotebooks() async {
         try? await CSSearchableIndex.default()
             .deleteSearchableItems(withDomainIdentifiers: [Self.domain])

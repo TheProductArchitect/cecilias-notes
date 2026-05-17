@@ -14,12 +14,12 @@ struct LinkPopoverView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(existingURL == nil ? "Add Link" : "Edit Link")
                 .font(.inkSubhead)
                 .foregroundColor(.inkTextPrimary)
 
-            HStack(spacing: Ink.Spacing.xs) {
+            HStack(spacing: CeciliasNotes.Spacing.xs) {
                 Image(systemName: "link")
                     .font(.system(size: 14))
                     .foregroundColor(.inkTextTertiary)
@@ -34,11 +34,11 @@ struct LinkPopoverView: View {
                     .focused($isFocused)
                     .onSubmit { tryApply() }
             }
-            .padding(Ink.Spacing.sm)
+            .padding(CeciliasNotes.Spacing.sm)
             .background(Color.inkBackgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
 
-            HStack(spacing: Ink.Spacing.sm) {
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
                 if existingURL != nil {
                     Button("Remove", role: .destructive) {
                         onRemove()
@@ -63,7 +63,7 @@ struct LinkPopoverView: View {
                 .disabled(!isValidURL)
             }
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .frame(width: 300)
         .onAppear {
             urlText   = existingURL?.absoluteString ?? ""

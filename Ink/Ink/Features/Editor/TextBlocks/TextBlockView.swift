@@ -2,11 +2,11 @@ import SafariServices
 import SwiftUI
 import UIKit
 
-// MARK: - InkTextView
+// MARK: - CeciliasNotesTextView
 
 /// UITextView subclass that adds Cmd+B/I/U/K key commands and exposes a
 /// callback so the hosting coordinator can respond without being in the responder chain.
-final class InkTextView: UITextView {
+final class CeciliasNotesTextView: UITextView {
 
     var onKeyCommand: ((RichTextToolbar.Action) -> Void)?
     var onEscape:     (() -> Void)?
@@ -103,7 +103,7 @@ struct TextBlockView: UIViewRepresentable {
                     onHeightChange: onHeightChange, onRequestLink: onRequestLink)
     }
 
-    func makeUIView(context: Context) -> InkTextView {
+    func makeUIView(context: Context) -> CeciliasNotesTextView {
         // TextKit 2 storage stack
         let storage    = NSTextContentStorage()
         let manager    = NSTextLayoutManager()
@@ -112,7 +112,7 @@ struct TextBlockView: UIViewRepresentable {
         manager.textContainer = container
         storage.addTextLayoutManager(manager)
 
-        let textView = InkTextView(frame: .zero, textContainer: container)
+        let textView = CeciliasNotesTextView(frame: .zero, textContainer: container)
         textView.backgroundColor   = .clear
         textView.isScrollEnabled   = false
         textView.isEditable        = false
@@ -135,7 +135,7 @@ struct TextBlockView: UIViewRepresentable {
         toolbar.delegate = context.coordinator
         textView.inputAccessoryView = toolbar
 
-        // Wire external keyboard shortcuts through InkTextView callbacks
+        // Wire external keyboard shortcuts through CeciliasNotesTextView callbacks
         let coordinator = context.coordinator
         textView.onKeyCommand = { [weak coordinator] action in
             guard let coord = coordinator, let tb = coord.toolbar else { return }
@@ -191,7 +191,7 @@ struct TextBlockView: UIViewRepresentable {
         return textView
     }
 
-    func updateUIView(_ textView: InkTextView, context: Context) {
+    func updateUIView(_ textView: CeciliasNotesTextView, context: Context) {
         // Sync editability with interaction state
         let shouldEdit = interactionState == .editing
         if textView.isEditable != shouldEdit {

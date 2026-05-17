@@ -1,8 +1,8 @@
 import SwiftUI
 
-// MARK: - InkPressableButtonStyle
+// MARK: - CeciliasNotesPressableButtonStyle
 
-/// Default press feedback for every tappable surface in Ink.
+/// Default press feedback for every tappable surface in Cecilia's Notes.
 ///
 /// On touch-down: scales to 0.96 and dims to 95% opacity.
 /// On release:    snaps back via a short interactive spring.
@@ -12,7 +12,7 @@ import SwiftUI
 /// on the call-site expansion (`.contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44)`).
 /// This style does NOT enforce a hit target on its own — it stays
 /// label-shape-agnostic so it composes with any visual sizing.
-public struct InkPressableButtonStyle: ButtonStyle {
+public struct CeciliasNotesPressableButtonStyle: ButtonStyle {
 
     public init() {}
 
@@ -27,10 +27,10 @@ public struct InkPressableButtonStyle: ButtonStyle {
     }
 }
 
-public extension ButtonStyle where Self == InkPressableButtonStyle {
+public extension ButtonStyle where Self == CeciliasNotesPressableButtonStyle {
     /// `Button(...).buttonStyle(.inkPressable)` — the standard press feedback
-    /// for every interactive surface in Ink.
-    static var inkPressable: InkPressableButtonStyle { InkPressableButtonStyle() }
+    /// for every interactive surface in Cecilia's Notes.
+    static var inkPressable: CeciliasNotesPressableButtonStyle { CeciliasNotesPressableButtonStyle() }
 }
 
 // MARK: - Hit target expansion

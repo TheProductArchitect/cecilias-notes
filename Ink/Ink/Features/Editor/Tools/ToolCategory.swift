@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - ToolCategory
 
-/// Groups InkTool variants. The palette renders one category button per
+/// Groups CeciliasNotesTool variants. The palette renders one category button per
 /// case; the button shows the user's *last-used variant* for that category
 /// (so when the user has just been using Fountain Pen, the Pen button
 /// shows the fountain-pen glyph).
@@ -19,7 +19,7 @@ enum ToolCategory: String, CaseIterable, Codable {
 
     /// Variants in display order. The first element is the category default
     /// (the variant a never-touched category falls back to).
-    var variants: [InkTool.Identity] {
+    var variants: [CeciliasNotesTool.Identity] {
         switch self {
         case .pen:         return [.pen, .fountainPen, .monoline]
         case .pencil:      return [.pencil, .crayon]
@@ -34,7 +34,7 @@ enum ToolCategory: String, CaseIterable, Codable {
         }
     }
 
-    var defaultVariant: InkTool.Identity {
+    var defaultVariant: CeciliasNotesTool.Identity {
         variants.first ?? .pen
     }
 
@@ -48,9 +48,9 @@ enum ToolCategory: String, CaseIterable, Codable {
     }
 }
 
-// MARK: - InkTool.Identity → ToolCategory
+// MARK: - CeciliasNotesTool.Identity → ToolCategory
 
-extension InkTool.Identity {
+extension CeciliasNotesTool.Identity {
     /// Reverse lookup. Nil for utility tools (eraser, lasso, ruler, text)
     /// that aren't part of the category system.
     var category: ToolCategory? {

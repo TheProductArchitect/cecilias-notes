@@ -20,7 +20,7 @@ struct PencilSettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: Ink.Spacing.lg) {
+            VStack(spacing: CeciliasNotes.Spacing.lg) {
                 doubleTapCard
                 togglesCard
                 if PencilProSupport.isSqueezeSupported {
@@ -32,7 +32,7 @@ struct PencilSettingsView: View {
                 // renderer ships. PencilKit doesn't expose the hooks needed to
                 // honour either setting (audit findings #39, #40).
             }
-            .padding(Ink.Spacing.lg)
+            .padding(CeciliasNotes.Spacing.lg)
         }
         .background(Color.inkBackgroundSecondary.ignoresSafeArea())
         .navigationTitle("Apple Pencil")
@@ -46,7 +46,7 @@ struct PencilSettingsView: View {
     /// four labels at the Settings sheet's typical width and squashed
     /// surrounding cards.
     private var doubleTapCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             cardHeader("Double-Tap Action")
 
             VStack(spacing: 0) {
@@ -56,7 +56,7 @@ struct PencilSettingsView: View {
                     if action != DoubleTapAction.allCases.last {
                         Divider()
                             .background(Color.inkRecessiveQuaternary.opacity(0.3))
-                            .padding(.leading, Ink.Spacing.md)
+                            .padding(.leading, CeciliasNotes.Spacing.md)
                     }
                 }
             }
@@ -66,7 +66,7 @@ struct PencilSettingsView: View {
                 .font(.inkCaption)
                 .foregroundColor(.inkTextTertiary)
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 
@@ -86,7 +86,7 @@ struct PencilSettingsView: View {
                         .foregroundStyle(Color.brandAccent)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
@@ -107,11 +107,11 @@ struct PencilSettingsView: View {
                 Text("Allow drawing with your finger. When off, finger gestures scroll and zoom the canvas.")
                     .font(.inkCaption)
                     .foregroundColor(.inkTextTertiary)
-                    .padding(.horizontal, Ink.Spacing.md)
-                    .padding(.bottom, Ink.Spacing.sm)
+                    .padding(.horizontal, CeciliasNotes.Spacing.md)
+                    .padding(.bottom, CeciliasNotes.Spacing.sm)
             }
 
-            InkDivider()
+            CeciliasNotesDivider()
 
             VStack(alignment: .leading, spacing: 2) {
                 toggleRow(
@@ -122,12 +122,12 @@ struct PencilSettingsView: View {
                 Text("Subtle vibration as you draw.")
                     .font(.inkCaption)
                     .foregroundColor(.inkTextTertiary)
-                    .padding(.horizontal, Ink.Spacing.md)
-                    .padding(.bottom, Ink.Spacing.sm)
+                    .padding(.horizontal, CeciliasNotes.Spacing.md)
+                    .padding(.bottom, CeciliasNotes.Spacing.sm)
             }
 
             if viewModel.supportsHoverPreview {
-                InkDivider()
+                CeciliasNotesDivider()
                 toggleRow(
                     "Pencil Hover Preview",
                     systemImage: "pencil.tip",
@@ -145,8 +145,8 @@ struct PencilSettingsView: View {
     /// double-tap card's list-row pattern. When "Switch to tool"
     /// is selected, a second card surfaces with the tool list.
     private var squeezeCard: some View {
-        VStack(spacing: Ink.Spacing.lg) {
-            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(spacing: CeciliasNotes.Spacing.lg) {
+            VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
                 cardHeader("Squeeze")
                 VStack(spacing: 0) {
                     ForEach(SqueezeAction.allCases, id: \.rawValue) { action in
@@ -154,7 +154,7 @@ struct PencilSettingsView: View {
                         if action != SqueezeAction.allCases.last {
                             Divider()
                                 .background(Color.inkRecessiveQuaternary.opacity(0.3))
-                                .padding(.leading, Ink.Spacing.md)
+                                .padding(.leading, CeciliasNotes.Spacing.md)
                         }
                     }
                 }
@@ -164,7 +164,7 @@ struct PencilSettingsView: View {
                     .font(.inkCaption)
                     .foregroundColor(.inkTextTertiary)
             }
-            .padding(Ink.Spacing.md)
+            .padding(CeciliasNotes.Spacing.md)
             .inkCard()
 
             if viewModel.squeezeAction == .tool {
@@ -189,7 +189,7 @@ struct PencilSettingsView: View {
                         .foregroundStyle(Color.brandAccent)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
@@ -200,7 +200,7 @@ struct PencilSettingsView: View {
     /// Tool sub-list shown beneath the squeeze card when "Switch
     /// to tool" is the active action. Same list-row pattern.
     private var squeezeToolCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             cardHeader("Tool")
             VStack(spacing: 0) {
                 ForEach(SqueezeToolChoice.allCases, id: \.rawValue) { choice in
@@ -208,13 +208,13 @@ struct PencilSettingsView: View {
                     if choice != SqueezeToolChoice.allCases.last {
                         Divider()
                             .background(Color.inkRecessiveQuaternary.opacity(0.3))
-                            .padding(.leading, Ink.Spacing.md)
+                            .padding(.leading, CeciliasNotes.Spacing.md)
                     }
                 }
             }
             .background(Color(.systemBackground))
         }
-        .padding(Ink.Spacing.md)
+        .padding(CeciliasNotes.Spacing.md)
         .inkCard()
     }
 
@@ -234,7 +234,7 @@ struct PencilSettingsView: View {
                         .foregroundStyle(Color.brandAccent)
                 }
             }
-            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
@@ -250,8 +250,8 @@ struct PencilSettingsView: View {
         }
         .toggleStyle(.switch)
         .tint(.inkAccentPrimary)
-        .padding(.horizontal, Ink.Spacing.md)
-        .padding(.vertical, Ink.Spacing.sm)
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
 
     private func cardHeader(_ title: String) -> some View {
