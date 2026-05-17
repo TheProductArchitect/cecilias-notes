@@ -57,7 +57,10 @@ private struct HomeSmallView: View {
             GhostLetter()
             VStack(alignment: .leading, spacing: 4) {
                 Spacer(minLength: 0)
-                BrandPossessive(size: 28)
+                // +2pt from the previous 28 — the brand mark was
+                // reading as thin/illegible at small widget scale
+                // against the ghost letter sharing the canvas.
+                BrandPossessive(size: 30)
                 Text("new note")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(.cnAccent)
@@ -96,7 +99,10 @@ private struct HomeMediumView: View {
                     GhostLetter()
                     VStack(alignment: .leading, spacing: 4) {
                         Spacer(minLength: 0)
-                        BrandPossessive(size: 26)
+                        // +2pt — same legibility bump as the small
+                        // widget. Medium's left half is roughly the
+                        // size of the small widget anyway.
+                        BrandPossessive(size: 28)
                         Text("new note")
                             .font(.system(size: 11, weight: .regular))
                             .foregroundColor(.cnAccent)
@@ -170,18 +176,31 @@ struct LockCircularNewNoteWidget: Widget {
 }
 
 private struct LockCircularView: View {
+
+    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.com.wave.venu.Ink"))
+    private var sharedName: String = ""
+
+    /// First-letter of the user's name, lowercased, ASCII-only.
+    /// Falls back to "c" (Cecilia's Notes brand default).
+    private var initial: String {
+        let trimmed = sharedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let first = trimmed.lowercased().first.map(String.init) ?? "c"
+        return first
+    }
+
     var body: some View {
-        VStack(spacing: 2) {
-            // The brand dot — tinted by the system's lock-screen
-            // accent treatment via `.widgetAccentable()`.
-            Text("·")
-                .font(.system(size: 36, weight: .heavy))
-                .widgetAccentable()
-            Text("new")
-                .font(.system(size: 11, weight: .regular))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .widgetURL(URL(string: "ink://quick-capture"))
+        // Simplified per the legibility pass — the circular slot
+        // is tiny, the brand dot wasn't legible alongside the
+        // "new" label. Letter-only reads cleanly under the
+        // system's accent tint. `.widgetAccentable()` lets iOS
+        // apply its accent colour in full-colour AND vibrant
+        // rendering modes.
+        Text(initial)
+            .font(.system(size: 28, weight: .heavy))
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .widgetAccentable()
+            .widgetURL(URL(string: "ink://quick-capture"))
     }
 }
 
@@ -281,16 +300,25 @@ private struct BrandPossessive: View {
                 .tracking(-0.05 * size)
                 .foregroundColor(.cnPrimary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                // 0.7 floor (was 0.6) — long names scale down a
+                // bit less aggressively, keeping the heavy weight
+                // recognisable rather than collapsing too far.
+                .minimumScaleFactor(0.7)
 
-            HStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text("notes")
                     .foregroundColor(.cnRecessive)
+                    .font(.system(size: size * 0.28, weight: .regular))
+                // The blue middle dot needs an explicit minimum
+                // size to stay visible at widget scale — the
+                // previous shared `size * 0.28` made it ~7pt for
+                // the lock-rect's size:13 mark, which all but
+                // disappeared. Floor at 16pt.
                 Text("·")
+                    .font(.system(size: max(16, size * 0.42), weight: .heavy))
                     .foregroundColor(.cnAccent)
                     .widgetAccentable()
             }
-            .font(.system(size: size * 0.28, weight: .regular))
         }
     }
 }

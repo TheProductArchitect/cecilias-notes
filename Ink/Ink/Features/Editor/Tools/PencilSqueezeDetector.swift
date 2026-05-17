@@ -14,7 +14,27 @@ import UIKit
 /// Wired to the editor's main ZStack via `.background(...)`. Pass a
 /// callback that opens the radial tool wheel.
 struct PencilSqueezeDetector: UIViewRepresentable {
-    let onSqueeze: () -> Void
+    /// Fires once per squeeze when the user releases. Used by the
+    /// `.palette` action to toggle the tool wheel open/closed.
+    let onSqueezeReleased: () -> Void
+    /// Fires when the squeeze begins (finger contact on the squeeze
+    /// sensor). Used by the `.tool` action to switch to the chosen
+    /// tool while the squeeze is held. Optional — `.palette` action
+    /// callers can pass `nil`.
+    let onSqueezeBegan: (() -> Void)?
+    /// Pairs with `onSqueezeBegan`. Fires when the squeeze ends or
+    /// is cancelled — the `.tool` action restores the previous tool.
+    let onSqueezeEndedOrCancelled: (() -> Void)?
+
+    init(
+        onSqueezeReleased: @escaping () -> Void,
+        onSqueezeBegan: (() -> Void)? = nil,
+        onSqueezeEndedOrCancelled: (() -> Void)? = nil
+    ) {
+        self.onSqueezeReleased         = onSqueezeReleased
+        self.onSqueezeBegan            = onSqueezeBegan
+        self.onSqueezeEndedOrCancelled = onSqueezeEndedOrCancelled
+    }
 
     func makeUIView(context: Context) -> UIView {
         let v = PassthroughHostView()
@@ -25,23 +45,56 @@ struct PencilSqueezeDetector: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {
-        context.coordinator.onSqueeze = onSqueeze
+        context.coordinator.onSqueezeReleased         = onSqueezeReleased
+        context.coordinator.onSqueezeBegan            = onSqueezeBegan
+        context.coordinator.onSqueezeEndedOrCancelled = onSqueezeEndedOrCancelled
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onSqueeze: onSqueeze) }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onSqueezeReleased: onSqueezeReleased,
+            onSqueezeBegan: onSqueezeBegan,
+            onSqueezeEndedOrCancelled: onSqueezeEndedOrCancelled
+        )
+    }
 
     final class Coordinator: NSObject, UIPencilInteractionDelegate {
-        var onSqueeze: () -> Void
-        init(onSqueeze: @escaping () -> Void) { self.onSqueeze = onSqueeze }
+        var onSqueezeReleased:         () -> Void
+        var onSqueezeBegan:            (() -> Void)?
+        var onSqueezeEndedOrCancelled: (() -> Void)?
 
-        // iOS 17.5+ Pencil Pro squeeze. The phase fires .began then .ended;
-        // we only want one trigger per squeeze — treat .ended as the commit.
+        init(
+            onSqueezeReleased: @escaping () -> Void,
+            onSqueezeBegan: (() -> Void)?,
+            onSqueezeEndedOrCancelled: (() -> Void)?
+        ) {
+            self.onSqueezeReleased         = onSqueezeReleased
+            self.onSqueezeBegan            = onSqueezeBegan
+            self.onSqueezeEndedOrCancelled = onSqueezeEndedOrCancelled
+        }
+
+        // iOS 17.5+ Pencil Pro squeeze. Phases:
+        //   .began  → user pressed the squeeze sensor; fire began callback
+        //             so the `.tool` press-and-hold path can switch tools.
+        //   .ended  → user released; fire BOTH ended (restore previous tool)
+        //             AND released (toggle palette). Call sites pick which.
+        //   .cancelled → fire ended (restore tool); skip released.
         @available(iOS 17.5, *)
         func pencilInteraction(
             _ interaction: UIPencilInteraction,
             didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze
         ) {
-            if squeeze.phase == .ended { onSqueeze() }
+            switch squeeze.phase {
+            case .began:
+                onSqueezeBegan?()
+            case .ended:
+                onSqueezeEndedOrCancelled?()
+                onSqueezeReleased()
+            case .cancelled:
+                onSqueezeEndedOrCancelled?()
+            @unknown default:
+                break
+            }
         }
     }
 }

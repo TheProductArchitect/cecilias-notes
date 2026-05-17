@@ -17,14 +17,41 @@ actor SpeechTranscriber {
     // MARK: - Live transcription
 
     private var liveRequest:      SFSpeechAudioBufferRecognitionRequest?
+    private var liveTask:         SFSpeechRecognitionTask?
     private var liveContinuation: AsyncStream<String>.Continuation?
 
     /// Returns an `AsyncStream<String>` of partial hypotheses emitted as the user speaks.
     /// Append PCM buffers via `appendBuffer(_:)`. Call `finishLive()` when recording stops.
     func startLive() async -> AsyncStream<String> {
-        guard await requestSpeechPermission(),
-              let recognizer = makeSupportedRecognizer()
-        else { return AsyncStream { $0.finish() } }
+        #if DEBUG
+        print("[Audio] 6. SpeechTranscriber.startLive() called")
+        #endif
+        // Unconditional cleanup of any prior session. A leftover
+        // `SFSpeechRecognitionTask` holds the recogniser and blocks
+        // a new one from connecting — the `handwritingd`-daemon
+        // invalidations seen in the console are exactly this
+        // contention. Cancel + nil the previous task BEFORE
+        // making any new request, even if the task appears finished.
+        liveTask?.cancel()
+        liveTask = nil
+        liveRequest?.endAudio()
+        liveRequest = nil
+        liveContinuation?.finish()
+        liveContinuation = nil
+
+        let permission = await requestSpeechPermission()
+        #if DEBUG
+        print("[Audio] 7. speech permission granted=\(permission)")
+        #endif
+        guard permission, let recognizer = makeSupportedRecognizer() else {
+            #if DEBUG
+            print("[Audio] 7b. no supported recognizer — bailing. permission=\(permission)")
+            #endif
+            return AsyncStream { $0.finish() }
+        }
+        #if DEBUG
+        print("[Audio] 8. recognizer locale=\(recognizer.locale.identifier) isAvailable=\(recognizer.isAvailable) supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
+        #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults   = true
@@ -35,8 +62,24 @@ actor SpeechTranscriber {
         let (stream, continuation) = AsyncStream<String>.makeStream()
         liveContinuation = continuation
 
-        recognizer.recognitionTask(with: request) { [weak self] result, error in
+        #if DEBUG
+        nonisolated(unsafe) var resultCount = 0
+        #endif
+        liveTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
+            #if DEBUG
+            if let error {
+                print("[Audio] recognitionTask error: \(error.localizedDescription)")
+            }
+            if let result {
+                resultCount += 1
+                let isFinal = result.isFinal
+                let text = result.bestTranscription.formattedString
+                if resultCount == 1 || resultCount % 10 == 0 || isFinal {
+                    print("[Audio] result #\(resultCount) isFinal=\(isFinal) len=\(text.count) text=\"\(text.prefix(60))\"")
+                }
+            }
+            #endif
             if let result {
                 Task { await self.yieldLive(result.bestTranscription.formattedString) }
             }
@@ -44,6 +87,9 @@ actor SpeechTranscriber {
                 Task { await self.finishLive() }
             }
         }
+        #if DEBUG
+        print("[Audio] 9. recognitionTask started")
+        #endif
         return stream
     }
 
@@ -57,6 +103,8 @@ actor SpeechTranscriber {
 
     func finishLive() {
         liveRequest?.endAudio()
+        liveTask?.cancel()
+        liveTask         = nil
         liveRequest      = nil
         liveContinuation?.finish()
         liveContinuation = nil
@@ -103,21 +151,43 @@ actor SpeechTranscriber {
     /// Takes annotation `id` (not the model) to avoid cross-actor SwiftData access.
     /// All StorageService calls are dispatched back to the main actor.
     func transcribe(url: URL, annotationId: UUID) async {
+        #if DEBUG
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+        print("[Audio] transcribe(url:) start file=\(url.lastPathComponent) size=\(fileSize)B")
+        #endif
         // 1. Amplitude extraction — no speech permission needed
         let amplitudes = await extractAmplitudes(from: url)
+        #if DEBUG
+        print("[Audio] transcribe(url:) amplitudes extracted count=\(amplitudes.count)")
+        #endif
         if !amplitudes.isEmpty {
-            let data = try? JSONEncoder().encode(amplitudes)
+            #if DEBUG
+            print("[Audio] transcribe(url:) about to write amplitudes on main")
+            #endif
             await MainActor.run {
-                if let annotation = StorageService.shared.fetchAudioAnnotation(id: annotationId) {
-                    try? StorageService.shared.updateAmplitudeData(annotation, amplitudeData: data)
+                if let record = StorageService.shared.fetchAudioRecord(id: annotationId) {
+                    try? StorageService.shared.updateAmplitudes(record, amplitudes: amplitudes)
                 }
             }
+            #if DEBUG
+            print("[Audio] transcribe(url:) amplitude write complete")
+            #endif
         }
 
         // 2. Speech recognition — on-device only
-        guard await requestSpeechPermission(),
-              let recognizer = makeSupportedRecognizer()
-        else { return }
+        let permission = await requestSpeechPermission()
+        #if DEBUG
+        print("[Audio] transcribe(url:) speech permission=\(permission)")
+        #endif
+        guard permission, let recognizer = makeSupportedRecognizer() else {
+            #if DEBUG
+            print("[Audio] transcribe(url:) bailing — no recognizer or no permission")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[Audio] transcribe(url:) recognizer locale=\(recognizer.locale.identifier) isAvailable=\(recognizer.isAvailable) supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
+        #endif
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults  = false
@@ -127,10 +197,14 @@ actor SpeechTranscriber {
         let transcriptionResult: (text: String, segments: [TranscriptionSegment])? =
             await withCheckedContinuation { cont in
                 recognizer.recognitionTask(with: request) { result, error in
-                    guard let result, result.isFinal else {
-                        if error != nil { cont.resume(returning: nil) }
+                    if let error {
+                        #if DEBUG
+                        print("[Audio] transcribe(url:) recognition error: \(error.localizedDescription)")
+                        #endif
+                        cont.resume(returning: nil)
                         return
                     }
+                    guard let result, result.isFinal else { return }
                     let text = result.bestTranscription.formattedString
                     let segs = result.bestTranscription.segments.map {
                         TranscriptionSegment(
@@ -144,16 +218,34 @@ actor SpeechTranscriber {
                 }
             }
 
+        #if DEBUG
+        print("[Audio] transcribe(url:) result len=\(transcriptionResult?.text.count ?? -1)")
+        #endif
         guard let result = transcriptionResult else { return }
 
+        #if DEBUG
+        print("[Audio] transcribe(url:) about to write transcript on main isMain=\(Thread.isMainThread)")
+        #endif
         await MainActor.run {
-            if let annotation = StorageService.shared.fetchAudioAnnotation(id: annotationId) {
-                try? StorageService.shared.updateTranscription(
-                    annotation,
-                    text: result.text,
-                    segments: result.segments
-                )
+            #if DEBUG
+            print("[Audio] transcribe(url:) on main: fetching record")
+            #endif
+            guard let record = StorageService.shared.fetchAudioRecord(id: annotationId) else {
+                #if DEBUG
+                print("[Audio] transcribe(url:) record gone — skipping write")
+                #endif
+                return
             }
+            #if DEBUG
+            print("[Audio] transcribe(url:) on main: writing transcript len=\(result.text.count)")
+            #endif
+            // Phase 5A+5C Step 3: word-level segments dropped (the
+            // popover that consumed them was deleted in Phase 4B).
+            // Single-call write of just the text.
+            try? StorageService.shared.updateTranscription(record, text: result.text)
+            #if DEBUG
+            print("[Audio] transcribe(url:) on main: write complete")
+            #endif
         }
     }
 

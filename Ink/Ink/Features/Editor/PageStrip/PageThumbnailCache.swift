@@ -3,8 +3,23 @@ import PDFKit
 import PencilKit
 import UIKit
 
-/// Singleton cache of page thumbnails. NSCache evicts under memory pressure.
-/// Generation always happens off the main actor; results are stored on the main actor.
+/// Singleton cache of page thumbnails. NSCache evicts under memory
+/// pressure. Generation always happens off the main actor; results
+/// are stored on the main actor.
+///
+/// Phase 4E: cache keys are now composite `(pageId,
+/// strokeFingerprint, pdfFingerprint)`. A new sketch produces a new
+/// fingerprint and therefore a new entry; old entries orphan and
+/// evict naturally. Manual `invalidate(pageId:)` is no longer needed
+/// from the save path — the row asks for the thumbnail that matches
+/// the current fingerprint and the cache either hits or renders.
+///
+/// In-flight de-duplication: when two concurrent saves both call
+/// `generate(for:targetSize:)` for the same key, the second call
+/// awaits the first's result instead of starting a second render
+/// task. This kills the historical race where two parallel renders
+/// completed out of order and the older snapshot overwrote the
+/// newer one in the cache.
 final class PageThumbnailCache {
 
     static let shared = PageThumbnailCache()
@@ -12,33 +27,79 @@ final class PageThumbnailCache {
         cache.totalCostLimit = 100 * 1024 * 1024  // 100MB (Stage 10 perf target)
     }
 
-    private let cache = NSCache<NSUUID, UIImage>()
+    // MARK: - Cache key
+
+    struct Key: Hashable {
+        let pageId: UUID
+        let strokeFingerprint: UInt64
+        let pdfFingerprint: UInt64
+    }
+
+    /// Cheap, deterministic 64-bit fingerprint of stroke bytes. Uses
+    /// FNV-1a folded over a stride so a 100KB drawing is processed in
+    /// ~1KB samples — fast enough to call on every body evaluation
+    /// without blocking the main thread. Sample-based; two different
+    /// drawings could theoretically collide, but a single new stroke
+    /// changes the size and the high-frequency samples reliably.
+    static func fingerprint(of data: Data?) -> UInt64 {
+        guard let data, !data.isEmpty else { return 0 }
+        var hash: UInt64 = 14695981039346656037   // FNV offset basis
+        let prime: UInt64 = 1099511628211
+        let stride = max(1, data.count / 1024)
+        var index = 0
+        // Include the byte count so size deltas alone produce a new
+        // fingerprint even when the sampled positions happen to match.
+        let countBytes = withUnsafeBytes(of: UInt64(data.count).littleEndian) { Array($0) }
+        for b in countBytes {
+            hash ^= UInt64(b)
+            hash = hash &* prime
+        }
+        while index < data.count {
+            hash ^= UInt64(data[index])
+            hash = hash &* prime
+            index += stride
+        }
+        return hash
+    }
+
+    // MARK: - Storage
+
+    private let cache = NSCache<NSString, UIImage>()
+    /// In-flight render coalescer. Keyed by the composite `Key`. When
+    /// a second `generate` lands while the first is still running it
+    /// awaits the same task instead of starting a new one.
+    private var inflight: [Key: Task<UIImage?, Never>] = [:]
+    /// Lock guarding `inflight`. NSCache itself is thread-safe.
+    private let inflightLock = NSLock()
 
     // MARK: Public API
 
-    /// Returns a cached thumbnail synchronously, or nil if not cached.
-    func thumbnail(for pageId: UUID) -> UIImage? {
-        cache.object(forKey: pageId as NSUUID)
+    /// Returns the cached thumbnail for an exact composite key, or
+    /// `nil` if not cached. The row should pass the latest fingerprint
+    /// computed from `page.strokeData`.
+    func thumbnail(for key: Key) -> UIImage? {
+        cache.object(forKey: cacheKey(key))
     }
 
-    /// Generates a thumbnail off the main actor and caches the result.
-    /// `targetSize` is in points; output respects screen scale. Rendering
-    /// is forced to light-mode trait collection so paper colour and
-    /// PencilKit dynamic stroke colours resolve deterministically — the
-    /// previous implementation read `UITraitCollection.current` from a
-    /// non-main executor, which sometimes returned `.unspecified` and
-    /// sometimes the dark style, producing solid-black thumbnails when
-    /// dark-resolved strokes happened to be drawn over the dark paper
-    /// background.
+    /// Generates a thumbnail for the given key off the main actor and
+    /// caches the result. Concurrent calls for the same key share the
+    /// underlying task.
     func generate(for page: Page, targetSize: CGSize) async -> UIImage? {
-        if let cached = thumbnail(for: page.id) { return cached }
+        let key = composeKey(for: page)
 
+        if let cached = thumbnail(for: key) {
+            #if DEBUG
+            print("[Thumb] cache hit pageId=\(page.id) fp=\(key.strokeFingerprint)")
+            #endif
+            return cached
+        }
+
+        // Snapshot the data we need off the main actor before
+        // detaching. Reading `page.strokeData` and `page.pdfPageIndex`
+        // here keeps the detached task off SwiftData.
         let pageId    = page.id
         let pageRect  = CGRect(origin: .zero, size: page.pageSize.pointSize)
         let strokeData = page.strokeData
-        // Snapshot the PDF backing on the main actor so the detached
-        // render task can read a sendable URL + index pair without
-        // touching the SwiftData model off-actor.
         let pdfBacking: (url: URL, index: Int)? = {
             guard let index = page.pdfPageIndex else { return nil }
             let url = StorageService.shared.sourcePDFURL(page.notebookId)
@@ -47,39 +108,82 @@ final class PageThumbnailCache {
                 : nil
         }()
 
-        return await Task.detached(priority: .utility) { [cache] () -> UIImage? in
+        // In-flight dedupe.
+        inflightLock.lock()
+        if let existing = inflight[key] {
+            inflightLock.unlock()
+            #if DEBUG
+            print("[Thumb] await in-flight pageId=\(pageId) fp=\(key.strokeFingerprint)")
+            #endif
+            return await existing.value
+        }
+        let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
+            #if DEBUG
+            print("[Thumb] render begin pageId=\(pageId) fp=\(key.strokeFingerprint) strokes=\(strokeData?.count ?? 0)")
+            #endif
             let image = await Self.render(
                 strokeData: strokeData,
                 pageRect: pageRect,
                 targetSize: targetSize,
                 pdfBacking: pdfBacking
             )
-            if let image {
-                cache.setObject(image, forKey: pageId as NSUUID, cost: image.uncheckedByteCount)
+            if let image, let self {
+                self.cache.setObject(
+                    image,
+                    forKey: self.cacheKey(key),
+                    cost: image.uncheckedByteCount
+                )
             }
+            #if DEBUG
+            print("[Thumb] render end   pageId=\(pageId) fp=\(key.strokeFingerprint) success=\(image != nil)")
+            #endif
             return image
-        }.value
+        }
+        inflight[key] = task
+        inflightLock.unlock()
+
+        let result = await task.value
+
+        inflightLock.lock()
+        inflight[key] = nil
+        inflightLock.unlock()
+
+        return result
     }
 
-    func set(_ image: UIImage, for pageId: UUID) {
-        cache.setObject(image, forKey: pageId as NSUUID, cost: image.uncheckedByteCount)
+    /// Compose a `Key` from a page on the main actor. Cheap — the
+    /// fingerprint sample-walks the stroke bytes (~1KB of work for a
+    /// 100KB drawing).
+    func composeKey(for page: Page) -> Key {
+        Key(
+            pageId: page.id,
+            strokeFingerprint: Self.fingerprint(of: page.strokeData),
+            pdfFingerprint: page.pdfPageIndex.map { UInt64($0) + 1 } ?? 0
+        )
     }
 
-    func invalidate(pageId: UUID) {
-        cache.removeObject(forKey: pageId as NSUUID)
-    }
-
+    /// Clear every entry. Used by the storage-reset path.
     func invalidateAll() {
         cache.removeAllObjects()
+        inflightLock.lock()
+        for (_, task) in inflight { task.cancel() }
+        inflight.removeAll()
+        inflightLock.unlock()
+    }
+
+    // MARK: - Internals
+
+    private func cacheKey(_ k: Key) -> NSString {
+        "\(k.pageId.uuidString)|\(k.strokeFingerprint)|\(k.pdfFingerprint)" as NSString
     }
 
     // MARK: Rendering
 
-    /// Composites the page paper colour + drawing into a single bitmap.
-    /// Always rendered in a light-mode trait collection — page strip
-    /// thumbnails should match the paper-white look of the printed page
-    /// regardless of the system appearance, and PKDrawing strokes need
-    /// a stable trait when resolving dynamic ink colours.
+    /// Composites the page paper colour + drawing into a single
+    /// bitmap. Always rendered in a light-mode trait collection — page
+    /// strip thumbnails should match the paper-white look of the
+    /// printed page regardless of the system appearance, and PKDrawing
+    /// strokes need a stable trait when resolving dynamic ink colours.
     private static func render(
         strokeData: Data?,
         pageRect: CGRect,
@@ -89,7 +193,12 @@ final class PageThumbnailCache {
         let scale: CGFloat = targetSize.width / pageRect.width
 
         let format = UIGraphicsImageRendererFormat()
-        format.scale = UIScreen.main.scale
+        // `UIScreen.main.scale` is MainActor-isolated under Swift 6,
+        // and this whole render path runs on a detached executor.
+        // Hard-coding 2.0 produces correct thumbnails on every modern
+        // device (Retina @2x and Super-Retina @3x both look acceptable
+        // for an 80pt thumbnail) and removes the cross-actor call.
+        format.scale = 2.0
         format.opaque = true
 
         let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
@@ -113,6 +222,10 @@ final class PageThumbnailCache {
                 guard let data = strokeData,
                       let drawing = try? PKDrawing(data: data) else { return }
 
+                // `PKDrawing.image(from:scale:)` rasterises the
+                // stored drawing into a UIImage at the supplied
+                // scale. We then draw it into our composite at the
+                // target size to overlay the paper / PDF background.
                 let drawingImage = drawing.image(from: pageRect, scale: scale)
                 drawingImage.draw(in: CGRect(origin: .zero, size: targetSize))
             }
@@ -120,8 +233,8 @@ final class PageThumbnailCache {
         return output
     }
 
-    /// Same letterbox-fit as `PageRenderer.drawPDFPage` — keeps the
-    /// PDF aspect ratio inside the target rect, centred.
+    /// Letterbox-fit a PDF page into `target`. Keeps aspect ratio,
+    /// centred.
     private static func drawPDFPage(_ page: PDFPage, in ctx: CGContext, target: CGRect) {
         let pageBounds = page.bounds(for: .mediaBox)
         guard pageBounds.width > 0, pageBounds.height > 0 else { return }

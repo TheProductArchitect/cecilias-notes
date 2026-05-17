@@ -296,6 +296,10 @@ struct YourNameCard: View {
         // path here before delegating.
         let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
+            // No-op if already cleared — focus-loss fires on every
+            // field interaction and would otherwise re-mirror + reload
+            // widget timelines on each defocus.
+            guard !userName.isEmpty else { return }
             userName = ""
             buffer   = ""
             validationError = false
@@ -309,6 +313,14 @@ struct YourNameCard: View {
             validationError = true
             HapticManager.shared.contextMenuOpened()
         case .accept(let firstWord):
+            // Skip the side-effects (icon + App Group mirror + widget
+            // timeline reload) when the committed value matches what's
+            // already stored. Without this guard, every focus-loss on
+            // the Settings field re-mirrors and reloads timelines.
+            guard firstWord != userName else {
+                buffer = firstWord    // still normalise display
+                return
+            }
             userName = firstWord
             buffer   = firstWord    // reflect normalisation
             updateAppIcon(for: firstWord)

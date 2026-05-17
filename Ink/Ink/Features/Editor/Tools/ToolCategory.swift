@@ -25,11 +25,12 @@ enum ToolCategory: String, CaseIterable, Codable {
         case .pencil:      return [.pencil, .crayon]
         case .brush:       return [.brush, .marker]
         case .highlighter:
-            // Three variants in the long-press picker. The base
-            // highlighter is the default; underline / strikethrough
-            // intercept the stroke against selectable PDF text and
-            // create the corresponding `PDFTextAnnotationRecord`.
-            return [.highlighter, .highlighterUnderline, .highlighterStrikethrough]
+            // Single-variant category. The previous underline /
+            // strikethrough variants were retired because they
+            // produced the same on-canvas mark as the base
+            // highlighter outside the PDF-text-intercept path; the
+            // UX read as three buttons that "all do the same thing".
+            return [.highlighter]
         }
     }
 

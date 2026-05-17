@@ -134,8 +134,10 @@ final class IntelligenceService: ObservableObject {
         guard let summary = await summarise(text: text) else { return }
         IntelligenceCache.setSummary(summary, for: notebookId)
         // Bump observers — NotebookCard reads from the cache, but the
-        // grid won't know to re-fetch otherwise.
-        objectWillChange.send()
+        // grid won't know to re-fetch otherwise. Defer to next
+        // runloop to avoid AttributeGraph cycles when the summary
+        // completes synchronously after a UI-triggered request.
+        Task { @MainActor in self.objectWillChange.send() }
     }
 
     /// 1–2 sentence summary of a notebook's combined content.
@@ -243,12 +245,16 @@ final class IntelligenceService: ObservableObject {
             // concurrent edit (rename, transcript refinement pass)
             // isn't clobbered. If the record is gone (soft-deleted
             // or purged) we silently skip the write.
-            guard var fresh = LectureStore.record(id: record.id, pageId: record.pageId)
+            // `LectureRecord` is now a SwiftData @Model class — the
+            // re-fetched instance is the SAME managed object as
+            // anything else the context vends, so property mutations
+            // land in place. `LectureStore.save` flushes the context
+            // and posts `.lectureRecordUpdated` for us.
+            guard let fresh = LectureStore.record(id: record.id, pageId: record.pageId)
             else { return }
             fresh.summary        = result.paragraph
             fresh.summaryBullets = result.bullets
             fresh.updatedAt      = Date()
-            // `LectureStore.save` posts `.lectureRecordUpdated` for us.
             LectureStore.save(fresh)
         }
         #endif
@@ -346,9 +352,11 @@ final class IntelligenceService: ObservableObject {
     /// One-shot conversational answer over a retrieved context.
     /// Non-streaming variant — used by the Ask sheet when the user
     /// is on a path that doesn't want progressive rendering.
-    func askMyNotes(question: String, context: String) async -> String? {
+    func askMyNotes(question: String, context: String, scopeTitle: String? = nil) async -> String? {
         guard canRun else { return nil }
-        return await respond(to: askMyNotesPrompt(question: question, context: context))
+        return await respond(
+            to: askMyNotesPrompt(question: question, context: context, scopeTitle: scopeTitle)
+        )
     }
 
     /// Streaming variant — yields successive partial strings as the
@@ -356,13 +364,24 @@ final class IntelligenceService: ObservableObject {
     /// answer surfaces character-by-character as soon as the model
     /// starts producing output. Returns an empty stream when AI is
     /// off so callers don't have to guard separately.
+    ///
+    /// `scopeTitle` is the notebook the user narrowed the query to,
+    /// or `nil` for an unscoped (search-everywhere) submit. When set,
+    /// the system prompt instructs the model to answer using only
+    /// notes from that notebook — keeps cross-notebook leakage out of
+    /// scoped responses.
     func askMyNotesStream(
         question: String,
-        context: String
+        context: String,
+        scopeTitle: String? = nil
     ) -> AsyncStream<String> {
         AsyncStream { continuation in
             guard canRun else { continuation.finish(); return }
-            let prompt = askMyNotesPrompt(question: question, context: context)
+            let prompt = askMyNotesPrompt(
+                question: question,
+                context: context,
+                scopeTitle: scopeTitle
+            )
             Task {
                 #if canImport(FoundationModels)
                 if #available(iOS 26.0, *) {
@@ -390,16 +409,37 @@ final class IntelligenceService: ObservableObject {
         }
     }
 
-    private func askMyNotesPrompt(question: String, context: String) -> String {
-        """
-        You are answering a question based only on the user's personal \
-        notes. Answer concisely. After your answer, list the sources as: \
-        [Notebook Title, Page N]. If the notes don't contain enough \
-        information to answer, say so plainly.
+    private func askMyNotesPrompt(
+        question: String,
+        context: String,
+        scopeTitle: String?
+    ) -> String {
+        // The partial-match instruction is deliberate: the retrieval
+        // path now stems the question and runs broader index queries,
+        // which can surface pages that are *related* to the question
+        // but don't contain a verbatim answer. Telling the model to
+        // use those partial matches (and flag them as such) makes the
+        // Ask feature feel less brittle to phrasing differences.
+        //
+        // Scope line — when present, narrows the model's domain to a
+        // single notebook so it doesn't reach across into unrelated
+        // notes that happened to slip through the retrieval filter.
+        let scopeLine: String = {
+            guard let scopeTitle, !scopeTitle.isEmpty else { return "" }
+            return "Search scoped to: \(scopeTitle). Answer based only on notes in this notebook.\n\n"
+        }()
+        return """
+        \(scopeLine)You are answering a question based only on the user's personal \
+        notes. Answer based on the notes below. If the notes contain \
+        information that is related to the question but not an exact \
+        match, use it anyway and note that it may be relevant. If \
+        nothing is relevant, say so plainly.
+
+        Answer concisely. After your answer, list the sources as: \
+        [Notebook Title, Page N].
 
         Question: \(question)
 
-        Notes:
         \(context)
         """
     }

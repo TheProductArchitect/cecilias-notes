@@ -90,7 +90,7 @@ struct AppearanceSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("resume where you left off")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
+                        .foregroundStyle(Color.inkTextPrimary)
                     Text("reopen the last notebook at the page you were viewing.")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.inkRecessivePrimary)

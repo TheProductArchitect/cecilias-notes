@@ -108,7 +108,7 @@ struct AnnotationListSheet: View {
                 Text("annotations")
                     .font(.system(size: 22, weight: .heavy))
                     .tracking(-0.5)
-                    .foregroundStyle(Color.inkNearBlack)
+                    .foregroundStyle(Color.inkTextPrimary)
                 Spacer()
                 Button {
                     onDismiss()
@@ -123,7 +123,7 @@ struct AnnotationListSheet: View {
             .padding(.top, 24)
             .padding(.bottom, 16)
             Rectangle()
-                .fill(Color.inkNearBlack)
+                .fill(Color.inkTextPrimary)
                 .frame(height: 1.5)
         }
     }
@@ -272,7 +272,7 @@ private struct AnnotationRow: View {
                     }
                     Text(item.snippet.isEmpty ? " " : item.snippet)
                         .font(.system(size: 13))
-                        .foregroundColor(.inkNearBlack)
+                        .foregroundColor(.inkTextPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }

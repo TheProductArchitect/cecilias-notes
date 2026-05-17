@@ -10,7 +10,11 @@ import UIKit
 /// and zoom/scroll as the PKCanvasView.
 ///
 /// Interaction model (enforced by TextModeGestureController):
-///   • Finger tap on empty space (text mode) → create block
+///   • Finger tap on empty space (text mode) → no-op (drag required)
+///   • Finger drag on empty space (text mode) → drag-to-create box;
+///     dashed preview during drag, commits a new block on release
+///     (clamped to a 100×30pt minimum, width locked, height grows
+///     as the user types)
 ///   • Finger tap inside idle block → select it
 ///   • Finger tap inside selected block → begin editing
 ///   • Finger drag on idle block → move it
@@ -18,6 +22,12 @@ import UIKit
 struct TextBlockOverlayView: View {
 
     @ObservedObject var viewModel: EditorViewModel
+    /// Page this overlay is mounted on. Per-page mount per Phase 3b —
+    /// renders only blocks whose `pageId` matches.
+    let pageId: UUID
+    /// Single placement primitive — base size only. See
+    /// `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
+    let coordinateSpace: PageCoordinateSpace
 
     @State private var activeBlockId: UUID?
     @State private var interactionStates: [UUID: TextBlockInteractionState] = [:]
@@ -30,6 +40,13 @@ struct TextBlockOverlayView: View {
     // Resize gesture tracking
     @State private var resizeStartRect: CGRect?
 
+    // Drag-to-create-box gesture tracking. `dragCreateStart` holds the
+    // touch-down point (in point coords); `dragCreateCurrent` updates on
+    // every drag event. When both are set, the dashed-preview rect is
+    // rendered between them. Cleared on drag end / cancel.
+    @State private var dragCreateStart:   CGPoint?
+    @State private var dragCreateCurrent: CGPoint?
+
     // Link popover
     @State private var isShowingLinkPopover: Bool = false
     @State private var linkPopoverBlockId: UUID?
@@ -39,32 +56,59 @@ struct TextBlockOverlayView: View {
     // Keyboard offset — kept in sync with EditorViewModel
     @State private var keyboardOffset: CGFloat = 0
 
+    /// Blocks scoped to this overlay's page. Resolved through
+    /// `viewModel.pages` rather than the storage layer so SwiftData's
+    /// observation drives re-renders. Lecture-prefixed blocks
+    /// (`content.hasPrefix("lecture:")`) are filtered out — those
+    /// render via `LectureBlocksOverlayView` on the same page.
+    private var blocks: [TextBlock] {
+        guard let page = viewModel.pages.first(where: { $0.id == pageId })
+        else { return [] }
+        return (page.textBlocks ?? [])
+            .filter { !$0.isDeleted && !$0.content.hasPrefix("lecture:") }
+            .sorted { $0.zIndex < $1.zIndex }
+    }
+
     var body: some View {
-        let pageSize = viewModel.currentPage.pageSize.pointSize
-        let blocks   = viewModel.currentPageTextBlocks
+        let pageSize = coordinateSpace.baseSize
+        let blocks   = self.blocks
 
         ZStack(alignment: .topLeading) {
-            // Transparent tap catcher for creating new blocks
+            // Transparent drag-to-create-box catcher. Single tap does
+            // nothing — the user must drag out a rectangle. The
+            // gesture commits a new text block sized to the drag on
+            // release, snapping to the 100×30pt minimum.
             if viewModel.selectedTool.isTextMode {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture(coordinateSpace: .local) { location in
-                        let norm = normalise(location, pageSize: pageSize)
-                        createBlock(at: norm, pageSize: pageSize)
-                    }
+                    .gesture(dragCreateGesture(pageSize: pageSize))
             }
 
             ForEach(blocks, id: \.id) { block in
                 blockView(block: block, pageSize: pageSize)
             }
+
+            // Dashed live preview while the user is dragging out a
+            // new text-box rectangle. Drawn on top so it visually
+            // commits even if it overlaps existing blocks.
+            if let start = dragCreateStart, let current = dragCreateCurrent {
+                let rect = previewRect(start: start, current: current)
+                Rectangle()
+                    .strokeBorder(
+                        Color.brandAccent,
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                    )
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
+                    .allowsHitTesting(false)
+            }
         }
-        .frame(width: pageSize.width, height: pageSize.height)
-        .onChange(of: viewModel.currentPageIndex) { _, _ in syncLayouts() }
+        .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onAppear { syncLayouts() }
         // Link popover sheet
         .sheet(isPresented: $isShowingLinkPopover) {
             if let blockId = linkPopoverBlockId,
-               let block = viewModel.currentPageTextBlocks.first(where: { $0.id == blockId }) {
+               let block = blocks.first(where: { $0.id == blockId }) {
                 LinkPopoverView(
                     isPresented: $isShowingLinkPopover,
                     existingURL: linkPopoverExistingURL,
@@ -258,20 +302,72 @@ struct TextBlockOverlayView: View {
 
     // MARK: - Block creation
 
-    private func createBlock(at normalizedOrigin: CGPoint, pageSize: CGSize) {
-        deselectAll()
-        let defaultWidth: Double  = 200.0 / pageSize.width
-        let defaultHeight: Double =  60.0 / pageSize.height
-        let rect = CGRect(
-            x:      max(0, min(1 - defaultWidth,  Double(normalizedOrigin.x))),
-            y:      max(0, min(1 - defaultHeight, Double(normalizedOrigin.y))),
-            width:  defaultWidth,
-            height: defaultHeight
+    /// Minimum drag-out text-box size in points. Anything smaller
+    /// (including a stray tap that never moves) snaps up to this.
+    private static let minBoxWidthPt:  CGFloat = 100
+    private static let minBoxHeightPt: CGFloat = 30
+
+    /// Drag-to-create text box gesture. `minimumDistance: 4` so a
+    /// stationary tap doesn't accidentally commit a min-sized box; the
+    /// gesture has to feel like a deliberate drag before the dashed
+    /// preview appears.
+    private func dragCreateGesture(pageSize: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .local)
+            .onChanged { value in
+                if dragCreateStart == nil {
+                    dragCreateStart = value.startLocation
+                    deselectAll()
+                }
+                dragCreateCurrent = value.location
+            }
+            .onEnded { value in
+                defer {
+                    dragCreateStart   = nil
+                    dragCreateCurrent = nil
+                }
+                guard let start = dragCreateStart else { return }
+                let raw = previewRect(start: start, current: value.location)
+                createBlock(fromPointRect: raw, pageSize: pageSize)
+            }
+    }
+
+    /// Build the point-space preview rectangle from the touch-down
+    /// point and the current drag location, applying the minimum-size
+    /// floor and clamping to the page bounds. Used for both the dashed
+    /// preview and the final committed rect so the on-screen preview
+    /// matches the persisted block exactly.
+    private func previewRect(start: CGPoint, current: CGPoint) -> CGRect {
+        let x = min(start.x, current.x)
+        let y = min(start.y, current.y)
+        let w = max(Self.minBoxWidthPt,  abs(current.x - start.x))
+        let h = max(Self.minBoxHeightPt, abs(current.y - start.y))
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    /// Commit a new TextBlock at the dragged rectangle. Height grows
+    /// from this seed as the user types — width is locked by the drag,
+    /// so text wraps inside it.
+    private func createBlock(fromPointRect ptRect: CGRect, pageSize: CGSize) {
+        guard pageSize.width > 0, pageSize.height > 0 else { return }
+        let clampedW = min(ptRect.width,  pageSize.width)
+        let clampedH = min(ptRect.height, pageSize.height)
+        let clampedX = max(0, min(pageSize.width  - clampedW, ptRect.origin.x))
+        let clampedY = max(0, min(pageSize.height - clampedH, ptRect.origin.y))
+        let normRect = CGRect(
+            x:      Double(clampedX) / Double(pageSize.width),
+            y:      Double(clampedY) / Double(pageSize.height),
+            width:  Double(clampedW) / Double(pageSize.width),
+            height: Double(clampedH) / Double(pageSize.height)
         )
-        guard let block = viewModel.createTextBlock(at: rect) else {
-            // Silently ignore — block creation failures are non-critical
+        guard let block = viewModel.createTextBlock(onPageId: pageId, at: normRect) else {
+            #if DEBUG
+            print("[TextTool] viewModel.createTextBlock returned nil — storage refused")
+            #endif
             return
         }
+        #if DEBUG
+        print("[TextTool] TextBlock created id=\(block.id) rect=\(normRect) — entering editing state")
+        #endif
         layouts[block.id] = TextBlockLayoutState(from: block)
         interactionStates[block.id] = .editing
         activeBlockId = block.id
@@ -331,13 +427,14 @@ struct TextBlockOverlayView: View {
     // MARK: - Sync
 
     private func syncLayouts() {
-        for block in viewModel.currentPageTextBlocks {
+        let pageBlocks = blocks
+        for block in pageBlocks {
             if layouts[block.id] == nil {
                 layouts[block.id] = TextBlockLayoutState(from: block)
             }
         }
         // Remove stale entries
-        let ids = Set(viewModel.currentPageTextBlocks.map(\.id))
+        let ids = Set(pageBlocks.map(\.id))
         layouts.keys.filter { !ids.contains($0) }.forEach { layouts.removeValue(forKey: $0) }
         interactionStates.keys.filter { !ids.contains($0) }.forEach { interactionStates.removeValue(forKey: $0) }
         blockHeights.keys.filter { !ids.contains($0) }.forEach { blockHeights.removeValue(forKey: $0) }
@@ -351,14 +448,12 @@ struct TextBlockOverlayView: View {
 
     // MARK: - Focus navigation (Tab / Shift+Tab outside a list)
 
-    /// Activates editing on the next text block by ascending zIndex. The list
-    /// in `viewModel.currentPageTextBlocks` is already sorted by zIndex, so we
-    /// simply walk forward from the current id.
+    /// Activates editing on the next text block by ascending zIndex.
     private func focusNextTextBlock(after currentBlockId: UUID) {
-        let blocks = viewModel.currentPageTextBlocks
-        guard let idx = blocks.firstIndex(where: { $0.id == currentBlockId }),
-              idx + 1 < blocks.count else { return }
-        let nextBlock = blocks[idx + 1]
+        let pageBlocks = blocks
+        guard let idx = pageBlocks.firstIndex(where: { $0.id == currentBlockId }),
+              idx + 1 < pageBlocks.count else { return }
+        let nextBlock = pageBlocks[idx + 1]
         deselectAll(except: nextBlock.id)
         interactionStates[nextBlock.id] = .editing
         activeBlockId = nextBlock.id
@@ -366,10 +461,10 @@ struct TextBlockOverlayView: View {
 
     /// Activates editing on the previous text block by descending zIndex.
     private func focusPreviousTextBlock(before currentBlockId: UUID) {
-        let blocks = viewModel.currentPageTextBlocks
-        guard let idx = blocks.firstIndex(where: { $0.id == currentBlockId }),
+        let pageBlocks = blocks
+        guard let idx = pageBlocks.firstIndex(where: { $0.id == currentBlockId }),
               idx > 0 else { return }
-        let prevBlock = blocks[idx - 1]
+        let prevBlock = pageBlocks[idx - 1]
         deselectAll(except: prevBlock.id)
         interactionStates[prevBlock.id] = .editing
         activeBlockId = prevBlock.id

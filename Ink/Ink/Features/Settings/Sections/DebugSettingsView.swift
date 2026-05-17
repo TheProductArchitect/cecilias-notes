@@ -92,7 +92,7 @@ struct DebugSettingsView: View {
             HStack {
                 Text(label)
                     .font(.system(size: 14))
-                    .foregroundStyle(isDestructive ? Color.red : Color.inkNearBlack)
+                    .foregroundStyle(isDestructive ? Color.red : Color.inkTextPrimary)
                 Spacer()
             }
             .padding(.vertical, 12)

@@ -9,10 +9,21 @@ struct StorageSettingsView: View {
     @State private var isClearingAudio         = false
     @State private var clearError:             String? = nil
 
+    /// Latest unified-storage diagnostics. Populated on `.task`; nil
+    /// until the first read completes (a few ms — no spinner needed).
+    @State private var mediaDiagnostics: MediaStorage.Diagnostics? = nil
+
     var body: some View {
         ScrollView {
             VStack(spacing: Ink.Spacing.lg) {
                 metricsRow
+                if let staleness = cacheStalenessCaption {
+                    Text(staleness)
+                        .font(.system(size: 11).italic())
+                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                mediaStorageBreakdown
                 actionsCard
             }
             .padding(Ink.Spacing.lg)
@@ -21,13 +32,14 @@ struct StorageSettingsView: View {
         .navigationTitle("Storage")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await viewModel.loadStorageMetrics() }
-        // Only load on first appear — `loadStorageMetrics` already guards
-        // re-entry, but skipping the call when data is fresh keeps the
-        // initial render free of an unnecessary spinner pulse.
+        // Always run a fresh calculation on appear. The view-model
+        // pre-populates `storageInfo` from the UserDefaults cache
+        // so the cards render real numbers immediately; the
+        // background task then overwrites with up-to-date values
+        // and re-writes the cache. `.task` is tied to view
+        // lifetime and cancels cleanly if the user leaves Settings.
         .task {
-            if viewModel.storageInfo == nil {
-                await viewModel.loadStorageMetrics()
-            }
+            await viewModel.loadStorageMetrics()
         }
         .alert("Clear Exported PDFs?", isPresented: $showClearExportsAlert) {
             Button("Cancel", role: .cancel) {}
@@ -55,6 +67,102 @@ struct StorageSettingsView: View {
         } message: { err in
             Text(err)
         }
+    }
+
+    /// Returns "updated X min ago" / "updated just now" when the
+    /// displayed cache value is older than `storageCacheStaleAfter`
+    /// (5 min). Returns `nil` while a fresh recalculation is running,
+    /// when the cache age is below the threshold, or when no cache
+    /// exists yet — those cases either display the value as-is or
+    /// fall back to the "calculating…" placeholder in the metric
+    /// cards.
+    private var cacheStalenessCaption: String? {
+        guard let cachedAt = viewModel.storageInfoCachedAt,
+              viewModel.storageInfo != nil,
+              !viewModel.isLoadingStorage
+        else { return nil }
+        let age = Date().timeIntervalSince(cachedAt)
+        guard age >= SettingsViewModel.storageCacheStaleAfter else { return nil }
+        let minutes = Int(age / 60)
+        return minutes < 1
+            ? "updated just now"
+            : "updated \(minutes) min ago"
+    }
+
+    // MARK: Unified MediaStorage breakdown
+    //
+    // Surfaces `MediaStorage.diagnostics()` — per-category counts and
+    // bytes for the unified `Documents/MediaAttachments/` tree. The
+    // legacy notebook-scoped totals above ("Total Used / Audio /
+    // Images") still come from `StorageService.localStorageUsed`,
+    // which walks the SwiftData notebook directories. Both panels are
+    // consistent for migrated installs and useful even before the
+    // migration completes (the breakdown reflects the unified tree
+    // exclusively, the totals reflect everything).
+
+    private var mediaStorageBreakdown: some View {
+        VStack(spacing: 0) {
+            breakdownRow(
+                label: "Images",
+                count: mediaDiagnostics?.imageCount,
+                bytes: mediaDiagnostics?.imageBytes,
+                icon: "photo"
+            )
+            InkDivider()
+            breakdownRow(
+                label: "Audio recordings",
+                count: mediaDiagnostics?.audioCount,
+                bytes: mediaDiagnostics?.audioBytes,
+                icon: "waveform"
+            )
+            InkDivider()
+            breakdownRow(
+                label: "Lecture recordings",
+                count: mediaDiagnostics?.lectureCount,
+                bytes: mediaDiagnostics?.lectureBytes,
+                icon: "mic"
+            )
+        }
+        .inkCard()
+        .task { await loadMediaDiagnostics() }
+    }
+
+    private func breakdownRow(
+        label: String,
+        count: Int?,
+        bytes: Int64?,
+        icon: String
+    ) -> some View {
+        HStack(spacing: Ink.Spacing.sm) {
+            Image(systemName: icon)
+                .font(.inkSectionIcon)
+                .foregroundColor(.inkTextSecondary)
+                .frame(width: 24)
+            Text(label)
+                .font(.inkBody)
+                .foregroundColor(.inkTextPrimary)
+            Spacer()
+            if let count, let bytes {
+                Text("\(count) · \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
+                    .font(.inkCaption)
+                    .foregroundColor(.inkTextSecondary)
+                    .monospacedDigit()
+            } else {
+                Text("calculating…")
+                    .font(.system(size: 11).italic())
+                    .foregroundStyle(Color.inkRecessiveTertiary)
+            }
+        }
+        .padding(Ink.Spacing.md)
+    }
+
+    private func loadMediaDiagnostics() async {
+        // Filesystem enumeration — small (3 directories) but still
+        // hop off main to keep the cards' first paint snappy.
+        let result = await Task.detached(priority: .utility) {
+            MediaStorage.diagnostics()
+        }.value
+        await MainActor.run { mediaDiagnostics = result }
     }
 
     // MARK: Metric cards
@@ -85,14 +193,21 @@ struct StorageSettingsView: View {
                 .font(.inkSectionIcon)
                 .foregroundColor(.inkTextSecondary)
 
-            if viewModel.isLoadingStorage {
-                ProgressView().scaleEffect(0.7)
-            } else {
-                Text(bytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "—")
+            // Cached value (if any) is restored on view-model init
+            // so `bytes` is usually non-nil on entry. The
+            // "calculating…" placeholder only shows on the first
+            // launch where no cache exists yet — never the
+            // legacy "—" empty state, which read as broken.
+            if let bytes {
+                Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
                     .font(.inkSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .monospacedDigit()
                     .minimumScaleFactor(0.7)
+            } else {
+                Text("calculating…")
+                    .font(.system(size: 11).italic())
+                    .foregroundStyle(Color.inkRecessiveTertiary)
             }
 
             Text(title)

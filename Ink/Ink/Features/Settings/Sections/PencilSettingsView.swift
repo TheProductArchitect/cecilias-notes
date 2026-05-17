@@ -23,7 +23,11 @@ struct PencilSettingsView: View {
             VStack(spacing: Ink.Spacing.lg) {
                 doubleTapCard
                 togglesCard
-                eraserCard
+                if PencilProSupport.isSqueezeSupported {
+                    squeezeCard
+                }
+                // Pixel-eraser size slider removed — PencilKit's
+                // default eraser behaviour now governs.
                 // TODO: re-add pressureCard + smoothingCard when a custom stroke
                 // renderer ships. PencilKit doesn't expose the hooks needed to
                 // honour either setting (audit findings #39, #40).
@@ -74,7 +78,7 @@ struct PencilSettingsView: View {
             HStack {
                 Text(action.displayName)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.inkNearBlack)
+                    .foregroundStyle(Color.inkTextPrimary)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -134,28 +138,108 @@ struct PencilSettingsView: View {
         .inkCard()
     }
 
-    // MARK: Eraser
+    // MARK: Squeeze (Apple Pencil Pro)
 
-    private var eraserCard: some View {
-        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
-            HStack {
-                cardHeader("Default Eraser Size")
-                Spacer()
-                Text("\(Int(viewModel.pixelEraserSize)) pt")
-                    .font(.inkMono)
-                    .foregroundColor(.inkTextSecondary)
-                    .monospacedDigit()
+    /// Inline-expanding picker for the squeeze action, gated on
+    /// `PencilProSupport.isSqueezeSupported`. Mirrors the
+    /// double-tap card's list-row pattern. When "Switch to tool"
+    /// is selected, a second card surfaces with the tool list.
+    private var squeezeCard: some View {
+        VStack(spacing: Ink.Spacing.lg) {
+            VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+                cardHeader("Squeeze")
+                VStack(spacing: 0) {
+                    ForEach(SqueezeAction.allCases, id: \.rawValue) { action in
+                        squeezeActionRow(action)
+                        if action != SqueezeAction.allCases.last {
+                            Divider()
+                                .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                                .padding(.leading, Ink.Spacing.md)
+                        }
+                    }
+                }
+                .background(Color(.systemBackground))
+
+                Text("Squeeze your Apple Pencil Pro to trigger this action.")
+                    .font(.inkCaption)
+                    .foregroundColor(.inkTextTertiary)
             }
+            .padding(Ink.Spacing.md)
+            .inkCard()
 
-            Slider(value: $viewModel.pixelEraserSize, in: 4...80, step: 1)
-                .tint(.inkAccentPrimary)
+            if viewModel.squeezeAction == .tool {
+                squeezeToolCard
+            }
+        }
+    }
 
-            Text("Starting size when you pick the pixel eraser. Adjust live in the toolbar.")
-                .font(.inkCaption)
-                .foregroundColor(.inkTextTertiary)
+    private func squeezeActionRow(_ action: SqueezeAction) -> some View {
+        let isSelected = viewModel.squeezeAction == action
+        return Button {
+            viewModel.squeezeAction = action
+        } label: {
+            HStack {
+                Text(action.displayName)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.inkTextPrimary)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.brandAccent)
+                }
+            }
+            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.inkPressable)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Tool sub-list shown beneath the squeeze card when "Switch
+    /// to tool" is the active action. Same list-row pattern.
+    private var squeezeToolCard: some View {
+        VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
+            cardHeader("Tool")
+            VStack(spacing: 0) {
+                ForEach(SqueezeToolChoice.allCases, id: \.rawValue) { choice in
+                    squeezeToolRow(choice)
+                    if choice != SqueezeToolChoice.allCases.last {
+                        Divider()
+                            .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                            .padding(.leading, Ink.Spacing.md)
+                    }
+                }
+            }
+            .background(Color(.systemBackground))
         }
         .padding(Ink.Spacing.md)
         .inkCard()
+    }
+
+    private func squeezeToolRow(_ choice: SqueezeToolChoice) -> some View {
+        let isSelected = viewModel.squeezeTool == choice
+        return Button {
+            viewModel.squeezeTool = choice
+        } label: {
+            HStack {
+                Text(choice.displayName)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.inkTextPrimary)
+                Spacer()
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.brandAccent)
+                }
+            }
+            .padding(.horizontal, Ink.Spacing.md)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.inkPressable)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func toggleRow(_ label: String, systemImage: String, value: Binding<Bool>) -> some View {

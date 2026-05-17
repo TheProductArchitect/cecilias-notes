@@ -55,7 +55,16 @@ struct LectureBlockView: View {
     // MARK: Body
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        #if DEBUG
+        // Phase-5-followup diagnostic 2 (lecture card "blue line").
+        // The user reports the card collapsing to a single vertical
+        // rule. Trace: did body evaluate at all? Did `record`
+        // resolve (nil → only the "lecture missing" placeholder
+        // renders)? Did the content VStack actually reach the
+        // header / transcript branches?
+        let _ = print("[LectureDiag] body building for recordId=\(recordId) record!=nil:\(record != nil) transcript.count=\(record?.transcript.count ?? -1) duration=\(record?.durationSeconds ?? -1) canRun=\(IntelligenceService.shared.canRun)")
+        #endif
+        return HStack(alignment: .top, spacing: 0) {
             // 3pt left rule — the only structural chrome on the
             // block. No card, no border, no fill.
             Rectangle()
@@ -65,6 +74,9 @@ struct LectureBlockView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 if let record {
+                    #if DEBUG
+                    let _ = print("[LectureDiag]   content VStack rendering: title=\(record.title) transcriptPrefix=\(record.transcript.prefix(40)) summary=\(record.summary?.prefix(40) ?? "nil")")
+                    #endif
                     header(for: record)
                     Rectangle()
                         .fill(Color.inkRecessiveQuinary)
@@ -76,6 +88,9 @@ struct LectureBlockView: View {
                     }
                     transcriptSection(for: record)
                 } else {
+                    #if DEBUG
+                    let _ = print("[LectureDiag]   record==nil → rendering 'lecture missing' placeholder")
+                    #endif
                     // The record was soft-deleted (e.g. via a
                     // sticky-note style management UI in a future
                     // pass) or its id is malformed. Recessive
@@ -113,7 +128,7 @@ struct LectureBlockView: View {
                 .foregroundStyle(Color.inkRecessiveSecondary)
             Text(record.title.isEmpty ? "untitled lecture" : record.title)
                 .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(Color.inkNearBlack)
+                .foregroundStyle(Color.inkTextPrimary)
                 .lineLimit(1)
             Spacer(minLength: 12)
             Text(Self.formatDuration(record.durationSeconds))
@@ -141,7 +156,7 @@ struct LectureBlockView: View {
                 if let summary = record.summary {
                     Text(summary)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
+                        .foregroundStyle(Color.inkTextPrimary)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -154,7 +169,7 @@ struct LectureBlockView: View {
                                 .padding(.top, 5)
                             Text(bullet)
                                 .font(.system(size: 13))
-                                .foregroundStyle(Color.inkNearBlack)
+                                .foregroundStyle(Color.inkTextPrimary)
                                 .lineSpacing(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -250,7 +265,11 @@ struct LectureBlocksOverlayView: View {
 
     @ObservedObject var viewModel: EditorViewModel
     let pageId: UUID
-    let pageSize: CGSize
+    /// Base page size for placement. Pages have a single fixed size
+    /// (Phase 3b removed the auto-extend continuous-scroll mode).
+    let coordinateSpace: PageCoordinateSpace
+
+    private var pageSize: CGSize { coordinateSpace.baseSize }
 
     /// Standard page margin used for the lecture block's width —
     /// the block expects "full page width minus standard page
@@ -259,8 +278,21 @@ struct LectureBlocksOverlayView: View {
     private static let horizontalMargin: Double = 0.06
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(lectureBlocks, id: \.id) { block in
+        let blocks = lectureBlocks
+        #if DEBUG
+        // Diagnostic 2 — how many lecture-placeholder TextBlocks did
+        // the overlay actually find on this page? The "blue line"
+        // symptom could be the overlay finding zero blocks (so
+        // nothing renders and the user sees something else),
+        // multiple blocks stacking, or a single block at the wrong
+        // y-offset.
+        let _ = print("[LectureDiag] overlay body for pageId=\(pageId) pageSize=\(pageSize) lectureBlocks.count=\(blocks.count)")
+        for b in blocks {
+            let _ = print("[LectureDiag]   block id=\(b.id) y=\(b.y) content=\(b.content.prefix(60))")
+        }
+        #endif
+        return ZStack(alignment: .topLeading) {
+            ForEach(blocks, id: \.id) { block in
                 blockView(for: block)
             }
         }
@@ -270,18 +302,24 @@ struct LectureBlocksOverlayView: View {
     @ViewBuilder
     private func blockView(for block: TextBlock) -> some View {
         if let recordId = LectureBlockView.parseRecordId(fromBody: block.content) {
-            // Position the block by its top-leading corner from the
-            // TextBlock's stored normalised origin; force the width
-            // to full-page-minus-margins per spec. Height grows to
-            // fit the transcript when expanded.
+            // Position the block by its top-leading corner. The previous
+            // implementation used `.position(...)`, which centres the view
+            // at the given coordinate — the lecture block has an intrinsic
+            // height of roughly 90–250 pt (title + duration + summary +
+            // optional expanded transcript), so the top half rendered at
+            // negative y and was clipped above the page. `.offset` on a
+            // topLeading-aligned container anchors the top-leading corner
+            // exactly, regardless of the block's intrinsic height.
             let leftMargin  = Self.horizontalMargin * pageSize.width
             let rightMargin = Self.horizontalMargin * pageSize.width
             let width = max(0, pageSize.width - leftMargin - rightMargin)
-            let top  = CGFloat(block.y) * pageSize.height
+            // Clamp the stored Y to keep the block on the page even if a
+            // legacy record was saved with an out-of-bounds value.
+            let normY = max(0.02, min(0.95, block.y))
+            let top   = CGFloat(normY) * pageSize.height
             LectureBlockView(recordId: recordId, pageId: block.pageId)
                 .frame(width: width, alignment: .topLeading)
-                .position(x: leftMargin + width / 2, y: top + 1)
-                .offset(y: 0)
+                .offset(x: leftMargin, y: top)
         }
     }
 

@@ -9,17 +9,19 @@ import UniformTypeIdentifiers
 enum NotebookSortOrder: String, CaseIterable, Identifiable {
     case lastModified  = "Last Modified"
     case created       = "Date Created"
-    case alphabetical  = "Alphabetical"
-    case manual        = "Manual"
+    case alphabeticalAZ = "Name A–Z"
+    case alphabeticalZA = "Name Z–A"
+    case manual        = "Manual Order"
 
     var id: String { rawValue }
 
     var symbolName: String {
         switch self {
-        case .lastModified:  return "clock"
-        case .created:       return "calendar"
-        case .alphabetical:  return "textformat.abc"
-        case .manual:        return "hand.draw"
+        case .lastModified:    return "clock"
+        case .created:         return "calendar"
+        case .alphabeticalAZ:  return "textformat.abc"
+        case .alphabeticalZA:  return "textformat.abc"
+        case .manual:          return "hand.draw"
         }
     }
 }
@@ -47,6 +49,19 @@ struct GroupedSearchResults {
 // Used for drag-and-drop between card and sidebar row.
 struct NotebookTransferID: Transferable, Codable {
     let id: UUID
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .data)
+    }
+}
+
+/// Distinct payload for subject drag-reorder. Uses a different JSON
+/// key (`subjectId`) than `NotebookTransferID` (`id`) so a row's
+/// single Data-typed drop destination can disambiguate by trying
+/// each decode in turn — neither type accidentally decodes the
+/// other's payload (Codable requires every declared key to be
+/// present).
+struct SubjectTransferID: Transferable, Codable {
+    let subjectId: UUID
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: .data)
     }
@@ -215,6 +230,17 @@ final class LibraryViewModel: ObservableObject {
     private let storage: StorageService
     private var cancellables = Set<AnyCancellable>()
     private static let contextKey = "library.lastSelectedContext"
+    private static let sortKey    = "library.sort.option"
+
+    /// Image-picker presentation state. Non-nil presents the
+    /// picker from the library root via `.sheet(item:)` —
+    /// crucially OUTSIDE the editor's `.fullScreenCover` so the
+    /// editor's navigation surface is untouched by picker
+    /// dismiss/present cycles. Cross-VM communication runs
+    /// through the `.imageImportRequested` /
+    /// `.imageImportCompleted` / `.imageImportCancelled`
+    /// notifications declared in `ImageImportNotifications.swift`.
+    @Published var pendingImageImport: PendingImageImport?
 
     // MARK: Init
     init(storage: StorageService? = nil) {
@@ -232,6 +258,14 @@ final class LibraryViewModel: ObservableObject {
             self.selectedContext = restored
         }
 
+        // Hydrate the user's last-chosen sort option. Default remains
+        // `.lastModified` for first-ever launch (or if the stored
+        // value no longer maps to a valid case after an enum change).
+        if let rawSort = UserDefaults.standard.string(forKey: Self.sortKey),
+           let restoredSort = NotebookSortOrder(rawValue: rawSort) {
+            self.sortOrder = restoredSort
+        }
+
         refresh()
 
         $searchText
@@ -242,21 +276,149 @@ final class LibraryViewModel: ObservableObject {
         // Clear selection state, reset folder browsing, refresh the
         // grid, and persist whenever the context changes — covers
         // both subject swaps and recent/all-notes toggles.
+        //
+        // CRITICAL: `@Published` emits in `willSet`, so inside this
+        // sink `self.selectedContext` still reads the OLD value.
+        // `refresh()` switches on `selectedContext` to pick the right
+        // fetch path, so calling it synchronously here populates
+        // `notebooks` for the *previous* context — the symptom is
+        // "tap a subject, see the prior subject's notebooks; tap
+        // again, see the correct ones." Deferring with
+        // `DispatchQueue.main.async` lands the work after `didSet`,
+        // by which point `self.selectedContext` reflects the new
+        // value.
         $selectedContext
             .dropFirst()
             .sink { [weak self] context in
                 guard let self else { return }
+                #if DEBUG
+                print("[LibraryVM] selectedContext sink → \(context)")
+                #endif
                 self.isSelecting = false
                 self.selectedNotebookIds = []
                 self.folderPath = []
                 UserDefaults.standard.set(context.rawString, forKey: Self.contextKey)
-                self.refresh()
+                DispatchQueue.main.async {
+                    #if DEBUG
+                    print("[LibraryVM] deferred refresh fires for ctx=\(self.selectedContext)")
+                    #endif
+                    self.refresh()
+                }
             }
             .store(in: &cancellables)
 
         $sortOrder
             .dropFirst()
-            .sink { [weak self] _ in self?.refresh() }
+            .sink { [weak self] order in
+                UserDefaults.standard.set(order.rawValue, forKey: Self.sortKey)
+                // Defer refresh + seed for the same reason as
+                // `$selectedContext` above — `@Published` emits in
+                // `willSet`, and refresh fetches/assigns several
+                // @Published arrays. Running synchronously here can
+                // race the view-update transaction triggered by the
+                // sort-picker tap and produce the "Publishing
+                // changes from within view updates" warning.
+                DispatchQueue.main.async {
+                    if order == .manual { self?.seedManualOrderIfNeeded() }
+                    self?.refresh()
+                }
+            }
+            .store(in: &cancellables)
+
+        // Image-import signal channel. Bypasses SwiftUI's
+        // presentation system entirely — `MediaPickerPresenter`
+        // walks up to the topmost UIKit VC and calls
+        // `present(_:animated:)` directly. SwiftUI `.sheet` /
+        // `.fullScreenCover` at this level both failed previously:
+        //   • `.sheet` was rejected with "only presenting a single
+        //     sheet is supported" because the editor's
+        //     `.fullScreenCover` already counted as an active
+        //     presentation.
+        //   • `.fullScreenCover` over `.fullScreenCover` has the
+        //     same accounting limitation.
+        // UIKit `present` has no such restriction — the picker
+        // lands above the editor cover and dismisses cleanly.
+        NotificationCenter.default.publisher(for: .imageImportRequested)
+            .sink { note in
+                let normX = (note.userInfo?[ImageImportUserInfoKey.normalizedX] as? Double) ?? 0.5
+                let normY = (note.userInfo?[ImageImportUserInfoKey.normalizedY] as? Double) ?? 0.5
+                let sourceRaw = note.userInfo?[ImageImportUserInfoKey.source] as? String
+                let source    = sourceRaw.flatMap(ImageImportSource.init(rawValue:)) ?? .photos
+                #if DEBUG
+                print("[ImagePicker] LibraryViewModel observed .imageImportRequested — about to present source=\(source.rawValue) at norm=(\(normX),\(normY))")
+                #endif
+                if source == .camera {
+                    MediaPickerPresenter.presentCamera(
+                        completion: { image in
+                            NotificationCenter.default.post(
+                                name: .imageImportCompleted,
+                                object: nil,
+                                userInfo: [
+                                    ImageImportUserInfoKey.image:       image,
+                                    ImageImportUserInfoKey.ext:         "jpg",
+                                    ImageImportUserInfoKey.normalizedX: normX,
+                                    ImageImportUserInfoKey.normalizedY: normY,
+                                ]
+                            )
+                        },
+                        onCancel: {
+                            NotificationCenter.default.post(
+                                name: .imageImportCancelled,
+                                object: nil
+                            )
+                        }
+                    )
+                    return
+                }
+                MediaPickerPresenter.presentPhotoPicker(
+                    completion: { images in
+                        // No images = user dismissed without picking;
+                        // treat as a cancel so any pending UI state
+                        // clears.
+                        guard let first = images.first else {
+                            NotificationCenter.default.post(
+                                name: .imageImportCancelled,
+                                object: nil
+                            )
+                            return
+                        }
+                        // The editor's `imageImportCompleted` observer
+                        // takes one image at a time. Surface only the
+                        // first picked image — the picker supports
+                        // multi-select but the toolbar import lands a
+                        // single attachment at the page-centre coords.
+                        NotificationCenter.default.post(
+                            name: .imageImportCompleted,
+                            object: nil,
+                            userInfo: [
+                                ImageImportUserInfoKey.image:       first,
+                                ImageImportUserInfoKey.ext:         "jpg",
+                                ImageImportUserInfoKey.normalizedX: normX,
+                                ImageImportUserInfoKey.normalizedY: normY,
+                            ]
+                        )
+                    },
+                    onCancel: {
+                        NotificationCenter.default.post(
+                            name: .imageImportCancelled,
+                            object: nil
+                        )
+                    }
+                )
+            }
+            .store(in: &cancellables)
+
+        // The picker no longer routes through `pendingImageImport`
+        // for the toolbar path — UIKit-direct presentation
+        // bypasses the SwiftUI sheet entirely. Keep the
+        // `pendingImageImport = nil` resets in place anyway so the
+        // canvas-tap path (which still uses
+        // `LibraryView.sheet(item:)`) continues to work.
+        NotificationCenter.default.publisher(for: .imageImportCompleted)
+            .sink { [weak self] _ in self?.pendingImageImport = nil }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .imageImportCancelled)
+            .sink { [weak self] _ in self?.pendingImageImport = nil }
             .store(in: &cancellables)
     }
 
@@ -289,6 +451,15 @@ final class LibraryViewModel: ObservableObject {
     // MARK: Refresh
 
     func refresh() {
+        #if DEBUG
+        let __refreshStart = CFAbsoluteTimeGetCurrent()
+        defer {
+            let ms = (CFAbsoluteTimeGetCurrent() - __refreshStart) * 1000
+            if ms > 50 {
+                print("[LibraryVM] refresh slow: \(String(format: "%.0f", ms)) ms ctx=\(selectedContext)")
+            }
+        }
+        #endif
         // Kick off the search index refresh on every library refresh
         // — it's idempotent and cheap for the synchronous metadata
         // (title / TextBlock / transcript). Handwriting OCR is
@@ -412,12 +583,15 @@ final class LibraryViewModel: ObservableObject {
 
     private func sorted(_ notebooks: [Notebook]) -> [Notebook] {
         switch sortOrder {
-        case .lastModified:  return notebooks.sorted { $0.updatedAt > $1.updatedAt }
-        case .created:       return notebooks.sorted { $0.createdAt < $1.createdAt }
-        case .alphabetical:  return notebooks.sorted {
+        case .lastModified:    return notebooks.sorted { $0.updatedAt > $1.updatedAt }
+        case .created:         return notebooks.sorted { $0.createdAt > $1.createdAt }
+        case .alphabeticalAZ:  return notebooks.sorted {
             $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
-        case .manual:        return notebooks.sorted {
+        case .alphabeticalZA:  return notebooks.sorted {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending
+        }
+        case .manual:          return notebooks.sorted {
             if $0.isPinned != $1.isPinned { return $0.isPinned }
             return $0.sortOrder < $1.sortOrder
         }
@@ -454,10 +628,73 @@ final class LibraryViewModel: ObservableObject {
         refresh()
     }
 
+    /// Toggle a subject's pinned state. Pinned subjects float to the
+    /// top of the sidebar above unpinned subjects, separated by a
+    /// hairline. Order within each group is `Subject.sortOrder`.
+    func togglePinSubject(_ subject: Subject) {
+        try? storage.setSubjectPinned(subject, isPinned: !subject.isPinned)
+        refresh()
+    }
+
     func reorderSubjects(from source: IndexSet, to destination: Int) {
         var ordered = subjects
         ordered.move(fromOffsets: source, toOffset: destination)
         try? storage.reorderSubjects(ordered)
+        refresh()
+    }
+
+    /// Reorder subjects by moving `sourceId` so it lands just BEFORE
+    /// `targetId`. Pinning is preserved — pinned and unpinned groups
+    /// only reorder within themselves (a drag across the hairline is
+    /// a no-op). Called from the sidebar's drag-handle drop target.
+    func reorderSubject(movedId sourceId: UUID, before targetId: UUID) {
+        guard sourceId != targetId else { return }
+        guard let source = subjects.first(where: { $0.id == sourceId }),
+              let target = subjects.first(where: { $0.id == targetId })
+        else { return }
+        // A drag from pinned → unpinned (or vice versa) is ignored.
+        // To move between groups the user must pin/unpin first.
+        guard source.isPinned == target.isPinned else { return }
+        var group = subjects.filter { $0.isPinned == source.isPinned }
+        guard let from = group.firstIndex(where: { $0.id == sourceId }),
+              let to   = group.firstIndex(where: { $0.id == targetId })
+        else { return }
+        let moved = group.remove(at: from)
+        let insertAt = to > from ? to - 1 : to
+        group.insert(moved, at: insertAt)
+        try? storage.reorderSubjects(group)
+        refresh()
+    }
+
+    // MARK: - Notebook manual ordering
+
+    /// One-shot seeding when the user switches sort to manual for
+    /// the first time within the current context. If every visible
+    /// notebook still has the additive default (`sortOrder == 0`),
+    /// assign sequential values matching the current display order
+    /// so the grid stays put when manual mode lights up.
+    fileprivate func seedManualOrderIfNeeded() {
+        let visible = notebooksAtCurrentLevel
+        guard !visible.isEmpty else { return }
+        let needsSeed = visible.allSatisfy { $0.sortOrder == 0 }
+        guard needsSeed else { return }
+        try? storage.reorderNotebooks(visible)
+    }
+
+    /// Move `sourceId` so it lands immediately before `targetId` in
+    /// the current display slice. Persists the new `sortOrder` for
+    /// every affected notebook in a single batch write. A drop on
+    /// the source itself is a no-op.
+    func reorderNotebook(movedId sourceId: UUID, before targetId: UUID) {
+        guard sourceId != targetId else { return }
+        var slice = notebooksAtCurrentLevel
+        guard let from = slice.firstIndex(where: { $0.id == sourceId }),
+              let to   = slice.firstIndex(where: { $0.id == targetId })
+        else { return }
+        let moved = slice.remove(at: from)
+        let insertAt = to > from ? to - 1 : to
+        slice.insert(moved, at: insertAt)
+        try? storage.reorderNotebooks(slice)
         refresh()
     }
 

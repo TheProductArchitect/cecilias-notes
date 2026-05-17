@@ -5,6 +5,18 @@ import SwiftUI
 
 @main
 struct InkApp: App {
+    /// UIApplicationDelegate-level crash-recovery + shutdown wiring.
+    /// Phase 5D: the `app.shutdown.clean` flag now lives at this
+    /// layer rather than the SwiftUI scenePhase observer. SwiftUI's
+    /// `onChange(of: scenePhase)` can miss the `.background`
+    /// transition if the system suspends the app while a sheet is
+    /// transitioning; the UIKit `applicationDidEnterBackground` /
+    /// `applicationWillTerminate` callbacks fire reliably across
+    /// every shutdown path that the OS gives us a chance to observe.
+    /// Force-quit + crash leave the gate at `false`, which is the
+    /// signal the next launch reads to force-route to library home.
+    @UIApplicationDelegateAdaptor(InkAppDelegate.self) private var appDelegate
+
     @StateObject private var themeManager   = ThemeManager()
     @StateObject private var storageService = StorageService.shared
     @StateObject private var cloudSync      = CloudSyncManager()
@@ -17,6 +29,22 @@ struct InkApp: App {
     // existing installs but are no longer read or written.
 
     init() {
+        // Crash-recovery gate is established by `InkAppDelegate`
+        // BEFORE SwiftUI instantiates this struct — see
+        // `application(_:didFinishLaunchingWithOptions:)`. By the
+        // time `init` runs, `LaunchRecovery.previousShutdownWasClean`
+        // is already populated and the persisted flag has been
+        // flipped to `false`.
+
+        // Re-enable the hosting-hierarchy diagnostic swizzle. The
+        // previous version filtered on parent-type and never matched;
+        // this version only filters on the subview class containing
+        // "ReparentingView", which is what the runtime warning is
+        // actually about. DEBUG-only.
+        #if DEBUG
+        HostingHierarchyDiagnostics.installOnce()
+        #endif
+
         // Register Apple Intelligence's master toggle as ON-by-default
         // *without* persisting the value. `UserDefaults.register`
         // installs a fallback that's returned when the key is absent
@@ -31,6 +59,14 @@ struct InkApp: App {
         // Ask My Notes are live on first launch with zero setup.
         UserDefaults.standard.register(defaults: [
             "intelligence.enabled": true,
+            // Pencil Pro squeeze defaults — "Show tool palette"
+            // until the user picks a different action. The
+            // `.tool` mode's selected tool defaults to `.eraser`
+            // (matches the SettingsViewModel's @AppStorage
+            // default), surfaced only when the user flips the
+            // action to `.tool`.
+            "pencil.squeeze.action": SqueezeAction.palette.rawValue,
+            "pencil.squeeze.tool":   SqueezeToolChoice.eraser.rawValue,
         ])
 
         // Disable UIScrollView's default 150ms gesture-arbitration delay
@@ -101,13 +137,42 @@ struct InkApp: App {
                     // Session-scoped values that should not survive a relaunch:
                     // - pixel-eraser size (resets to the user's Settings default
                     //   each time the app cold-starts).
+                    // Pixel-eraser session key from the retired
+                    // Settings slider — wiped at launch on the
+                    // off-chance an old build left a value behind.
                     UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize.session")
+                    UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize")
 
                     // One-time defensive recompute of `totalPageCount`
                     // for any pre-existing notebooks whose denormalised
                     // count drifted from the live page list. Gated by a
                     // UserDefaults flag — subsequent launches no-op.
                     storageService.runOneTimePageCountBackfillIfNeeded()
+
+                    // MediaStorage migration v1: collapse the three
+                    // legacy on-disk media layouts into the unified
+                    // `Documents/MediaAttachments/{images,audio,lectures}/`
+                    // tree. Idempotent — gated by a UserDefaults flag,
+                    // subsequent launches only ensure the directory
+                    // structure exists. See
+                    // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.B.
+                    Task.detached(priority: .utility) {
+                        await MediaStorage.migrateExistingFilesIfNeeded()
+                    }
+
+                    // Warm the storage-metrics cache on launch so the
+                    // first time the user visits Settings → Storage
+                    // the numbers are already there — no "calculating…"
+                    // placeholder, even on a cold install. Runs at
+                    // background priority off the main actor; the only
+                    // shared writes are to `UserDefaults`, which has
+                    // its own concurrency boundary.
+                    Task.detached(priority: .background) {
+                        let info = await StorageService.shared.localStorageUsed()
+                        await MainActor.run {
+                            SettingsViewModel.persistStorageCache(info)
+                        }
+                    }
 
                     // No navigation state restoration on cold launch
                     // — the app always lands in the library. The
@@ -133,8 +198,156 @@ struct InkApp: App {
                 }
         }
         .commands { InkCommands(deepLink: deepLink) }
+        // Phase 5D: shutdown-clean writes moved to
+        // `InkAppDelegate.applicationDidEnterBackground` /
+        // `applicationWillTerminate`. SwiftUI's scenePhase observer
+        // can be racy under sheet transitions; the UIKit lifecycle
+        // callbacks are the OS-guaranteed signals.
     }
 
+}
+
+// MARK: - LaunchRecovery
+
+/// Cross-launch shutdown gate. Snapshotted in
+/// `InkAppDelegate.application(_:didFinishLaunchingWithOptions:)`
+/// from the `app.shutdown.clean` UserDefault. The delegate flips the
+/// persisted value to `false` immediately; the delegate's
+/// `applicationDidEnterBackground` / `applicationWillTerminate`
+/// callbacks flip it back to `true` whenever iOS gives us a chance to
+/// clean up. Net effect: a force-quit / OOM-kill / crash leaves the
+/// persisted value at false, and the next launch's
+/// `previousShutdownWasClean` snapshot reads `false`. Any view that
+/// wants to gate restoration / splash-skip / auto-resume on a clean
+/// previous shutdown reads this static.
+enum LaunchRecovery {
+    /// `true` when `app.shutdown.clean` was `true` at launch (or on
+    /// the very first install where the key was absent and we
+    /// optimistically default to `true`). `false` when the previous
+    /// run terminated abnormally — see `RootView` for the
+    /// restoration-suppression hookup.
+    nonisolated(unsafe) static var previousShutdownWasClean: Bool = true
+}
+
+// MARK: - InkAppDelegate
+
+/// `UIApplicationDelegate` shim that owns the crash-recovery gate.
+/// Wired into `InkApp` via `@UIApplicationDelegateAdaptor`. Three
+/// callbacks matter:
+///
+///   • `application(_:didFinishLaunchingWithOptions:)` — snapshots
+///     the previous-run `app.shutdown.clean` value, flips it to
+///     `false`, and (when the previous run was dirty) clears any
+///     stale resume pointers so the next session can't restore into
+///     a broken editor state. This runs BEFORE SwiftUI instantiates
+///     `InkApp`, so `LaunchRecovery.previousShutdownWasClean` is
+///     populated by the time the first `RootView` body evaluates.
+///
+///   • `applicationDidEnterBackground(_:)` — flips the flag to
+///     `true`. iOS guarantees this fires before the system can
+///     suspend / terminate the app under any normal path; missing it
+///     means the next launch will treat the previous shutdown as
+///     dirty and force the user to library home. This is the
+///     critical write for the standard "user multitasks then
+///     force-quits" sequence: background fires first, then the
+///     user's force-quit produces no further lifecycle event.
+///
+///   • `applicationWillTerminate(_:)` — belt-and-braces redundancy
+///     for the rare paths where iOS calls this directly (e.g.
+///     low-memory termination of a foreground app). Not all
+///     termination paths route through this method.
+final class InkAppDelegate: NSObject, UIApplicationDelegate {
+
+    private static let shutdownKey = "app.shutdown.clean"
+    /// Phase 5A+5C Step 2: one-shot wipe gate. When this is absent
+    /// from `UserDefaults` on launch, the V4 → V5 media-record stores
+    /// are deleted (lectures first; audio + images added in later
+    /// substeps). The gate is set after the wipe so subsequent
+    /// launches no-op. There is intentionally no migration path —
+    /// existing UserDefaults JSON records are discarded outright per
+    /// the start-clean spec.
+    private static let v5WipeKey = "schema.v5.wiped"
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions:
+            [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        let defaults = UserDefaults.standard
+        let prevClean = defaults.object(forKey: Self.shutdownKey) as? Bool ?? true
+        LaunchRecovery.previousShutdownWasClean = prevClean
+        // Reset to false immediately so any subsequent crash leaves
+        // the gate dirty for the next launch.
+        defaults.set(false, forKey: Self.shutdownKey)
+        if !prevClean {
+            // Clear any stale per-notebook resume pointers so the
+            // editor's "resume to last page" path can't restore into
+            // the broken session that caused the unclean shutdown.
+            defaults.removeObject(forKey: "ink.resume.lastNotebookId")
+            defaults.removeObject(forKey: "ink.resume.lastPageIndex")
+            #if DEBUG
+            print("[Launch] previous shutdown was DIRTY — forcing library home + clearing resume keys")
+            #endif
+        }
+        Self.runV5WipeIfNeeded(defaults: defaults)
+        return true
+    }
+
+    /// One-shot wipe on the first V5 launch. Two parts:
+    ///
+    ///   1. Remove legacy UserDefaults JSON metadata stores so the
+    ///      V5 SwiftData entities own those records exclusively.
+    ///   2. Delete the V4 SwiftData store proactively. The audio
+    ///      reshape (Step 3) drops `AudioAnnotation` columns; the
+    ///      `ModelContainer` would hit the mismatch fallback at
+    ///      `inkContainer()` and wipe anyway, but doing it here
+    ///      avoids a noisy failed-open log on first launch.
+    ///
+    /// Files on disk under `Documents/MediaAttachments/` are left in
+    /// place — they orphan silently and the user accepted that
+    /// trade-off in the V5 scoping decision.
+    ///
+    /// Keys removed (added per substep):
+    ///   • `lecture.store.v1` — Phase 5A+5C Step 2 (lectures).
+    ///   • Future: `media.attachments.v1` (images).
+    private static func runV5WipeIfNeeded(defaults: UserDefaults) {
+        guard defaults.object(forKey: v5WipeKey) == nil else { return }
+
+        // UserDefaults JSON stores (Phase 5A+5C Steps 2 + 4).
+        defaults.removeObject(forKey: "lecture.store.v1")
+        defaults.removeObject(forKey: "media.attachments.v1")
+
+        // SwiftData store + WAL/SHM sidecars. Best-effort —
+        // FileManager errors here are non-fatal because the
+        // ModelContainer's own fallback path will recover.
+        let storeURL = StorageService.inkDirectoryURL
+            .appendingPathComponent("ink.sqlite")
+        try? FileManager.default.removeItem(at: storeURL)
+        for suffix in ["-shm", "-wal", "-journal"] {
+            try? FileManager.default.removeItem(
+                at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+            )
+        }
+
+        defaults.set(true, forKey: v5WipeKey)
+        #if DEBUG
+        print("[Launch] V5 wipe applied — UserDefaults media stores + V4 SwiftData store cleared")
+        #endif
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        #if DEBUG
+        print("[Launch] applicationDidEnterBackground → marked shutdown clean")
+        #endif
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        #if DEBUG
+        print("[Launch] applicationWillTerminate → marked shutdown clean")
+        #endif
+    }
 }
 
 // MARK: - DeepLinkRouter

@@ -24,6 +24,11 @@ struct ToolPaletteView: View {
     @State private var showSizePopover = false
     @State private var showEraserPopover = false
     @State private var showErasePageConfirm = false
+    @State private var showImageVariantPopover = false
+    /// Mirror of `ImageToolVariantStore.current` for SwiftUI redraw.
+    /// Kept in sync via the `.imageToolVariantChanged` notification so
+    /// taps on the variant picker update the toolbar glyph immediately.
+    @State private var imageVariant: ImageToolVariant = ImageToolVariantStore.current
     /// Which category, if any, is showing its variant picker popover.
     @State private var openVariantCategory: ToolCategory?
 
@@ -85,6 +90,15 @@ struct ToolPaletteView: View {
             if let stored = UserDefaults.standard.string(forKey: positionKey) {
                 resolvedEdgeRaw = stored
             }
+            // Re-read the image variant on appear in case Settings or a
+            // different surface changed it while the editor wasn't on
+            // screen.
+            imageVariant = ImageToolVariantStore.current
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .imageToolVariantChanged)
+        ) { _ in
+            imageVariant = ImageToolVariantStore.current
         }
         .popover(isPresented: $viewModel.isShowingColorPicker) {
             ColorPickerView(viewModel: viewModel) {
@@ -437,11 +451,15 @@ struct ToolPaletteView: View {
     @ViewBuilder
     private func toolButton(_ identity: InkTool.Identity) -> some View {
         let isActive = viewModel.selectedTool.identity == identity
+        // The image button's glyph follows the persisted variant
+        // (`tool.image.variant`), so the user can see whether a tap
+        // will open the camera or the photo library before they tap.
+        let glyph: String = identity == .image ? imageVariant.systemImage : identity.systemImage
         let core = Button {
             handleToolTap(identity)
         } label: {
             // Phase D: icon-colour-only active state (no filled pill).
-            Image(systemName: identity.systemImage)
+            Image(systemName: glyph)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundColor(isActive ? .brandAccent : .inkRecessiveSecondary)
                 .frame(width: buttonSize, height: buttonSize)
@@ -468,12 +486,107 @@ struct ToolPaletteView: View {
                             showEraserPopover = true
                         }
                 )
+        } else if identity == .image {
+            // Long-press on the image button opens the variant picker
+            // (photo library / camera). Tap selects the image tool AND
+            // opens the picker matching the persisted variant — the
+            // captured image lands at page centre via the standard
+            // imageImportRequested → imageImportCompleted chain.
+            core
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.4)
+                        .onEnded { _ in
+                            HapticManager.shared.contextMenuOpened()
+                            showImageVariantPopover = true
+                        }
+                )
+                .popover(isPresented: $showImageVariantPopover) {
+                    imageVariantPopover
+                        .presentationCompactAdaptation(.popover)
+                }
         } else {
             core
         }
     }
 
+    // MARK: Image-tool variant picker
+
+    /// Photo Library / Camera picker shown by long-pressing the image
+    /// tool button. Selecting a variant persists it via
+    /// `ImageToolVariantStore` (and updates the toolbar glyph the next
+    /// time the user taps the button) and immediately fires the
+    /// matching picker so the long-press still gives the user a one-
+    /// gesture path into the chosen source.
+    private var imageVariantPopover: some View {
+        VStack(spacing: 0) {
+            ForEach(ImageToolVariant.allCases, id: \.self) { variant in
+                Button {
+                    ImageToolVariantStore.current = variant
+                    imageVariant = variant
+                    showImageVariantPopover = false
+                    requestImageImport(source: variant.importSource)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: variant.systemImage)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(Color.inkTextPrimary)
+                            .frame(width: 22)
+                        Text(variant.displayName)
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(Color.inkTextPrimary)
+                        Spacer(minLength: 12)
+                        if variant == imageVariant {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.brandAccent)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 200)
+    }
+
+    /// Post the centre-of-page image-import request used by both the
+    /// tool-button tap and the long-press variant picker.
+    private func requestImageImport(source: ImageImportSource) {
+        #if DEBUG
+        print("[ImagePicker] presenting picker, reason=user explicit tap on image tool icon source=\(source.rawValue)")
+        let stack = Thread.callStackSymbols.prefix(6).joined(separator: "\n  ")
+        print("[ImagePicker]   stack:\n  \(stack)")
+        #endif
+        NotificationCenter.default.post(
+            name: .imageImportRequested,
+            object: nil,
+            userInfo: [
+                ImageImportUserInfoKey.normalizedX: 0.5,
+                ImageImportUserInfoKey.normalizedY: 0.5,
+                ImageImportUserInfoKey.source:      source.rawValue,
+            ]
+        )
+    }
+
     private func handleToolTap(_ identity: InkTool.Identity) {
+        // The image button is special: every tap (active or not) fires
+        // the picker matching the persisted variant in addition to
+        // selecting the tool. This collapses the previous two-step
+        // "select tool, then tap canvas" flow into a single tap, which
+        // matches the spec for Feature 6.
+        if identity == .image {
+            if viewModel.selectedTool.identity != .image {
+                withAnimation(.inkSpring(InkSpring.precise)) {
+                    viewModel.selectTool(identity: .image)
+                }
+            }
+            HapticManager.shared.toolSwitched()
+            requestImageImport(source: imageVariant.importSource)
+            return
+        }
         // Tap always activates. Re-tapping an active tool is a no-op
         // — the eraser mode picker (formerly opened by tap-when-active)
         // moved to long-press. See `toolButton`.
@@ -600,11 +713,9 @@ struct ToolPaletteView: View {
             .background(Color.inkBackgroundSecondary)
             .clipShape(RoundedRectangle(cornerRadius: Ink.Radius.sm, style: .continuous))
 
-            if activeMode == .pixel {
-                Text("Adjust size in the toolbar.")
-                    .font(.inkCaption)
-                    .foregroundColor(.inkTextTertiary)
-            }
+            // Pixel-eraser size is no longer user-configurable —
+            // the "Adjust size in the toolbar" caption that used
+            // to live here is gone with the slider.
         }
         .padding(Ink.Spacing.md)
         .frame(width: 260)
@@ -656,14 +767,13 @@ struct ToolPaletteView: View {
     }
 
     private var sizePopover: some View {
-        // Pixel eraser uses a different range and step than inking tools.
-        let isPixelEraser: Bool = {
-            if case .eraser(.pixel) = viewModel.selectedTool { return true }
-            return false
-        }()
-        let range: ClosedRange<Double> = isPixelEraser ? 4...80 : 0.5...20
-        let step:  Double               = isPixelEraser ? 1     : 0.5
-        let title: String               = isPixelEraser ? "Eraser size" : "Width"
+        // Pixel eraser used to take a different range here; its
+        // configurable width was retired (Settings slider removed,
+        // `hasWidth` is now false for `.eraser(.pixel)`), so the
+        // popover only ever serves inking tools now.
+        let range: ClosedRange<Double> = 0.5...20
+        let step:  Double               = 0.5
+        let title: String               = "Width"
 
         return VStack(alignment: .leading, spacing: Ink.Spacing.sm) {
             Text(title)

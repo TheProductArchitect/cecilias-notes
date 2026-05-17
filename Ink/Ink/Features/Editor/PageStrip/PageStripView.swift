@@ -51,6 +51,8 @@ struct PageStripView: View {
                             viewModel.deletePage(page)
                         } onContextMenuAddAfter: {
                             viewModel.addPage(after: page.pageNumber)
+                        } onContextMenuAddBefore: {
+                            viewModel.addPage(before: page.pageNumber)
                         }
                         .id(page.id)
                     }
@@ -100,6 +102,7 @@ private struct PageStripThumbnail: View {
     let onContextMenuDuplicate: () -> Void
     let onContextMenuDelete: () -> Void
     let onContextMenuAddAfter: () -> Void
+    let onContextMenuAddBefore: () -> Void
 
     @State private var image: UIImage?
 
@@ -134,27 +137,34 @@ private struct PageStripThumbnail: View {
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .contextMenu {
+            Button { onContextMenuAddBefore() } label: {
+                Label("Insert Page Before", systemImage: "rectangle.badge.plus")
+            }
             Button { onContextMenuAddAfter() } label: {
-                Label("Add Page After", systemImage: "plus.rectangle")
+                Label("Insert Page After", systemImage: "plus.rectangle")
             }
             Button { onContextMenuDuplicate() } label: {
                 Label("Duplicate", systemImage: "doc.on.doc")
             }
             Divider()
             Button(role: .destructive) { onContextMenuDelete() } label: {
-                Label("Delete", systemImage: "trash")
+                Label("Delete Page", systemImage: "trash")
             }
         }
         .onAppear { loadThumbnail() }
         .onChange(of: page.updatedAt) { _, _ in
-            // Page changed → invalidate and re-render
-            PageThumbnailCache.shared.invalidate(pageId: page.id)
+            // Phase 4E: composite key carries a fingerprint of
+            // `strokeData`, so a new sketch produces a new entry
+            // automatically — no manual invalidate needed. The
+            // previous image stays visible until the new one is
+            // ready (never flash to blank during regen).
             loadThumbnail()
         }
     }
 
     private func loadThumbnail() {
-        if let cached = PageThumbnailCache.shared.thumbnail(for: page.id) {
+        let key = PageThumbnailCache.shared.composeKey(for: page)
+        if let cached = PageThumbnailCache.shared.thumbnail(for: key) {
             image = cached
             return
         }
@@ -163,7 +173,11 @@ private struct PageStripThumbnail: View {
                 for: page,
                 targetSize: size
             )
-            await MainActor.run { image = result }
+            // Don't blank the row if the render returned nil — the
+            // previous image is a better fallback than empty paper.
+            if let result {
+                await MainActor.run { image = result }
+            }
         }
     }
 }

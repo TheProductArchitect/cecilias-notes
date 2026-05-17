@@ -58,18 +58,7 @@ struct NotebookGridView: View {
                     }
 
                     ForEach(levelNotebooks) { notebook in
-                        NotebookCardView(notebook: notebook, viewModel: viewModel)
-                            .frame(width: 168, height: 224)
-                            .transition(.scale(scale: 0.85).combined(with: .opacity))
-                            .draggable(
-                                (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id)))
-                                    ?? Data()
-                            ) {
-                                NotebookCardView(notebook: notebook, viewModel: viewModel)
-                                    .frame(width: 168, height: 224)
-                                    .opacity(0.6)
-                                    .onAppear { HapticManager.shared.dragReorderStarted() }
-                            }
+                        notebookCard(notebook)
                     }
                 }
                 // 24pt of breathing room between the masthead's bottom
@@ -87,6 +76,67 @@ struct NotebookGridView: View {
             // PencilKit or other gesture recognisers downstream.
             .scrollDismissesKeyboard(.immediately)
         }
+    }
+
+    /// One notebook tile. Carries the cross-subject move drag
+    /// (unchanged from before) and, in manual sort mode only, adds a
+    /// 6-dot drag handle overlay + a drop destination that reorders
+    /// the dragged card immediately before this one via
+    /// `LibraryViewModel.reorderNotebook(movedId:before:)`.
+    @ViewBuilder
+    private func notebookCard(_ notebook: Notebook) -> some View {
+        let isManual   = viewModel.sortOrder == .manual
+        let dragData   = (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id))) ?? Data()
+        NotebookCardView(notebook: notebook, viewModel: viewModel)
+            .frame(width: 168, height: 224)
+            .overlay(alignment: .topTrailing) {
+                if isManual { reorderDragHandle }
+            }
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+            .draggable(dragData) {
+                NotebookCardView(notebook: notebook, viewModel: viewModel)
+                    .frame(width: 168, height: 224)
+                    .scaleEffect(1.03)
+                    .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+                    .opacity(0.85)
+                    .onAppear { HapticManager.shared.dragReorderStarted() }
+            }
+            // Reorder-on-drop only in manual mode. Non-manual modes
+            // fall through to the existing sidebar drop targets (move
+            // to subject / folder). A drop on the source itself is a
+            // no-op handled inside the VM.
+            .dropDestination(for: Data.self) { items, _ in
+                guard isManual else { return false }
+                var landed = false
+                for data in items {
+                    if let decoded = try? JSONDecoder().decode(NotebookTransferID.self, from: data) {
+                        viewModel.reorderNotebook(movedId: decoded.id, before: notebook.id)
+                        landed = true
+                    }
+                }
+                if landed { HapticManager.shared.dragReorderDropped() }
+                return landed
+            }
+    }
+
+    /// Small 6-dot grip rendered top-right of each card when manual
+    /// sort is active. Purely a visual affordance — the underlying
+    /// `.draggable` lives on the whole card so the user can pick up
+    /// from anywhere, but the grip signals "this is reorderable" to
+    /// match the spec.
+    private var reorderDragHandle: some View {
+        VStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 2) {
+                    Circle().frame(width: 2, height: 2)
+                    Circle().frame(width: 2, height: 2)
+                }
+            }
+        }
+        .foregroundStyle(Color.inkRecessiveTertiary)
+        .frame(width: 20, height: 20)
+        .padding(6)
+        .accessibilityLabel("Drag to reorder")
     }
 
     // MARK: Search
@@ -138,18 +188,33 @@ struct NotebookGridView: View {
 
     // MARK: Empty states
 
-    /// Three-element minimal empty state per the redesign — a 28pt
-    /// hairline rule, "nothing here yet.", "pick a subject, start
-    /// something.". No icon, no illustration, no CTA. Used everywhere
-    /// the grid would otherwise show an empty state (subject root,
-    /// inside an empty folder, all notes).
+    /// Centred call-to-action empty state. Two variants, picked from
+    /// the VM's current shape:
+    ///   • No subjects yet → "create your first subject" → focuses the
+    ///     inline rename on a fresh subject (same flow as the sidebar's
+    ///     "+ new subject" tap).
+    ///   • Subjects exist but the current context has no notebooks →
+    ///     "create your first notebook" → routes through
+    ///     `createNotebookWithFallback`, which lands the notebook in the
+    ///     selected subject (or the inferred subject for `.recent` /
+    ///     `.allNotes`) and opens the customise panel.
     @ViewBuilder
     private var emptyState: some View {
-        EditorialEmptyState(
-            primary: "nothing here yet.",
-            secondary: "pick a subject, start something."
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        if viewModel.subjects.isEmpty {
+            CreateFirstCTA(
+                title: "create your first subject",
+                buttonLabel: "+ new subject",
+                action: { viewModel.createSubject() }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            CreateFirstCTA(
+                title: "create your first notebook",
+                buttonLabel: "+ new notebook",
+                action: { viewModel.createNotebookWithFallback() }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private var searchEmptyState: some View {
@@ -158,6 +223,40 @@ struct NotebookGridView: View {
             secondary: "try fewer words."
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Centred create-CTA
+
+/// Center-screen empty-state affordance for first-run / empty-subject
+/// flows. Visually matches the editorial empty state's restraint —
+/// generous whitespace, near-black SF Pro Display title — but adds a
+/// single primary button to give a new user a clear next step.
+private struct CreateFirstCTA: View {
+    let title: String
+    let buttonLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text(title)
+                .font(.system(size: 22, weight: .semibold, design: .default))
+                .foregroundStyle(Color.inkTextPrimary)
+                .multilineTextAlignment(.center)
+            Button(action: action) {
+                Text(buttonLabel)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(Color.brandAccent)
+                    )
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 32)
     }
 }
 

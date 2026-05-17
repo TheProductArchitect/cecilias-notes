@@ -94,6 +94,7 @@ final class Notebook {
             NotebookPreferencesStore.setPreferences(prefs, for: id)
         }
     }
+
     /// Denormalised page count — maintained by StorageService.
     var totalPageCount: Int = 0
     /// JPEG 200×260pt thumbnail of first page, regenerated on save.

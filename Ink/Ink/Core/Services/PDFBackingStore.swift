@@ -7,8 +7,7 @@ import Foundation
 ///   (see `InkSchemas.swift`). The pattern for new per-notebook /
 ///   per-page state in this app is a UserDefaults-backed store —
 ///   `CoverToneStore`, `NotebookPreferencesStore`,
-///   `PageExtraHeightStore`, `RecentNotebooksTracker` — and this
-///   store follows that pattern.
+///   `RecentNotebooksTracker` — and this store follows that pattern.
 ///
 /// Two responsibilities:
 ///   • Mark a notebook as "PDF-backed" — the actual PDF lives at

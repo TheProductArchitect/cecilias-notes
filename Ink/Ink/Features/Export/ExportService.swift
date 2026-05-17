@@ -380,7 +380,7 @@ final class ExportService {
             )
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.rotate(by: -CGFloat(record.rotationDegrees) * .pi / 180)
+            ctx.rotate(by: -CGFloat(record.rotation) * .pi / 180)
             ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
             image.draw(in: CGRect(origin: .zero, size: rect.size))
             ctx.restoreGState()
@@ -838,45 +838,10 @@ final class ExportService {
     // MARK: - Media attachments
 
     private func drawMediaAttachments(_ page: Page, ctx: CGContext, bounds: CGRect, notebook: Notebook) {
-        // Legacy SwiftData-backed attachments (the @Model is kept
-        // for CloudKit-compatibility but is not the runtime source
-        // of truth any more). Walked first so the side-channel
-        // attachments end up on top in z-order — matches "newest
-        // wins" since new attachments only go through the
-        // side-channel path.
-        let attachments = (page.mediaAttachments ?? [])
-            .filter { !$0.isDeleted }
-            .sorted { $0.zIndex < $1.zIndex }
-
-        for att in attachments {
-            let fileURL = StorageService.notebooksDirectoryURL
-                .appendingPathComponent(notebook.id.uuidString)
-                .appendingPathComponent("media")
-                .appendingPathComponent(att.fileName)
-            guard let image = UIImage(contentsOfFile: fileURL.path) else { continue }
-
-            let rect = CGRect(
-                x:      att.x * bounds.width,
-                y:      att.y * bounds.height,
-                width:  att.width  * bounds.width,
-                height: att.height * bounds.height
-            )
-            let cx = rect.midX, cy = rect.midY
-
-            ctx.saveGState()
-            ctx.translateBy(x: cx, y: cy)
-            ctx.rotate(by: CGFloat(att.rotation))
-            ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
-            ctx.setAlpha(att.opacity)
-            image.draw(in: CGRect(origin: .zero, size: rect.size))
-            ctx.restoreGState()
-        }
-
-        // Side-channel image attachments — the runtime source of
-        // truth. Drawn after the legacy path so they layer on top.
-        // Geometry is normalised against `bounds`; rotation is
-        // applied around the rect's centre, same as the legacy
-        // path above.
+        // Phase 5A+5C Step 1: the legacy SwiftData `MediaAttachment`
+        // entity is gone; image attachments live exclusively in
+        // `MediaAttachmentStore`. Geometry is normalised against
+        // `bounds`; rotation is applied around the rect's centre.
         let records = MediaAttachmentStore.records(for: page.id)
         for record in records {
             let url = MediaAttachmentStore.absoluteURL(for: record)
@@ -893,7 +858,7 @@ final class ExportService {
             // Convert 90° steps to radians. `rotate(by:)` is
             // counter-clockwise in PDF context, so negate to match
             // the on-screen rotation direction.
-            ctx.rotate(by: -CGFloat(record.rotationDegrees) * .pi / 180)
+            ctx.rotate(by: -CGFloat(record.rotation) * .pi / 180)
             ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
             image.draw(in: CGRect(origin: .zero, size: rect.size))
             ctx.restoreGState()
@@ -957,12 +922,15 @@ final class ExportService {
     // MARK: - Audio markers
 
     private func drawAudioMarkers(_ page: Page, ctx: CGContext, bounds: CGRect) {
-        let annotations = (page.audioAnnotations ?? []).filter { !$0.isDeleted }
-        guard !annotations.isEmpty else { return }
+        // Phase 5A+5C Step 3: `AudioRecord` is denormalised by
+        // pageId — fetch via the storage façade rather than a
+        // (now-removed) `Page.audioAnnotations` relationship.
+        let records = StorageService.shared.fetchAudioRecords(forPageId: page.id)
+        guard !records.isEmpty else { return }
 
-        for ann in annotations {
-            let pinX = CGFloat(ann.pageX) * bounds.width
-            let pinY = CGFloat(ann.pageY) * bounds.height
+        for ann in records {
+            let pinX = CGFloat(ann.normalizedX) * bounds.width
+            let pinY = CGFloat(ann.normalizedY) * bounds.height
             let pinSize: CGFloat = 16
 
             // Microphone symbol (filled circle + mic icon rendered as UIImage)
@@ -972,8 +940,9 @@ final class ExportService {
                 mic.draw(at: CGPoint(x: pinX - pinSize / 2, y: pinY - pinSize / 2))
             }
 
-            // Transcription footnote
-            guard let transcript = ann.transcription, !transcript.isEmpty else { continue }
+            // Transcription footnote — `transcript` is non-optional String now.
+            let transcript = ann.transcript
+            guard !transcript.isEmpty else { continue }
 
             let footnoteY = pinY + pinSize + 4
             let ruleRect  = CGRect(x: 0, y: footnoteY, width: bounds.width, height: 0.5)

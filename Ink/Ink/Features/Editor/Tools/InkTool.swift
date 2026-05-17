@@ -16,16 +16,6 @@ enum InkTool: Equatable {
     case crayon(colour: UIColor, width: CGFloat)
     case pencil(colour: UIColor, width: CGFloat, opacity: CGFloat)
     case highlighter(colour: UIColor, width: CGFloat)
-    /// Underline-text variant of the highlighter family. On a
-    /// PDF-backed page with selectable text under the stroke, the
-    /// editor intercepts the stroke and creates a
-    /// `PDFTextAnnotationRecord(type: .underline)` instead of
-    /// committing PencilKit ink. On non-PDF pages, or when no text
-    /// is detected, it falls back to a marker stroke at 40% alpha.
-    case highlighterUnderline(colour: UIColor, width: CGFloat)
-    /// Strikethrough-text variant — same interception logic, type
-    /// `.strikethrough`.
-    case highlighterStrikethrough(colour: UIColor, width: CGFloat)
     // Modes
     case eraser(mode: EraserMode)
     case lasso
@@ -45,7 +35,6 @@ enum InkTool: Equatable {
 
     enum Identity: String, CaseIterable, Codable {
         case pen, fountainPen, monoline, marker, brush, crayon, pencil, highlighter
-        case highlighterUnderline, highlighterStrikethrough
         case eraser, lasso, ruler, text, stickyNote, image
 
         var systemImage: String {
@@ -58,8 +47,6 @@ enum InkTool: Equatable {
             case .crayon:                   return "pencil.tip.crop.circle"
             case .pencil:                   return "pencil"
             case .highlighter:              return "highlighter"
-            case .highlighterUnderline:     return "underline"
-            case .highlighterStrikethrough: return "strikethrough"
             case .eraser:                   return "eraser"
             case .lasso:                    return "lasso"
             case .ruler:                    return "ruler"
@@ -79,8 +66,6 @@ enum InkTool: Equatable {
             case .crayon:                   return "Crayon"
             case .pencil:                   return "Pencil"
             case .highlighter:              return "Highlighter"
-            case .highlighterUnderline:     return "Underline"
-            case .highlighterStrikethrough: return "Strikethrough"
             case .eraser:                   return "Eraser"
             case .lasso:                    return "Lasso"
             case .ruler:                    return "Ruler"
@@ -101,8 +86,6 @@ enum InkTool: Equatable {
         case .crayon:                   return .crayon
         case .pencil:                   return .pencil
         case .highlighter:              return .highlighter
-        case .highlighterUnderline:     return .highlighterUnderline
-        case .highlighterStrikethrough: return .highlighterStrikethrough
         case .eraser:                   return .eraser
         case .lasso:                    return .lasso
         case .ruler:                    return .ruler
@@ -112,30 +95,25 @@ enum InkTool: Equatable {
         }
     }
 
-    /// True when the active tool is a member of the highlighter
-    /// family — base highlighter, underline, or strikethrough. The
-    /// stroke-end hook in `EditorViewModel` uses this to decide
-    /// whether to attempt PDF text detection on the just-committed
-    /// stroke.
+    /// True when the active tool is the highlighter. The stroke-end
+    /// hook in `EditorViewModel` uses this to decide whether to
+    /// attempt PDF text detection on the just-committed stroke.
     var isHighlighterFamily: Bool {
         switch self {
-        case .highlighter, .highlighterUnderline, .highlighterStrikethrough:
-            return true
-        default:
-            return false
+        case .highlighter: return true
+        default:           return false
         }
     }
 
-    /// Maps a highlighter-family tool to the corresponding
-    /// `PDFTextAnnotationType` that should be recorded when text is
-    /// detected under the stroke. Returns `nil` for non-highlighter
-    /// tools.
+    /// Maps the highlighter to the corresponding `PDFTextAnnotationType`
+    /// that should be recorded when text is detected under the stroke.
+    /// Returns `nil` for non-highlighter tools. Underline / strikethrough
+    /// variants were retired in the variant-collapse pass — there's only
+    /// `.highlight` left.
     var pdfTextAnnotationType: PDFTextAnnotationType? {
         switch self {
-        case .highlighter:              return .highlight
-        case .highlighterUnderline:     return .underline
-        case .highlighterStrikethrough: return .strikethrough
-        default:                        return nil
+        case .highlighter: return .highlight
+        default:           return nil
         }
     }
 
@@ -145,7 +123,7 @@ enum InkTool: Equatable {
     var hasColour: Bool {
         switch self {
         case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil,
-             .highlighter, .highlighterUnderline, .highlighterStrikethrough:
+             .highlighter:
             return true
         case .eraser, .lasso, .ruler, .text, .stickyNote, .image:
             return false
@@ -156,9 +134,11 @@ enum InkTool: Equatable {
     var hasWidth: Bool {
         switch self {
         case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil,
-             .highlighter, .highlighterUnderline, .highlighterStrikethrough:
+             .highlighter:
             return true
-        case .eraser(.pixel):                          return true
+        // Pixel eraser used to expose a width slider in the
+        // floating palette; spec retired the configurability, so
+        // every eraser mode now reports `hasWidth = false`.
         case .eraser:                                  return false
         case .lasso, .ruler, .text, .stickyNote, .image: return false
         }
@@ -183,9 +163,7 @@ enum InkTool: Equatable {
         case .monoline(let c, _),
              .marker(let c, _),
              .crayon(let c, _),
-             .highlighter(let c, _),
-             .highlighterUnderline(let c, _),
-             .highlighterStrikethrough(let c, _):     return c
+             .highlighter(let c, _):                  return c
         default:                                      return .inkTextPrimary
         }
     }
@@ -199,17 +177,12 @@ enum InkTool: Equatable {
         case .monoline(_, let w),
              .marker(_, let w),
              .crayon(_, let w),
-             .highlighter(_, let w),
-             .highlighterUnderline(_, let w),
-             .highlighterStrikethrough(_, let w):    return w
-        case .eraser(.pixel):
-            // Session value takes precedence over the Settings default.
-            // Session is cleared at app cold-launch; the toolbar size
-            // slider writes through to it on every adjustment.
-            let session = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize.session")
-            if session > 0 { return CGFloat(session) }
-            let stored  = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
-            return stored > 0 ? CGFloat(stored) : 24
+             .highlighter(_, let w):                 return w
+        // Pixel eraser width is no longer user-configurable — the
+        // dedicated Settings slider was removed and `hasWidth` is
+        // now false for `.eraser(.pixel)`, so the floating
+        // toolbar's size buttons stop affecting it. `makePKTool`
+        // hardcodes the PencilKit-default-equivalent width.
         default:                                     return 0
         }
     }
@@ -220,9 +193,7 @@ enum InkTool: Equatable {
              .fountainPen(_, _, let o),
              .brush(_, _, let o),
              .pencil(_, _, let o):                  return o
-        case .highlighter,
-             .highlighterUnderline,
-             .highlighterStrikethrough:             return 0.4
+        case .highlighter:                          return 0.4
         default:                                    return 1.0
         }
     }
@@ -275,10 +246,6 @@ enum InkTool: Equatable {
         case .crayon(_, let w):              return .crayon(colour: colour, width: w)
         case .pencil(_, let w, let o):       return .pencil(colour: colour, width: w, opacity: o)
         case .highlighter(_, let w):         return .highlighter(colour: colour, width: w)
-        case .highlighterUnderline(_, let w):
-            return .highlighterUnderline(colour: colour, width: w)
-        case .highlighterStrikethrough(_, let w):
-            return .highlighterStrikethrough(colour: colour, width: w)
         default:                             return self
         }
     }
@@ -294,10 +261,6 @@ enum InkTool: Equatable {
         case .crayon(let c, _):              return .crayon(colour: c, width: clamped)
         case .pencil(let c, _, let o):       return .pencil(colour: c, width: clamped, opacity: o)
         case .highlighter(let c, _):         return .highlighter(colour: c, width: clamped)
-        case .highlighterUnderline(let c, _):
-            return .highlighterUnderline(colour: c, width: clamped)
-        case .highlighterStrikethrough(let c, _):
-            return .highlighterStrikethrough(colour: c, width: clamped)
         default:                             return self
         }
     }
@@ -342,11 +305,6 @@ enum InkTool: Equatable {
             .pencil(colour: inkColour(theme), width: 3, opacity: 1.0)
         }
         static let highlighter: InkTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
-        // Underline / strikethrough share the highlighter's colour
-        // and width defaults — they're the same family from the
-        // user's mental model, just applied with a different mark.
-        static let highlighterUnderline: InkTool = .highlighterUnderline(colour: UIColor(hex: "#FFD60A"), width: 12)
-        static let highlighterStrikethrough: InkTool = .highlighterStrikethrough(colour: UIColor(hex: "#FFD60A"), width: 12)
         static let eraser: InkTool = .eraser(mode: .wholeStroke)
         static let lasso: InkTool = .lasso
         static let ruler: InkTool = .ruler
@@ -366,8 +324,6 @@ enum InkTool: Equatable {
             case .crayon:       return crayon(theme: theme)
             case .pencil:       return pencil(theme: theme)
             case .highlighter:              return highlighter
-            case .highlighterUnderline:     return highlighterUnderline
-            case .highlighterStrikethrough: return highlighterStrikethrough
             case .eraser:       return eraser
             case .lasso:        return lasso
             case .ruler:        return ruler
@@ -404,25 +360,24 @@ enum InkTool: Equatable {
             return PKInkingTool(.crayon, color: c, width: w)
         case .pencil(let c, let w, let opacity):
             return PKInkingTool(.pencil, color: c.withAlphaComponent(opacity), width: w)
-        case .highlighter(let c, let w),
-             .highlighterUnderline(let c, let w),
-             .highlighterStrikethrough(let c, let w):
+        case .highlighter(let c, let w):
             // Spec: highlighter is colour at 40% alpha (fixed). Marker ink type
             // gives the chunky chisel feel a highlighter expects.
             //
-            // Underline + strikethrough share this PKTool — the visible
-            // stroke is the user's drag preview. When the stroke ends
-            // over selectable PDF text, the editor intercepts and
-            // replaces the stroke with a `PDFTextAnnotationRecord`
-            // (see EditorViewModel.handleHighlighterStrokeCompleted).
-            // Over non-text regions the stroke stays as a fallback.
+            // On PDF-backed pages the stroke-end hook tries to detect
+            // selectable text under the stroke and replaces the
+            // PencilKit ink with a `PDFTextAnnotationRecord(.highlight)`.
+            // Outside that detection path the stroke stays as the
+            // visible mark.
             return PKInkingTool(.marker, color: c.withAlphaComponent(0.4), width: w)
         case .eraser(.pixel):
-            let session = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize.session")
-            let stored  = UserDefaults.standard.double(forKey: "ink.eraser.pixelSize")
-            let width: CGFloat = session > 0 ? CGFloat(session)
-                              : (stored > 0 ? CGFloat(stored) : 24)
-            return PKEraserTool(.bitmap, width: width)
+            // Fixed default width — the Settings slider that used
+            // to drive this is gone, and the floating palette's
+            // size buttons no longer report `hasWidth` for the
+            // pixel eraser, so there's nothing else to consult.
+            // 24pt matches PencilKit's typical bitmap-eraser
+            // default and the value the legacy keys defaulted to.
+            return PKEraserTool(.bitmap, width: 24)
         case .eraser(.wholeStroke):
             return PKEraserTool(.vector)
         case .eraser(.page):

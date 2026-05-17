@@ -12,6 +12,12 @@ final class InkTextView: UITextView {
     var onEscape:     (() -> Void)?
     var onTab:        (() -> Void)?
     var onShiftTab:   (() -> Void)?
+    /// Fires on a finger or Pencil tap when the text view is NOT yet
+    /// editable (states `.idle` and `.selected`). The hosting overlay
+    /// promotes the block to `.editing` in response. Without this
+    /// callback the only way into editing was the SwiftUI parent's
+    /// `.onTapGesture`, which UITextView's own gestures swallowed.
+    var onActivate: (() -> Void)?
 
     override var keyCommands: [UIKeyCommand]? {
         // iOS 13+ replacement for the deprecated
@@ -163,6 +169,25 @@ struct TextBlockView: UIViewRepresentable {
         context.coordinator.toolbar  = toolbar
         context.coordinator.block    = block
 
+        // Tap-to-activate. UITextView with `isEditable = false`
+        // intercepts touches but does nothing useful with them; the
+        // SwiftUI parent's `.onTapGesture { handleTap }` therefore
+        // never fires inside the text body. Adding our own
+        // recognizer that defers to existing gestures (cancelsTouchesInView
+        // = false, delaysTouchesEnded = false) lets selection still work
+        // when the view IS editable, but routes idle/selected taps up to
+        // `onActivate` so the block can promote into editing state.
+        textView.onActivate = { [weak coordinator] in
+            coordinator?.onBecomeActive()
+        }
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleActivationTap(_:))
+        )
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesEnded   = false
+        textView.addGestureRecognizer(tap)
+
         return textView
     }
 
@@ -246,6 +271,14 @@ extension TextBlockView {
 
         private var shortcutHandler: MarkdownShortcutHandler?
         private var saveTask: Task<Void, Never>?
+
+        /// Tap inside the text view body — promotes idle/selected
+        /// blocks into editing. No-op while already editing so the tap
+        /// can position the caret instead.
+        @objc func handleActivationTap(_ gr: UITapGestureRecognizer) {
+            guard let textView, !textView.isEditable else { return }
+            onBecomeActive()
+        }
 
         init(onCommit: @escaping (NSAttributedString) -> Void,
              onBecomeActive: @escaping () -> Void,

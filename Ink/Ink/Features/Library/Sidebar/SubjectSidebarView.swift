@@ -3,8 +3,10 @@ import SwiftData
 
 /// Recessive 118pt-wide sidebar. No header, no logo, no panel tint —
 /// it sits beside the masthead and recedes until the user reaches for
-/// it. Three sections (subjects, pinned, recent), then a bottom bar
-/// with "+ new subject" and the iCloud status indicator.
+/// it. Two sections (subjects, recent), then a bottom bar with
+/// "+ new subject" and the iCloud status indicator. Pinned subjects
+/// surface at the top of the SUBJECTS list with the pin glyph; there
+/// is no separate PINNED section.
 ///
 /// Section labels are 7.5pt tracked uppercase quaternary recessive.
 /// Subject rows are 11pt primary recessive (#aaa-equivalent), with the
@@ -18,6 +20,13 @@ struct SubjectSidebarView: View {
     // `bottomBar`. The `KeyboardObserver` dependency the earlier
     // floating-only gate required is no longer needed here.
 
+    /// Session-local edit mode. Toggled by the "Edit" button in the
+    /// subjects section label row. In edit mode the drag handles
+    /// become more prominent and a minus delete button appears on
+    /// each row. Not persisted — leaving and re-entering the sidebar
+    /// resets to the default browse state.
+    @State private var isEditingSubjects: Bool = false
+
     private static let horizontalInset: CGFloat = 13
 
     /// Subject-count colour — #aaa light / dim dark equivalent. Slightly
@@ -28,20 +37,11 @@ struct SubjectSidebarView: View {
         dark:  Color(hex: "#5e5e5c")
     )
 
-    /// "nothing yet" empty-state colour — #bbb light. Sits between
-    /// counts and dividers in the recessive ramp.
-    private static let emptyStateColor = Color(
-        light: Color(hex: "#bbbbbb"),
-        dark:  Color(hex: "#555553")
-    )
-
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 0) {
                     subjectsSection
-                    sectionDivider
-                    pinnedSection
                     sectionDivider
                     recentContextRow
                 }
@@ -49,9 +49,21 @@ struct SubjectSidebarView: View {
                 .padding(.bottom, 16)
             }
             .scrollIndicators(.hidden)
+            // Allow the user to dismiss the floating keyboard by
+            // scrolling the sidebar — matches iOS conventions and
+            // prevents a stuck keyboard from blocking the bottomBar.
+            .scrollDismissesKeyboard(.immediately)
 
             bottomBar
         }
+        // Ignore keyboard avoidance for the entire sidebar layout.
+        // Without this, the floating keyboard shifts the whole VStack
+        // (including the bottomBar's "+ new notebook" / "+ new subject"
+        // buttons) upward, even though `bottomBar` itself already
+        // declares `.ignoresSafeArea(.keyboard)` — SwiftUI applies
+        // keyboard inset to the closest enclosing scrollable container,
+        // which is this outer VStack. See Bug 3.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .background(Color(.systemBackground))
         .overlay(alignment: .trailing) {
             Rectangle()
@@ -64,16 +76,66 @@ struct SubjectSidebarView: View {
     // MARK: Subjects
 
     private var subjectsSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("subjects")
+        // Subjects arrive from the VM already pinned-first via
+        // `fetchSubjects()` (sorted by `isPinned` descending). Splitting
+        // here lets us slip a hairline between the two groups without
+        // re-sorting client-side.
+        let pinned   = viewModel.subjects.filter { $0.isPinned }
+        let unpinned = viewModel.subjects.filter { !$0.isPinned }
+        return VStack(alignment: .leading, spacing: 0) {
+            subjectsSectionHeader
             // "All Notes" — kept as the first row so the cross-subject
             // view stays reachable. Italicised so it reads as a meta
             // entry rather than a real subject.
             allNotesRow
-            ForEach(viewModel.subjects) { subject in
+            ForEach(pinned) { subject in
+                subjectRow(for: subject)
+            }
+            // Hairline separator between pinned and unpinned groups.
+            // Only rendered when at least one subject is pinned —
+            // an empty-pinned sidebar shows no extra rule.
+            if !pinned.isEmpty && !unpinned.isEmpty {
+                Rectangle()
+                    .fill(Color.inkRecessiveQuinary)
+                    .frame(height: 0.5)
+                    .padding(.horizontal, Self.horizontalInset)
+                    .padding(.vertical, 6)
+            }
+            ForEach(unpinned) { subject in
                 subjectRow(for: subject)
             }
         }
+    }
+
+    /// "subjects" label paired with an Edit / Done text button on the
+    /// right. The button is hidden when there are no subjects yet —
+    /// reordering and deleting both require existing rows.
+    private var subjectsSectionHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("subjects")
+                .font(.system(size: 7.5, weight: .regular))
+                .tracking(0.08)
+                .textCase(.uppercase)
+                .foregroundStyle(Color.inkRecessiveQuaternary)
+            Spacer(minLength: 0)
+            if !viewModel.subjects.isEmpty {
+                Button {
+                    withAnimation(.inkSpring(InkSpring.snappy)) {
+                        isEditingSubjects.toggle()
+                    }
+                } label: {
+                    Text(isEditingSubjects ? "done" : "edit")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, Self.horizontalInset)
+        .padding(.bottom, 8)
     }
 
     private var allNotesRow: some View {
@@ -87,51 +149,9 @@ struct SubjectSidebarView: View {
         SubjectListRow(
             subject: subject,
             viewModel: viewModel,
-            countColor: Self.countColor
+            countColor: Self.countColor,
+            isEditing: isEditingSubjects
         )
-    }
-
-    // MARK: Pinned
-
-    private var pinnedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("pinned")
-            if viewModel.pinnedNotebooks.isEmpty {
-                Text("nothing yet")
-                    .font(.system(size: 10, weight: .regular).italic())
-                    .foregroundStyle(Self.emptyStateColor)
-                    .padding(.horizontal, Self.horizontalInset)
-                    .padding(.vertical, 4)
-            } else {
-                ForEach(viewModel.pinnedNotebooks.prefix(4)) { notebook in
-                    pinnedRow(for: notebook)
-                }
-            }
-        }
-    }
-
-    private func pinnedRow(for notebook: Notebook) -> some View {
-        let subjectName = subjectName(for: notebook.subjectId)
-        return Button {
-            viewModel.selectedNotebookId = notebook.id
-        } label: {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(notebook.title.lowercased())
-                    .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(Color.inkRecessivePrimary)
-                    .lineLimit(1)
-                if !subjectName.isEmpty {
-                    Text(subjectName.lowercased())
-                        .font(.system(size: 8.5, weight: .regular).italic())
-                        .foregroundStyle(Color.inkRecessiveQuinary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Self.horizontalInset)
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: Recent (context switcher)
@@ -150,7 +170,7 @@ struct SubjectSidebarView: View {
             HStack(spacing: 0) {
                 Text("recent")
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                    .foregroundStyle(isSelected ? Color.inkNearBlack : Color.inkRecessivePrimary)
+                    .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
                 Spacer(minLength: 0)
             }
         }
@@ -258,11 +278,6 @@ struct SubjectSidebarView: View {
             .padding(.vertical, 12)
     }
 
-    private func subjectName(for id: UUID?) -> String {
-        guard let id else { return "" }
-        return viewModel.subjects.first { $0.id == id }?.name ?? ""
-    }
-
 }
 
 // MARK: - Generic recessive row
@@ -285,7 +300,7 @@ private struct SidebarRow<Content: View>: View {
             .overlay(alignment: .leading) {
                 if isSelected {
                     Rectangle()
-                        .fill(Color.inkNearBlack)
+                        .fill(Color.inkTextPrimary)
                         .frame(width: 2)
                 }
             }
@@ -317,7 +332,7 @@ private struct AllNotesListRow: View {
             HStack(spacing: 0) {
                 Text("all notes")
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular).italic())
-                    .foregroundStyle(isSelected ? Color.inkNearBlack : Color.inkRecessivePrimary)
+                    .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
                 Spacer(minLength: 0)
                 Text("\(notebooks.count)")
                     .font(.system(size: 9, weight: .regular))
@@ -351,13 +366,20 @@ private struct SubjectListRow: View {
     let subject: Subject
     @ObservedObject var viewModel: LibraryViewModel
     let countColor: Color
+    let isEditing: Bool
 
     @Query private var notebooks: [Notebook]
 
-    init(subject: Subject, viewModel: LibraryViewModel, countColor: Color) {
+    init(
+        subject: Subject,
+        viewModel: LibraryViewModel,
+        countColor: Color,
+        isEditing: Bool
+    ) {
         self.subject     = subject
         self.viewModel   = viewModel
         self.countColor  = countColor
+        self.isEditing   = isEditing
 
         let subjectId = subject.id
         _notebooks = Query(
@@ -371,34 +393,115 @@ private struct SubjectListRow: View {
         viewModel.selectedContext == .subject(subject.id)
     }
 
+    /// Drag payload for subject reorder. Distinct from
+    /// `NotebookTransferID` so a single Data-typed drop destination
+    /// on this row can route notebook-moves vs subject-reorders by
+    /// trying each decode in turn.
+    private var subjectDragData: Data {
+        (try? JSONEncoder().encode(SubjectTransferID(subjectId: subject.id))) ?? Data()
+    }
+
     var body: some View {
         SidebarRow(
             isSelected: isSelected,
-            onTap: { viewModel.selectedContext = .subject(subject.id) }
+            onTap: {
+                #if DEBUG
+                print("[Sidebar] subject tap id=\(subject.id) name=\(subject.name)")
+                #endif
+                viewModel.selectedContext = .subject(subject.id)
+            }
         ) {
-            HStack(spacing: 0) {
-                Text(subject.name.lowercased())
-                    .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                    .foregroundStyle(isSelected ? Color.inkNearBlack : Color.inkRecessivePrimary)
-                    .lineLimit(1)
+            HStack(spacing: 4) {
+                // Edit-mode delete affordance — a standard iOS red
+                // minus circle that soft-deletes the subject and
+                // returns the user to All Notes if the deleted one
+                // was active.
+                if isEditing {
+                    Button {
+                        HapticManager.shared.destructiveConfirmed()
+                        viewModel.deleteSubject(subject)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(Color.inkDestructive)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete \(subject.name)")
+                    .transition(.scale.combined(with: .opacity))
+                }
+
+                // Pinned indicator — small filled pin in the brand
+                // accent. The icon is the *only* visual distinction
+                // for pinned rows; no separate "Pinned" section label.
+                if subject.isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(Color.brandAccent)
+                }
+                // Inline rename when `viewModel.renamingSubjectId` matches.
+                // Driven by the context-menu "Rename" action and the
+                // auto-rename hand-off after a fresh `createSubject()`.
+                // Without this branch the rename flag was set but nothing
+                // surfaced the editor — the user saw no prompt and several
+                // subjects ended up named "New Subject". See Reg 4.
+                if viewModel.renamingSubjectId == subject.id {
+                    SubjectInlineRename(
+                        initialName: subject.name,
+                        onCommit: { newName in
+                            viewModel.renameSubject(subject, name: newName)
+                            viewModel.renamingSubjectId = nil
+                        },
+                        onCancel: {
+                            viewModel.renamingSubjectId = nil
+                        }
+                    )
+                } else {
+                    Text(subject.name.lowercased())
+                        .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                        .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 Text("\(notebooks.count)")
                     .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(countColor)
+
+                // Drag handle — always present, brighter + larger
+                // in edit mode. The `.draggable` lives on the handle
+                // so a long-press anywhere else on the row falls
+                // through to the existing context menu and tap
+                // gesture stays clean.
+                subjectDragHandle
             }
         }
+        // Single Data-typed drop destination dispatches by payload
+        // kind: notebook ID → move into this subject (existing); a
+        // subject ID → reorder (new). The decoders are mutually
+        // exclusive on JSON keys so the first successful decode
+        // wins.
         .dropDestination(for: Data.self) { items, _ in
             var landed = false
             for data in items {
                 if let decoded = try? JSONDecoder().decode(NotebookTransferID.self, from: data) {
                     viewModel.moveNotebook(id: decoded.id, to: subject.id)
                     landed = true
+                } else if let decoded = try? JSONDecoder().decode(SubjectTransferID.self, from: data) {
+                    viewModel.reorderSubject(movedId: decoded.subjectId, before: subject.id)
+                    landed = true
                 }
             }
             if landed { HapticManager.shared.dragReorderDropped() }
-            return true
+            return landed
         }
         .contextMenu {
+            Button {
+                viewModel.togglePinSubject(subject)
+            } label: {
+                Label(
+                    subject.isPinned ? "Unpin" : "Pin",
+                    systemImage: subject.isPinned ? "pin.slash" : "pin"
+                )
+            }
             Button {
                 viewModel.renamingSubjectId = subject.id
             } label: {
@@ -410,6 +513,43 @@ private struct SubjectListRow: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+    }
+
+    /// 6-dot grip. Default rendering is recessive-quinary; edit mode
+    /// bumps to recessive-secondary with a slightly larger dot to
+    /// make the affordance "grabbable" without changing the row
+    /// height. The handle is itself the drag origin.
+    private var subjectDragHandle: some View {
+        let dotSize: CGFloat = isEditing ? 2.5 : 2.0
+        let dotColor: Color  = isEditing
+            ? Color.inkRecessiveSecondary
+            : Color.inkRecessiveQuinary
+        return VStack(spacing: 2) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 2) {
+                    Circle().frame(width: dotSize, height: dotSize)
+                    Circle().frame(width: dotSize, height: dotSize)
+                }
+            }
+        }
+        .foregroundStyle(dotColor)
+        .frame(width: 14, height: 14)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Drag to reorder")
+        .draggable(subjectDragData) {
+            // Drag preview — minimal pill showing the subject name.
+            Text(subject.name.lowercased())
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(Color.inkTextPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 2)
+                )
+                .onAppear { HapticManager.shared.dragReorderStarted() }
         }
     }
 }
@@ -461,5 +601,61 @@ struct iCloudStatusView: View {
         if case .syncing = syncStatus { return true }
         if case .checking = syncStatus { return true }
         return false
+    }
+}
+
+
+// MARK: - SubjectInlineRename
+
+/// Inline text-field editor used by both flows that surface
+/// `viewModel.renamingSubjectId`:
+///   • Long-press → context-menu → "Rename"
+///   • Fresh subject created via "+ New Subject" (auto-focused so
+///     the user types the name without an extra tap).
+///
+/// Matches the inline-edit styling pattern used elsewhere in the
+/// editor (small SF Pro, near-black foreground, hairline underline).
+/// Commit on Return; cancel on Escape or focus loss with no edits.
+private struct SubjectInlineRename: View {
+
+    let initialName: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var draft: String
+    @FocusState private var focused: Bool
+
+    init(
+        initialName: String,
+        onCommit: @escaping (String) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.initialName = initialName
+        self.onCommit = onCommit
+        self.onCancel = onCancel
+        _draft = State(initialValue: initialName.lowercased())
+    }
+
+    var body: some View {
+        TextField("subject name", text: $draft)
+            .font(.system(size: 11, weight: .regular))
+            .foregroundStyle(Color.inkTextPrimary)
+            .focused($focused)
+            .submitLabel(.done)
+            .onSubmit {
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty { onCancel() } else { onCommit(trimmed) }
+            }
+            .onAppear { focused = true }
+            .onChange(of: focused) { _, isFocused in
+                // Focus-loss commits if there is content; cancels otherwise.
+                guard !isFocused else { return }
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty || trimmed == initialName {
+                    onCancel()
+                } else {
+                    onCommit(trimmed)
+                }
+            }
     }
 }

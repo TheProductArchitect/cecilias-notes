@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import UIKit
+import WidgetKit
 
 // MARK: - Storage keys
 
@@ -25,8 +26,28 @@ enum PersonalIdentity {
     /// dev builds without the App Group entitlement.
     static func mirrorNameToAppGroup(_ name: String? = nil) {
         let resolved = name ?? UserDefaults.standard.string(forKey: nameKey) ?? ""
-        UserDefaults(suiteName: appGroupSuite)?
-            .set(resolved, forKey: appGroupNameKey)
+        let suite    = UserDefaults(suiteName: appGroupSuite)
+        // Defensive guard — no-op when the value hasn't changed. This
+        // makes the function safe to call from any stray site without
+        // risking a write loop. `RootView.init` used to call it on
+        // every re-evaluation, and even though that call has been
+        // removed, the guard means any *future* accidental caller
+        // can't relight the same fuse. Skips the UserDefaults write
+        // AND the WidgetCenter reload — both are pointless when the
+        // stored value is already what we'd write.
+        let existing = suite?.string(forKey: appGroupNameKey) ?? ""
+        guard existing != resolved else { return }
+        suite?.set(resolved, forKey: appGroupNameKey)
+        #if DEBUG
+        print("[PersonalIdentity] mirror → \(appGroupSuite)/\(appGroupNameKey) = \"\(resolved)\"")
+        #endif
+        // WidgetKit's natural refresh cadence is up to 15 minutes;
+        // without an explicit reload the brand-mark possessive
+        // (e.g. "cecilia's") lags every name change. `reloadAllTimelines`
+        // tells the system to re-fetch every active widget's data
+        // and re-render — the user sees the new name within
+        // 2–3s on the home / lock screen.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

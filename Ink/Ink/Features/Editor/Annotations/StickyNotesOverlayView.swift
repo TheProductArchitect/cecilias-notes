@@ -15,45 +15,59 @@ import SwiftUI
 ///     fresh one on top).
 struct StickyNotesOverlayView: View {
     @ObservedObject var viewModel: EditorViewModel
+    /// The page this overlay is mounted on. Per-page mount per the
+    /// architectural rule — renders only notes whose `pageId` matches.
+    let pageId: UUID
+    /// Single placement primitive, base size only. See
+    /// `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
+    let coordinateSpace: PageCoordinateSpace
+
+    /// Refresh tick — bumped when `.stickyNotesChanged` fires so the
+    /// per-page lookup re-runs without polling the store.
+    @State private var refreshTick: Int = 0
 
     var body: some View {
-        GeometryReader { proxy in
-            let pageSize = proxy.size
-            ZStack(alignment: .topLeading) {
-                // Placement layer — only present when the sticky-note
-                // tool is active. SwiftUI z-stacks new content above
-                // earlier content, so the layer sits BELOW the
-                // existing markers and lets marker taps win.
-                if viewModel.selectedTool.isStickyNoteMode {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { location in
-                            placeNote(at: location, in: pageSize)
-                        }
-                }
+        let _ = refreshTick
+        let pageSize = coordinateSpace.baseSize
+        let notes    = StickyNoteStore.notes(for: pageId)
 
-                ForEach(viewModel.currentPageStickyNotes) { note in
-                    StickyNoteMarker(
-                        note: note,
-                        isOpen: viewModel.editingStickyNoteId == note.id,
-                        viewModel: viewModel
-                    )
-                    .position(
-                        x: CGFloat(note.normalizedX) * pageSize.width,
-                        y: CGFloat(note.normalizedY) * pageSize.height
-                    )
-                }
+        ZStack(alignment: .topLeading) {
+            // Placement layer — only present when the sticky-note
+            // tool is active. SwiftUI z-stacks new content above
+            // earlier content, so the layer sits BELOW the
+            // existing markers and lets marker taps win.
+            if viewModel.selectedTool.isStickyNoteMode {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        placeNote(at: location, in: pageSize)
+                    }
             }
-            .frame(width: pageSize.width, height: pageSize.height)
+
+            ForEach(notes) { note in
+                StickyNoteMarker(
+                    note: note,
+                    isOpen: viewModel.editingStickyNoteId == note.id,
+                    viewModel: viewModel
+                )
+                .position(
+                    x: CGFloat(note.normalizedX) * pageSize.width,
+                    y: CGFloat(note.normalizedY) * pageSize.height
+                )
+            }
         }
+        .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+        .onReceive(
+            NotificationCenter.default.publisher(for: .stickyNotesChanged)
+        ) { _ in refreshTick &+= 1 }
     }
 
     private func placeNote(at location: CGPoint, in size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        viewModel.addStickyNote(at: CGPoint(
-            x: location.x / size.width,
-            y: location.y / size.height
-        ))
+        viewModel.addStickyNote(
+            on: pageId,
+            at: CGPoint(x: location.x / size.width, y: location.y / size.height)
+        )
     }
 }
 
@@ -157,7 +171,7 @@ private struct StickyNotePopoverEditor: View {
 
             TextEditor(text: $draft)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.inkNearBlack)
+                .foregroundStyle(Color.inkTextPrimary)
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .focused($focused)

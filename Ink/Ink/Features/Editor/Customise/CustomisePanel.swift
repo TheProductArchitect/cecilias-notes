@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Slide-down customise panel anchored to the top of the editor.
@@ -51,28 +52,50 @@ struct CustomisePanel: View {
         VStack(spacing: 0) {
             sheetHeader
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 28) {
+                // Tightened layout: 8pt vertical rhythm between
+                // sections so the cover tones + page templates do the
+                // visual heavy lifting and the panel fits on a
+                // standard 11" iPad in portrait without scrolling.
+                // Two-column rows pair related controls; the toggle
+                // band is consolidated into compact single-line rows
+                // with a shared caption underneath.
+                VStack(alignment: .leading, spacing: 8) {
                     suggestedTagsBanner
                     nameSection
-                    tagsSection
                     coverSection
-                    // PDF-backed notebooks render the source PDF as
-                    // each page's background, so notebook-level page
-                    // size and template selection don't apply — hide
-                    // both sections in that case.
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // Page size + template share one row too —
+                    // hidden for PDF-backed notebooks where the
+                    // source PDF dictates both. ~35/65 split per
+                    // spec — `pageSizeSection` is narrower because
+                    // its three text options need less horizontal
+                    // run than the template carousel.
                     if !viewModel.notebook.isPDFBacked {
-                        pageSizeSection
-                        templateSection
+                        HStack(alignment: .top, spacing: 16) {
+                            pageSizeSection
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .layoutPriority(35)
+                            templateSection
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .layoutPriority(65)
+                        }
                     }
+                    tagsSection
                     if viewModel.notebook.isPDFBacked {
                         annotationsSection
                     }
-                    autoAddSection
-                    autoHideHeaderSection
+                    // Consolidated toggle band — single-line rows
+                    // with hairline separators, then one shared
+                    // recessive caption explaining both toggles.
+                    VStack(spacing: 0) {
+                        autoAddSection
+                        autoHideHeaderSection
+                    }
+                    togglesCaption
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 20)
-                .padding(.bottom, 28)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
             }
         }
         .background(
@@ -112,10 +135,19 @@ struct CustomisePanel: View {
         HStack {
             Text(viewModel.notebook.title.lowercased())
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.inkNearBlack)
+                .foregroundStyle(Color.inkTextPrimary)
                 .lineLimit(1)
             Spacer()
             Button {
+                // Resign first responder BEFORE the panel begins
+                // its slide-away animation. If we let the panel
+                // dismiss first, the in-flight keyboard animation
+                // can race the panel's transition and leave the
+                // keyboard stranded on the canvas. Order matters.
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
                 commitTitle()
                 viewModel.closeCustomisePanel()
             } label: {
@@ -140,7 +172,7 @@ struct CustomisePanel: View {
             sectionLabel("name")
             TextField("notebook name", text: $titleBuffer)
                 .font(.system(size: 15))
-                .foregroundStyle(Color.inkNearBlack)
+                .foregroundStyle(Color.inkTextPrimary)
                 .focused($nameFieldFocused)
                 .submitLabel(.done)
                 .onSubmit { commitTitle() }
@@ -151,9 +183,12 @@ struct CustomisePanel: View {
                 .overlay(alignment: .bottom) {
                     Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
                 }
-                // Keyboard toolbar "Done" — same pattern as the
-                // grid card's title field. Single dismiss path
+                // Keyboard toolbar "Done" — single dismiss path
                 // that works under floating + docked keyboards.
+                // This is now the only inline TextField in the
+                // notebook-naming flow; the legacy in-card
+                // rename was retired in favour of routing every
+                // rename through the customise panel.
                 .toolbar {
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()
@@ -190,7 +225,7 @@ struct CustomisePanel: View {
                         .foregroundStyle(Color.inkRecessiveTertiary)
                     Text(suggestion)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.inkNearBlack)
+                        .foregroundStyle(Color.inkTextPrimary)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -224,7 +259,7 @@ struct CustomisePanel: View {
                         ForEach(viewModel.suggestedTags, id: \.self) { tag in
                             Text(tag)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Color.inkNearBlack)
+                                .foregroundStyle(Color.inkTextPrimary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(
@@ -267,11 +302,22 @@ struct CustomisePanel: View {
     /// already-additive schema field. No tag sync, no analytics —
     /// tag mutations stay on-device.
     private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             sectionLabel("tags")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    // Empty-state placeholder: "add tags" italic in
+                    // recessive tertiary, sitting inline with the
+                    // `+` button so the row reads as intentional
+                    // instead of an orphaned chip. The placeholder
+                    // collapses out the moment the user adds a tag.
+                    if viewModel.notebook.tags.isEmpty && !isAddingTag {
+                        Text("add tags")
+                            .font(.system(size: 12).italic())
+                            .foregroundStyle(Color.inkRecessiveTertiary)
+                    }
+
                     ForEach(viewModel.notebook.tags, id: \.self) { tag in
                         tagPill(tag)
                     }
@@ -363,7 +409,7 @@ struct CustomisePanel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel tag entry")
         }
-        .foregroundStyle(Color.inkNearBlack)
+        .foregroundStyle(Color.inkTextPrimary)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
@@ -504,7 +550,7 @@ struct CustomisePanel: View {
                             .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                             .foregroundStyle(
                                 isSelected
-                                    ? Color.inkNearBlack
+                                    ? Color.inkTextPrimary
                                     : Color(light: Color(hex: "#aaaaaa"),
                                             dark:  Color(hex: "#5e5e5c"))
                             )
@@ -629,7 +675,7 @@ struct CustomisePanel: View {
             HStack(alignment: .center, spacing: 0) {
                 Text(annotationsSummary(counts))
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.inkNearBlack)
+                    .foregroundStyle(Color.inkTextPrimary)
                 Spacer(minLength: 8)
                 // Chevron — only when there's something to drill in
                 // to. Recessive-tertiary at 12pt, matching the
@@ -650,15 +696,25 @@ struct CustomisePanel: View {
                 Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
             }
         }
-        // Sheet anchored to the row so the half-detent slide-up
-        // origin reads cleanly. The list view subscribes to its own
-        // change notifications for live refresh.
-        .sheet(isPresented: $showAnnotationList) {
-            AnnotationListSheet(viewModel: viewModel) {
-                showAnnotationList = false
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+        // Phase 5B: AnnotationListSheet is presented through
+        // `ModalPresenter` so it lifts above the editor's
+        // `.fullScreenCover` from `LibraryView` rather than nesting
+        // a sheet inside the cover. The trigger boolean
+        // `showAnnotationList` is preserved so existing button
+        // wiring is unchanged; the .onChange below translates flag
+        // flips into presenter calls.
+        .onChange(of: showAnnotationList) { _, newValue in
+            guard newValue else { return }
+            ModalPresenter.shared.present(.sheet(
+                id: "editor.annotationList",
+                onDidDismiss: { showAnnotationList = false }
+            ) {
+                AnnotationListSheet(viewModel: viewModel) {
+                    ModalPresenter.shared.dismiss()
+                }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            })
         }
         // Live recompute when either store mutates. `annotationsTick`
         // is bumped on each post; the body's `let _ = ...` read
@@ -728,30 +784,53 @@ struct CustomisePanel: View {
         return parts.joined(separator: " · ")
     }
 
-    // MARK: Auto-add
+    // MARK: Auto-add / auto-hide compact rows
+    //
+    // Both toggles are single-line 44pt rows — label on the left,
+    // `Toggle` on the right, hairline separator at the bottom. The
+    // per-toggle descriptions that used to sit under each label are
+    // consolidated into one recessive caption (`togglesCaption`)
+    // mounted right below the band so the panel keeps its overall
+    // height down.
 
     private var autoAddSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("auto-add pages")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
-                    Text("adds a fresh page when you scroll near the bottom.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(light: Color(hex: "#aaaaaa"),
-                                               dark:  Color(hex: "#5e5e5c")))
-                }
-                Spacer()
-                Toggle("", isOn: autoAddBinding)
-                    .labelsHidden()
-                    .tint(.brandAccent)
-            }
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
-            }
+        toggleRow(
+            label:   "auto-add pages",
+            binding: autoAddBinding
+        )
+    }
+
+    private var autoHideHeaderSection: some View {
+        toggleRow(
+            label:   "auto-hide top bar",
+            binding: autoHideBinding
+        )
+    }
+
+    private func toggleRow(label: String, binding: Binding<Bool>) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.inkTextPrimary)
+            Spacer(minLength: 0)
+            Toggle("", isOn: binding)
+                .labelsHidden()
+                .tint(.brandAccent)
         }
+        .frame(height: 44)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+        }
+    }
+
+    /// Shared recessive caption explaining both consolidated toggles.
+    /// 10pt `inkRecessiveTertiary` so it reads as supplementary,
+    /// not chrome.
+    private var togglesCaption: some View {
+        Text("auto-add: new page when scrolling near bottom · auto-hide: hides toolbar while writing")
+            .font(.system(size: 10))
+            .foregroundStyle(Color.inkRecessiveTertiary)
+            .padding(.top, 6)
     }
 
     private var autoAddBinding: Binding<Bool> {
@@ -759,32 +838,6 @@ struct CustomisePanel: View {
             get: { viewModel.notebook.autoAddPagesOnScroll },
             set: { viewModel.notebook.autoAddPagesOnScroll = $0 }
         )
-    }
-
-    // MARK: Auto-hide top bar
-
-    private var autoHideHeaderSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("auto-hide top bar")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
-                    Text("hides the toolbar while you write. tap top to bring it back.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color(light: Color(hex: "#aaaaaa"),
-                                               dark:  Color(hex: "#5e5e5c")))
-                }
-                Spacer()
-                Toggle("", isOn: autoHideBinding)
-                    .labelsHidden()
-                    .tint(.brandAccent)
-            }
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
-            }
-        }
     }
 
     private var autoHideBinding: Binding<Bool> {

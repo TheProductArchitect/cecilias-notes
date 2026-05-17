@@ -127,17 +127,22 @@ struct MinimapView: View {
     // MARK: Thumbnail
 
     private func loadThumbnail() {
-        let pageId = viewModel.currentPage.id
-        if let cached = PageThumbnailCache.shared.thumbnail(for: pageId) {
+        let page = viewModel.currentPage
+        let key  = PageThumbnailCache.shared.composeKey(for: page)
+        if let cached = PageThumbnailCache.shared.thumbnail(for: key) {
             thumbnail = cached
             return
         }
         Task {
             let result = await PageThumbnailCache.shared.generate(
-                for: viewModel.currentPage,
+                for: page,
                 targetSize: CGSize(width: mapWidth, height: mapHeight)
             )
-            await MainActor.run { thumbnail = result }
+            // Keep the previous thumbnail visible if the render
+            // returned nil — never flash to blank during regen.
+            if let result {
+                await MainActor.run { thumbnail = result }
+            }
         }
     }
 }

@@ -22,11 +22,11 @@ struct LibraryView: View {
     @State private var isShowingSettings      = false
     @State private var reExportNotebookId: UUID?
 
-    /// Bridge between the editor (mounted inside `.fullScreenCover`)
-    /// and this view's `.sheet` for the image picker. Presenting the
-    /// picker from the cover destination is unreliable on iPad; the
-    /// bridge lets us present at the root level instead.
-    @ObservedObject private var imagePickerBridge = ImagePickerBridge.shared
+    // Image-picker presentation is now driven by
+    // `viewModel.pendingImageImport`. The editor signals intent
+    // via NotificationCenter; LibraryViewModel observes and
+    // flips that state; the `.sheet(item:)` below presents from
+    // this view (the cover's host, outside the cover destination).
 
     private static let sidebarWidth: CGFloat = 240
 
@@ -36,17 +36,67 @@ struct LibraryView: View {
     // outside the Library's control. No onboarding cover here.
 
     var body: some View {
-        // Three-band home: action strip across the top, masthead full
-        // width below, then a sidebar + grid HStack underneath. Puts
-        // identity (date eyebrow + wordmark + bottom rule) in the top
-        // zone, with subjects and notebooks in a balanced split below.
-        // Earlier the sidebar started at the masthead's top edge,
-        // burying SUBJECTS under the wordmark.
+        contentLayer
+            .onAppear {
+                #if DEBUG
+                print("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
+                #endif
+            }
+            .onChange(of: viewModel.pendingExportNotebookId) { _, id in
+                guard let id, let notebook = viewModel.notebook(id: id) else { return }
+                DispatchQueue.main.async {
+                    viewModel.pendingExportNotebookId = nil
+                    deepLink.pendingExport = true
+                }
+                editingNotebook = notebook
+            }
+            .onChange(of: deepLink.openNotebookId) { _, id in
+                guard let id, let notebook = viewModel.notebook(id: id) else { return }
+                DispatchQueue.main.async { deepLink.openNotebookId = nil }
+                editingNotebook = notebook
+            }
+            .onChange(of: deepLink.openSettings) { _, open in
+                guard open else { return }
+                DispatchQueue.main.async { deepLink.openSettings = false }
+                isShowingSettings = true
+            }
+            // Every `viewModel.*` mutation inside `.onReceive` is
+            // deferred to the next runloop tick via `Task { @MainActor
+            // in }`. Notification publishers can fire synchronously
+            // during an active SwiftUI view-update transaction (e.g.
+            // foreground notifications during sheet dismissal), and a
+            // direct `@Published` write there triggers the "Publishing
+            // changes from within view updates is not allowed"
+            // warning. Repeated occurrences cascade into a render
+            // loop that has crashed the app with SIGKILL under memory
+            // pressure.
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                Task { @MainActor in viewModel.refresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                Task { @MainActor in viewModel.clearTagFilters() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inkCommandNewNotebook)) { _ in
+                guard viewModel.selectedSubjectId != nil else { return }
+                Task { @MainActor in viewModel.createUntitledNotebookAndOpen() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inkCommandSearch)) { _ in
+                Task { @MainActor in
+                    withAnimation(.inkSpring(InkSpring.smooth)) { viewModel.isSearchActive = true }
+                }
+            }
+            .onChange(of: deepLink.pendingQuickCapture) { _, pending in
+                guard pending else { return }
+                DispatchQueue.main.async { deepLink.pendingQuickCapture = false }
+                viewModel.createUntitledNotebookAndOpen()
+            }
+            .task { handleQuickCaptureOnLaunch() }
+    }
+
+    private var contentLayer: some View {
         VStack(spacing: 0) {
             actionStrip
-
             LibraryHeaderView(viewModel: viewModel)
-
             HStack(spacing: 0) {
                 if isSidebarVisible {
                     SubjectSidebarView(viewModel: viewModel)
@@ -58,12 +108,6 @@ struct LibraryView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        // Tap anywhere outside an active inline title edit (or
-        // search field) to commit and dismiss the keyboard. Sits on
-        // the background layer so cards, sidebar rows and buttons
-        // still claim their own taps; only "empty" hits land here.
-        // Gated on keyboard visibility so we don't intercept stray
-        // taps when nothing is being edited.
         .background(
             Color.clear
                 .contentShape(Rectangle())
@@ -76,22 +120,14 @@ struct LibraryView: View {
                 }
         )
         .overlay(alignment: .top) {
-            // Error banner — slides from top when a storage mutation
-            // fails. Sits above everything so it's always
-            // attention-grabbing.
             if let message = viewModel.error?.errorDescription {
-                MediaErrorBanner(message: message) {
-                    viewModel.error = nil
-                }
-                .padding(.top, Ink.Spacing.md)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(99)
+                MediaErrorBanner(message: message) { viewModel.error = nil }
+                    .padding(.top, Ink.Spacing.md)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(99)
             }
         }
         .overlay(alignment: .bottom) {
-            // PDF batch import progress — small capsule toast so the
-            // user sees "3 of 7" rather than a frozen-looking library
-            // while a multi-PDF import runs.
             if viewModel.isImporting {
                 HStack(spacing: 10) {
                     ProgressView().scaleEffect(0.8)
@@ -125,16 +161,7 @@ struct LibraryView: View {
         .background(Color(.systemBackground))
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
-        // Floating keyboards on iPad are narrow (~370pt) and don't
-        // occupy a full-width band at the bottom — letting SwiftUI
-        // reflow the layout to "avoid" them looks broken (the sidebar
-        // buttons jump up). Opt out of keyboard-driven safe-area inset
-        // exactly when the floating keyboard is up; docked/split
-        // keyboards keep the default avoidance.
-        .ignoresSafeArea(
-            .keyboard,
-            edges: keyboardObserver.isFloatingKeyboard ? .bottom : []
-        )
+        .ignoresSafeArea(.keyboard, edges: keyboardObserver.isFloatingKeyboard ? .bottom : [])
         .animation(reduceMotion ? nil : .inkSpring(InkSpring.snappy), value: isSidebarVisible)
         .sheet(isPresented: $isShowingRecentExports) {
             RecentExportsView { notebookId in
@@ -143,10 +170,7 @@ struct LibraryView: View {
             }
         }
         .sheet(isPresented: $isShowingSettings) {
-            SettingsView(
-                cloudSyncManager: cloudSyncManager,
-                themeManager:     themeManager
-            ) {
+            SettingsView(cloudSyncManager: cloudSyncManager, themeManager: themeManager) {
                 isShowingSettings = false
             }
             .presentationDetents([.large])
@@ -158,77 +182,56 @@ struct LibraryView: View {
             editingNotebook = notebook
         }
         .onChange(of: viewModel.selectedNotebookId) { _, id in
-            guard let id, let notebook = viewModel.notebook(id: id) else { return }
-            editingNotebook = notebook
-        }
-        .onChange(of: viewModel.pendingOpenAfterImport) { _, nb in
-            // Single-PDF import auto-opens the new notebook. Multi-PDF
-            // import leaves the user in the library with the batch
-            // visible — `pendingOpenAfterImport` stays nil in that case.
-            guard let nb else { return }
-            viewModel.pendingOpenAfterImport = nil
-            editingNotebook = nb
-        }
-        .onChange(of: viewModel.pendingExportNotebookId) { _, id in
-            guard let id, let notebook = viewModel.notebook(id: id) else { return }
-            DispatchQueue.main.async {
-                viewModel.pendingExportNotebookId = nil
-                deepLink.pendingExport = true
+            #if DEBUG
+            print("[Library] onChange(selectedNotebookId) → \(id?.uuidString ?? "nil")")
+            #endif
+            guard let id, let notebook = viewModel.notebook(id: id) else {
+                #if DEBUG
+                if id != nil { print("[Library] notebook(id:) returned nil — id stale?") }
+                #endif
+                return
             }
             editingNotebook = notebook
         }
-        .onChange(of: deepLink.openNotebookId) { _, id in
-            guard let id, let notebook = viewModel.notebook(id: id) else { return }
-            DispatchQueue.main.async { deepLink.openNotebookId = nil }
-            editingNotebook = notebook
-        }
-        .onChange(of: deepLink.openSettings) { _, open in
-            guard open else { return }
-            DispatchQueue.main.async { deepLink.openSettings = false }
-            isShowingSettings = true
+        .onChange(of: viewModel.pendingOpenAfterImport) { _, nb in
+            guard let nb else { return }
+            viewModel.pendingOpenAfterImport = nil
+            editingNotebook = nb
         }
         .fullScreenCover(item: $editingNotebook) { notebook in
             EditorView(
                 notebook: notebook,
                 deepLinkPageId: viewModel.deepLinkPageId,
                 onDismiss: {
+                    // `editingNotebook = nil` triggers the cover
+                    // dismiss animation; the remaining viewModel
+                    // writes + refresh are deferred to the next
+                    // runloop tick so they don't fire @Published
+                    // mutations during the cover's own dismiss
+                    // transaction. Refresh in particular touches
+                    // half a dozen @Published arrays and was a
+                    // primary source of the "Publishing changes
+                    // from within view updates" warning on every
+                    // back-from-editor tap.
                     editingNotebook = nil
-                    viewModel.selectedNotebookId = nil
-                    viewModel.deepLinkPageId = nil
-                    viewModel.refresh()       // pull updated thumbnails / titles
+                    Task { @MainActor in
+                        viewModel.selectedNotebookId = nil
+                        viewModel.deepLinkPageId = nil
+                        viewModel.refresh()
+                    }
                 }
             )
         }
-        // Cover-dismiss recovery. The user-initiated dismiss path
-        // (`onDismiss` above) clears `selectedNotebookId` cleanly,
-        // but a system-initiated dismiss (e.g. presentation-chain
-        // collapse from a nested sheet glitch) leaves the trigger
-        // pointing at the same notebook — tapping the same card
-        // after a forced-dismiss then becomes a no-op because
-        // `selectedNotebookId.didSet` only fires on a CHANGE.
-        // Mirroring the clear here makes both dismiss paths
-        // converge to the same state.
         .onChange(of: editingNotebook) { _, new in
             if new == nil { viewModel.selectedNotebookId = nil }
         }
-        // Image-import picker — presented from this root level, NOT
-        // from inside the editor cover. The editor signals via
-        // `ImagePickerBridge`; the bridge's `pending` is what we
-        // bind to. Picker dismisses by clearing the bridge in its
-        // `onPicked` / `onCancel` paths — no `.onDisappear`
-        // clearing (which previously force-collapsed the cover).
-        .sheet(item: $imagePickerBridge.pending) { pending in
-            ImageImportPicker(
-                isPresented: .constant(true),
-                onPicked:  { image, ext in pending.onPicked(image, ext) },
-                onCancel:  { imagePickerBridge.cancel() }
-            )
-        }
-        // Real keyboard shortcuts — settings ⌘, , new notebook ⌘N etc
-        // come through the .commands modifier on the WindowGroup
-        // (see InkCommands). The ⌘, settings shortcut stays here
-        // because Apple reserves ⌘, for app preferences and the
-        // .commands menu structure can't slot it cleanly.
+        // Image-import picker is presented via `MediaPickerPresenter`
+        // (UIKit-direct present-on-topmost-VC) wired in
+        // `LibraryViewModel.subscribeToImageImports`. The previous
+        // SwiftUI `.sheet(item: $viewModel.pendingImageImport)` here
+        // collapsed the editor's `.fullScreenCover` ("only presenting
+        // a single sheet is supported") and was the cause of the
+        // "image insert tears down the editor" bug. See Phase 3b §E.
         .background(
             VStack(spacing: 0) {
                 Button("Settings") { isShowingSettings = true }
@@ -238,38 +241,12 @@ struct LibraryView: View {
             .opacity(0)
             .accessibilityHidden(true)
         )
-        // Refresh on app foreground — covers cross-session writes
-        // (notebooks created in another window, future iCloud sync
-        // arriving while backgrounded) without waiting for the next
-        // user-driven create/delete to trigger refresh.
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            viewModel.refresh()
-        }
-        // Tag filter is session-only — drop it whenever the app
-        // goes into the background so a fresh foreground starts
-        // unfiltered.
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-            viewModel.clearTagFilters()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .inkCommandNewNotebook)) { _ in
-            guard viewModel.selectedSubjectId != nil else { return }
+    }
+
+    private func handleQuickCaptureOnLaunch() {
+        if deepLink.pendingQuickCapture {
+            deepLink.pendingQuickCapture = false
             viewModel.createUntitledNotebookAndOpen()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .inkCommandSearch)) { _ in
-            withAnimation(.inkSpring(InkSpring.smooth)) {
-                viewModel.isSearchActive = true
-            }
-        }
-        .onChange(of: deepLink.pendingQuickCapture) { _, pending in
-            guard pending else { return }
-            DispatchQueue.main.async { deepLink.pendingQuickCapture = false }
-            viewModel.createUntitledNotebookAndOpen()
-        }
-        .task {
-            if deepLink.pendingQuickCapture {
-                deepLink.pendingQuickCapture = false
-                viewModel.createUntitledNotebookAndOpen()
-            }
         }
     }
 

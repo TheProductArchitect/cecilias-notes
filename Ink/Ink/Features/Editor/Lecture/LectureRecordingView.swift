@@ -52,7 +52,7 @@ struct LectureRecordingView: View {
             VStack(spacing: 0) {
                 contentColumn
                 Rectangle()
-                    .fill(Color.inkNearBlack)
+                    .fill(Color.inkTextPrimary)
                     .frame(height: 1.5)
                 controlsRow
             }
@@ -97,7 +97,7 @@ struct LectureRecordingView: View {
         TextField("lecture title", text: $recorder.title)
             .font(.system(size: 22, weight: .heavy))
             .tracking(-0.5)
-            .foregroundStyle(Color.inkNearBlack)
+            .foregroundStyle(Color.inkTextPrimary)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .focused($titleFocused)
@@ -108,7 +108,7 @@ struct LectureRecordingView: View {
         Text(formattedElapsed)
             .font(.system(size: 48, weight: .heavy))
             .tracking(-1)
-            .foregroundStyle(Color.inkNearBlack)
+            .foregroundStyle(Color.inkTextPrimary)
             .monospacedDigit()
     }
 
@@ -179,7 +179,7 @@ struct LectureRecordingView: View {
                         Text(recorder.liveTranscript)
                             .font(.system(size: 15))
                             .lineSpacing(15 * 0.4)        // 1.4× line spacing
-                            .foregroundStyle(Color.inkNearBlack)
+                            .foregroundStyle(Color.inkTextPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id("transcript-tail")
                     }
@@ -209,7 +209,7 @@ struct LectureRecordingView: View {
             } label: {
                 Image(systemName: recorder.isPaused ? "play.fill" : "pause.fill")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.inkNearBlack)
+                    .foregroundStyle(Color.inkTextPrimary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

@@ -255,9 +255,13 @@ final class SearchIndexService {
                 .filter { !$0.isDeleted }
                 .map(\.content)
                 .joined(separator: "\n")
-            let transcriptText = (page.audioAnnotations ?? [])
-                .filter { !$0.isDeleted }
-                .compactMap(\.transcription)
+            // Phase 5A+5C Step 3: audio transcripts come from the
+            // denormalised `AudioRecord` fetch — there's no longer
+            // a `Page.audioAnnotations` relationship.
+            let transcriptText = StorageService.shared
+                .fetchAudioRecords(forPageId: page.id)
+                .map(\.transcript)
+                .filter { !$0.isEmpty }
                 .joined(separator: "\n")
             // FUTURE: OCR on imported images via VNRecognizeTextRequest —
             // read `MediaAttachmentStore.records(for: page.id)` here, run

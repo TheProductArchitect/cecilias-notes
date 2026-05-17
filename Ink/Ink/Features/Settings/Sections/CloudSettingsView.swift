@@ -85,7 +85,7 @@ struct CloudSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("iCloud sync")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
+                        .foregroundStyle(Color.inkTextPrimary)
                     Text("notebooks sync across your devices via iCloud drive.")
                         .font(.system(size: 11))
                         .foregroundStyle(Self.captionColour)
@@ -195,7 +195,7 @@ struct CloudSettingsView: View {
             HStack {
                 Text("used in iCloud")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.inkNearBlack)
+                    .foregroundStyle(Color.inkTextPrimary)
                 Spacer()
                 if isLoadingUsage {
                     ProgressView().scaleEffect(0.6)

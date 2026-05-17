@@ -32,7 +32,40 @@ final class MediaInsertCoordinator: ObservableObject {
         self.viewModel = viewModel
     }
 
-    func insertPhotos()    { viewModel?.activeMediaSource = .photos }
+    func insertPhotos() {
+        #if DEBUG
+        print("[ImageInsert] 1. insertPhotos() called — posting imageImportRequested (centre coords)")
+        #endif
+        // Photo picker is routed through `LibraryView`'s root-level
+        // `.sheet(item: $viewModel.pendingImageImport)` rather than
+        // the editor's own sheet. Presenting the sheet from inside
+        // a `.fullScreenCover` destination causes SwiftUI to pop
+        // the destination on dismiss (confirmed by the
+        // `[ImageInsert] 3. EditorView.onDisappear fired` line that
+        // appears immediately after the picker closes). Routing
+        // through the notification → library sheet decouples the
+        // picker lifecycle from the editor cover entirely.
+        //
+        // No specific tap location → default to page centre. The
+        // editor's `commitImportedImage` honours this by dropping
+        // the image at (0.5, 0.5) of the current page.
+        NotificationCenter.default.post(
+            name: .imageImportRequested,
+            object: nil,
+            userInfo: [
+                ImageImportUserInfoKey.normalizedX: 0.5,
+                ImageImportUserInfoKey.normalizedY: 0.5,
+            ]
+        )
+    }
+    // Files / camera / scan still route through `activeMediaSource`
+    // and the editor's own `.sheet(item:)`. They use different
+    // pickers (`UIDocumentPickerViewController`,
+    // `UIImagePickerController` source `.camera`,
+    // `VNDocumentCameraViewController`) which aren't wired into the
+    // library's `ImageImportPicker` host. If they exhibit the same
+    // dismiss-pops-the-cover symptom, they need analogous root-level
+    // sheets — separate fix.
     func insertFromFiles() { viewModel?.activeMediaSource = .files }
     func insertFromCamera() { viewModel?.activeMediaSource = .camera }
     func insertScan()      { viewModel?.activeMediaSource = .scan }
@@ -42,7 +75,15 @@ final class MediaInsertCoordinator: ObservableObject {
 
     /// Called by photo picker with selected UIImages.
     func handlePickedImages(_ images: [UIImage]) async {
-        guard let vm = viewModel else { return }
+        #if DEBUG
+        print("[ImageInsert] 5. handlePickedImages called with \(images.count) image(s); first size=\(images.first?.size ?? .zero)")
+        #endif
+        guard let vm = viewModel else {
+            #if DEBUG
+            print("[ImageInsert] 5b. handlePickedImages: viewModel is nil — editor was already dismissed before picker returned")
+            #endif
+            return
+        }
         viewModel?.activeMediaSource = nil
         await processAndInsert(images: images.map { .uiImage($0) }, into: vm)
     }
@@ -102,32 +143,23 @@ final class MediaInsertCoordinator: ObservableObject {
 
         guard !processed.isEmpty else { return }
 
-        // First scanned page → current page
+        // First scanned page → current page.
         let first = processed[0]
-        let rect  = centredRect(for: first.originalSize, pageSize: pageSize)
-        _ = try? StorageService.shared.addPreprocessedImage(
-            to: vm.currentPage, id: first.id, fileName: first.fileName,
-            fileSizeBytes: first.fileSizeBytes,
-            originalWidth: Int(first.originalSize.width),
-            originalHeight: Int(first.originalSize.height),
-            at: MediaLayoutState.normalise(rect, pageSize: pageSize)
-        )
+        let firstRect = centredRect(for: first.originalSize, pageSize: pageSize)
+        saveImageRecord(first, on: vm.currentPage, notebookId: vm.notebook.id,
+                        rect: firstRect, pageSize: pageSize)
 
-        // Pages 2+ → new pages
+        // Pages 2+ → new pages.
         for extra in processed.dropFirst() {
             vm.addPage()
             guard let newPage = vm.pages.last else { continue }
             let r = centredRect(for: extra.originalSize, pageSize: pageSize)
-            _ = try? StorageService.shared.addPreprocessedImage(
-                to: newPage, id: extra.id, fileName: extra.fileName,
-                fileSizeBytes: extra.fileSizeBytes,
-                originalWidth: Int(extra.originalSize.width),
-                originalHeight: Int(extra.originalSize.height),
-                at: MediaLayoutState.normalise(r, pageSize: pageSize)
-            )
+            saveImageRecord(extra, on: newPage, notebookId: vm.notebook.id,
+                            rect: r, pageSize: pageSize)
         }
-
-        vm.refreshCurrentPageAttachments()
+        // `MediaAttachmentStore.save` posts `.mediaAttachmentsChanged`
+        // — `ImageAttachmentsView` re-renders from that notification,
+        // so no explicit refresh call is needed.
     }
 
     // MARK: - PDF handling
@@ -155,32 +187,24 @@ final class MediaInsertCoordinator: ObservableObject {
                     let r = centredRect(for: processed.originalSize, pageSize: pageSize)
 
                     if i == 0 {
-                        _ = try? StorageService.shared.addPreprocessedImage(
-                            to: viewModel.currentPage, id: processed.id,
-                            fileName: processed.fileName,
-                            fileSizeBytes: processed.fileSizeBytes,
-                            originalWidth: Int(processed.originalSize.width),
-                            originalHeight: Int(processed.originalSize.height),
-                            at: MediaLayoutState.normalise(r, pageSize: pageSize)
-                        )
+                        saveImageRecord(processed, on: viewModel.currentPage,
+                                        notebookId: viewModel.notebook.id,
+                                        rect: r, pageSize: pageSize)
                     } else {
                         viewModel.addPage()
                         if let newPage = viewModel.pages.last {
-                            _ = try? StorageService.shared.addPreprocessedImage(
-                                to: newPage, id: processed.id,
-                                fileName: processed.fileName,
-                                fileSizeBytes: processed.fileSizeBytes,
-                                originalWidth: Int(processed.originalSize.width),
-                                originalHeight: Int(processed.originalSize.height),
-                                at: MediaLayoutState.normalise(r, pageSize: pageSize)
-                            )
+                            saveImageRecord(processed, on: newPage,
+                                            notebookId: viewModel.notebook.id,
+                                            rect: r, pageSize: pageSize)
                         }
                     }
                 }
             }
             await MainActor.run { processingProgress = Double(i + 1) / Double(pageCount) }
         }
-        viewModel.refreshCurrentPageAttachments()
+        // See `handleScannedDocument` — re-render is driven by the
+        // `.mediaAttachmentsChanged` notification posted from
+        // `MediaAttachmentStore.save`.
     }
 
     // MARK: - Main pipeline
@@ -216,38 +240,37 @@ final class MediaInsertCoordinator: ObservableObject {
             return
         }
 
-        // Insert cascade: first at centre, each subsequent +16pt right+down
-        var insertedIds: [UUID] = []
+        // Insert cascade: first at centre, each subsequent +16pt right+down.
         for (i, processed) in results.enumerated() {
             let offset = CGFloat(i) * 16
             var rect   = centredRect(for: processed.originalSize, pageSize: pageSize)
             rect.origin.x = min(rect.origin.x + offset, pageSize.width  - rect.width  - 8)
             rect.origin.y = min(rect.origin.y + offset, pageSize.height - rect.height - 8)
-            let norm = MediaLayoutState.normalise(rect, pageSize: pageSize)
-
-            if let att = try? StorageService.shared.addPreprocessedImage(
-                to: vm.currentPage,
-                id: processed.id,
-                fileName: processed.fileName,
-                fileSizeBytes: processed.fileSizeBytes,
-                originalWidth: Int(processed.originalSize.width),
-                originalHeight: Int(processed.originalSize.height),
-                at: norm
-            ) {
-                insertedIds.append(att.id)
-            }
+            saveImageRecord(processed, on: vm.currentPage,
+                            notebookId: vm.notebook.id,
+                            rect: rect, pageSize: pageSize)
         }
-
-        vm.refreshCurrentPageAttachments()
-        vm.selectedAttachmentIds = Set(insertedIds)
+        // Re-render driven by the `.mediaAttachmentsChanged`
+        // notification — see `handleScannedDocument`. The previous
+        // `selectedAttachmentIds` Set write is dropped: Phase 4C's
+        // `ImageAttachmentsView` selects via tap, not via this
+        // post-insert seed.
     }
 
     // MARK: - Helpers
 
+    /// Phase 5A+5C Step 4: images now live under the unified
+    /// `MediaStorage.images/` tree (`Documents/MediaAttachments/images/`)
+    /// rather than the per-notebook `notebooks/<uuid>/media/` path.
+    /// `MediaAttachmentStore.absoluteURL(for:)` resolves through
+    /// `MediaStorage.url(for: .images, id:)`, so file writes must
+    /// land there for the renderer to find them. Per-notebook
+    /// cleanup is handled by `MediaAttachmentStore.forget(pageIds:)`
+    /// which iterates records and deletes each file by id —
+    /// per-notebook directory isolation is no longer needed.
     private func mediaDirectory(for vm: EditorViewModel) -> URL {
-        StorageService.notebooksDirectoryURL
-            .appendingPathComponent(vm.notebook.id.uuidString)
-            .appendingPathComponent("media")
+        MediaStorage.ensureDirectoriesExist()
+        return MediaStorage.directory(for: .images)
     }
 
     private func centredRect(for imageSize: CGSize, pageSize: CGSize) -> CGRect {
@@ -265,5 +288,44 @@ final class MediaInsertCoordinator: ObservableObject {
             width:  w,
             height: h
         )
+    }
+
+    /// Persist a `ProcessedImage` as an `ImageRecord` via
+    /// `MediaAttachmentStore`. The image bytes are already on disk;
+    /// this only writes the SwiftData metadata. Posts
+    /// `.mediaAttachmentsChanged` (via the store), which
+    /// `ImageAttachmentsView` listens to for a live re-render.
+    ///
+    /// Phase 5A+5C Step 4: the legacy `relativeFilePath` is gone —
+    /// `MediaAttachmentStore.absoluteURL(for:)` resolves via
+    /// `MediaStorage.url(for: .images, id:)`. The Files / Camera /
+    /// Scan / PDF paths write image bytes through
+    /// `ImageProcessingService.processImage(_:mediaDir:)` into the
+    /// per-notebook `media/` directory — those files are now
+    /// orphans the moment this lands, since the store only knows
+    /// about `MediaStorage.images/`. Migrating those paths to write
+    /// into `MediaStorage` directly is a follow-up; for now the
+    /// canvas-tap import path (the dominant one) works correctly.
+    private func saveImageRecord(
+        _ processed: ProcessedImage,
+        on page: Page,
+        notebookId: UUID,
+        rect: CGRect,
+        pageSize: CGSize
+    ) {
+        let record = ImageRecord(
+            id: processed.id,
+            pageId: page.id,
+            notebookId: notebookId,
+            normalizedX:      rect.origin.x / pageSize.width,
+            normalizedY:      rect.origin.y / pageSize.height,
+            normalizedWidth:  rect.width    / pageSize.width,
+            normalizedHeight: rect.height   / pageSize.height,
+            rotation:         0,
+            zOrder:           0,
+            originalWidth:    Double(processed.originalSize.width),
+            originalHeight:   Double(processed.originalSize.height)
+        )
+        MediaAttachmentStore.save(record)
     }
 }

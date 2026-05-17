@@ -5,7 +5,7 @@ import SwiftUI
 /// Renders an audio waveform using SwiftUI Canvas.
 ///
 /// Live mode: bars are appended left-to-right and shift right as new levels arrive.
-/// Static mode: pre-computed amplitude array from `AudioAnnotation.amplitudeData`.
+/// Static mode: pre-computed amplitude array from `AudioRecord.amplitudes`.
 /// Playhead: vertical accent line; bars left = accent, bars right = tertiary.
 struct WaveformView: View {
 

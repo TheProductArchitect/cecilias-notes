@@ -69,7 +69,7 @@ struct LibraryHeaderView: View {
         .background(Color(.systemBackground))
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.inkNearBlack)
+                .fill(Color.inkTextPrimary)
                 .frame(height: 1.5)
                 .frame(maxWidth: .infinity)
         }
@@ -231,8 +231,29 @@ struct LibraryHeaderView: View {
             .buttonStyle(.inkPressable)
             .accessibilityLabel("Filter by tag")
 
-            // "+" creation menu
-            Menu {
+            // "+" — single tap goes straight to notebook creation in
+            // the active subject (or the inferred subject for
+            // `.allNotes` / `.recent`). Folder + subject creation moved
+            // to a long-press context menu so the primary action stays
+            // one-tap; the customise panel still opens for the new
+            // notebook so the user can rename / pick a template before
+            // committing to the editor.
+            Button {
+                #if DEBUG
+                print("[Library] toolbar + tapped, opening notebook creation flow")
+                #endif
+                viewModel.createNotebookWithFallback()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(Color.inkRecessiveQuaternary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.inkPressable)
+            .accessibilityLabel("New notebook")
+            .disabled(!viewModel.canCreateNotebook)
+            .contextMenu {
                 Button {
                     viewModel.createNotebookWithFallback()
                 } label: {
@@ -254,14 +275,7 @@ struct LibraryHeaderView: View {
                 } label: {
                     Label("New Subject", systemImage: "square.stack")
                 }
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveQuaternary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
             }
-            .accessibilityLabel("Create")
 
             // Open PDF — multi-select supported. Each picked PDF
             // becomes its own notebook in the current subject; the
@@ -310,10 +324,29 @@ struct LibraryHeaderView: View {
     }
 
     private var selectingStrip: some View {
-        HStack(spacing: 8) {
+        // Drives the select-all / deselect-all toggle. "All visible" means
+        // every notebook in `viewModel.notebooks` — that array is already
+        // filtered by the active sidebar context (subject / all-notes /
+        // recent) and tag filter, so this naturally respects whatever
+        // narrowing the user has applied.
+        let visibleIds = Set(viewModel.notebooks.map(\.id))
+        let allVisibleSelected = !visibleIds.isEmpty
+            && visibleIds.isSubset(of: viewModel.selectedNotebookIds)
+        return HStack(spacing: 8) {
             Text("\(viewModel.selectedNotebookIds.count) selected")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(Color.inkRecessivePrimary)
+
+            Button(allVisibleSelected ? "deselect all" : "select all") {
+                if allVisibleSelected {
+                    viewModel.selectedNotebookIds.subtract(visibleIds)
+                } else {
+                    viewModel.selectedNotebookIds.formUnion(visibleIds)
+                }
+            }
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(Color.brandAccent)
+            .disabled(visibleIds.isEmpty)
 
             Spacer(minLength: 8)
 

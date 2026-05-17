@@ -10,6 +10,11 @@ final class Subject {
     var name: String = ""
     var colorHex: String = ""
     var sortOrder: Int = 0
+    /// Pinned subjects float to the top of the sidebar above all
+    /// unpinned subjects, ordered among themselves by `sortOrder`.
+    /// Additive field, default `false` — CloudKit-safe (no schema
+    /// version bump required).
+    var isPinned: Bool = false
 
     // MARK: Timestamps
     var createdAt: Date = Date()

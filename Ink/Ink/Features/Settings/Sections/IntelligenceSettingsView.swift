@@ -43,7 +43,7 @@ struct IntelligenceSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Apple Intelligence")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkNearBlack)
+                        .foregroundStyle(Color.inkTextPrimary)
                     Text("summaries, suggested titles, and ask your notes — all run on this device. nothing leaves it.")
                         .font(.system(size: 12))
                         .foregroundStyle(Self.captionColour)

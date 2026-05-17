@@ -41,13 +41,20 @@ struct RootView: View {
         let onboardingDone = UserDefaults.standard.bool(
             forKey: PersonalIdentity.onboardingCompletedKey
         )
-        // One-shot migration for users who completed onboarding
-        // before the App Group mirror existed: copy the canonical
-        // name into the shared suite so the widget reads the user's
-        // possessive instead of the "cecilia's" fallback. Idempotent
-        // — re-runs on every launch but only ever writes the same
-        // value the user already has on disk.
-        PersonalIdentity.mirrorNameToAppGroup()
+        // DELIBERATELY NOT mirroring the user name here. `RootView`'s
+        // `init` is run by SwiftUI on every parent re-evaluation
+        // (≥7× during a single cold launch), which fired the
+        // identity mirror in a loop and contributed to a launch-time
+        // freeze. The mirror now runs from exactly two call sites:
+        //   1. Onboarding commit (the user types a name, taps Continue).
+        //   2. Settings → About name field commit (`.onSubmit` /
+        //      focus-loss commit).
+        // The defensive guard inside `mirrorNameToAppGroup` no-ops
+        // any stray write when the value is unchanged, so a user
+        // who upgraded across the App-Group-key boundary just sees
+        // the brand fallback ("cecilia's") on the widget until their
+        // next explicit name edit — acceptable trade-off vs. the
+        // re-entry storm we had previously.
         let elapsed = AppGroupLaunchTracker.consumeElapsedSinceLastOpen()
 
         // Onboarding-not-complete always sees the full splash —
@@ -55,6 +62,19 @@ struct RootView: View {
         // testing during development or the first 30 s of a fresh
         // install.
         if !onboardingDone {
+            _phase = State(initialValue: .splash)
+            _splashMode = State(initialValue: .full)
+            return
+        }
+
+        // Crash-recovery: if the previous run didn't shut down
+        // cleanly (force-quit, OOM-kill, crash), force the full
+        // splash + library path regardless of `elapsed`. The 1-hour
+        // skip-splash optimisation depends on the previous session
+        // having torn down through a normal lifecycle — without
+        // that, we can't trust any session-state. See `LaunchRecovery`
+        // in `InkApp.swift`.
+        guard LaunchRecovery.previousShutdownWasClean else {
             _phase = State(initialValue: .splash)
             _splashMode = State(initialValue: .full)
             return
@@ -103,7 +123,16 @@ struct RootView: View {
                 .transition(.opacity)
 
             case .library:
+                // ModalHostView (Phase 5B) mounts the single
+                // app-wide `.sheet` and `.fullScreenCover` driven
+                // by `ModalPresenter.shared`. Placed at the
+                // library level so editor-internal modals presented
+                // through the presenter sit ABOVE the
+                // `editingNotebook` cover — solving the SwiftUI
+                // "Currently, only presenting a single sheet is
+                // supported" failure for editor-internal sheets.
                 LibraryView()
+                    .modifier(ModalHostView())
                     .overlay(alignment: .topLeading) {
                         #if DEBUG
                         FourFingerTapDetector {

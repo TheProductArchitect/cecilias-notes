@@ -3,6 +3,7 @@ import Foundation
 import PencilKit
 import SwiftData
 import UIKit
+import WidgetKit
 
 // MARK: - StorageService
 
@@ -71,7 +72,13 @@ final class StorageService: ObservableObject {
     /// per-subject count) to reactively track store changes without
     /// going through the manual `LibraryViewModel.refresh()` cycle.
     let container: ModelContainer
-    private let context: ModelContext
+    // Internal so adjacent file-scoped types in `Core/Services/`
+    // (`LectureStore`, future `AudioStore` / `ImageStore`) can reach
+    // the shared context without re-creating one or routing every
+    // call through a wrapping method. The container is private; the
+    // context is read-only for callers (they only use it for
+    // `fetch` / `insert` / `delete` / `save`).
+    let context: ModelContext
 
     /// Designated init — callers pass a container for testability.
     init(container: ModelContainer) {
@@ -218,11 +225,24 @@ extension StorageService {
     }
 
     func fetchSubjects() -> [Subject] {
+        // Pinned subjects float to the top (isPinned == true sorts
+        // ahead via `.reverse`). Among equal pin-state rows we order
+        // by `sortOrder` ascending, with `createdAt` as a stable
+        // tiebreaker so subjects with the additive-default `sortOrder
+        // == 0` (everything pre-reorder) stay in creation order
+        // rather than thrashing under SwiftData's unstable secondary
+        // sort.
         let descriptor = FetchDescriptor<Subject>(
             predicate: #Predicate { $0.isDeleted == false },
-            sortBy: [SortDescriptor(\.sortOrder)]
+            sortBy: [
+                SortDescriptor(\.sortOrder),
+                SortDescriptor(\.createdAt),
+            ]
         )
-        return (try? context.fetch(descriptor)) ?? []
+        let results = (try? context.fetch(descriptor)) ?? []
+        // Sort pinned subjects to the top in-memory; Bool isn't
+        // usable with SortDescriptor on some SwiftData versions.
+        return results.sorted { $0.isPinned && !$1.isPinned }
     }
 
     func updateSubject(_ subject: Subject, name: String?, colorHex: String?) throws {
@@ -259,6 +279,34 @@ extension StorageService {
         for (index, subject) in subjects.enumerated() {
             subject.sortOrder = index
             subject.updatedAt = Date()
+        }
+        try context.save()
+    }
+
+    /// Toggle a subject's pinned state. Pinned subjects float to the
+    /// top of the sidebar; ordering inside each group still follows
+    /// `sortOrder`. No-op when the requested value already matches.
+    func setSubjectPinned(_ subject: Subject, isPinned: Bool) throws {
+        guard subject.isPinned != isPinned else { return }
+        subject.isPinned  = isPinned
+        subject.updatedAt = Date()
+        try context.save()
+    }
+}
+
+// MARK: - Notebook manual ordering
+
+extension StorageService {
+
+    /// Assigns sequential `sortOrder` values 0..<N to `notebooks` in
+    /// the order supplied. Used by the library's manual-sort mode to
+    /// persist a drag-reorder in a single save. Existing values are
+    /// overwritten — call sites pass the *desired* final ordering.
+    func reorderNotebooks(_ notebooks: [Notebook]) throws {
+        let now = Date()
+        for (index, notebook) in notebooks.enumerated() where notebook.sortOrder != index {
+            notebook.sortOrder = index
+            notebook.updatedAt = now
         }
         try context.save()
     }
@@ -577,9 +625,14 @@ extension StorageService {
     /// Stamp a notebook as "just opened". Called when the editor opens
     /// a notebook so it surfaces in the Library "recently opened"
     /// section. Backed by UserDefaults — no SwiftData mutation, no
-    /// migration risk.
+    /// migration risk. Re-writes the widget snapshot so the home /
+    /// lock screen recents rail mirrors the user's just-opened
+    /// notebook within the next 15-minute refresh window (or
+    /// immediately via `reloadAllTimelines` inside
+    /// `scheduleWidgetSnapshot`).
     func markNotebookOpened(_ notebook: Notebook) {
         RecentNotebooksTracker.markOpened(notebook.id)
+        scheduleWidgetSnapshot()
     }
 
     func updateNotebook(
@@ -704,48 +757,44 @@ extension StorageService {
                 newPage.textBlocks = (newPage.textBlocks ?? []) + [newBlock]
             }
 
-            for attachment in (page.mediaAttachments ?? []) where !attachment.isDeleted {
-                let newAtt = MediaAttachment(
-                    pageId: newPage.id,
-                    notebookId: copy.id,
-                    type: attachment.type,
-                    fileName: attachment.fileName,
-                    mimeType: attachment.mimeType,
-                    fileSizeBytes: attachment.fileSizeBytes,
-                    originalWidth: attachment.originalWidth,
-                    originalHeight: attachment.originalHeight,
-                    x: attachment.x, y: attachment.y,
-                    width: attachment.width, height: attachment.height
+            // Image attachments live in the `MediaAttachmentStore`
+            // side-channel (UserDefaults JSON for metadata + file
+            // bytes under `Documents/MediaAttachments/images/`),
+            // not on the SwiftData `Page`. Duplication of those
+            // records belongs in that store's own flow — punted
+            // until the side-channel itself migrates to SwiftData
+            // (5A+5C Step 2).
+            // Audio records are denormalised by pageId — fetch them
+            // for the source page, clone each one with new ids
+            // pointing at the new page + notebook, and copy the audio
+            // file via `MediaStorage.url(for: .audio, id:)`.
+            let sourcePageId = page.id
+            let sourceRecords: [AudioRecord] = (try? context.fetch(
+                FetchDescriptor<AudioRecord>(
+                    predicate: #Predicate {
+                        $0.pageId == sourcePageId && $0.deletedAt == nil
+                    }
                 )
-                newAtt.rotation = attachment.rotation
-                newAtt.zIndex   = attachment.zIndex
-                newAtt.caption  = attachment.caption
-                newAtt.page     = newPage
-                context.insert(newAtt)
-                newPage.mediaAttachments = (newPage.mediaAttachments ?? []) + [newAtt]
-
-                try await copyFile(from: mediaURL(for: attachment), to: mediaURL(for: newAtt))
-                try await copyFile(from: thumbnailURL(for: attachment), to: thumbnailURL(for: newAtt))
-            }
-
-            for annotation in (page.audioAnnotations ?? []) where !annotation.isDeleted {
-                let newAnn = AudioAnnotation(
-                    pageId: newPage.id,
-                    notebookId: copy.id,
-                    fileName: annotation.fileName,
-                    durationSeconds: annotation.durationSeconds,
-                    fileSizeBytes: annotation.fileSizeBytes,
-                    pageX: annotation.pageX,
-                    pageY: annotation.pageY
+            )) ?? []
+            for source in sourceRecords {
+                let cloneId = UUID()
+                let clone = AudioRecord(
+                    id:              cloneId,
+                    pageId:          newPage.id,
+                    notebookId:      copy.id,
+                    normalizedX:     source.normalizedX,
+                    normalizedY:     source.normalizedY,
+                    durationSeconds: source.durationSeconds,
+                    amplitudes:      source.amplitudes,
+                    transcript:      source.transcript,
+                    createdAt:       source.createdAt,
+                    updatedAt:       Date()
                 )
-                newAnn.transcription         = annotation.transcription
-                newAnn.transcriptionSegments = annotation.transcriptionSegments
-                newAnn.recordedAt            = annotation.recordedAt
-                newAnn.page                  = newPage
-                context.insert(newAnn)
-                newPage.audioAnnotations = (newPage.audioAnnotations ?? []) + [newAnn]
-
-                try await copyFile(from: audioURL(for: annotation), to: audioURL(for: newAnn))
+                context.insert(clone)
+                try await copyFile(
+                    from: MediaStorage.url(for: .audio, id: source.id),
+                    to:   MediaStorage.url(for: .audio, id: cloneId)
+                )
             }
         }
 
@@ -1042,309 +1091,152 @@ extension StorageService {
         try context.save()
         return block
     }
-}
 
-// MARK: - Media Attachments
-
-extension StorageService {
-
-    func addImage(
-        to page: Page,
-        imageData: Data,
-        mimeType: String,
-        at normalizedRect: CGRect
-    ) async throws -> MediaAttachment {
-        guard let image = UIImage(data: imageData) else {
-            throw InkStorageError.fileWriteFailed(
-                NSError(domain: "Ink", code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "Cannot decode image data"])
-            )
-        }
-
-        let attachment = MediaAttachment(
+    /// Like `createTextBlock(on:content:)` but uses an explicit
+    /// normalised rect — used by the lecture/audio block placement
+    /// path so the caller can stack new cards beneath existing ones
+    /// without re-implementing the SwiftData mutation.
+    /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.C.
+    @discardableResult
+    func createTextBlock(
+        on page: Page,
+        content: String,
+        normalizedRect: CGRect
+    ) throws -> TextBlock {
+        let block = TextBlock(
             pageId: page.id,
-            notebookId: page.notebookId,
-            type: .image,
-            fileName: "\(UUID().uuidString).jpg",
-            mimeType: mimeType,
-            fileSizeBytes: Int64(imageData.count),
-            originalWidth: Int(image.size.width),
-            originalHeight: Int(image.size.height),
-            x: normalizedRect.origin.x,
-            y: normalizedRect.origin.y,
-            width: normalizedRect.width,
+            x:      normalizedRect.origin.x,
+            y:      normalizedRect.origin.y,
+            width:  normalizedRect.width,
             height: normalizedRect.height
         )
-
-        let zMax = ((page.mediaAttachments ?? []).map(\.zIndex).max() ?? -1) + 1
-        attachment.zIndex = zMax
-        attachment.page   = page
-
-        context.insert(attachment)
-        page.mediaAttachments = (page.mediaAttachments ?? []) + [attachment]
-        page.updatedAt = Date()
-
-        // Write files on background task
-        let mediaDestURL  = mediaURL(for: attachment)
-        let thumbDestURL  = thumbnailURL(for: attachment)
-        let notebookId    = page.notebookId
-
-        Task.detached(priority: .utility) { [weak self] in
-            guard self != nil else { return }
-            let fm = FileManager.default
-            let dir = StorageService.notebooksDirectoryURL
-                .appendingPathComponent(notebookId.uuidString)
-                .appendingPathComponent("media")
-            try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-
-            // Full resolution. NSFileCoordinator-wrapped when iCloud is enabled.
-            if let jpeg = image.jpegData(compressionQuality: 0.90) {
-                try? Self.writeFile(jpeg, to: mediaDestURL)
-            }
-            // Thumbnail — max 400×400pt, JPEG 75%.
-            // thumbnailFitting is @MainActor-isolated (UIKit drawing).
-            let thumbJpeg: Data? = await MainActor.run {
-                image.thumbnailFitting(maxDimension: 400)?
-                    .jpegData(compressionQuality: 0.75)
-            }
-            if let thumbJpeg {
-                try? Self.writeFile(thumbJpeg, to: thumbDestURL)
-            }
-        }
-
-        try context.save()
-        return attachment
-    }
-
-    func updateAttachment(
-        _ attachment: MediaAttachment,
-        rect: CGRect?,
-        rotation: Double?,
-        caption: String?,
-        opacity: Double? = nil
-    ) throws {
-        if let rect {
-            attachment.x      = rect.origin.x
-            attachment.y      = rect.origin.y
-            attachment.width  = rect.width
-            attachment.height = rect.height
-        }
-        if let rotation { attachment.rotation = rotation }
-        if let caption  { attachment.caption  = caption  }
-        if let opacity  { attachment.opacity  = max(0.2, min(1.0, opacity)) }
-        attachment.updatedAt = Date()
-        try context.save()
-    }
-
-    func updateAttachmentZIndex(_ attachment: MediaAttachment, zIndex: Int) throws {
-        attachment.zIndex    = zIndex
-        attachment.updatedAt = Date()
-        try context.save()
-    }
-
-    /// Replaces the file data for a cropped image and updates dimensions.
-    func replaceAttachmentImage(
-        _ attachment: MediaAttachment,
-        jpegData: Data,
-        originalWidth: Int,
-        originalHeight: Int
-    ) throws {
-        let destURL   = mediaURL(for: attachment)
-        let thumbURL  = thumbnailURL(for: attachment)
-        let notebookId = attachment.notebookId
-
-        try Self.writeFile(jpegData, to: destURL)
-        attachment.fileSizeBytes  = Int64(jpegData.count)
-        attachment.originalWidth  = originalWidth
-        attachment.originalHeight = originalHeight
-        attachment.updatedAt = Date()
-        try context.save()
-
-        // Regenerate thumbnail off-thread (UIImage rendering hops to MainActor).
-        Task.detached(priority: .utility) {
-            guard let image = UIImage(data: jpegData) else { return }
-            let thumbJpeg: Data? = await MainActor.run {
-                image.thumbnailFitting(maxDimension: 400)?
-                    .jpegData(compressionQuality: 0.75)
-            }
-            guard let thumbJpeg else { return }
-            try? Self.writeFile(thumbJpeg, to: thumbURL)
-        }
-        _ = notebookId
-    }
-
-    /// Insert a pre-processed image (files already written to disk).
-    func addPreprocessedImage(
-        to page: Page,
-        id: UUID,
-        fileName: String,
-        fileSizeBytes: Int64,
-        originalWidth: Int,
-        originalHeight: Int,
-        at normalizedRect: CGRect
-    ) throws -> MediaAttachment {
-        let attachment = MediaAttachment(
-            pageId: page.id,
-            notebookId: page.notebookId,
-            type: .image,
-            fileName: fileName,
-            mimeType: "image/jpeg",
-            fileSizeBytes: fileSizeBytes,
-            originalWidth: originalWidth,
-            originalHeight: originalHeight,
-            x: normalizedRect.origin.x,
-            y: normalizedRect.origin.y,
-            width: normalizedRect.width,
-            height: normalizedRect.height
-        )
-        attachment.id     = id
-        attachment.zIndex = ((page.mediaAttachments ?? []).map(\.zIndex).max() ?? -1) + 1
-        attachment.page   = page
-        context.insert(attachment)
-        page.mediaAttachments = (page.mediaAttachments ?? []) + [attachment]
+        block.content = content
+        let maxZ      = ((page.textBlocks ?? []).map(\.zIndex).max() ?? -1) + 1
+        block.zIndex  = maxZ
+        block.page    = page
+        context.insert(block)
+        page.textBlocks = (page.textBlocks ?? []) + [block]
         page.updatedAt = Date()
         try context.save()
-        return attachment
-    }
-
-    func deleteAttachment(_ attachment: MediaAttachment) throws {
-        attachment.isDeleted = true
-        attachment.deletedAt = Date()
-        attachment.updatedAt = Date()
-        try context.save()
-        // Physical file removal deferred until "Empty Trash" or 30-day purge.
-    }
-
-    func restoreAttachment(_ attachment: MediaAttachment) throws {
-        attachment.isDeleted = false
-        attachment.deletedAt = nil
-        attachment.updatedAt = Date()
-        try context.save()
-    }
-
-    func mediaURL(for attachment: MediaAttachment) -> URL {
-        mediaDir(attachment.notebookId)
-            .appendingPathComponent(attachment.id.uuidString + ".jpg")
-    }
-
-    func thumbnailURL(for attachment: MediaAttachment) -> URL {
-        mediaDir(attachment.notebookId)
-            .appendingPathComponent(attachment.id.uuidString + "_thumb.jpg")
+        return block
     }
 }
 
-// MARK: - Audio Annotations
+// MARK: - Audio Records
+//
+// Phase 5A+5C Step 3: `AudioAnnotation` reshaped into `AudioRecord`.
+// No relationship to `Page` — records are denormalised by `pageId`
+// and queried via `FetchDescriptor`. The audio file URL is derived
+// directly from `record.id` (`MediaStorage.url(for: .audio, id:)`)
+// so there's no `fileName` field on the record any more.
 
 extension StorageService {
 
-    func addAudioAnnotation(
+    /// Insert a fresh `AudioRecord` for a page. Called by
+    /// `EditorViewModel.startRecording` when the user taps the
+    /// quick-record button. The audio bytes don't exist yet — they
+    /// land on disk under `MediaStorage.url(for: .audio, id: record.id)`
+    /// once recording stops.
+    @discardableResult
+    func addAudioRecord(
         to page: Page,
-        fileName: String,
         duration: Double,
         at point: CGPoint
-    ) throws -> AudioAnnotation {
-        let annotation = AudioAnnotation(
-            pageId: page.id,
-            notebookId: page.notebookId,
-            fileName: fileName,
-            durationSeconds: duration,
-            pageX: Double(point.x),
-            pageY: Double(point.y)
-        )
-        annotation.page = page
-        context.insert(annotation)
-        page.audioAnnotations = (page.audioAnnotations ?? []) + [annotation]
-        page.updatedAt = Date()
-        try context.save()
-        return annotation
-    }
-
-    func updateTranscription(
-        _ annotation: AudioAnnotation,
-        text: String,
-        segments: [TranscriptionSegment]
-    ) throws {
-        annotation.transcription         = text
-        annotation.transcriptionSegments = try? JSONEncoder().encode(segments)
-        annotation.isTranscribed         = true
-        annotation.updatedAt             = Date()
-        try context.save()
-    }
-
-    func deleteAudioAnnotation(_ annotation: AudioAnnotation) throws {
-        annotation.isDeleted = true
-        annotation.deletedAt = Date()
-        annotation.updatedAt = Date()
-        try context.save()
-    }
-
-    func audioURL(for annotation: AudioAnnotation) -> URL {
-        audioDir(annotation.notebookId)
-            .appendingPathComponent(annotation.id.uuidString + ".m4a")
-    }
-
-    /// Called by `AudioFilePicker` after the file is already copied to the audio directory.
-    func insertAudioFile(
-        to page: Page,
-        annotationId: UUID,
-        fileName: String,
-        duration: Double,
-        fileSizeBytes: Int64,
-        at point: CGPoint
-    ) throws -> AudioAnnotation {
-        let annotation = AudioAnnotation(
-            id:              annotationId,
+    ) throws -> AudioRecord {
+        let record = AudioRecord(
             pageId:          page.id,
             notebookId:      page.notebookId,
-            fileName:        fileName,
-            durationSeconds: duration,
-            fileSizeBytes:   fileSizeBytes,
-            pageX:           Double(point.x),
-            pageY:           Double(point.y)
+            normalizedX:     Double(point.x),
+            normalizedY:     Double(point.y),
+            durationSeconds: duration
         )
-        annotation.page = page
-        context.insert(annotation)
-        page.audioAnnotations = (page.audioAnnotations ?? []) + [annotation]
+        context.insert(record)
         page.updatedAt = Date()
         try context.save()
-        return annotation
+        return record
     }
 
-    /// Writes pre-computed amplitude data (archived [Float]) for static waveform rendering.
-    func updateAmplitudeData(_ annotation: AudioAnnotation, amplitudeData: Data?) throws {
-        annotation.amplitudeData = amplitudeData
-        annotation.updatedAt     = Date()
+    /// Update the transcript text on a record. Called by
+    /// `SpeechTranscriber` once on-device recognition completes.
+    /// Word-level segments are no longer stored — the popover player
+    /// that used them was deleted in Phase 4B.
+    func updateTranscription(_ record: AudioRecord, text: String) throws {
+        record.transcript = text
+        record.updatedAt  = Date()
         try context.save()
     }
 
-    func fetchAudioAnnotation(id: UUID) -> AudioAnnotation? {
-        var descriptor = FetchDescriptor<AudioAnnotation>(
-            predicate: #Predicate { $0.id == id && $0.isDeleted == false }
+    /// Update the waveform amplitudes array on a record. Called by
+    /// `SpeechTranscriber` once amplitude extraction completes.
+    /// `[Float]` is stored natively by SwiftData — no JSON
+    /// round-trip.
+    func updateAmplitudes(_ record: AudioRecord, amplitudes: [Float]) throws {
+        record.amplitudes = amplitudes
+        record.updatedAt  = Date()
+        try context.save()
+    }
+
+    func deleteAudioRecord(_ record: AudioRecord) throws {
+        record.deletedAt = Date()
+        record.updatedAt = Date()
+        try context.save()
+    }
+
+    /// Returns the on-disk URL for a record's audio file. Pure
+    /// passthrough to `MediaStorage`.
+    func audioURL(for record: AudioRecord) -> URL {
+        MediaStorage.url(for: .audio, id: record.id)
+    }
+
+    /// Called by `AudioFilePicker` after the file is already copied
+    /// into `MediaStorage.url(for: .audio, id:)`.
+    @discardableResult
+    func insertAudioFile(
+        to page: Page,
+        recordId: UUID,
+        duration: Double,
+        at point: CGPoint
+    ) throws -> AudioRecord {
+        let record = AudioRecord(
+            id:              recordId,
+            pageId:          page.id,
+            notebookId:      page.notebookId,
+            normalizedX:     Double(point.x),
+            normalizedY:     Double(point.y),
+            durationSeconds: duration
+        )
+        context.insert(record)
+        page.updatedAt = Date()
+        try context.save()
+        return record
+    }
+
+    func fetchAudioRecord(id: UUID) -> AudioRecord? {
+        var descriptor = FetchDescriptor<AudioRecord>(
+            predicate: #Predicate { $0.id == id && $0.deletedAt == nil }
         )
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
     }
 
-    /// Moves a pin to a new normalised position.
-    func moveAudioAnnotation(_ annotation: AudioAnnotation, to point: CGPoint) throws {
-        annotation.pageX     = Double(point.x)
-        annotation.pageY     = Double(point.y)
-        annotation.updatedAt = Date()
+    /// Active records for a page, oldest-first.
+    func fetchAudioRecords(forPageId pageId: UUID) -> [AudioRecord] {
+        let descriptor = FetchDescriptor<AudioRecord>(
+            predicate: #Predicate { $0.pageId == pageId && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\.createdAt)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Moves a record's anchor to a new normalised position.
+    func moveAudioRecord(_ record: AudioRecord, to point: CGPoint) throws {
+        record.normalizedX = Double(point.x)
+        record.normalizedY = Double(point.y)
+        record.updatedAt   = Date()
         try context.save()
     }
-
 }
 
-// MARK: - Audio directory (public for AudioFilePicker)
-
-extension StorageService {
-    /// Returns the audio directory URL for a given notebook.
-    func audioDirURL(notebookId: UUID) -> URL {
-        Self.notebooksDirectoryURL
-            .appendingPathComponent(notebookId.uuidString)
-            .appendingPathComponent("audio")
-    }
-}
 
 // MARK: - Search
 
@@ -1388,17 +1280,20 @@ extension StorageService {
             ))
         }
 
-        // Audio transcriptions
-        let annotations = (try? context.fetch(
-            FetchDescriptor<AudioAnnotation>(predicate: #Predicate { $0.isDeleted == false })
+        // Audio transcripts (Phase 5A+5C Step 3: AudioAnnotation
+        // reshaped into AudioRecord; transcript is non-optional and
+        // empty when unrecognised).
+        let audioRecords = (try? context.fetch(
+            FetchDescriptor<AudioRecord>(predicate: #Predicate { $0.deletedAt == nil })
         )) ?? []
-        for ann in annotations {
-            guard let text = ann.transcription, text.lowercased().contains(q),
-                  let nbId = pageToNotebook[ann.pageId] else { continue }
+        for rec in audioRecords {
+            guard !rec.transcript.isEmpty,
+                  rec.transcript.lowercased().contains(q),
+                  let nbId = pageToNotebook[rec.pageId] else { continue }
             results.append(SearchResult(
                 notebookId: nbId,
-                pageId: ann.pageId,
-                context: String(text.prefix(120)),
+                pageId: rec.pageId,
+                context: String(rec.transcript.prefix(120)),
                 type: .transcription
             ))
         }
@@ -1474,16 +1369,17 @@ extension StorageService {
                 throw InkStorageError.fileWriteFailed(error)
             }
         }
-        // Soft-delete all AudioAnnotation records
-        let descriptor = FetchDescriptor<AudioAnnotation>(
-            predicate: #Predicate { $0.isDeleted == false }
+        // Soft-delete all AudioRecord rows (Phase 5A+5C Step 3 —
+        // type renamed, `isDeleted` Bool replaced by `deletedAt`
+        // nullable as the soft-delete signal).
+        let descriptor = FetchDescriptor<AudioRecord>(
+            predicate: #Predicate { $0.deletedAt == nil }
         )
-        let annotations = (try? context.fetch(descriptor)) ?? []
+        let records = (try? context.fetch(descriptor)) ?? []
         let now = Date()
-        for ann in annotations {
-            ann.isDeleted = true
-            ann.deletedAt = now
-            ann.updatedAt = now
+        for rec in records {
+            rec.deletedAt = now
+            rec.updatedAt = now
         }
         try context.save()
     }
@@ -1643,11 +1539,34 @@ extension StorageService {
         }
     }
 
-    /// Re-write the App Group widget snapshot from the latest notebook list.
-    /// Debounced through `WidgetDataWriter`.
+    /// Re-write the App Group widget snapshot from the latest
+    /// notebook list. Sort order is most-recently-OPENED first
+    /// (via `RecentNotebooksTracker`) so the medium widget's
+    /// "recents" rail mirrors what the user actually expects —
+    /// the previous `updatedAt`-ordered snapshot ignored opens
+    /// that didn't write strokes. Falls back to `updatedAt` for
+    /// notebooks the tracker doesn't know about yet, then trims
+    /// to ten so the widget's three-row consumer always has
+    /// headroom for filters / deletions.
+    ///
+    /// Triggers `WidgetCenter.shared.reloadAllTimelines()`
+    /// immediately after the write is scheduled so the widget
+    /// re-renders within seconds rather than waiting up to 15
+    /// minutes for the natural timeline refresh.
     func scheduleWidgetSnapshot() {
-        let summaries: [NotebookSummary] = fetchNotebooks(subjectId: nil)
-            .sorted { $0.updatedAt > $1.updatedAt }
+        let recentIds = RecentNotebooksTracker.recentIdsNewestFirst()
+        let byRecentRank: [UUID: Int] = Dictionary(
+            uniqueKeysWithValues: recentIds.enumerated().map { ($0.element, $0.offset) }
+        )
+        let summaries: [NotebookSummary] = fetchAllNotebooks()
+            .sorted { lhs, rhs in
+                switch (byRecentRank[lhs.id], byRecentRank[rhs.id]) {
+                case let (l?, r?):  return l < r
+                case (_?, nil):     return true
+                case (nil, _?):     return false
+                case (nil, nil):    return lhs.updatedAt > rhs.updatedAt
+                }
+            }
             .prefix(10)
             .map { nb in
                 NotebookSummary(
@@ -1660,6 +1579,12 @@ extension StorageService {
                 )
             }
         Task { await WidgetDataWriter.shared.scheduleWrite(summaries) }
+        // Tell WidgetKit to re-fetch + redraw. The actual JSON
+        // write is debounced inside `WidgetDataWriter`; the
+        // reload is cheap and idempotent, so calling it before
+        // the write completes is fine — when the widget re-fetches
+        // (~1s later) the new snapshot is already on disk.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

@@ -92,7 +92,36 @@ final class EditorViewModel: ObservableObject {
     // MARK: Tool state
     @Published var selectedTool: InkTool
     @Published private(set) var lastTool: InkTool?         // for "switch between two tools"
+
+    // MARK: State machine (Phase 5E)
+    //
+    // Single consolidation point for the editor's high-level mode —
+    // see `EditorStateMachine.swift`. Tool identity + settings stay
+    // on `selectedTool`; this machine owns the orthogonal mode axis
+    // (lecture recording, audio recording, text-block edit, image
+    // selection, sticky-note edit) and the `canvasIsInteractive`
+    // signal the canvas reads to decide whether to take Pencil input.
+    //
+    // Existing call sites still mutate `activeLectureRecorder`,
+    // `activeMediaSource`, `recordingState`, `selectedAttachmentIds`
+    // directly. The `didSet` hooks on those properties mirror the
+    // transition into `stateMachine` so the mode stays in sync
+    // without rewriting every call site. New code should call
+    // `stateMachine.enterMode(_:)` / `exitMode()` directly.
+    let stateMachine = EditorStateMachine()
+
+    /// Single source of truth the canvas reads to gate Pencil input.
+    /// Combines tool-type signal (`selectedTool.isDrawingTool`) with
+    /// the mode signal (`stateMachine.mode == .drawing`).
+    var canvasIsInteractive: Bool {
+        stateMachine.canvasIsInteractive(toolIsDrawing: selectedTool.isDrawingTool)
+    }
     @Published var activePencilDoubleTapAction: PencilDoubleTapAction = .toggleEraser
+    /// `UserDefaults.didChangeNotification` token. Released in `deinit`.
+    /// Drives the mid-session refresh of `activePencilDoubleTapAction`
+    /// when the user changes the setting in Settings → Pencil with the
+    /// editor still open. See §6.E.
+    private var userDefaultsObserver: NSObjectProtocol?
     @Published var isShowingColorPicker: Bool = false
 
     // MARK: Zoom
@@ -111,26 +140,31 @@ final class EditorViewModel: ObservableObject {
     /// wants the imported image centred on. Used as the `at:`
     /// argument to `commitImportedImage` from every entry point
     /// (canvas tap, long-press, drag-drop, toolbar centre-import).
-    /// The previous `@Published var imageImportRequest` that
-    /// drove a `.sheet(item:)` inside the editor cover is gone —
-    /// the picker is now presented from `LibraryView` via
-    /// `ImagePickerBridge` to avoid the nested-presentation
-    /// collapse that closed the editor on iPad.
+    /// Picker presentation itself runs from `LibraryView` at the
+    /// root level, driven by `LibraryViewModel.pendingImageImport`
+    /// and the `.imageImportRequested` / `.imageImportCompleted`
+    /// notifications — see `ImageImportNotifications.swift`.
     struct ImageImportRequest: Identifiable {
         let id = UUID()
         let normalizedX: Double
         let normalizedY: Double
     }
 
-    /// Open the import picker centred on the current page. Routes
-    /// through `ImagePickerBridge` so the picker is presented at
-    /// the library root level, above the editor's
-    /// `.fullScreenCover`.
+    /// Open the import picker centred on the current page. Posts
+    /// `.imageImportRequested`; `LibraryViewModel` observes and
+    /// flips its `pendingImageImport` state, which drives the
+    /// library-root `.sheet(item:)`. Picker resolution comes back
+    /// here via `handleImageImportCompleted` (the
+    /// `.imageImportCompleted` observer set up in `init`).
     func requestImageImportCentred() {
-        let request = ImageImportRequest(normalizedX: 0.5, normalizedY: 0.5)
-        ImagePickerBridge.shared.present { [weak self] image, ext in
-            self?.commitImportedImage(image, fileExtension: ext, at: request)
-        }
+        NotificationCenter.default.post(
+            name: .imageImportRequested,
+            object: nil,
+            userInfo: [
+                ImageImportUserInfoKey.normalizedX: 0.5,
+                ImageImportUserInfoKey.normalizedY: 0.5,
+            ]
+        )
     }
 
     /// Commit a picked image to disk + the side-channel store. The
@@ -146,68 +180,46 @@ final class EditorViewModel: ObservableObject {
     ) {
         let attachmentId = UUID()
         let safeExt = ext.isEmpty ? "jpg" : ext.lowercased()
-        let fileName = "\(attachmentId.uuidString).\(safeExt)"
-        let dir = MediaAttachmentStore.mediaDirectory(for: notebook.id)
-        let absoluteURL = dir.appendingPathComponent(fileName)
+        // `relativeFilePath` is no longer stored on the record —
+        // `MediaAttachmentStore.absoluteURL(for:)` derives the path
+        // from the id. We still resolve the format here so the write
+        // path knows which extension to use.
 
-        // Resolve the documents-relative path once — the record
-        // stores the relative form so a sandbox relocate doesn't
-        // invalidate the reference.
-        let docs = FileManager.default
-            .urls(for: .documentDirectory, in: .userDomainMask)[0].path
-        let relativePath: String
-        if absoluteURL.path.hasPrefix(docs) {
-            relativePath = String(
-                absoluteURL.path
-                    .dropFirst(docs.count)
-                    .drop(while: { $0 == "/" })
-            )
-        } else {
-            // Fallback — should never happen given the directory
-            // above is in Documents, but the safe branch keeps the
-            // record valid even if the constant changes.
-            relativePath = "media/\(notebook.id.uuidString)/\(fileName)"
-        }
-
-        // Encode + write off the main actor.
-        Task.detached(priority: .userInitiated) {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let data: Data?
-            switch safeExt {
-            case "png":  data = image.pngData()
-            default:     data = image.jpegData(compressionQuality: 0.85)
-            }
-            guard let data else { return }
-            try? data.write(to: absoluteURL, options: .atomic)
-        }
-
-        // Aspect-preserving fit to ~60% of page width. Falls back
-        // to a 60×40 box when the image has zero dimensions
-        // (shouldn't happen — UIImagePickerController and
-        // PHPickerViewController guarantee non-zero).
+        // Aspect-preserving fit to ~60% of page width.
         let pixelWidth  = max(1, image.size.width)
         let pixelHeight = max(1, image.size.height)
         let aspect = pixelHeight / pixelWidth
         let targetW: Double = 0.6
         let targetH: Double = Double(aspect) * targetW
 
-        let record = MediaAttachmentRecord(
+        let record = ImageRecord(
             id: attachmentId,
             pageId: currentPage.id,
             notebookId: notebook.id,
-            relativeFilePath: relativePath,
             normalizedX: max(0, min(1 - targetW, request.normalizedX - targetW / 2)),
             normalizedY: max(0, min(1 - targetH, request.normalizedY - targetH / 2)),
             normalizedWidth:  targetW,
             normalizedHeight: targetH,
-            rotationDegrees: 0,
+            rotation: 0,
+            zOrder: 0,
             originalWidth: Double(pixelWidth),
-            originalHeight: Double(pixelHeight),
-            createdAt: Date(),
-            updatedAt: Date(),
-            deletedAt: nil
+            originalHeight: Double(pixelHeight)
         )
-        MediaAttachmentStore.save(record)
+
+        // Write the bytes BEFORE publishing the record. The render
+        // path (`ImageAttachmentLoader`) decodes from disk on the
+        // first refresh; if the record lands in the store before
+        // the file does, the loader resolves a missing file and
+        // shows a permanent grey placeholder (`.task(id: url)` only
+        // re-runs when the URL changes, not when the file appears).
+        // Awaiting the write keeps the two in lock-step.
+        let format: MediaStorage.ImageFormat =
+            safeExt == "png" ? .png : .jpeg(quality: 0.85)
+        Task { @MainActor in
+            let writtenPath = await MediaStorage.writeImage(image, id: attachmentId, format: format)
+            guard writtenPath != nil else { return }
+            MediaAttachmentStore.save(record)
+        }
     }
 
     /// Annotation pulse signal. Set to a `PDFTextAnnotationRecord.id`
@@ -295,6 +307,15 @@ final class EditorViewModel: ObservableObject {
     }
 
     func closeCustomisePanel() {
+        // Resign first responder before the panel slides away so
+        // the keyboard can't get stranded above the canvas if the
+        // user dismissed via tap-outside (not the "done" button).
+        // Idempotent — `sendAction(_:to: nil)` no-ops when no
+        // responder is focused.
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
         isCustomisePanelOpen = false
         endInteraction(.customisePanel)
     }
@@ -315,7 +336,14 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var currentPageTextBlocks: [TextBlock] = []
 
     // MARK: Media attachments
-    @Published private(set) var currentPageAttachments: [MediaAttachment] = []
+    //
+    // Phase 5A+5C Step 1: the SwiftData `MediaAttachment` entity is
+    // gone. Image rendering / interaction lives entirely in
+    // `ImageAttachmentsView`, backed by `MediaAttachmentStore`
+    // (UserDefaults JSON). The previous per-page array, undo stack,
+    // and the half-dozen passthrough mutation methods on this
+    // view-model were callers of the deleted entity and have been
+    // removed.
     @Published var selectedAttachmentIds: Set<UUID> = []
     @Published var mediaError: String?
 
@@ -329,17 +357,18 @@ final class EditorViewModel: ObservableObject {
         self.error = appError
     }
 
-    /// Drives the media picker sheet — set by MediaInsertCoordinator methods.
+    /// Drives the media picker sheet — set by MediaInsertCoordinator
+    /// methods. Phase 5E mirror: this isn't itself a mode (it's a
+    /// modal-presentation flag), so we don't reflect it in the
+    /// state machine. Listed here for completeness because the
+    /// nearby mode-bearing flags below DO mirror in their didSets.
     @Published var activeMediaSource: MediaSource?
 
     // MARK: Media insert coordinator (lazy to break init cycle)
     lazy var mediaInsertCoordinator: MediaInsertCoordinator = MediaInsertCoordinator(viewModel: self)
 
-    // MARK: Undo stack for deleted attachments (session-only, not SwiftData undo)
-    private var deletedAttachmentsUndo: [(MediaAttachment, Data?)] = []
-
     // MARK: Audio annotations
-    @Published private(set) var currentPageAudioAnnotations: [AudioAnnotation] = []
+    @Published private(set) var currentPageAudioAnnotations: [AudioRecord] = []
 
     // MARK: Sticky notes
     //
@@ -357,10 +386,37 @@ final class EditorViewModel: ObservableObject {
     // record so the editor can drop the post-stop placeholder
     // TextBlock on the page.
 
-    @Published var activeLectureRecorder: LectureRecorder?
+    @Published var activeLectureRecorder: LectureRecorder? {
+        didSet {
+            // Phase 5E mirror: lecture mode is a state-machine mode.
+            // Existing call sites flip this directly; the mirror
+            // here keeps `stateMachine.mode` in sync without
+            // touching them. `recorder.recordId` would be ideal as
+            // the session id but it's private; use a fresh UUID
+            // per session — the id is opaque to readers, they only
+            // pattern-match on the case.
+            if activeLectureRecorder != nil, oldValue == nil {
+                stateMachine.enterMode(.lectureRecording(sessionId: UUID()))
+            } else if activeLectureRecorder == nil, oldValue != nil {
+                if case .lectureRecording = stateMachine.mode {
+                    stateMachine.exitMode()
+                }
+            }
+        }
+    }
     /// When non-nil, the SwiftUI popover for this sticky note is open
     /// and the body field is focused.
-    @Published var editingStickyNoteId: UUID?
+    @Published var editingStickyNoteId: UUID? {
+        didSet {
+            if let id = editingStickyNoteId, oldValue == nil {
+                stateMachine.enterMode(.stickyNoteEditing(noteId: id))
+            } else if editingStickyNoteId == nil, oldValue != nil {
+                if case .stickyNoteEditing = stateMachine.mode {
+                    stateMachine.exitMode()
+                }
+            }
+        }
+    }
 
     // MARK: AI — suggested title (Phase 2)
 
@@ -379,7 +435,6 @@ final class EditorViewModel: ObservableObject {
         let trimmed = notebook.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.lowercased() == "untitled"
     }
-    @Published var playingAnnotationId:         UUID?     = nil
     @Published var isRecordingPanelVisible:     Bool      = false {
         didSet {
             guard oldValue != isRecordingPanelVisible else { return }
@@ -387,7 +442,28 @@ final class EditorViewModel: ObservableObject {
             else                       { endInteraction(.recordingPanel) }
         }
     }
-    @Published var recordingState:              RecordingState = .idle
+    @Published var recordingState:              RecordingState = .idle {
+        didSet {
+            // Phase 5E mirror: quick-record session is a state-
+            // machine mode. Only `.recording` blocks other long-
+            // form sessions; `.idle` (and the transient `.paused`)
+            // both fall back to `.drawing`.
+            guard recordingState != oldValue else { return }
+            #if DEBUG
+            let stack = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
+            print("[RecordingMirror] recordingState \(oldValue) → \(recordingState)")
+            print("[RecordingMirror]   stack:\n  \(stack)")
+            #endif
+            switch recordingState {
+            case .recording:
+                stateMachine.enterMode(.audioRecording(sessionId: UUID()))
+            default:
+                if case .audioRecording = stateMachine.mode {
+                    stateMachine.exitMode()
+                }
+            }
+        }
+    }
     /// Defaults from `ink.transcription.auto` (Settings → Audio & Transcription).
     /// User can also override per-recording via the panel toggle while recording.
     @Published var isTranscriptionEnabled: Bool =
@@ -501,7 +577,6 @@ final class EditorViewModel: ObservableObject {
 
         resetToolbarTimer()
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
 
@@ -515,6 +590,19 @@ final class EditorViewModel: ObservableObject {
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
+
+        // Image-import completion. The picker is owned by the
+        // library (it lives outside this view-model's
+        // navigation destination); a successful pick fires this
+        // notification and we route the bytes through
+        // `commitImportedImage`. Cancellation has no editor-side
+        // side-effect, so we don't observe it here.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleImageImportCompleted(_:)),
+            name: .imageImportCompleted,
+            object: nil
+        )
     }
 
     deinit {
@@ -523,7 +611,13 @@ final class EditorViewModel: ObservableObject {
         headerManualReHideTask?.cancel()
         saveTask?.cancel()
         savedFlashTask?.cancel()
+        // Selector-based observers (e.g. handleAppBackground).
         NotificationCenter.default.removeObserver(self)
+        // Block-based observer for UserDefaults.didChangeNotification —
+        // `removeObserver(self)` does not cover token-returning observers.
+        if let token = userDefaultsObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
     }
 
     /// Background-notification handler. `@objc` so it can be
@@ -533,6 +627,26 @@ final class EditorViewModel: ObservableObject {
         Task { @MainActor in
             await writer.flushImmediately()
         }
+    }
+
+    /// Image-import completion handler. Reads the picked image +
+    /// extension + normalised tap location from the notification's
+    /// `userInfo` and routes through `commitImportedImage`. The
+    /// library has already cleared its `pendingImageImport` state
+    /// by the time this fires (both VMs observe the same
+    /// notification independently).
+    @objc private func handleImageImportCompleted(_ note: Notification) {
+        guard
+            let image = note.userInfo?[ImageImportUserInfoKey.image] as? UIImage,
+            let ext   = note.userInfo?[ImageImportUserInfoKey.ext]   as? String
+        else { return }
+        let normX = (note.userInfo?[ImageImportUserInfoKey.normalizedX] as? Double) ?? 0.5
+        let normY = (note.userInfo?[ImageImportUserInfoKey.normalizedY] as? Double) ?? 0.5
+        commitImportedImage(
+            image,
+            fileExtension: ext,
+            at: ImageImportRequest(normalizedX: normX, normalizedY: normY)
+        )
     }
 
     /// Editor view should call this on dismiss so any pending
@@ -585,11 +699,43 @@ final class EditorViewModel: ObservableObject {
         }
 
         // Pencil double-tap action — honour system preference if set
+        refreshPencilDoubleTapActionFromUserDefaults()
+
+        // Reactivity: keep `activePencilDoubleTapAction` in sync with
+        // the Settings UI when the user changes the setting *while*
+        // the editor is open. Without this observer the value is read
+        // once at init and stays stale until the next cold launch —
+        // double-tap then fires the previous action even though
+        // Settings shows the new one. See
+        // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.E.
+        //
+        // Squeeze action / squeeze tool are not cached — see
+        // `handlePencilSqueeze`, which reads UserDefaults on every
+        // squeeze event. They don't need the same observer.
+        userDefaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshPencilDoubleTapActionFromUserDefaults()
+        }
+    }
+
+    /// Idempotent re-read of the double-tap action UserDefault. Safe
+    /// to call from anywhere — only mutates `activePencilDoubleTapAction`
+    /// if the value actually changed.
+    private func refreshPencilDoubleTapActionFromUserDefaults() {
+        let next: PencilDoubleTapAction
         if let raw = userDefaults.string(forKey: StorageKeys.pencilDoubleTap),
            let action = PencilDoubleTapAction(rawValue: raw) {
-            activePencilDoubleTapAction = action
+            next = action
         } else if let mapped = PencilDoubleTapAction.from(UIPencilInteraction.preferredTapAction) {
-            activePencilDoubleTapAction = mapped
+            next = mapped
+        } else {
+            return
+        }
+        if activePencilDoubleTapAction != next {
+            activePencilDoubleTapAction = next
         }
     }
 
@@ -749,19 +895,77 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: - Pencil Pro squeeze wheel
 
-    /// Called by `PencilSqueezeDetector` on each squeeze. Toggles the wheel.
-    /// `squeezeWheelCentre` is a sentinel — `nil` means hidden, any
-    /// non-nil value means visible. The host view computes the real
-    /// position from its own GeometryReader. Future: feed pencil hover
-    /// position through this property.
-    func handlePencilSqueeze() {
+    /// Settings → Apple Pencil → Squeeze action:
+    ///   • `.palette` — toggles the radial tool wheel. Fires on
+    ///     squeeze release (single trigger per squeeze).
+    ///   • `.tool` — switches to the chosen tool **only while held**
+    ///     (press-and-hold). Released → restores the previous tool.
+    ///
+    /// Three-callback wiring keeps the .palette and .tool semantics
+    /// from interfering with each other.
+
+    /// Stash for the press-and-hold tool path. `nil` between squeezes.
+    private var savedToolBeforeSqueeze: InkTool?
+
+    /// Squeeze BEGIN — fires when the user presses the squeeze sensor.
+    /// `.tool` action: snapshot current tool and switch to chosen tool.
+    /// `.palette` action: no-op (wheel toggles on release).
+    func handlePencilSqueezeBegan() {
+        let action = currentSqueezeAction()
+        #if DEBUG
+        print("[Pencil] squeeze .began action=\(action.rawValue) currentTool=\(selectedTool.identity)")
+        #endif
+        guard action == .tool else { return }
+        let target = currentSqueezeToolChoice().identity
+        // If we're already on the target tool, treat as a no-op so
+        // the release doesn't pop back to itself.
+        guard selectedTool.identity != target else { return }
+        savedToolBeforeSqueeze = selectedTool
+        // Press-and-hold squeeze owns its own restore state; must NOT
+        // touch `lastTool` (the double-tap ping-pong state).
+        selectTool(identity: target, tracksLastTool: false)
+        HapticManager.shared.toolSwitched()
+    }
+
+    /// Squeeze END / CANCEL — fires when the user releases or the
+    /// system cancels. `.tool` action: restore the saved tool.
+    /// `.palette` action: no-op (wheel toggles on release, not end).
+    func handlePencilSqueezeEnded() {
+        let action = currentSqueezeAction()
+        #if DEBUG
+        print("[Pencil] squeeze .ended/.cancelled action=\(action.rawValue) restoring=\(savedToolBeforeSqueeze?.identity.rawValue ?? "nil")")
+        #endif
+        guard action == .tool, let saved = savedToolBeforeSqueeze else { return }
+        // Restoring after squeeze must NOT poison `lastTool`. Otherwise
+        // the next double-tap would toggle to the squeeze tool instead
+        // of the user's prior pre-squeeze choice.
+        selectTool(saved, tracksLastTool: false)
+        savedToolBeforeSqueeze = nil
+        HapticManager.shared.toolSwitched()
+    }
+
+    /// Squeeze RELEASE — `.palette` action toggles the wheel here
+    /// (a single fire per squeeze, not on every phase). `.tool`
+    /// action ignores release because its work happened in began/ended.
+    func handlePencilSqueezeReleased() {
+        let action = currentSqueezeAction()
+        guard action == .palette else { return }
         if squeezeWheelCentre != nil {
-            // Already up — second squeeze dismisses.
             squeezeWheelCentre = nil
             return
         }
         squeezeWheelCentre = .zero
         HapticManager.shared.contextMenuOpened()
+    }
+
+    private func currentSqueezeAction() -> SqueezeAction {
+        let raw = UserDefaults.standard.string(forKey: "pencil.squeeze.action") ?? SqueezeAction.palette.rawValue
+        return SqueezeAction(rawValue: raw) ?? .palette
+    }
+
+    private func currentSqueezeToolChoice() -> SqueezeToolChoice {
+        let raw = UserDefaults.standard.string(forKey: "pencil.squeeze.tool") ?? SqueezeToolChoice.eraser.rawValue
+        return SqueezeToolChoice(rawValue: raw) ?? .eraser
     }
 
     func dismissSqueezeWheel() {
@@ -792,12 +996,21 @@ final class EditorViewModel: ObservableObject {
     /// associated values to the per-tool persisted store so the next time
     /// the user picks that identity, their last colour/width/opacity is
     /// restored.
-    func selectTool(_ tool: InkTool) {
+    ///
+    /// `tracksLastTool: false` is the squeeze press-and-hold escape hatch —
+    /// squeeze maintains its own `savedToolBeforeSqueeze` stash and must not
+    /// poison `lastTool`, which belongs to the double-tap ping-pong state
+    /// machine. If squeeze wrote `lastTool`, releasing the squeeze would
+    /// leave `lastTool` pointing at the squeeze tool, so the next double-tap
+    /// would toggle to the squeeze tool instead of the user's prior choice.
+    func selectTool(_ tool: InkTool, tracksLastTool: Bool = true) {
         if tool.identity != selectedTool.identity {
             // Snapshot the *outgoing* tool before we overwrite selectedTool.
             toolSettings.snapshot(selectedTool)
             toolSettings.save()
-            lastTool = selectedTool
+            if tracksLastTool {
+                lastTool = selectedTool
+            }
         }
         selectedTool = tool
         resetToolbarTimer()
@@ -806,9 +1019,9 @@ final class EditorViewModel: ObservableObject {
     /// Switch to a tool by identity — looks up persisted per-tool settings
     /// (`ToolSettingsStore`) and falls back to defaults. This is what the
     /// tool palette should call when the user taps a tool button.
-    func selectTool(identity: InkTool.Identity) {
+    func selectTool(identity: InkTool.Identity, tracksLastTool: Bool = true) {
         let restored = toolSettings.tool(for: identity, theme: theme)
-        selectTool(restored)
+        selectTool(restored, tracksLastTool: tracksLastTool)
         // Remember this variant as the category's current pick.
         ToolCategoryStore.setLastVariant(identity)
     }
@@ -1086,44 +1299,28 @@ final class EditorViewModel: ObservableObject {
 
     func incrementWidth() {
         guard selectedTool.hasWidth else { return }
-        if case .eraser(.pixel) = selectedTool {
-            setPixelEraserSize(selectedTool.currentWidth + 1)
-            return
-        }
+        // `.eraser(.pixel)` reports `hasWidth == false` now (the
+        // configurable size was retired) so the guard catches it
+        // — no separate pixel-eraser branch needed.
         selectedTool = selectedTool.withWidth(selectedTool.currentWidth + 0.5)
         persistCurrentToolSettings()
     }
 
     func decrementWidth() {
         guard selectedTool.hasWidth else { return }
-        if case .eraser(.pixel) = selectedTool {
-            setPixelEraserSize(selectedTool.currentWidth - 1)
-            return
-        }
         selectedTool = selectedTool.withWidth(selectedTool.currentWidth - 0.5)
         persistCurrentToolSettings()
     }
 
     func setWidth(_ width: CGFloat) {
-        if case .eraser(.pixel) = selectedTool {
-            setPixelEraserSize(width)
-            return
-        }
         selectedTool = selectedTool.withWidth(width)
         persistCurrentToolSettings()
     }
 
-    /// Pixel-eraser size lives in `ink.eraser.pixelSize.session` (a UserDefaults
-    /// key cleared at app cold-launch). The PKEraserTool is rebuilt by
-    /// re-emitting the same case so the canvas picks up the new bitmap width.
-    private func setPixelEraserSize(_ width: CGFloat) {
-        let clamped = max(4, min(80, width))
-        UserDefaults.standard.set(Double(clamped), forKey: "ink.eraser.pixelSize.session")
-        // Toggle selectedTool to force PKCanvasView to rebuild its tool.
-        if case .eraser(.pixel) = selectedTool {
-            selectedTool = .eraser(mode: .pixel)
-        }
-    }
+    // Pixel-eraser size mutator removed — the Settings slider
+    // that drove the legacy `ink.eraser.pixelSize` /
+    // `ink.eraser.pixelSize.session` keys is gone; the eraser
+    // uses a fixed 24pt width baked into `InkTool.makePKTool`.
 
     func setOpacity(_ opacity: CGFloat) {
         selectedTool = selectedTool.withOpacity(opacity)
@@ -1183,7 +1380,6 @@ final class EditorViewModel: ObservableObject {
         // lands.
         currentPageIndex = newIndex
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
         pendingScrollPageIndex = newIndex
@@ -1219,6 +1415,24 @@ final class EditorViewModel: ObservableObject {
         HapticManager.shared.pageAdded()
     }
 
+    /// Append a new page immediately after the page with the given id, then
+    /// navigate to it. Used by the canvas stroke handler to auto-add a fresh
+    /// page when the user draws near the bottom of the last page.
+    func addPage(afterPageId pageId: UUID) {
+        guard let anchor = pages.first(where: { $0.id == pageId }) else { return }
+        guard let _ = try? storage.createPage(
+            in: notebook,
+            after: anchor.pageNumber,
+            pageSize: globalPageSize,
+            backgroundTemplate: globalTemplate
+        ) else { return }
+        refreshPages()
+        if let newIdx = pages.firstIndex(where: { $0.pageNumber == anchor.pageNumber + 1 }) {
+            goToPage(index: newIdx)
+        }
+        HapticManager.shared.pageAdded()
+    }
+
     // MARK: - Toolbar state hooks
 
     /// True iff `currentPageIndex` is the last page in the notebook.
@@ -1244,14 +1458,50 @@ final class EditorViewModel: ObservableObject {
         goToPage(index: currentPageIndex - 1)
     }
 
+    /// Insert a page after `pageNumber` (or at the end if nil) and
+    /// navigate to it. Powers the page-strip "+ add page" button and
+    /// the context-menu "Add Page After" item.
     func addPage(after pageNumber: Int? = nil) {
-        guard let _ = try? storage.createPage(
+        let target = pageNumber ?? pages.last?.pageNumber
+        guard (try? storage.createPage(
             in: notebook,
-            after: pageNumber ?? pages.last?.pageNumber,
+            after: target,
             pageSize: globalPageSize,
             backgroundTemplate: globalTemplate
-        ) else { return }
+        )) != nil else { return }
         refreshPages()
+        // Navigate to the freshly-inserted page. After `createPage`
+        // renumbers, the new page sits at `(target ?? lastNumber) + 1`
+        // i.e. `target` index + 1 (zero-based) → `target` index in 0
+        // when target was nil it's appended at the end.
+        let newIndex: Int
+        if let target {
+            newIndex = min(target, pages.count - 1)   // pageNumber is 1-based; index = number
+        } else {
+            newIndex = pages.count - 1
+        }
+        goToPage(index: newIndex)
+        HapticManager.shared.pageAdded()
+    }
+
+    /// Insert a page BEFORE `pageNumber` and navigate to it. Powers
+    /// the page-strip context-menu "Insert Page Before" item.
+    func addPage(before pageNumber: Int) {
+        // `createPage(after:)` with `pageNumber - 1` puts the new page
+        // at position `pageNumber`, which after renumbering pushes the
+        // original page (and everything after it) down by one.
+        let after: Int? = pageNumber > 1 ? pageNumber - 1 : nil
+        guard (try? storage.createPage(
+            in: notebook,
+            after: after,
+            pageSize: globalPageSize,
+            backgroundTemplate: globalTemplate
+        )) != nil else { return }
+        refreshPages()
+        // The new page is now at the index that the original occupied.
+        let newIndex = max(0, min(pageNumber - 1, pages.count - 1))
+        goToPage(index: newIndex)
+        HapticManager.shared.pageAdded()
     }
 
     func deletePage(_ page: Page) {
@@ -1285,7 +1535,6 @@ final class EditorViewModel: ObservableObject {
         pages = fetched
         currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAttachments()
         refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
     }
@@ -1296,16 +1545,25 @@ final class EditorViewModel: ObservableObject {
             .sorted { $0.zIndex < $1.zIndex }
     }
 
-    func refreshCurrentPageAttachments() {
-        currentPageAttachments = (currentPage.mediaAttachments ?? [])
-            .filter { !$0.isDeleted }
-            .sorted { $0.zIndex < $1.zIndex }
-    }
-
     func refreshCurrentPageAudioAnnotations() {
-        currentPageAudioAnnotations = (currentPage.audioAnnotations ?? [])
-            .filter { !$0.isDeleted }
-            .sorted { $0.createdAt < $1.createdAt }
+        // Skip re-publish when the array is bit-for-bit identical —
+        // the post-transcribe path can fire this multiple times in
+        // quick succession (amplitude write, transcript write, refine
+        // pass) and re-publishing the same array still triggers
+        // SwiftUI re-renders for every observer. Cheap deep equality
+        // via id list + transcript-emptiness flag covers the
+        // meaningful changes the audio overlay actually re-renders
+        // for. (Phase 5A+5C Step 3: `isTranscribed` flag removed —
+        // derive from `!transcript.isEmpty`.)
+        let next = storage.fetchAudioRecords(forPageId: currentPage.id)
+        let nextIds = next.map { $0.id }
+        let prevIds = currentPageAudioAnnotations.map { $0.id }
+        if nextIds == prevIds {
+            let nextTr = next.map { !$0.transcript.isEmpty }
+            let prevTr = currentPageAudioAnnotations.map { !$0.transcript.isEmpty }
+            if nextTr == prevTr { return }
+        }
+        currentPageAudioAnnotations = next
     }
 
     // MARK: - Sticky notes
@@ -1322,12 +1580,22 @@ final class EditorViewModel: ObservableObject {
     /// can type — placement and editing are a single user-perceived
     /// gesture.
     func addStickyNote(at normalised: CGPoint) {
+        addStickyNote(on: currentPage.id, at: normalised)
+    }
+
+    /// Per-page sticky-note placement. The Phase 3b per-page overlay
+    /// passes its `pageId` through so a placement on page N never
+    /// lands on the active page when the user has scrolled to a
+    /// different page mid-tap.
+    func addStickyNote(on pageId: UUID, at normalised: CGPoint) {
         let record = StickyNoteStore.add(
-            pageId:      currentPage.id,
+            pageId:      pageId,
             normalizedX: Double(normalised.x.clamped01),
             normalizedY: Double(normalised.y.clamped01)
         )
-        refreshCurrentPageStickyNotes()
+        if pageId == currentPage.id {
+            refreshCurrentPageStickyNotes()
+        }
         editingStickyNoteId = record.id
     }
 
@@ -1367,7 +1635,12 @@ final class EditorViewModel: ObservableObject {
     /// the recorder so the editor view restores.
     func endLectureMode(with record: LectureRecord?) {
         defer { activeLectureRecorder = nil }
-        guard let record else { return }
+        guard let record else {
+            #if DEBUG
+            print("[EditorViewModel] endLectureMode called with nil record — no placeholder inserted")
+            #endif
+            return
+        }
 
         // Placeholder TextBlock body is just the marker — Pass B's
         // `LectureBlockView` looks up the full record from
@@ -1378,9 +1651,39 @@ final class EditorViewModel: ObservableObject {
         // record itself. Old serialised TextBlocks with the extra
         // lines continue to parse — `LectureBlockView` ignores
         // everything after the first line.
+        //
+        // `LectureBlocksOverlayView` filters by
+        // `block.content.hasPrefix("lecture:")` (NOT a `body`
+        // property — TextBlock's text lives in `content`), so the
+        // exact string shape below is the contract that drives the
+        // per-page lecture-block rendering.
         let content = "lecture:\(record.id.uuidString)"
-        _ = try? storage.createTextBlock(on: currentPage, content: content)
+        // Default placement per `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.C:
+        // - Anchor at normalised (0.05, 0.05) — top-leading inset 5%
+        //   from each edge, width 0.9 (90% of page width).
+        // - Stack subsequent cards 0.03 normalised below the previous
+        //   bottom (≈ 30 pt at A4). Falls back to the default top
+        //   anchor if no existing lecture cards are on the page.
+        // - Height seed of 0.18 is a placeholder — the overlay's
+        //   `LectureBlockView` measures its own intrinsic height at
+        //   render time and isn't constrained by the stored value;
+        //   the seed only matters when this block is later edited as
+        //   plain text via the legacy text-block path.
+        let placement = nextLectureCardRect(on: currentPage)
+        let inserted: Bool = {
+            do {
+                _ = try storage.createTextBlock(
+                    on: currentPage, content: content, normalizedRect: placement
+                )
+                return true
+            } catch {
+                return false
+            }
+        }()
         refreshCurrentPageTextBlocks()
+        #if DEBUG
+        print("[EditorViewModel] endLectureMode → inserted=\(inserted) at \(placement) on pageId=\(currentPage.id)")
+        #endif
 
         // Bump the search index synchronously so the transcript is
         // searchable as soon as the user tries to find it. The pass
@@ -1397,6 +1700,32 @@ final class EditorViewModel: ObservableObject {
         Task.detached(priority: .utility) {
             await IntelligenceService.shared.generateLectureSummary(for: record)
         }
+    }
+
+    /// Compute the normalised rect a freshly-recorded lecture/audio card
+    /// should occupy on `page`. Stacks beneath any existing lecture
+    /// cards on the same page using a fixed 0.03 normalised vertical
+    /// gap. Spec defaults: width 0.9, leading inset 0.05, top inset
+    /// 0.05 for the first card, height seed 0.18.
+    /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.C.
+    private func nextLectureCardRect(on page: Page) -> CGRect {
+        let leading: CGFloat   = 0.05
+        let topInset: CGFloat  = 0.05
+        let width: CGFloat     = 0.9
+        let stackGap: CGFloat  = 0.03
+        let heightSeed: CGFloat = 0.18
+
+        let existing = (page.textBlocks ?? [])
+            .filter { !$0.isDeleted && $0.content.hasPrefix("lecture:") }
+            .sorted { $0.y < $1.y }
+
+        let topY: CGFloat
+        if let last = existing.last {
+            topY = min(0.95 - heightSeed, CGFloat(last.y) + CGFloat(last.height) + stackGap)
+        } else {
+            topY = topInset
+        }
+        return CGRect(x: leading, y: topY, width: width, height: heightSeed)
     }
 
     private func formatLectureDuration(_ seconds: Double) -> String {
@@ -1422,14 +1751,23 @@ final class EditorViewModel: ObservableObject {
 
     /// Returns the created `TextBlock` so the overlay can install its layout
     /// state immediately. Refreshes `currentPageTextBlocks` and schedules
-    /// autosave on success.
+    /// autosave on success. Convenience for the active-page case; per-page
+    /// overlays should use `createTextBlock(onPageId:at:)`.
     @discardableResult
     func createTextBlock(at normalizedRect: CGRect) -> TextBlock? {
-        guard let block = try? storage.createTextBlock(on: currentPage,
-                                                       at: normalizedRect) else {
+        createTextBlock(onPageId: currentPage.id, at: normalizedRect)
+    }
+
+    /// Per-page text-block creation. The text-block overlay is mounted
+    /// per-page (Phase 3b), so the overlay knows its own pageId without
+    /// going through `currentPage`.
+    @discardableResult
+    func createTextBlock(onPageId pageId: UUID, at normalizedRect: CGRect) -> TextBlock? {
+        guard let page = pages.first(where: { $0.id == pageId }) else { return nil }
+        guard let block = try? storage.createTextBlock(on: page, at: normalizedRect) else {
             return nil
         }
-        refreshCurrentPageTextBlocks()
+        if pageId == currentPage.id { refreshCurrentPageTextBlocks() }
         scheduleAutosave()
         return block
     }
@@ -1448,135 +1786,93 @@ final class EditorViewModel: ObservableObject {
         scheduleAutosave()
     }
 
-    func moveAudioAnnotation(_ annotation: AudioAnnotation, to point: CGPoint) {
-        try? storage.moveAudioAnnotation(annotation, to: point)
+    func moveAudioAnnotation(_ record: AudioRecord, to point: CGPoint) {
+        try? storage.moveAudioRecord(record, to: point)
         refreshCurrentPageAudioAnnotations()
         scheduleAutosave()
     }
 
-    func deleteAudioAnnotation(_ annotation: AudioAnnotation) {
-        try? storage.deleteAudioAnnotation(annotation)
+    func deleteAudioAnnotation(_ record: AudioRecord) {
+        try? storage.deleteAudioRecord(record)
         refreshCurrentPageAudioAnnotations()
         scheduleAutosave()
     }
 
-    func deleteAttachment(_ attachment: MediaAttachment) {
-        try? storage.deleteAttachment(attachment)
-        refreshCurrentPageAttachments()
-        scheduleAutosave()
-    }
-
-    func updateAttachment(
-        _ attachment: MediaAttachment,
-        rect: CGRect? = nil,
-        rotation: Double? = nil,
-        opacity: Double? = nil,
-        caption: String? = nil
-    ) {
-        try? storage.updateAttachment(attachment, rect: rect, rotation: rotation,
-                                       caption: caption, opacity: opacity)
-        scheduleAutosave()
-    }
-
-    func updateAttachmentZIndex(_ attachment: MediaAttachment, zIndex: Int) {
-        try? storage.updateAttachmentZIndex(attachment, zIndex: zIndex)
-        refreshCurrentPageAttachments()
-        scheduleAutosave()
-    }
-
-    func replaceAttachmentImage(
-        _ attachment: MediaAttachment,
-        jpegData: Data,
-        originalWidth: Int,
-        originalHeight: Int
-    ) {
-        try? storage.replaceAttachmentImage(attachment, jpegData: jpegData,
-                                            originalWidth: originalWidth,
-                                            originalHeight: originalHeight)
-        scheduleAutosave()
-    }
-
-    /// Inserts an audio file (already copied to the audio directory) into the current
-    /// page. Used by `AudioFilePicker` after it has finished copying / transcoding.
+    /// Inserts an audio file (already copied into
+    /// `MediaStorage.url(for: .audio, id:)`) into the current page.
+    /// Used by `AudioFilePicker` after copy/transcode completes.
+    /// Phase 5A+5C Step 3: `fileName` / `fileSizeBytes` are no
+    /// longer stored on the record — the file URL is derived from
+    /// the record id.
     @discardableResult
     func insertAudioFile(
-        annotationId: UUID,
-        fileName: String,
+        recordId: UUID,
         duration: Double,
-        fileSizeBytes: Int64,
         at point: CGPoint
-    ) -> AudioAnnotation? {
-        let annotation = try? storage.insertAudioFile(
+    ) -> AudioRecord? {
+        let record = try? storage.insertAudioFile(
             to: currentPage,
-            annotationId: annotationId,
-            fileName: fileName,
+            recordId: recordId,
             duration: duration,
-            fileSizeBytes: fileSizeBytes,
             at: point
         )
-        if annotation != nil {
+        if record != nil {
             refreshCurrentPageAudioAnnotations()
             scheduleAutosave()
         }
-        return annotation
+        return record
     }
 
-    /// URL of the audio directory for the active notebook — needed by AudioFilePicker
-    /// to write a transcoded copy before calling `insertAudioFile(from:...)`.
-    func audioDirURL() -> URL {
-        storage.audioDirURL(notebookId: currentPage.notebookId)
+    // Read-only URL passthrough — overlays use this to load audio
+    // bytes without depending on StorageService directly. Image
+    // attachments resolve their URLs through
+    // `MediaAttachmentStore.absoluteURL(for:)` instead.
+    func audioURL(for record: AudioRecord) -> URL {
+        storage.audioURL(for: record)
     }
-
-    // Read-only URL passthroughs — overlays use these to load image bytes for
-    // Copy / Crop / display without depending on StorageService directly.
-    func mediaURL(for attachment: MediaAttachment) -> URL {
-        storage.mediaURL(for: attachment)
-    }
-    func thumbnailURL(for attachment: MediaAttachment) -> URL {
-        storage.thumbnailURL(for: attachment)
-    }
-    func audioURL(for annotation: AudioAnnotation) -> URL {
-        storage.audioURL(for: annotation)
-    }
-
-    // MARK: - Attachment undo (session-only shake/toolbar undo)
-
-    func registerAttachmentUndo(_ attachment: MediaAttachment) {
-        let data = try? Data(contentsOf: StorageService.shared.mediaURL(for: attachment))
-        deletedAttachmentsUndo.append((attachment, data))
-    }
-
-    func undoLastAttachmentDelete() {
-        guard let (attachment, _) = deletedAttachmentsUndo.popLast() else { return }
-        try? StorageService.shared.restoreAttachment(attachment)
-        refreshCurrentPageAttachments()
-    }
-
-    var canUndoAttachmentDelete: Bool { !deletedAttachmentsUndo.isEmpty }
 
     // MARK: - Audio recording
 
     func startRecording() async {
+        #if DEBUG
+        print("[Audio] 0. EditorViewModel.startRecording() (quick-record path — AudioRecorder, NOT LectureRecorder)")
+        #endif
         do {
             try await audioRecorder.requestPermission()
-            let dir = StorageService.shared.audioDirURL(notebookId: currentPage.notebookId)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            #if DEBUG
+            print("[Audio] 0a. mic permission granted")
+            #endif
+            // New audio writes land in the unified `MediaStorage.audio/`
+            // tree directly. The legacy `audioDirURL(notebookId:)`
+            // location is read-only after Phase 3 — only used by the
+            // launch migration to find pre-existing files. See
+            // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.B.
+            MediaStorage.ensureDirectoriesExist()
             let tempId  = UUID()
-            let fileURL = dir.appendingPathComponent(tempId.uuidString + ".m4a")
+            let fileURL = MediaStorage.url(for: .audio, id: tempId)
             try await audioRecorder.start(outputURL: fileURL)
             recordingState = .recording
             pendingRecordingURL = fileURL
             pendingRecordingId  = tempId
         } catch {
+            #if DEBUG
+            print("[Audio] 0x. startRecording threw: \(error.localizedDescription)")
+            #endif
             mediaError = AppError.humanize(error)
         }
     }
 
     func stopRecording() async {
+        #if DEBUG
+        print("[Audio] stopRecording entry isMain=\(Thread.isMainThread) state=\(recordingState)")
+        #endif
         guard recordingState == .recording else { return }
         recordingState = .processing
         do {
             let result = try await audioRecorder.stop()
+            #if DEBUG
+            print("[Audio] stopRecording audioRecorder.stop returned duration=\(result.duration)s bytes=\(result.fileSizeBytes)")
+            #endif
             guard let url = pendingRecordingURL, let id = pendingRecordingId else {
                 recordingState = .idle
                 return
@@ -1603,12 +1899,10 @@ final class EditorViewModel: ObservableObject {
 
             if saveAudio {
                 let pinPoint = CGPoint(x: 0.15, y: 0.15)
-                let annotation = try StorageService.shared.insertAudioFile(
+                let record = try StorageService.shared.insertAudioFile(
                     to: currentPage,
-                    annotationId: id,
-                    fileName: id.uuidString + ".m4a",
+                    recordId: id,
                     duration: result.duration,
-                    fileSizeBytes: result.fileSizeBytes,
                     at: pinPoint
                 )
                 refreshCurrentPageAudioAnnotations()
@@ -1619,11 +1913,33 @@ final class EditorViewModel: ObservableObject {
 
                 if transcribe {
                     let capturedURL = url
-                    let capturedId  = annotation.id
+                    let capturedId  = record.id
+                    #if DEBUG
+                    let fileSize = (try? FileManager.default.attributesOfItem(atPath: capturedURL.path)[.size] as? Int64) ?? 0
+                    print("[Audio] stopRecording → POST-record transcribe scheduled. file=\(capturedURL.lastPathComponent) size=\(fileSize)B annotationId=\(capturedId)")
+                    #endif
                     Task.detached(priority: .utility) { [weak self] in
                         await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
-                        await MainActor.run { [weak self] in
+                        #if DEBUG
+                        print("[Audio] transcribe(url:annotationId:) completed isMain=\(Thread.isMainThread)")
+                        #endif
+                        // Defer the refresh to the NEXT runloop tick via
+                        // `Task { @MainActor in ... }` instead of an
+                        // immediate `await MainActor.run { ... }`. The
+                        // synchronous form sometimes lands inside the
+                        // SwiftData save-completion's own observer
+                        // dispatch, which produced a re-entrant
+                        // refresh → re-render → state-update cycle that
+                        // appeared as a permanent freeze. Decoupling
+                        // breaks the cycle. See post-Phase-3b freeze fix.
+                        Task { @MainActor [weak self] in
+                            #if DEBUG
+                            print("[Audio] post-transcribe refresh begin viewModelAlive=\(self != nil)")
+                            #endif
                             self?.refreshCurrentPageAudioAnnotations()
+                            #if DEBUG
+                            print("[Audio] post-transcribe refresh end")
+                            #endif
                         }
                     }
                 }
@@ -1676,7 +1992,10 @@ final class EditorViewModel: ObservableObject {
         do {
             try storage.updateNotebook(notebook, title: trimmed,
                                        coverColorHex: nil, isPinned: nil, tags: nil)
-            objectWillChange.send()
+            // Defer to next runloop — synchronous `objectWillChange.send`
+            // inside a view-body-driven mutation creates AttributeGraph
+            // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
+            Task { @MainActor in self.objectWillChange.send() }
         } catch {
             showError(.storageFailed(action: "rename notebook", underlying: error))
         }
@@ -1786,7 +2105,10 @@ final class EditorViewModel: ObservableObject {
                 isPinned:      nil,
                 tags:          notebook.tags
             )
-            objectWillChange.send()
+            // Defer to next runloop — synchronous `objectWillChange.send`
+            // inside a view-body-driven mutation creates AttributeGraph
+            // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
+            Task { @MainActor in self.objectWillChange.send() }
         } catch {
             showError(.storageFailed(action: "update tags", underlying: error))
         }
@@ -1812,7 +2134,10 @@ final class EditorViewModel: ObservableObject {
                 coverTexture:  cover.texture
             )
             userDefaults.set(cover.rawValue, forKey: "ink.lastUsed.cover")
-            objectWillChange.send()
+            // Defer to next runloop — synchronous `objectWillChange.send`
+            // inside a view-body-driven mutation creates AttributeGraph
+            // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
+            Task { @MainActor in self.objectWillChange.send() }
         } catch {
             showError(.storageFailed(action: "update cover", underlying: error))
         }
@@ -1840,7 +2165,10 @@ final class EditorViewModel: ObservableObject {
                 first.updatedAt = Date()
             }
             userDefaults.set(size.rawValue, forKey: "ink.lastUsed.pageSize")
-            objectWillChange.send()
+            // Defer to next runloop — synchronous `objectWillChange.send`
+            // inside a view-body-driven mutation creates AttributeGraph
+            // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
+            Task { @MainActor in self.objectWillChange.send() }
         } catch {
             showError(.storageFailed(action: "update page size", underlying: error))
         }
@@ -1863,7 +2191,10 @@ final class EditorViewModel: ObservableObject {
                 first.updatedAt          = Date()
             }
             userDefaults.set(template.jsonString, forKey: "ink.lastUsed.template")
-            objectWillChange.send()
+            // Defer to next runloop — synchronous `objectWillChange.send`
+            // inside a view-body-driven mutation creates AttributeGraph
+            // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
+            Task { @MainActor in self.objectWillChange.send() }
         } catch {
             showError(.storageFailed(action: "update template", underlying: error))
         }
@@ -1906,7 +2237,11 @@ final class EditorViewModel: ObservableObject {
             try storage.updatePageStrokes(page, drawing: drawing)
             saveStatus = .saved
             scheduleSavedFlash()
-            scheduleThumbnailRegeneration(for: page, drawing: drawing)
+            // Phase 4E: thumbnail cache is keyed by
+            // `(pageId, strokeFingerprint, pdfFingerprint)`. A new
+            // stroke produces a new fingerprint, so the next lookup
+            // automatically misses and the row re-renders via the
+            // composite path. No manual invalidate needed.
             // Re-OCR the page for full-text search. Debounced by 2s
             // inside `SearchIndexService.scheduleOCR` — bursts of
             // stroke saves coalesce into one Vision pass per page.
@@ -1943,7 +2278,9 @@ final class EditorViewModel: ObservableObject {
             isDirty    = false
             saveStatus = .saved
             scheduleSavedFlash()
-            scheduleThumbnailRegeneration(for: page, drawing: drawing)
+            // Composite-path regeneration via the page-strip row's
+            // `.onChange(of: page.updatedAt)` observer — see the
+            // identical comment in `savePage(_:drawing:)`.
             SearchIndexService.shared.scheduleOCR(
                 notebookId: page.notebookId,
                 pageId:     page.id
@@ -1969,19 +2306,15 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Regenerate the page thumbnail off the drawing thread.
-    private func scheduleThumbnailRegeneration(for page: Page, drawing: PKDrawing) {
-        let pageSize = page.pageSize.pointSize
-        let pageId   = page.id
-        Task.detached(priority: .utility) {
-            let bounds = CGRect(origin: .zero, size: pageSize)
-            let scale: CGFloat = 0.20  // ~ 200×260 thumbnail dimensions
-            let image  = drawing.image(from: bounds, scale: scale)
-            await MainActor.run {
-                PageThumbnailCache.shared.set(image, for: pageId)
-            }
-        }
-    }
+    // The legacy `scheduleThumbnailRegeneration` strokes-only
+    // fast path was removed — it raced the composite path in
+    // `PageThumbnailCache.generate` and won, leaving a
+    // transparent-background image in the cache that read as
+    // "blank" for thin/sparse drawings. Thumbnails now flow
+    // exclusively through the composite path: `savePage` /
+    // `flushPendingSaveSync` invalidate the cache; the page-strip
+    // row's `.onChange(of: page.updatedAt)` regenerates via
+    // `PageThumbnailCache.generate(for:targetSize:)`.
 
     // MARK: - Exit
 

@@ -180,11 +180,15 @@ extension EditorViewModel {
         // struct) can't drift.
         let recordId = record.id
         undoManager?.registerUndo(withTarget: canvas) { canvasTarget in
-            // Re-insert the original stroke at its original
-            // position. Strokes are value types so this is a
-            // straightforward concatenation.
+            // Re-insert the original stroke and re-sort by
+            // `path.creationDate` so PKDrawing's internal stroke-order
+            // invariant is preserved. Appending unconditionally would
+            // produce the "Suspect normalizing of a drawing where
+            // stroke order is flipped" warning and corrupt undo
+            // identifiers downstream. See Reg 2 in the audit.
             var restored = canvasTarget.drawing.strokes
             restored.append(target)
+            restored.sort { $0.path.creationDate < $1.path.creationDate }
             canvasTarget.drawing = PKDrawing(strokes: restored)
             PDFTextAnnotationStore.softDelete(id: recordId, pageId: pageId)
             // Mirror the soft-delete into the in-memory document.

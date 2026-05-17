@@ -105,8 +105,23 @@ final class SettingsViewModel: ObservableObject {
     /// Default OFF — Pencil draws, finger scrolls/zooms. When ON, finger can also draw.
     @AppStorage("ink.canvas.fingerDrawingEnabled") var fingerDrawingEnabled: Bool = false
 
-    /// Default Pixel Eraser size (used when no per-tool override is in effect).
-    @AppStorage("ink.eraser.pixelSize") var pixelEraserSize: Double = 24
+    // Pixel-eraser size setting removed — PencilKit's default
+    // eraser behaviour now governs. The legacy
+    // `ink.eraser.pixelSize` / `ink.eraser.pixelSize.session` keys
+    // are no longer read; existing installs' stored values are
+    // harmless leftovers.
+
+    // MARK: - Pencil Pro squeeze (iOS 17.5+)
+
+    /// User's choice for the Apple Pencil Pro squeeze gesture.
+    /// Registered with a `"palette"` default in `InkApp.init`; the
+    /// AppStorage default here is the same so a fresh field read
+    /// without the register-defaults still resolves correctly.
+    @AppStorage("pencil.squeeze.action") var squeezeAction: SqueezeAction = .palette
+
+    /// The tool to switch to when `squeezeAction == .tool`.
+    /// Defaults to `.eraser` per spec.
+    @AppStorage("pencil.squeeze.tool") var squeezeTool: SqueezeToolChoice = .eraser
 
     // MARK: General
 
@@ -135,6 +150,11 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: Storage metrics
     @Published var storageInfo: StorageInfo?       = nil
+    /// Wall-clock time of the most recent cache write that produced
+    /// the value currently in `storageInfo`. The Storage view shows a
+    /// "updated X min ago" suffix in `inkRecessiveTertiary` when this
+    /// is older than `storageCacheStaleAfter`.
+    @Published var storageInfoCachedAt: Date?      = nil
     @Published var exportedPDFsBytes: Int64        = 0
     @Published var audioAnnotationCount: Int       = 0
     @Published var isLoadingStorage: Bool          = false
@@ -152,9 +172,80 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: Init
 
+    /// UserDefaults key for the on-disk storage metrics cache.
+    /// Stored as a JSON blob keyed `total / audio / media / db` plus
+    /// an optional `cachedAt` timestamp so the Storage view can render
+    /// a "updated X min ago" suffix when the cache is stale (the
+    /// background warmup at app launch + a fresh `.task` recalculation
+    /// on view appear keep this fresh in normal use).
+    static let storageCacheKey     = "settings.storage.lastCalculated"
+    static let storageCacheDateKey = "settings.storage.lastCalculatedDate"
+
+    /// Age past which the cached storage value is considered stale and
+    /// the Storage view shows an "updated X min ago" caption.
+    static let storageCacheStaleAfter: TimeInterval = 5 * 60
+
+    private struct StorageCacheEntry: Codable {
+        let total: Int64
+        let audio: Int64
+        let media: Int64
+        let db:    Int64
+        // Optional for backwards-compatibility with caches written
+        // before this field existed.
+        var cachedAt: Date?
+    }
+
+    /// Reads the persisted storage metrics cache, if any. Used by
+    /// both `SettingsViewModel.init` (to pre-populate `storageInfo`
+    /// for instant first paint) and the `InkApp` background warmup
+    /// (which checks whether a warm cache already exists so it can
+    /// skip the recompute when the user hasn't been away long).
+    static func readStorageCache() -> (info: StorageInfo, cachedAt: Date?)? {
+        guard let raw    = UserDefaults.standard.data(forKey: storageCacheKey),
+              let cached = try? JSONDecoder().decode(StorageCacheEntry.self, from: raw)
+        else { return nil }
+        return (
+            StorageInfo(
+                totalBytes: cached.total,
+                audioBytes: cached.audio,
+                mediaBytes: cached.media,
+                dbBytes:    cached.db
+            ),
+            cached.cachedAt
+        )
+    }
+
+    /// Persists the storage metrics cache. Safe to call from any
+    /// thread — `UserDefaults` is its own concurrency boundary, and
+    /// the JSON encoder is stateless. Called both from the foreground
+    /// `loadStorageMetrics` path and the `InkApp` background warmup.
+    static func persistStorageCache(_ info: StorageInfo, at date: Date = Date()) {
+        let entry = StorageCacheEntry(
+            total:    info.totalBytes,
+            audio:    info.audioBytes,
+            media:    info.mediaBytes,
+            db:       info.dbBytes,
+            cachedAt: date
+        )
+        guard let data = try? JSONEncoder().encode(entry) else { return }
+        UserDefaults.standard.set(data, forKey: storageCacheKey)
+        UserDefaults.standard.set(date, forKey: storageCacheDateKey)
+    }
+
     init(themeManager: ThemeManager, cloudSyncManager: CloudSyncManager) {
         self.themeManager     = themeManager
         self.cloudSyncManager = cloudSyncManager
+
+        // Pre-populate `storageInfo` from the cache (if any) so the
+        // first paint of Settings → Storage shows real numbers
+        // instead of a placeholder. `loadStorageMetrics` still runs
+        // on appear and overwrites with fresh values. The background
+        // warmup in `InkApp` keeps the cache fresh even when the user
+        // hasn't visited Settings recently.
+        if let (info, cachedAt) = Self.readStorageCache() {
+            self.storageInfo         = info
+            self.storageInfoCachedAt = cachedAt
+        }
 
         // The previous version installed a UserDefaults.didChangeNotification
         // observer that called objectWillChange.send() so views reading
@@ -176,9 +267,17 @@ final class SettingsViewModel: ObservableObject {
     func loadStorageMetrics() async {
         guard !isLoadingStorage else { return }
         isLoadingStorage = true
-        storageInfo      = await StorageService.shared.localStorageUsed()
-        exportedPDFsBytes = StorageService.shared.exportedPDFsSizeBytes()
-        isLoadingStorage = false
+        let fresh = await StorageService.shared.localStorageUsed()
+        let now   = Date()
+        storageInfo         = fresh
+        storageInfoCachedAt = now
+        exportedPDFsBytes   = StorageService.shared.exportedPDFsSizeBytes()
+        isLoadingStorage    = false
+        // Persist so the next entry into Settings → Storage shows
+        // a stable value immediately. Cache write is best-effort —
+        // worst case the user sees "calculating…" briefly on the
+        // next launch.
+        Self.persistStorageCache(fresh, at: now)
     }
 
     func clearExportedPDFs() async throws {

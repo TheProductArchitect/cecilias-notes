@@ -10,7 +10,7 @@ import Foundation
 /// `@AppStorage` doesn't natively support enums with associated
 /// values, so the value round-trips through a small raw-string form
 /// (`"recent"`, `"all"`, `"subject:<UUID>"`).
-enum LibraryContext: Equatable {
+enum LibraryContext: Equatable, Hashable {
     case recent
     case allNotes
     case subject(UUID)

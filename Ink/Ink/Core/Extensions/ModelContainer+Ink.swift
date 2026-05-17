@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 import SwiftData
 
@@ -29,12 +30,14 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // V4 = the CloudKit-compatible schema. Prompt 7 was an
-        // explicit fresh start with no backward-compatibility
-        // requirement, so there is no migration plan — see
-        // `InkSchemas.swift` for the duplicate-checksum trap that
-        // forced the collapse to a single version.
-        let schema = Schema(versionedSchema: InkSchemaV4.self)
+        // V5 = the active schema. Phase 5A+5C Step 2 bumped from V4
+        // to add `LectureRecord` as a first-class SwiftData entity.
+        // No migration plan — see `InkSchemas.swift` for the
+        // duplicate-checksum trap that forces single-version
+        // operation, and the wipe-and-retry fallback below for the
+        // schema-mismatch recovery path that handles V4-store →
+        // V5-schema transitions.
+        let schema = Schema(versionedSchema: InkSchemaV5.self)
 
         // First attempt: CloudKit private database. The container
         // identifier matches the iCloud capability provisioned in
@@ -45,16 +48,39 @@ extension ModelContainer {
             cloudKitDatabase: .private("iCloud.com.wave.venu.Ink")
         )
         do {
-            return try ModelContainer(
+            let container = try ModelContainer(
                 for: schema,
                 configurations: cloudConfig
             )
+            #if DEBUG
+            // Diagnostic 4 — confirm the production container
+            // actually came up on the CloudKit path (not silently
+            // demoted to local-only by the catch branch below). The
+            // CKContainer account-status check runs async; logs the
+            // user's iCloud sign-in state so we know whether sync
+            // even has the prerequisites to fire.
+            print("[CloudKit] container initialised on private database (iCloud.com.wave.venu.Ink)")
+            CKContainer(identifier: "iCloud.com.wave.venu.Ink").accountStatus { status, err in
+                let label: String
+                switch status {
+                case .available:           label = "available"
+                case .noAccount:           label = "noAccount (user not signed in)"
+                case .restricted:          label = "restricted"
+                case .couldNotDetermine:   label = "couldNotDetermine"
+                case .temporarilyUnavailable: label = "temporarilyUnavailable"
+                @unknown default:          label = "unknown(\(status.rawValue))"
+                }
+                print("[CloudKit] account status: \(label) err=\(err?.localizedDescription ?? "nil")")
+            }
+            #endif
+            return container
         } catch {
             // Local-only fallback. Logged once at launch so a
             // missing-entitlements regression is visible during
             // development; no user-facing error surface.
             #if DEBUG
             print("[ModelContainer] CloudKit init failed, falling back to local: \(error)")
+            print("[CloudKit] *** SYNC DISABLED *** container ran on local-only path; verify (1) iCloud + CloudKit capabilities in app target, (2) iCloud container 'iCloud.com.wave.venu.Ink' exists in Apple Dev portal, (3) user signed into iCloud on device, (4) Ink toggle ON in Settings → Apple ID → iCloud")
             #endif
             let localConfig = ModelConfiguration(
                 schema: schema,
@@ -106,8 +132,9 @@ extension ModelContainer {
             Notebook.self,
             Page.self,
             TextBlock.self,
-            MediaAttachment.self,
-            AudioAnnotation.self,
+            AudioRecord.self,
+            LectureRecord.self,
+            ImageRecord.self,
         ])
         let config = ModelConfiguration(
             schema: schema,

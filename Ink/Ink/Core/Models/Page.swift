@@ -34,11 +34,6 @@ final class Page {
     /// Byte count of strokeData; updated atomically with strokeData.
     var strokeDataSize: Int = 0
 
-    // Note: the auto-grow "extra height" for the last page in a
-    // notebook is *not* stored on the model — `PageExtraHeightStore`
-    // (UserDefaults) keeps it sidecar. That's a per-device UI
-    // preference, not synced via CloudKit.
-
     // MARK: Timestamps
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
@@ -50,20 +45,16 @@ final class Page {
     // MARK: Relationships
     //
     // CloudKit-compatible bidirectional shape: `notebook` is the
-    // back-reference paired with `Notebook.pages`; the three child
-    // collections own their inverses on `TextBlock.page`,
-    // `MediaAttachment.page` and `AudioAnnotation.page`. The
-    // `notebookId` UUID column above remains for read paths.
+    // back-reference paired with `Notebook.pages`; `textBlocks` owns
+    // its inverse on `TextBlock.page`. Audio (Phase 5A+5C Step 3)
+    // and lectures (Step 2) and images (side-channel) all live as
+    // denormalised-by-pageId records — no relationship from `Page`
+    // to them. Queries go through `FetchDescriptor<AudioRecord>` /
+    // `FetchDescriptor<LectureRecord>` keyed by `pageId`.
     @Relationship var notebook: Notebook?
 
     @Relationship(deleteRule: .cascade, inverse: \TextBlock.page)
     var textBlocks: [TextBlock]?
-
-    @Relationship(deleteRule: .cascade, inverse: \MediaAttachment.page)
-    var mediaAttachments: [MediaAttachment]?
-
-    @Relationship(deleteRule: .cascade, inverse: \AudioAnnotation.page)
-    var audioAnnotations: [AudioAnnotation]?
 
     // MARK: Init
     init(

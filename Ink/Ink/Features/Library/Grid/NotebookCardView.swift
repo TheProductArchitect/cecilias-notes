@@ -13,15 +13,15 @@ struct NotebookCardView: View {
     let notebook: Notebook
     @ObservedObject var viewModel: LibraryViewModel
 
-    @State private var isHovered          = false
-    @State private var isEditingTitle     = false
-    @State private var titleBuffer        = ""
+    @State private var isHovered            = false
     @State private var isShowingCoverPicker = false
-    @FocusState private var titleFocused: Bool
-    /// 300ms debounced auto-save while the user is typing. Keeps the
-    /// in-progress title persisted if the user backgrounds the app
-    /// mid-edit, without writing on every keystroke.
-    @State private var titleAutosaveTask: Task<Void, Never>?
+    // Inline title editing was retired — the card title is now
+    // display-only. Renaming happens in the customise panel
+    // (notebook → customise panel → name field), which is the
+    // single edit path and dismisses cleanly via its keyboard
+    // toolbar "Done" button. Removing the in-place TextField
+    // eliminated the keyboard-dismissal bug that survived two
+    // prior fix attempts.
 
     private static let cornerRadius: CGFloat = 3
     private static let borderColor   = Color(hex: "#ebebeb")
@@ -59,16 +59,9 @@ struct NotebookCardView: View {
             withAnimation(.inkSpring(InkSpring.precise)) { isHovered = hovered }
         }
         .onTapGesture {
-            if isEditingTitle {
-                // Tap inside the card while editing commits the
-                // current buffer and resigns the keyboard. Without
-                // this the card's own gesture absorbs the tap and
-                // the LibraryView root's background-tap-dismiss
-                // never fires — the user gets stuck with the
-                // keyboard up until they hit return / checkmark.
-                commitTitle()
-                return
-            }
+            #if DEBUG
+            print("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
+            #endif
             if viewModel.isSelecting {
                 withAnimation(.inkSpring(InkSpring.snappy)) {
                     viewModel.toggleSelection(notebook)
@@ -267,102 +260,24 @@ struct NotebookCardView: View {
         return relativeShort(for: date)
     }
 
-    // MARK: Inline-editable title
+    // MARK: Title (display-only)
 
-    @ViewBuilder
+    /// Display-only Text. The card's `.onTapGesture` opens the
+    /// notebook; renaming happens exclusively inside the customise
+    /// panel via the editor. No TextField, no focus state, no
+    /// keyboard surface — eliminates the keyboard-dismissal bug
+    /// that survived two prior fix attempts at the field level.
     private var titleView: some View {
-        if isEditingTitle {
-            TextField("Untitled", text: $titleBuffer)
-                .font(.system(size: 19, weight: .heavy))
-                .tracking(-0.5)
-                .foregroundStyle(tone.textColor)
-                .textFieldStyle(.plain)
-                .focused($titleFocused)
-                .submitLabel(.done)
-                .autocorrectionDisabled()
-                .onSubmit { commitTitle() }
-                .onChange(of: titleFocused) { _, focused in
-                    if !focused { commitTitle() }
-                }
-                .onChange(of: titleBuffer) { _, newValue in
-                    scheduleAutosave(newValue)
-                }
-                // Keyboard toolbar "Done" — single, always-present
-                // dismiss path regardless of keyboard type
-                // (floating, docked, hardware). Resigning first
-                // responder triggers the existing
-                // `onChange(of: titleFocused)` commit path.
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") {
-                            UIApplication.shared.sendAction(
-                                #selector(UIResponder.resignFirstResponder),
-                                to: nil, from: nil, for: nil
-                            )
-                        }
-                        .foregroundStyle(Color.brandAccent)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 1)
-                .background(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .fill(Color.brandAccent.opacity(0.18))
-                )
-        } else {
-            Button {
-                guard !viewModel.isSelecting else { return }
-                titleBuffer = notebook.title
-                isEditingTitle = true
-                DispatchQueue.main.async { titleFocused = true }
-            } label: {
-                Text(notebook.title)
-                    .font(.system(size: 19, weight: .heavy))
-                    .tracking(-0.5)
-                    .foregroundStyle(tone.textColor)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func commitTitle() {
-        titleAutosaveTask?.cancel()
-        titleAutosaveTask = nil
-        let trimmed = titleBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, trimmed != notebook.title {
-            viewModel.renameNotebook(notebook, newTitle: trimmed)
-        }
-        // Empty buffer falls through: the existing notebook.title is
-        // left untouched, so the user effectively reverts by clearing.
-        isEditingTitle = false
-        titleFocused = false
-    }
-
-    /// 300ms debounce — coalesces keystrokes into a single rename so
-    /// SwiftData isn't hit on every character but a backgrounded app
-    /// preserves the in-progress title.
-    private func scheduleAutosave(_ buffered: String) {
-        titleAutosaveTask?.cancel()
-        let id = notebook.id
-        titleAutosaveTask = Task { [weak viewModel] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            let trimmed = buffered.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty,
-                  let viewModel,
-                  let nb = viewModel.notebook(id: id),
-                  trimmed != nb.title
-            else { return }
-            await MainActor.run {
-                viewModel.renameNotebook(nb, newTitle: trimmed)
-            }
-        }
+        Text(notebook.title)
+            .font(.system(size: 19, weight: .heavy))
+            .tracking(-0.5)
+            .foregroundStyle(tone.textColor)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
     }
 
     // MARK: Border
@@ -422,9 +337,13 @@ struct NotebookCardView: View {
         }
 
         Button {
-            titleBuffer = notebook.title
-            isEditingTitle = true
-            DispatchQueue.main.async { titleFocused = true }
+            // Rename / customise is now exclusively inside the
+            // editor's customise panel. Marking the notebook for
+            // auto-customise then opening it gives the user a
+            // one-tap path from the card's context menu to the
+            // panel's name field.
+            NewNotebookCustomiseTrigger.mark(notebook.id)
+            viewModel.selectedNotebookId = notebook.id
         } label: {
             Label("Rename", systemImage: "pencil")
         }

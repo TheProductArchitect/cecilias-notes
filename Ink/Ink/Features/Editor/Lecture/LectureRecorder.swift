@@ -50,6 +50,10 @@ final class LectureRecorder: ObservableObject {
     /// to build the eventual `LectureRecord` and to soft-cancel an
     /// in-flight recording if the user navigates away.
     private(set) var pageId: UUID?
+    /// The notebook the recording belongs to. Denormalised onto the
+    /// `LectureRecord` so the V5 schema can purge all records under
+    /// a notebook without joining through pages.
+    private(set) var notebookId: UUID?
     private var recordId: UUID = UUID()
     private var startedAt: Date = .distantPast
 
@@ -72,6 +76,16 @@ final class LectureRecorder: ObservableObject {
 
     private var recogniser: SFSpeechRecognizer?
     private var currentTask: SFSpeechRecognitionTask?
+
+    /// Re-entrancy guard for `rotateRecognitionTaskIfStillRecording`.
+    /// The recognition result handler can fire multiple times in
+    /// rapid succession around a session boundary (final partial
+    /// then `.isFinal=true` then a daemon-error callback); without
+    /// this guard a second rotation can race the first and create
+    /// two competing tasks. The `handwritingd` daemon then kills
+    /// both — the source of the "transcript appears then
+    /// disappears after one line" symptom.
+    private var isRotatingRecognition: Bool = false
     /// Transcripts accumulate across recognition sessions. The live
     /// transcript surfaced to the UI is `committedTranscript +
     /// (current task's running best transcription)`. When a task
@@ -107,19 +121,19 @@ final class LectureRecorder: ObservableObject {
         await ensureSpeechPermission()       // optional — failure means no transcript
 
         self.pageId      = pageId
+        self.notebookId  = notebookId
         self.recordId    = UUID()
         self.startedAt   = Date()
 
         try configureAudioSession()
 
-        // Build the output URL inside the existing Documents/audio
-        // tree so it reaper-purges with the notebook via the
-        // notebook directory cleanup. Filename prefix distinguishes
-        // long-form lectures from short-form audio annotations.
-        let dir = StorageService.shared.audioDirURL(notebookId: notebookId)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let fileName = "lecture_\(recordId.uuidString).m4a"
-        let url = dir.appendingPathComponent(fileName)
+        // New lecture writes land directly in the unified
+        // `MediaStorage.lectures/` tree. The legacy notebook-scoped
+        // `audio/lecture_<id>.m4a` location is read-only after Phase 3
+        // — only used by the launch migration to find pre-existing
+        // recordings. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.B.
+        MediaStorage.ensureDirectoriesExist()
+        let url = MediaStorage.url(for: .lectures, id: recordId)
         self.outputURL = url
 
         try await startEngineAndFile(at: url)
@@ -162,8 +176,12 @@ final class LectureRecorder: ObservableObject {
     }
 
     /// Stop recording, flush the audio file, soft-finalise the
-    /// `LectureRecord`. Returns the saved record so the calling
-    /// view can navigate / show its post-stop placeholder.
+    /// `LectureRecord`. Always returns a record once a recording
+    /// has actually started — even if the recogniser broke
+    /// mid-session and the transcript is empty, the placeholder
+    /// TextBlock + audio file still need to land on the page.
+    /// Returns `nil` only in the genuine "no recording in flight"
+    /// case, which is a programmer error the caller can ignore.
     func stop() async -> LectureRecord? {
         guard isRecording else { return nil }
         stopElapsedTimer()
@@ -171,6 +189,10 @@ final class LectureRecorder: ObservableObject {
 
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
+        // `.cancel()` (not `.finish()`) — if the daemon connection
+        // is broken, a `finish()` waits indefinitely for a final
+        // result that never arrives. We commit whatever
+        // `committedTranscript` already holds and move on.
         await endSpeechRecognition(commitFinal: true)
 
         // Closing the `AVAudioFile` flushes and finalises the
@@ -181,38 +203,98 @@ final class LectureRecorder: ObservableObject {
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        let url = outputURL
+        // Resolve a sensible URL even if `outputURL` was never set
+        // (shouldn't happen once `isRecording == true`, but the
+        // spec requires `stop()` to always produce a record once
+        // we got this far). The fallback path is filesystem-valid
+        // — `audioRelativePath` doesn't have to exist for the
+        // record to be persisted; subsequent playback will simply
+        // find no file and show the empty-audio state.
+        let url = outputURL ?? URL(fileURLWithPath: "lecture_\(recordId.uuidString).m4a")
         let duration = elapsedSeconds
+        // Discard sub-second recordings — they're almost always
+        // accidental start/stop taps and the resulting "0m"
+        // placeholder card just clutters the page. Clean up the
+        // audio file too so we don't leak a tiny m4a per misfire.
+        guard duration >= 1.0 else {
+            #if DEBUG
+            print("[LectureRecorder] stop → discarding sub-second recording (duration=\(duration)s)")
+            #endif
+            try? FileManager.default.removeItem(at: url)
+            isRecording = false
+            isPaused    = false
+            return nil
+        }
+        // pageId is guaranteed non-nil for an active recording —
+        // `start(pageId:notebookId:)` sets it. Fall back to a
+        // zero UUID so the record is still constructible if some
+        // pre-condition was violated; the editor's
+        // `endLectureMode` handles the placeholder gracefully.
+        let resolvedPageId = pageId ?? UUID()
         isRecording = false
         isPaused    = false
 
-        guard let pageId, let url else { return nil }
-
-        var record = LectureRecord(
-            id:                recordId,
-            pageId:            pageId,
-            title:             title.trimmingCharacters(in: .whitespacesAndNewlines),
-            audioRelativePath: relativePath(of: url),
-            transcript:        committedTranscript
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            durationSeconds:   duration,
-            createdAt:         startedAt,
-            updatedAt:         Date(),
-            deletedAt:         nil
-        )
-        if record.title.isEmpty { record.title = "Untitled lecture" }
+        // CRITICAL: mutate the already-persisted draft record rather
+        // than constructing a fresh `LectureRecord` with the same id.
+        // `LectureRecord` has no `@Attribute(.unique)` constraint
+        // (CloudKit incompatibility), so re-inserting a same-id object
+        // creates a second managed copy alongside the draft. Subsequent
+        // `LectureStore.record(id:pageId:)` lookups then return whichever
+        // copy SwiftData fetches first — frequently the draft, which
+        // still has `title: ""`, `transcript: ""`, `durationSeconds: 0`.
+        // That's the source of the "untitled lecture / 0m" symptom users
+        // see immediately after the TextBlock is inserted by
+        // `endLectureMode`.
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTranscript = committedTranscript
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let record: LectureRecord = {
+            if let draft = LectureStore.record(id: recordId, pageId: resolvedPageId) {
+                draft.title             = trimmedTitle.isEmpty ? "Untitled lecture" : trimmedTitle
+                draft.audioRelativePath = relativePath(of: url)
+                draft.transcript        = trimmedTranscript
+                draft.durationSeconds   = duration
+                draft.updatedAt         = Date()
+                return draft
+            }
+            // Fallback: no draft on disk (start() never persisted, e.g.
+            // pageId was nil at start). Construct fresh.
+            let fresh = LectureRecord(
+                id:                recordId,
+                pageId:            resolvedPageId,
+                notebookId:        notebookId ?? UUID(),
+                title:             trimmedTitle.isEmpty ? "Untitled lecture" : trimmedTitle,
+                audioRelativePath: relativePath(of: url),
+                transcript:        trimmedTranscript,
+                durationSeconds:   duration,
+                createdAt:         startedAt,
+                updatedAt:         Date(),
+                deletedAt:         nil
+            )
+            return fresh
+        }()
         LectureStore.save(record)
+        #if DEBUG
+        print("[LectureRecorder] stop → saved record id=\(record.id) pageId=\(record.pageId) transcriptLength=\(record.transcript.count) duration=\(record.durationSeconds)s")
+        #endif
 
         // One final refinement pass over the saved M4A — fills any
         // gaps that the live recogniser missed (notably backgrounded
         // intervals). Best-effort and fully asynchronous; the
-        // record is already on disk before this fires.
-        Task.detached { [recordId, pageId, url] in
-            await Self.refineTranscript(
-                recordId:  recordId,
-                pageId:    pageId,
-                audioURL:  url
-            )
+        // record is already on disk before this fires. Skipped if
+        // the audio file didn't actually land on disk (fallback
+        // URL above doesn't exist).
+        if FileManager.default.fileExists(atPath: url.path) {
+            let refineRecordId = recordId
+            let refinePageId   = resolvedPageId
+            let refineURL      = url
+            Task.detached {
+                await Self.refineTranscript(
+                    recordId:  refineRecordId,
+                    pageId:    refinePageId,
+                    audioURL:  refineURL
+                )
+            }
         }
 
         return record
@@ -290,6 +372,15 @@ final class LectureRecorder: ObservableObject {
     // MARK: - Speech recognition
 
     private func startSpeechRecognition() async {
+        // Defensive teardown of any task that survived a prior
+        // rotation — the recogniser refuses to host a second task
+        // while a previous one still has a reference, and that's
+        // the precise contention that drops the `handwritingd`
+        // daemon connection.
+        currentTask?.cancel()
+        currentTask = nil
+        await capture.endRequestAudio()
+
         // Pick a recogniser that supports on-device recognition.
         // Order: user-selected locale → system → en-US fallback.
         let recogniser = Self.makeOnDeviceRecogniser()
@@ -326,17 +417,44 @@ final class LectureRecorder: ObservableObject {
     /// Called when a recognition task ends (timeout, final result,
     /// or error). If we're still recording AND not paused AND not
     /// backgrounded, commit the segment's final text and start a
-    /// fresh request immediately. The audio tap keeps feeding into
-    /// whatever `currentRequest` points at, so the rotation is
-    /// invisible to the user.
+    /// fresh request immediately.
+    ///
+    /// Strictly sequential: the previous task must be fully torn
+    /// down before the new request is created, or the
+    /// `handwritingd` daemon sees two competing sessions and
+    /// invalidates both. `isRotatingRecognition` blocks re-entry
+    /// from rapid-succession result callbacks. A 120ms delay
+    /// between the old request's `endAudio()` and the new task's
+    /// creation gives the daemon room to release the previous
+    /// session — short enough that the user doesn't perceive a
+    /// gap in the live transcript.
     private func rotateRecognitionTaskIfStillRecording(finalSegment: String?) async {
+        guard !isRotatingRecognition else { return }
+        isRotatingRecognition = true
+        defer { isRotatingRecognition = false }
+
+        // Commit the final segment BEFORE tearing down the request
+        // so the daemon's last delivered string is reflected in
+        // `committedTranscript` regardless of what the new
+        // session captures.
         if let finalSegment, !finalSegment.isEmpty {
             committedTranscript =
                 (committedTranscript + " " + finalSegment)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
         }
+        // End the previous request's audio and finish the task.
+        // `finish()` is preferred over `cancel()` here — it lets
+        // any pending result deliver normally. The task's
+        // completion handler clears the local reference; we
+        // additionally nil it here to be safe.
         await capture.endRequestAudio()
+        currentTask?.finish()
         currentTask = nil
+        // Give the speech daemon a beat to release the previous
+        // session before we ask for a new one. Without this delay
+        // the new request often fails to connect with a daemon
+        // invalidation error.
+        try? await Task.sleep(for: .milliseconds(120))
 
         guard isRecording, !isPaused else { return }
         // Bail if we got backgrounded between callback fire and
@@ -409,12 +527,14 @@ final class LectureRecorder: ObservableObject {
         guard let final, !final.isEmpty else { return }
 
         await MainActor.run {
-            guard var record = LectureStore.record(id: recordId, pageId: pageId)
+            guard let record = LectureStore.record(id: recordId, pageId: pageId)
             else { return }
             // Prefer the longer transcript — the refinement pass is
             // usually richer than the live one, but if for any
             // reason it's shorter (very quiet audio, transient
-            // recogniser hiccup) we keep what we had.
+            // recogniser hiccup) we keep what we had. `record` is
+            // now a SwiftData @Model class; mutations land in place
+            // and `LectureStore.save` flushes the context.
             if final.count > record.transcript.count {
                 record.transcript = final
                 record.updatedAt  = Date()
@@ -465,6 +585,7 @@ final class LectureRecorder: ObservableObject {
         let draft = LectureRecord(
             id:                recordId,
             pageId:            pageId,
+            notebookId:        notebookId ?? UUID(),
             title:             title,
             audioRelativePath: audioRelativePath,
             transcript:        "",

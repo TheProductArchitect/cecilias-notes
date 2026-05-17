@@ -3,12 +3,81 @@ import PencilKit
 import SwiftUI
 import UIKit
 
-/// Continuous-scroll writing surface (Item 2, Phase 1).
+// MARK: - UIHostingController parenting helper
+//
+// SwiftUI's `UIViewRepresentable` is itself wrapped in a private
+// `UIHostingController`. Adding *another* hosting controller's `.view`
+// as a raw subview inside that tree triggers the runtime warning
+//   "Adding '_UIReparentingView' as a subview of UIHostingController.view
+//    is not supported"
+// which in turn destabilises the system input infrastructure
+// (handwritingd daemon invalidations → SFSpeechRecognizer dies →
+// transcription returns empty strings). The fix is to register each
+// overlay's hosting controller as a proper child view controller of
+// the nearest ancestor UIViewController instead of dangling its view.
+private extension UIHostingController {
+    /// Walks `parentView`'s responder chain to find the nearest
+    /// UIViewController and parents `self` as its child. Retries on the
+    /// next runloop tick if no VC is reachable yet (the view may not
+    /// be in a window during `makeUIView`).
+    func attachAsChild(of parentView: UIView, retriesLeft: Int = 8) {
+        var responder: UIResponder? = parentView.next
+        while let r = responder {
+            if let vc = r as? UIViewController, vc !== self {
+                if parent !== vc {
+                    if parent != nil {
+                        willMove(toParent: nil)
+                        removeFromParent()
+                    }
+                    vc.addChild(self)
+                    didMove(toParent: vc)
+                }
+                return
+            }
+            responder = r.next
+        }
+        guard retriesLeft > 0 else { return }
+        DispatchQueue.main.async { [weak self, weak parentView] in
+            guard let self, let parentView else { return }
+            self.attachAsChild(of: parentView, retriesLeft: retriesLeft - 1)
+        }
+    }
+
+    /// Reverses `attachAsChild` and removes the hosted view from its
+    /// superview. Safe to call regardless of attachment state.
+    func detachFromParentVC() {
+        willMove(toParent: nil)
+        view.removeFromSuperview()
+        removeFromParent()
+    }
+}
+
+/// Plain `UIView` subclass whose only job is to fire `onLayoutSubviews`
+/// after every layout pass. `ContinuousCanvasView` uses it as the
+/// outer host so it can recompute the scroll view's content inset
+/// whenever the window/device resizes — the canvas's content inset
+/// has to stay equal to `(bounds.width - pageWidth) / 2` to keep the
+/// page horizontally centred, but SwiftUI doesn't natively notify a
+/// `UIViewRepresentable` on layout-only changes.
+private final class CanvasHostView: UIView {
+    var onLayoutSubviews: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayoutSubviews?()
+    }
+}
+
+/// Vertical-stack writing surface.
 ///
-/// Replaces the single-canvas `CanvasContainerView`. Lays every page out
-/// vertically inside one big `UIScrollView`, with `Ink.Spacing.lg` gaps
-/// (~24pt) of editor background between pages. Pinch-zoom zooms the
-/// entire stack together so all pages scale as one document.
+/// Lays every page out vertically inside one `UIScrollView` with
+/// `Ink.Spacing.lg` gaps (~24pt) of editor background between pages.
+/// Pinch-zoom zooms the stack together so all pages scale as one
+/// document. Each page is its fixed `page.pageSize.pointSize` — the
+/// previous auto-extend-last-page / scroll-mode machinery was
+/// removed in Phase 3b. Pages only
+/// grow in count when the user explicitly inserts one via the page-strip
+/// menu or the `+` page button.
 ///
 /// Memory invariants
 ///   • `PageRenderer` (lightweight Core Graphics view) is mounted for
@@ -25,21 +94,6 @@ import UIKit
 ///   point `viewModel.canvasView` at that page's PKCanvasView so existing
 ///   features (toolbar undo manager, shape recognition, text/media/audio
 ///   overlays) keep working unchanged.
-///
-/// Auto-add page
-///   Triggered when the user *finishes a stroke on the last page whose
-///   geometry extends into the bottom half of that page*. Pure scrolling
-///   (no drawing) never appends pages — that prevents the runaway
-///   "every scroll-to-bottom adds a page" behaviour. The bottom-half
-///   gate keeps short top-of-page strokes from adding pages too. Gated
-///   by the `ink.newpage.autoAdd` setting and throttled to once per
-///   second so a flurry of strokes can't add a stack at once.
-///
-/// Phase 1 deferral
-///   Text-block / media-attachment / audio-annotation overlays live in
-///   a single "floating overlay layer" that snaps to the active page's
-///   frame on each active-page change. They render only on the active
-///   page. Per-page overlay rendering is Phase 2.
 struct ContinuousCanvasView: UIViewRepresentable {
 
     @ObservedObject var viewModel: EditorViewModel
@@ -47,22 +101,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
     private let pageGap: CGFloat              = 24
     private let warmBandPaddingFactor: CGFloat = 1.0
-    private let autoAddCooldown: TimeInterval = 1.0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(viewModel: viewModel,
                     fingerDrawingEnabled: fingerDrawingEnabled,
                     pageGap: pageGap,
-                    warmBandPaddingFactor: warmBandPaddingFactor,
-                    autoAddCooldown: autoAddCooldown)
+                    warmBandPaddingFactor: warmBandPaddingFactor)
     }
 
     // MARK: makeUIView
 
     func makeUIView(context: Context) -> UIView {
-        let host = UIView()
+        let host = CanvasHostView()
         host.backgroundColor = .inkCanvasBackground
         host.isUserInteractionEnabled = true
+        // Re-centre the page horizontally whenever the host's bounds
+        // change. `rebuildPageHosts` only fires once in a deferred
+        // `DispatchQueue.main.async` from this method, by which point
+        // the scroll view's bounds may not yet equal the final
+        // window width. With `bounds.width == 0` at that moment the
+        // computed `hInset` is `0` on both sides and the page hugs
+        // the left edge (visible as the "narrow column on the left,
+        // massive whitespace on the right" symptom). Refiring on
+        // every layout pass keeps the content inset in sync.
+        host.onLayoutSubviews = { [weak coord = context.coordinator] in
+            coord?.refreshContentInsetForBounds()
+        }
 
         let scrollView = UIScrollView(frame: host.bounds)
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -110,22 +174,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // overlay is a child of its page renderer and scrolls with
         // it mechanically.
 
-        // Sticky notes — second SwiftUI overlay sharing the same
-        // passthrough container. The view itself toggles its
-        // interactive surface (full-bleed placement layer vs.
-        // marker-only taps) based on `viewModel.selectedTool`.
-        let stickyHost = UIHostingController(
-            rootView: StickyNotesOverlayView(viewModel: viewModel)
-        )
-        stickyHost.view.backgroundColor = .clear
-        stickyHost.view.translatesAutoresizingMaskIntoConstraints = false
-        overlayLayer.addSubview(stickyHost.view)
-        NSLayoutConstraint.activate([
-            stickyHost.view.topAnchor.constraint(equalTo: overlayLayer.topAnchor),
-            stickyHost.view.leadingAnchor.constraint(equalTo: overlayLayer.leadingAnchor),
-            stickyHost.view.trailingAnchor.constraint(equalTo: overlayLayer.trailingAnchor),
-            stickyHost.view.bottomAnchor.constraint(equalTo: overlayLayer.bottomAnchor),
-        ])
+        // Sticky notes — per-page mount, see `rebuildPageHosts`. The
+        // legacy global single overlay was removed in Phase 3b.
+
+        // Text block overlay — same floating-active-page model as
+        // Text-block overlay — per-page mount, see `rebuildPageHosts`.
+        // The legacy global single overlay was removed in Phase 3b.
 
         context.coordinator.host             = host
         context.coordinator.scrollView       = scrollView
@@ -136,7 +190,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // (see the page-mount loop below). The coordinator's
         // `audioPinsHost` slot stays in the model for legacy
         // diagnostics but isn't populated.
-        context.coordinator.stickyNotesHost  = stickyHost
 
         // Two-finger double tap → 100% zoom. The page-by-page two-finger
         // *swipe* navigation is intentionally absent — continuous scroll
@@ -189,6 +242,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // — typically 3–5 canvases live at once.
         coord.applyDrawingPolicyToAll(fingerDraws: fingerDrawingEnabled)
         coord.applyToolToAll(viewModel.selectedTool)
+        // Non-drawing tools (text / image / sticky-note) need finger
+        // taps to reach the SwiftUI overlays underneath the canvas.
+        // PKCanvasView's gesture recognisers swallow taps even in
+        // `.pencilOnly` mode, so we have to disable user interaction
+        // on every mounted canvas while a non-drawing tool is active.
+        // Phase 5E: consult the single-source `canvasIsInteractive`
+        // signal instead of reading `selectedTool.isDrawingTool`
+        // directly. The state machine adds the mode-axis check so a
+        // lecture / audio recording also suppresses Pencil input
+        // even when a drawing tool is selected.
+        coord.applyOverlayHitTestingToAll(canvasInteractive: viewModel.canvasIsInteractive)
+        // Bring the active-tool's overlay to the front inside each
+        // renderer so finger taps on images / sticky-notes / text
+        // blocks aren't swallowed by another overlay's hosting view.
+        // See Bug 4.
+        coord.promoteActiveOverlayToFront(for: viewModel.selectedTool)
 
         // Page list change (autoAdd appended a page, or first run).
         coord.rebuildPageHostsIfNeeded()
@@ -228,7 +297,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         private let pageGap: CGFloat
         private let warmBandPaddingFactor: CGFloat
-        private let autoAddCooldown: TimeInterval
 
         weak var host:         UIView?
         weak var scrollView:   UIScrollView?
@@ -237,11 +305,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // Strong ref — UIHostingController keeps the SwiftUI overlay
         // alive. Released when the coordinator deinits (i.e. when the
         // editor view is dismissed).
-        var audioPinsHost: UIHostingController<AudioAnnotationPinsOverlayView>?
-        /// Strong ref to the sticky-notes hosting controller — same
-        /// pattern as `audioPinsHost`. Released when the coordinator
-        /// deinits.
-        var stickyNotesHost: UIHostingController<StickyNotesOverlayView>?
+        var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>?
 
         struct PageHostState {
             let pageId: UUID
@@ -252,6 +316,21 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// a strong ref alongside the renderer so the controller
             /// outlives `mountCanvas` / `unmountCanvas` cycles.
             var templateHost: UIHostingController<TemplatePatternView>
+            /// Image attachments overlay (BELOW the canvas). Stored so
+            /// the hosting controller outlives the page's lifetime — a
+            /// dangling HC stops driving SwiftUI updates and also
+            /// triggers `_UIReparentingView` complaints.
+            var imagesHost:    UIHostingController<ImageAttachmentsView>
+            /// Audio annotation pins overlay (ABOVE the canvas).
+            var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>
+            /// Lecture-block overlay (ABOVE the canvas).
+            var lectureHost:   UIHostingController<LectureBlocksOverlayView>
+            /// Sticky-notes overlay (ABOVE the canvas). Phase 3b: was a
+            /// single global overlay in `overlayLayer`, now per-page.
+            var stickyHost:    UIHostingController<StickyNotesOverlayView>
+            /// Text-block overlay (ABOVE the canvas). Phase 3b: was a
+            /// single global overlay in `overlayLayer`, now per-page.
+            var textBlockHost: UIHostingController<TextBlockOverlayView>
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
@@ -263,23 +342,31 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private var lastActivePageId: UUID?
         var suppressZoomUpdate = false
         private var suppressActivePageUpdates = false
-        private var lastAutoAddDate: Date = .distantPast
         private var isStrokeInProgress = false
         var appliedTool: InkTool?
+        /// Throttle for auto-add-page-on-bottom-stroke. Without this a
+        /// flurry of short strokes near the bottom of the last page would
+        /// spawn multiple pages back-to-back.
+        private var lastAutoAddDate: Date = .distantPast
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
              pageGap: CGFloat,
-             warmBandPaddingFactor: CGFloat,
-             autoAddCooldown: TimeInterval) {
+             warmBandPaddingFactor: CGFloat) {
             self.viewModel = viewModel
             self.fingerDrawingEnabled = fingerDrawingEnabled
             self.pageGap = pageGap
             self.warmBandPaddingFactor = warmBandPaddingFactor
-            self.autoAddCooldown = autoAddCooldown
         }
 
         deinit {
+            // Detach the sticky-notes hosting controller from its
+            // parent VC so it doesn't outlive the editor screen as a
+            // dangling child VC. Per-page hosting controllers are
+            // detached inside `tearDownAllHosts`; this covers the one
+            // installed in `makeUIView` that isn't part of the page
+            // loop. Capturing as a local prevents the `MainActor`-only
+            // call from running off-actor in a deinit chain.
             // Pencil double-tap and other interactions cleaned up when
             // their host views are released. Save tasks are cooperative
             // and will see Task.isCancelled on the next tick.
@@ -313,12 +400,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let maxW    = pages.map { $0.pageSize.pointSize.width }.max() ?? PageSize.a4.pointSize.width
             for page in pages {
                 let baseSize = page.pageSize.pointSize
-                let h = effectiveHeight(for: page)
                 let frame = CGRect(
                     x: (maxW - baseSize.width) / 2,
                     y: y,
                     width: baseSize.width,
-                    height: h
+                    height: baseSize.height
                 )
                 let renderer = PageRenderer(pageSize: page.pageSize)
                 renderer.frame = frame
@@ -359,6 +445,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     templateHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
                     templateHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
+                templateHost.attachAsChild(of: renderer)
 
                 // Image attachments layer — sits ABOVE the
                 // background (template / PDF) and BELOW the
@@ -366,11 +453,26 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // per the architecture rule: PKCanvasView is always
                 // the topmost interactive layer so handwriting
                 // overwrites images cleanly.
+                //
+                // Pass the *base* page size (not the effective
+                // height `h` which includes auto-extension extra
+                // space). The image overlay normalises positions
+                // against this size, so when the page auto-extends
+                // after a stroke near the bottom, images stay
+                // anchored to their original absolute coordinates
+                // instead of shifting down proportionally with the
+                // grown height. Images live in the original page
+                // rect; the extended region is canvas-only.
+                // Single placement primitive shared by every per-page
+                // overlay below — base size only, no effective height.
+                // See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
+                let pageCS = PageCoordinateSpace(baseSize: baseSize)
+
                 let imagesHost = UIHostingController(
                     rootView: ImageAttachmentsView(
                         viewModel: viewModel,
                         pageId: page.id,
-                        pageSize: CGSize(width: baseSize.width, height: h)
+                        coordinateSpace: pageCS
                     )
                 )
                 imagesHost.view.backgroundColor = .clear
@@ -382,17 +484,19 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     imagesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
                     imagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
+                imagesHost.attachAsChild(of: renderer)
 
-                // Audio pin overlay — per-page, scoped to this
-                // page's id. Replaces the legacy single-overlay
-                // design that re-parented onto the active page and
-                // caused pins to drift on scroll. Lives in the
-                // page renderer's coordinate space so positions
-                // need no scroll-offset math.
+                // Audio annotation overlay — per-page, scoped to
+                // this page's id. Phase 4B: replaced the pin overlay
+                // with full-width cards stacked from the top of the
+                // page. Cards are always interactive (tap to expand
+                // transcript, long-press for context menu) regardless
+                // of the selected tool.
                 let audioPinsHost = UIHostingController(
-                    rootView: AudioAnnotationPinsOverlayView(
+                    rootView: AudioAnnotationCardsOverlayView(
                         viewModel: viewModel,
-                        pageId: page.id
+                        pageId: page.id,
+                        coordinateSpace: pageCS
                     )
                 )
                 audioPinsHost.view.backgroundColor = .clear
@@ -404,6 +508,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     audioPinsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
                     audioPinsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
+                audioPinsHost.attachAsChild(of: renderer)
 
                 // Lecture-block overlay — per-page, renders the
                 // proper `LectureBlockView` (header / summary /
@@ -417,7 +522,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     rootView: LectureBlocksOverlayView(
                         viewModel: viewModel,
                         pageId: page.id,
-                        pageSize: CGSize(width: baseSize.width, height: h)
+                        coordinateSpace: pageCS
                     )
                 )
                 lectureHost.view.backgroundColor = .clear
@@ -429,16 +534,62 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     lectureHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
                     lectureHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
+                lectureHost.attachAsChild(of: renderer)
+
+                // Sticky-notes overlay — per-page mount (Phase 3b).
+                let stickyHost = UIHostingController(
+                    rootView: StickyNotesOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                stickyHost.view.backgroundColor = .clear
+                stickyHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(stickyHost.view)
+                NSLayoutConstraint.activate([
+                    stickyHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    stickyHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    stickyHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    stickyHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                stickyHost.attachAsChild(of: renderer)
+
+                // Text-block overlay — per-page mount (Phase 3b). Same
+                // overlay also handles `lecture:<uuid>`-prefixed blocks
+                // by routing them through `LectureBlockView` internally.
+                let textBlockHost = UIHostingController(
+                    rootView: TextBlockOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                textBlockHost.view.backgroundColor = .clear
+                textBlockHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(textBlockHost.view)
+                NSLayoutConstraint.activate([
+                    textBlockHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    textBlockHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    textBlockHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    textBlockHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                textBlockHost.attachAsChild(of: renderer)
 
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
-                    pageId:       page.id,
-                    frame:        frame,
-                    renderer:     renderer,
-                    templateHost: templateHost,
-                    template:     page.backgroundTemplate
+                    pageId:        page.id,
+                    frame:         frame,
+                    renderer:      renderer,
+                    templateHost:  templateHost,
+                    imagesHost:    imagesHost,
+                    audioPinsHost: audioPinsHost,
+                    lectureHost:   lectureHost,
+                    stickyHost:    stickyHost,
+                    textBlockHost: textBlockHost,
+                    template:      page.backgroundTemplate
                 ))
-                y += h + pageGap
+                y += baseSize.height + pageGap
             }
             // Total content height excludes the trailing gap.
             let height = max(0, y - pageGap)
@@ -463,25 +614,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 }
                 hosts[i].saveTask?.cancel()
                 hosts[i].canvasView?.removeFromSuperview()
+                // Detach the four overlay hosting controllers from
+                // their parent view controller before the renderer is
+                // removed — otherwise the VC graph holds dangling
+                // children whose `.view` no longer has a window.
+                hosts[i].templateHost.detachFromParentVC()
+                hosts[i].imagesHost.detachFromParentVC()
+                hosts[i].audioPinsHost.detachFromParentVC()
+                hosts[i].lectureHost.detachFromParentVC()
+                hosts[i].stickyHost.detachFromParentVC()
+                hosts[i].textBlockHost.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
         }
 
-        /// Refresh `PageRenderer.template` / `PageRenderer.pageSize` /
-        /// `Page.extraHeight` when a page's metadata changed without the
-        /// page list itself changing. Customise panel mutations and
-        /// auto-extend-last-page mutations both land here. A change to
-        /// `pageSize` or `extraHeight` reshapes the layout, so we trigger
-        /// a full rebuild of host frames + content size in that case.
+        /// Refresh `PageRenderer.template` / `PageRenderer.pageSize`
+        /// when a page's metadata changed without the page list itself
+        /// changing. Customise panel mutations land here. A change to
+        /// `pageSize` reshapes the layout, so we trigger a full rebuild
+        /// of host frames + content size in that case.
         private func applyPageMetadataChanges() {
             var needsLayoutRebuild = false
             for i in hosts.indices {
                 guard let page = page(for: hosts[i].pageId) else { continue }
-                let templateChanged   = hosts[i].template != page.backgroundTemplate
-                let pageSizeChanged   = hosts[i].renderer.pageSize != page.pageSize
-                let effective         = effectiveHeight(for: page)
-                let extraHeightChanged = abs(hosts[i].frame.height - effective) > 0.5
+                let templateChanged = hosts[i].template != page.backgroundTemplate
+                let pageSizeChanged = hosts[i].renderer.pageSize != page.pageSize
                 if pageSizeChanged {
                     hosts[i].renderer.update(pageSize: page.pageSize)
                 }
@@ -490,7 +648,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     hosts[i].templateHost.rootView =
                         TemplatePatternView(template: page.backgroundTemplate)
                 }
-                if pageSizeChanged || extraHeightChanged {
+                if pageSizeChanged {
                     needsLayoutRebuild = true
                 }
             }
@@ -499,19 +657,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
-        /// Effective rendered height for a page = base size + auto-grow
-        /// extension. The extension is stored sidecar in
-        /// `PageExtraHeightStore` keyed by page UUID — see the comment
-        /// in InkSchemas.swift for why it's not a SwiftData column.
-        private func effectiveHeight(for page: Page) -> CGFloat {
-            page.pageSize.pointSize.height
-                + PageExtraHeightStore.extraHeight(forPageId: page.id)
-        }
-
         /// Recompute every host's frame in place (without tearing down
         /// canvases), then update the scroll view's content size. Used
-        /// when the last page auto-grows or when the user changes a
-        /// page's size via the Customise panel.
+        /// when the user changes a page's size via the Customise panel.
         private func relayoutHosts() {
             guard let contentView else { return }
             let pages = viewModel.pages
@@ -524,13 +672,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ?? PageSize.a4.pointSize.width
             var y: CGFloat = 0
             for (i, page) in pages.enumerated() {
-                let w = page.pageSize.pointSize.width
-                let h = effectiveHeight(for: page)
-                let frame = CGRect(x: (maxW - w) / 2, y: y, width: w, height: h)
+                let baseSize = page.pageSize.pointSize
+                let frame = CGRect(
+                    x: (maxW - baseSize.width) / 2,
+                    y: y,
+                    width: baseSize.width,
+                    height: baseSize.height
+                )
                 hosts[i].frame = frame
                 hosts[i].renderer.frame = frame
                 hosts[i].canvasView?.frame = frame
-                y += h + pageGap
+                y += baseSize.height + pageGap
             }
             let height = max(0, y - pageGap)
             updateContentSize(width: maxW, height: height)
@@ -544,17 +696,45 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let scrollView, let contentView else { return }
             contentView.frame = CGRect(x: 0, y: 0, width: width, height: height)
             scrollView.contentSize = CGSize(width: width, height: height)
-            // Centre horizontally + add half-viewport top/bottom inset so
-            // the user can scroll the first/last page to the middle of the
-            // viewport (matches Files / Preview conventions).
+            applyContentInset()
+        }
+
+        /// Recompute the scroll view's content inset against its
+        /// current bounds + content size. Called from
+        /// `updateContentSize` (when the page list changes) AND from
+        /// the host's `layoutSubviews` hook (when the window
+        /// resizes / orientation flips / the editor cover first
+        /// becomes visible at a non-zero bounds). The horizontal
+        /// inset is what keeps the page visually centred — without
+        /// re-firing on bounds change, an early layout pass with
+        /// `bounds.width == 0` locks the inset at zero and the page
+        /// stays pinned to the scroll view's left edge.
+        func refreshContentInsetForBounds() {
+            applyContentInset()
+        }
+
+        private func applyContentInset() {
+            guard let scrollView else { return }
+            let width  = scrollView.contentSize.width
+            let height = scrollView.contentSize.height
+            // Skip when bounds aren't yet sized — the host's
+            // `layoutSubviews` will re-fire once SwiftUI gives the
+            // representable its real frame.
+            guard scrollView.bounds.width > 0, width > 0 else { return }
             let hInset = max(0, (scrollView.bounds.width  - width)  / 2)
             let vInset = max(0, scrollView.bounds.height / 2 - height / 2)
-            scrollView.contentInset = UIEdgeInsets(
+            let newInset = UIEdgeInsets(
                 top:    Swift.max(scrollView.bounds.height * 0.10, vInset),
                 left:   hInset,
                 bottom: Swift.max(scrollView.bounds.height * 0.10, vInset),
                 right:  hInset
             )
+            // Only assign when actually different — setting the
+            // inset always triggers a `setContentOffset` adjustment
+            // that can fight the user's in-flight scroll.
+            if scrollView.contentInset != newInset {
+                scrollView.contentInset = newInset
+            }
         }
 
         // MARK: Canvas membership (lazy mount/unmount)
@@ -591,7 +771,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let page = page(for: hosts[i].pageId) else { return }
             let frame = hosts[i].frame
 
-            let canvas = PKCanvasView(frame: frame)
+            // `InkPKCanvasView` overrides `addGestureRecognizer` to
+            // reject `UIHoverGestureRecognizer` at install time —
+            // prevents the iPadOS 17.5+ Pencil-hover layout pass that
+            // shifted rendered strokes. See
+            // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
+            let canvas = InkPKCanvasView(frame: frame)
             canvas.delegate = self
             canvas.backgroundColor = .clear
             canvas.isOpaque = false
@@ -612,6 +797,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 canvas.drawing = drawing
             }
             applyTool(viewModel.selectedTool, to: canvas)
+            // Honour current text-mode state at mount time. Without
+            // this a canvas mounted while the user is already in
+            // text mode would intercept finger taps for the first
+            // tool-change cycle.
+            // Disable canvas hit-testing for any non-drawing tool (text /
+            // image / sticky-note). PKCanvasView's gesture recognisers
+            // greedily consume finger taps even in `.pencilOnly` mode,
+            // which prevents the SwiftUI overlays underneath
+            // (ImageAttachmentsView, TextBlockOverlayView,
+            // StickyNotesOverlayView) from ever seeing taps. Tying this to
+            // `isDrawingTool` keeps Pencil drawing disabled in those modes
+            // (acceptable — the user explicitly switched away from a
+            // drawing tool) while letting finger taps reach the overlays.
+            // Phase 5E: single-source `canvasIsInteractive` (tool +
+            // mode axis combined) — see `EditorStateMachine`.
+            canvas.isUserInteractionEnabled = viewModel.canvasIsInteractive
 
             // Pencil double-tap forwarded to the view-model, so the user's
             // configured action (toggle eraser / switch tool / colour
@@ -619,6 +820,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let pencilInteraction = UIPencilInteraction()
             pencilInteraction.delegate = self
             canvas.addInteraction(pencilInteraction)
+            #if DEBUG
+            print("[Pencil-diag] mountCanvas registered UIPencilInteraction interaction=\(ObjectIdentifier(pencilInteraction).hashValue) on canvas page=\(hosts[i].pageId)")
+            #endif
+
+            // Hover-recogniser rejection happens inside
+            // `InkPKCanvasView.addGestureRecognizer`. No post-hoc walk
+            // is required — see the subclass's header comment.
 
             contentView.addSubview(canvas)
             hosts[i].canvasView = canvas
@@ -711,42 +919,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
-        // MARK: Auto-extend last page
-        //
-        // Stroke-driven: when the user finishes a stroke on the *last*
-        // page whose geometry reaches into the bottom half of that page,
-        // the last page's height grows by another base-page-height worth
-        // of paper. The user keeps writing into the same page; pages
-        // only ever pile up if the user explicitly inserts new ones via
-        // the page-strip menu. Plain scrolling never grows the page.
-
-        /// Called from `canvasViewDidEndUsingTool` after each stroke
-        /// commits. Returns immediately if the stroke isn't on the last
-        /// page or doesn't reach the lower half. Throttled to once per
-        /// `autoAddCooldown` second so a fast pen with a series of
-        /// strokes doesn't extend the page by a mile at once.
-        private func considerAutoAddAfterStroke(on canvas: PKCanvasView) {
-            guard viewModel.autoAddEnabled else { return }
-            guard let lastHost = hosts.last else { return }
-            // Must be the last page's canvas.
-            guard lastHost.canvasView === canvas else { return }
-            guard let lastStroke = canvas.drawing.strokes.last else { return }
-            let strokeMaxY = lastStroke.renderBounds.maxY
-            let pageMidY   = lastHost.frame.height / 2
-            guard strokeMaxY > pageMidY else { return }
-
-            let now = Date()
-            guard now.timeIntervalSince(lastAutoAddDate) > autoAddCooldown else { return }
-            lastAutoAddDate = now
-
-            guard let lastPage = page(for: lastHost.pageId) else { return }
-            // Grow by one base-page-height worth of paper. Roomy enough
-            // that the user has plenty to write into; the next extend
-            // can fire when this fresh space starts filling up too.
-            let increment = lastPage.pageSize.pointSize.height
-            viewModel.extendLastPage(lastPage, byAdditional: increment)
-        }
-
         // MARK: Tool / drawing-policy propagation
 
         func applyToolToAll(_ tool: InkTool) {
@@ -762,6 +934,63 @@ struct ContinuousCanvasView: UIViewRepresentable {
             for h in hosts {
                 guard let canvas = h.canvasView else { continue }
                 if canvas.drawingPolicy != desired { canvas.drawingPolicy = desired }
+            }
+        }
+
+        /// Toggle `isUserInteractionEnabled` on every mounted canvas
+        /// based on whether the selected tool is a drawing tool.
+        /// PencilKit's `drawingPolicy` only controls *drawing* input —
+        /// its own gesture recognisers still consume finger taps even
+        /// in pencilOnly mode, which prevents the SwiftUI overlays
+        /// (text / image / sticky-note) from receiving taps. Disabling
+        /// user interaction on the canvas is the only reliable way to
+        /// let taps fall through.
+        ///
+        /// The trade-off: Pencil drawing is also blocked while a
+        /// non-drawing tool is active. Acceptable — the user
+        /// explicitly switched away from a drawing tool. Switching
+        /// back to any drawing tool restores `true`.
+        func applyOverlayHitTestingToAll(canvasInteractive desired: Bool) {
+            for h in hosts {
+                guard let canvas = h.canvasView else { continue }
+                if canvas.isUserInteractionEnabled != desired {
+                    canvas.isUserInteractionEnabled = desired
+                }
+                #if DEBUG
+                print("[ImageInteract] canvas isUserInteractionEnabled=\(canvas.isUserInteractionEnabled), tool=\(viewModel.selectedTool)")
+                #endif
+            }
+        }
+
+        /// Bring the per-page overlay matching the active tool to the
+        /// front inside its renderer. Without this, the per-page overlay
+        /// stack order (image → audio → lecture → sticky → text) means
+        /// the text-block hosting view sits on TOP of the image overlay,
+        /// and `UIHostingController.view` absorbs finger hits even when
+        /// its SwiftUI body has no interactive content. Re-ordering the
+        /// SwiftUI hosting views per the active tool puts the right
+        /// overlay's tap-catcher first in the responder chain. See Bug 4.
+        func promoteActiveOverlayToFront(for tool: InkTool) {
+            for h in hosts {
+                let renderer = h.renderer
+                switch true {
+                case tool.isImageMode:
+                    renderer.bringSubviewToFront(h.imagesHost.view)
+                case tool.isStickyNoteMode:
+                    renderer.bringSubviewToFront(h.stickyHost.view)
+                case tool.isTextMode:
+                    renderer.bringSubviewToFront(h.textBlockHost.view)
+                default:
+                    // Drawing tools — restore the original stacking
+                    // order (text on top, then sticky, lecture, audio,
+                    // images, template). Image / sticky / text all need
+                    // to render under the canvas anyway when a drawing
+                    // tool is active.
+                    renderer.bringSubviewToFront(h.textBlockHost.view)
+                    renderer.bringSubviewToFront(h.stickyHost.view)
+                    renderer.bringSubviewToFront(h.lectureHost.view)
+                    renderer.bringSubviewToFront(h.audioPinsHost.view)
+                }
             }
         }
 
@@ -862,9 +1091,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             )
             updateCanvasMembership()
             updateActivePageFromScroll()
-            // Auto-add is no longer scroll-driven — it fires on
-            // stroke-end via `considerAutoAddAfterStroke(on:)`. Pure
-            // scrolling should never grow the notebook.
         }
 
         func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
@@ -909,13 +1135,66 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // the user just drew on.
             viewModel.canvasView = canvasView
             viewModel.handleStrokeEnded()
-            // Stroke-end is the only place we consider auto-adding a page.
             considerAutoAddAfterStroke(on: canvasView)
+        }
+
+        /// If the just-finished stroke lands in the bottom 15% of the *last*
+        /// page's canvas and auto-add is on, append a new page after it and
+        /// scroll to reveal it. Throttled to one fire per second so a flurry
+        /// of small strokes near the bottom doesn't spawn multiple pages.
+        private func considerAutoAddAfterStroke(on canvasView: PKCanvasView) {
+            guard viewModel.autoAddEnabled else { return }
+            guard let host = hosts.first(where: { $0.canvasView === canvasView }) else { return }
+            guard let lastPageId = viewModel.pages.last?.id, host.pageId == lastPageId else { return }
+            guard let stroke = canvasView.drawing.strokes.last else { return }
+            let canvasHeight = canvasView.bounds.height
+            guard canvasHeight > 0 else { return }
+            let threshold = canvasHeight * 0.85
+            guard stroke.renderBounds.maxY >= threshold else { return }
+            let now = Date()
+            guard now.timeIntervalSince(lastAutoAddDate) > 1.0 else { return }
+            lastAutoAddDate = now
+            // Defer the mutation to the next runloop tick — mutating
+            // `@Published` state from a PencilKit delegate callback is the
+            // exact pattern that triggers AttributeGraph cycle warnings.
+            let pageId = host.pageId
+            Task { @MainActor [weak viewModel] in
+                viewModel?.addPage(afterPageId: pageId)
+            }
         }
 
         // MARK: - UIPencilInteractionDelegate
 
+        // Pencil 2 (iPad Pro / iPad Air with original Apple Pencil 2):
+        // the system calls this legacy method on double-tap.
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            #if DEBUG
+            print("[Pencil] double-tap fired (legacy API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
+            print("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
+            Thread.callStackSymbols.prefix(8).forEach { print("[Pencil-diag]   \($0)") }
+            #endif
+            viewModel.handlePencilDoubleTap()
+        }
+
+        // Apple Pencil Pro (iPad Pro M4, iPad Air M2/M3): the system
+        // calls this iOS 17.5+ method instead. Without this method, a
+        // Pencil Pro double-tap silently doesn't fire — the legacy
+        // `pencilInteractionDidTap(_:)` is only consulted for older
+        // Pencil hardware. Both delegate methods must be implemented
+        // so the editor works across the full Pencil matrix. See Bug 5.
+        @available(iOS 17.5, *)
+        func pencilInteraction(
+            _ interaction: UIPencilInteraction,
+            didReceiveTap tap: UIPencilInteraction.Tap
+        ) {
+            // `UIPencilInteraction.Tap` is a discrete event (no
+            // `phase` member). One delegate call = one user-perceived
+            // double-tap — fire the action once and exit.
+            #if DEBUG
+            print("[Pencil] double-tap fired (Pencil Pro API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
+            print("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
+            Thread.callStackSymbols.prefix(8).forEach { print("[Pencil-diag]   \($0)") }
+            #endif
             viewModel.handlePencilDoubleTap()
         }
 
@@ -941,6 +1220,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let scrollView else { return }
             scrollView.setZoomScale(1.0, animated: true)
         }
+
     }
 }
 
@@ -964,18 +1244,4 @@ extension EditorViewModel {
         HapticManager.shared.pageAdded()
     }
 
-    /// Grow the last page's vertical extension. Caller passes the
-    /// *additional* points of paper to grant (typically one base-page
-    /// height); the value accumulates in `PageExtraHeightStore` keyed
-    /// by the page's UUID. Bumping `objectWillChange` triggers
-    /// SwiftUI to re-render `ContinuousCanvasView`, which detects the
-    /// height change in `applyPageMetadataChanges()` and relayouts.
-    func extendLastPage(_ page: Page, byAdditional additional: CGFloat) {
-        guard additional > 0 else { return }
-        PageExtraHeightStore.extend(pageId: page.id, byAdditional: additional)
-        page.updatedAt = Date()
-        objectWillChange.send()
-        refreshPages()
-        HapticManager.shared.pageAdded()
-    }
 }

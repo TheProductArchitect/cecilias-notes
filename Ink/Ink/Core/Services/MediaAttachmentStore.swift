@@ -1,32 +1,37 @@
 /// MediaAttachmentStore.swift
 /// Cecilia's Notes
 ///
-/// Side-channel store for image attachments. Mirrors
-/// `StickyNoteStore` and `PDFTextAnnotationStore`:
-/// `UserDefaults.standard`, JSON-encoded dictionary keyed by
-/// `pageId.uuidString`, soft-delete via `deletedAt`, hard-delete
-/// via `forget(pageIds:)` from the reaper. Image bytes live as
-/// files on disk; the record only carries metadata.
+/// Phase 5A+5C Step 4: static façade over the `ImageRecord`
+/// SwiftData entity. This used to be a UserDefaults JSON store
+/// with a sibling `struct MediaAttachmentRecord`; the struct moved
+/// to `@Model class ImageRecord` (see `Core/Models/ImageRecord.swift`)
+/// and the static API here now reads/writes through SwiftData via
+/// `StorageService.shared.context`.
 ///
-/// Why a side-channel rather than SwiftData: image pixels are
-/// large, position/size mutates often during gestures, and adding
-/// a new SwiftData entity type forces a schema version bump with
-/// structurally-distinct Swift types. See `InkSchemas.swift` and
-/// `ARCHITECTURE.md`.
+/// The façade survives the rewrite because every caller in the
+/// editor — `ImageAttachmentsView`, `MediaInsertCoordinator`,
+/// `ExportService`, `EditorViewModel.commitImportedImage` — already
+/// expects this enum-shaped API. Routing through it keeps the
+/// migration to one place and isolates SwiftData-context plumbing
+/// from the call sites.
+///
+/// `.mediaAttachmentsChanged` is still posted from `save(_:)` /
+/// `softDelete(_:_:)` so `ImageAttachmentsView` re-renders on any
+/// external mutation without caller-side changes.
 
 import Foundation
+import SwiftData
 import UIKit
 
 enum MediaAttachmentStore {
 
-    private static let storageKey = "media.attachments.v1"
-
     // MARK: - Filesystem helpers
 
     /// Per-notebook media directory: `Documents/media/<uuid>/`.
-    /// Mirrors the audio + PDF file layout so a notebook's assets
-    /// stay grouped under a single subdirectory the reaper can
-    /// sweep wholesale.
+    /// Image bytes that pre-date Step 4 still live here; new image
+    /// inserts go through `MediaStorage.url(for: .images, id:)` (the
+    /// unified `Documents/MediaAttachments/images/` tree). The
+    /// reaper sweeps both paths.
     static func mediaDirectory(for notebookId: UUID) -> URL {
         let docs = FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -35,132 +40,85 @@ enum MediaAttachmentStore {
             .appendingPathComponent(notebookId.uuidString, isDirectory: true)
     }
 
-    /// Resolve a record's `relativeFilePath` against `Documents/`.
-    /// Returns the absolute URL — `nil` only if Documents itself is
-    /// unreachable, which shouldn't happen.
-    static func absoluteURL(for record: MediaAttachmentRecord) -> URL {
-        let docs = FileManager.default
-            .urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent(record.relativeFilePath)
+    /// Resolve the on-disk URL for a record's image bytes.
+    /// `MediaStorage` owns the canonical path under
+    /// `Documents/MediaAttachments/images/<uuid>.jpg`.
+    static func absoluteURL(for record: ImageRecord) -> URL {
+        MediaStorage.url(for: .images, id: record.id)
     }
 
     // MARK: - Read
 
     /// Active records for a page, ordered by `createdAt`. Used by
     /// the canvas render layer and the export pipeline.
-    static func records(
-        for pageId: UUID,
-        defaults: UserDefaults = .standard
-    ) -> [MediaAttachmentRecord] {
-        readMap(defaults: defaults)[pageId.uuidString]?
-            .filter { $0.deletedAt == nil }
-            .sorted { $0.createdAt < $1.createdAt } ?? []
+    static func records(for pageId: UUID) -> [ImageRecord] {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<ImageRecord>(
+            predicate: #Predicate { $0.pageId == pageId && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\.createdAt)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
     }
 
-    /// Every active record. Used by debug tooling — not part of any
-    /// hot path.
-    static func allActiveRecords(
-        defaults: UserDefaults = .standard
-    ) -> [MediaAttachmentRecord] {
-        readMap(defaults: defaults).values.flatMap { $0 }
-            .filter { $0.deletedAt == nil }
+    /// Every active record across every page. Debug tooling only —
+    /// not part of any hot path.
+    static func allActiveRecords() -> [ImageRecord] {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<ImageRecord>(
+            predicate: #Predicate { $0.deletedAt == nil }
+        )
+        return (try? context.fetch(descriptor)) ?? []
     }
 
     // MARK: - Mutate
 
-    /// Insert or replace by `id`. Drag / resize / rotate all flow
+    /// Insert or update a record. Drag / resize / rotate all flow
     /// through here on commit. The on-disk file is NOT touched —
-    /// the caller is responsible for writing pixels before saving
-    /// the record, and the file path inside the record never
-    /// changes after creation.
-    static func save(
-        _ record: MediaAttachmentRecord,
-        defaults: UserDefaults = .standard
-    ) {
-        var map = readMap(defaults: defaults)
-        var arr = map[record.pageId.uuidString] ?? []
-        if let idx = arr.firstIndex(where: { $0.id == record.id }) {
-            arr[idx] = record
-        } else {
-            arr.append(record)
+    /// the caller is responsible for writing pixels before saving.
+    static func save(_ record: ImageRecord) {
+        let context = StorageService.shared.context
+        if record.modelContext == nil {
+            context.insert(record)
         }
-        map[record.pageId.uuidString] = arr
-        writeMap(map, defaults: defaults)
+        record.updatedAt = Date()
+        try? context.save()
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 
-    /// Soft-delete — stamps `deletedAt`, leaves the record + the
-    /// on-disk file in place so an undo path could restore the
-    /// image without re-keying. The reaper hard-deletes both on
-    /// notebook purge.
-    static func softDelete(
-        id: UUID,
-        pageId: UUID,
-        defaults: UserDefaults = .standard
-    ) {
-        var map = readMap(defaults: defaults)
-        guard var arr = map[pageId.uuidString],
-              let idx = arr.firstIndex(where: { $0.id == id })
-        else { return }
-        arr[idx].deletedAt = Date()
-        arr[idx].updatedAt = Date()
-        map[pageId.uuidString] = arr
-        writeMap(map, defaults: defaults)
+    /// Soft-delete — stamps `deletedAt`. The on-disk file stays in
+    /// place so an undo could restore the image without re-keying.
+    /// The reaper hard-deletes both on notebook purge.
+    static func softDelete(id: UUID, pageId: UUID) {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<ImageRecord>(
+            predicate: #Predicate { $0.id == id && $0.pageId == pageId }
+        )
+        guard let record = try? context.fetch(descriptor).first else { return }
+        record.deletedAt = Date()
+        record.updatedAt = Date()
+        try? context.save()
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 
-    /// Hard-delete: drops every record for the given pages AND
-    /// removes the underlying image files from disk. Called by
+    /// Hard-delete every record for the given pages AND remove the
+    /// underlying image files from disk. Called by
     /// `StorageService.purgeNotebookFiles` on reaper purge. Files
-    /// are removed before the record reference goes away so we can
-    /// still resolve the absolute path.
-    static func forget(
-        pageIds: [UUID],
-        defaults: UserDefaults = .standard
-    ) {
+    /// are removed before the record is deleted so we can still
+    /// resolve their absolute paths.
+    static func forget(pageIds: [UUID]) {
         guard !pageIds.isEmpty else { return }
-        var map = readMap(defaults: defaults)
+        let context = StorageService.shared.context
+        let pageIdSet = Set(pageIds)
+        let descriptor = FetchDescriptor<ImageRecord>(
+            predicate: #Predicate { pageIdSet.contains($0.pageId) }
+        )
         let fm = FileManager.default
-        for pid in pageIds {
-            if let arr = map[pid.uuidString] {
-                for record in arr {
-                    let url = absoluteURL(for: record)
-                    try? fm.removeItem(at: url)
-                }
-            }
-            map.removeValue(forKey: pid.uuidString)
+        let records = (try? context.fetch(descriptor)) ?? []
+        for record in records {
+            try? fm.removeItem(at: absoluteURL(for: record))
+            context.delete(record)
         }
-        writeMap(map, defaults: defaults)
-    }
-
-    // MARK: - Internals
-
-    private static func readMap(
-        defaults: UserDefaults
-    ) -> [String: [MediaAttachmentRecord]] {
-        guard let raw  = defaults.string(forKey: storageKey),
-              let data = raw.data(using: .utf8),
-              let map  = try? JSONDecoder().decode(
-                  [String: [MediaAttachmentRecord]].self, from: data
-              )
-        else { return [:] }
-        return map
-    }
-
-    private static func writeMap(
-        _ map: [String: [MediaAttachmentRecord]],
-        defaults: UserDefaults
-    ) {
-        let compact = map.filter { !$0.value.isEmpty }
-        if compact.isEmpty {
-            defaults.removeObject(forKey: storageKey)
-            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
-            return
-        }
-        guard let data = try? JSONEncoder().encode(compact),
-              let str  = String(data: data, encoding: .utf8)
-        else { return }
-        defaults.set(str, forKey: storageKey)
-        // Reactive render layer: `ImageAttachmentsView` listens for
-        // this notification and refreshes without polling.
+        try? context.save()
         NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 }

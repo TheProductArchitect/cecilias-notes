@@ -63,15 +63,13 @@ struct AudioFilePicker: UIViewControllerRepresentable {
             await MainActor.run { viewModel.recordingState = .processing }
 
             let annotationId = UUID()
-            let destURL = await MainActor.run {
-                viewModel.audioDirURL().appendingPathComponent(annotationId.uuidString + ".m4a")
-            }
+            // Imported audio files land in the unified `MediaStorage.audio/`
+            // tree alongside fresh recordings. See
+            // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.B.
+            let destURL = MediaStorage.url(for: .audio, id: annotationId)
 
             do {
-                try FileManager.default.createDirectory(
-                    at: destURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
+                MediaStorage.ensureDirectoriesExist()
 
                 // If not M4A, transcode via AVAssetExportSession
                 if sourceURL.pathExtension.lowercased() == "m4a" {
@@ -81,19 +79,18 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 }
 
                 let duration = try await audioDuration(at: destURL)
-                let fileSize = (try? FileManager.default.attributesOfItem(atPath: destURL.path)[.size] as? Int64) ?? 0
                 let pinPoint = CGPoint(x: 0.1, y: 0.1)
 
                 // Insert on the main actor and surface only the
-                // notebook-id (Sendable UUID) — `AudioAnnotation` is a
+                // record id (Sendable UUID) — `AudioRecord` is a
                 // SwiftData persistent model and not Sendable, so we
-                // can't return it across the actor boundary.
+                // can't return it across the actor boundary. Phase
+                // 5A+5C Step 3: `fileName` / `fileSizeBytes` no
+                // longer stored on the record.
                 let inserted: UUID? = await MainActor.run {
                     viewModel.insertAudioFile(
-                        annotationId: annotationId,
-                        fileName: annotationId.uuidString + ".m4a",
+                        recordId: annotationId,
                         duration: duration,
-                        fileSizeBytes: fileSize,
                         at: pinPoint
                     )?.id
                 }

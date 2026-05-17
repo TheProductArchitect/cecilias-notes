@@ -213,6 +213,13 @@ struct EditorView: View {
                     .ignoresSafeArea(edges: .top)
                     .opacity(viewModel.isFocusMode ? 0 : 1)
                     .allowsHitTesting(!viewModel.isFocusMode)
+                    // Sit above the Customise panel's tap-outside
+                    // layer (zIndex 73) and the panel itself (74) so
+                    // the back chevron is tappable even when the
+                    // panel is auto-opened for a fresh notebook —
+                    // otherwise the first tap on Back lands on the
+                    // dismiss layer and only closes the panel.
+                    .zIndex(75)
                 }
 
                 // 5y. Customise pill (Item 1) — surfaces top-right for ~5s
@@ -253,7 +260,7 @@ struct EditorView: View {
 
                     VStack {
                         CustomisePanel(viewModel: viewModel)
-                            .padding(.top, proxy.safeAreaInsets.top + 52) // below toolbar
+                            .padding(.top, proxy.safeAreaInsets.top + 56) // below toolbar (matches EditorToolbarView.toolbarHeight)
                         Spacer()
                     }
                     .zIndex(74)
@@ -344,9 +351,11 @@ struct EditorView: View {
                 // 5c. Apple Pencil Pro squeeze detector. Always mounted —
                 // gracefully no-ops on iOS 17.0–17.4 / non-Pro Pencils.
                 // Lives at zIndex 0 underneath everything; takes no hits.
-                PencilSqueezeDetector {
-                    viewModel.handlePencilSqueeze()
-                }
+                PencilSqueezeDetector(
+                    onSqueezeReleased: { viewModel.handlePencilSqueezeReleased() },
+                    onSqueezeBegan:    { viewModel.handlePencilSqueezeBegan() },
+                    onSqueezeEndedOrCancelled: { viewModel.handlePencilSqueezeEnded() }
+                )
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -408,6 +417,10 @@ struct EditorView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                     .opacity(viewModel.isFocusMode ? 0 : 1)
                     .allowsHitTesting(!viewModel.isFocusMode)
+                    // Same zIndex story as the toolbar — must sit
+                    // above the Customise panel's tap-outside layer
+                    // so the back chip works when the panel is open.
+                    .zIndex(75)
                 }
 
                 // Full-screen exit tap
@@ -482,79 +495,121 @@ struct EditorView: View {
         // style below).
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
-        // Media picker sheets
-        .sheet(item: $viewModel.activeMediaSource) { source in
-            mediaPickerSheet(for: source)
-        }
-        // The image-attachment import picker used to live here as a
-        // `.sheet(item: $viewModel.imageImportRequest)`. Presenting
-        // a sheet from inside a `.fullScreenCover` destination is
-        // unreliable on iPad — the inner UIKit picker's
-        // dismiss/present cycle can collapse the entire
-        // presentation chain and force-dismiss the editor cover.
-        // The picker is now presented from `LibraryView` at the
-        // root level (above the cover) via `ImagePickerBridge`,
-        // which decouples the picker's lifecycle from the editor's
-        // navigation surface.
-        // Audio file picker sheet
-        .sheet(isPresented: $viewModel.isShowingAudioFilePicker) {
-            AudioFilePicker(viewModel: viewModel) {
-                viewModel.isShowingAudioFilePicker = false
-            }
-        }
-        // Export options sheet
-        .sheet(isPresented: $isShowingCoverPicker) {
-            CoverTonePickerView(notebook: viewModel.notebook) {
-                isShowingCoverPicker = false
-            }
-            .presentationDetents([.medium])
-        }
-        .sheet(isPresented: $viewModel.isShowingExportSheet) {
-            ExportOptionsView(
-                notebook: viewModel.notebook,
-                pages: viewModel.pages,
-                currentIndex: viewModel.currentPageIndex
+        // Phase 5B: editor-internal modals migrated to ModalPresenter.
+        // The editor itself is a `.fullScreenCover` from `LibraryView`;
+        // sheets presented directly from this view risk SwiftUI's
+        // sheet-over-cover collision ("Currently, only presenting a
+        // single sheet is supported"). Routing through
+        // `ModalPresenter.shared` puts the sheets above the cover via
+        // the host modifier on `RootView`. The trigger state (the
+        // @State / @Published booleans below) stays so existing
+        // callers and the deep-link / header paths don't change; the
+        // .onChange handlers translate flag flips into presenter
+        // calls and the `onDidDismiss` callback resets the flag on
+        // swipe-dismiss.
+        .onChange(of: viewModel.activeMediaSource) { _, newValue in
+            guard let source = newValue else { return }
+            ModalPresenter.shared.present(.sheet(
+                id: "editor.mediaSource.\(source)",
+                onDidDismiss: {
+                    // Sheet dismissal can land mid-view-update; defer
+                    // the @Published clear to avoid AttributeGraph
+                    // cycles.
+                    Task { @MainActor in viewModel.activeMediaSource = nil }
+                }
             ) {
-                viewModel.isShowingExportSheet = false
-            }
+                mediaPickerSheet(for: source)
+            })
+        }
+        // The image-attachment import picker is presented from
+        // `LibraryViewModel` via the `.imageImportRequested` /
+        // `.imageImportCompleted` notification pair — see
+        // `ImageImportNotifications.swift`. It deliberately bypasses
+        // the editor entirely so the editor's cover doesn't share a
+        // presentation lineage with the picker.
+        .onChange(of: viewModel.isShowingAudioFilePicker) { _, newValue in
+            guard newValue else { return }
+            ModalPresenter.shared.present(.sheet(
+                id: "editor.audioFilePicker",
+                onDidDismiss: {
+                    Task { @MainActor in viewModel.isShowingAudioFilePicker = false }
+                }
+            ) {
+                AudioFilePicker(viewModel: viewModel) {
+                    ModalPresenter.shared.dismiss()
+                }
+            })
+        }
+        .onChange(of: isShowingCoverPicker) { _, newValue in
+            guard newValue else { return }
+            ModalPresenter.shared.present(.sheet(
+                id: "editor.coverPicker",
+                onDidDismiss: {
+                    Task { @MainActor in isShowingCoverPicker = false }
+                }
+            ) {
+                CoverTonePickerView(notebook: viewModel.notebook) {
+                    ModalPresenter.shared.dismiss()
+                }
+                .presentationDetents([.medium])
+            })
+        }
+        .onChange(of: viewModel.isShowingExportSheet) { _, newValue in
+            guard newValue else { return }
+            ModalPresenter.shared.present(.sheet(
+                id: "editor.export",
+                onDidDismiss: {
+                    Task { @MainActor in viewModel.isShowingExportSheet = false }
+                }
+            ) {
+                ExportOptionsView(
+                    notebook: viewModel.notebook,
+                    pages: viewModel.pages,
+                    currentIndex: viewModel.currentPageIndex
+                ) {
+                    ModalPresenter.shared.dismiss()
+                }
+            })
         }
         .statusBarHidden(viewModel.isFullScreen || viewModel.isFocusMode)
         .persistentSystemOverlays(viewModel.isFocusMode ? .hidden : .automatic)
         .onAppear {
             startUndoStateTimer()
-            // Library "Share as PDF…" deep-link: present the export sheet immediately.
-            // Reset the deep-link flag on the next runloop tick so the publisher
-            // mutation doesn't land in this same view-update transaction.
-            if deepLink.pendingExport {
-                DispatchQueue.main.async { deepLink.pendingExport = false }
-                viewModel.isShowingExportSheet = true
-            }
-            // "+ new notebook → editor" hand-off. When the library
-            // marks this notebook for auto-customise, slide the
-            // panel down immediately and request name-field focus
-            // so the keyboard is up the moment the user lands.
-            // Consumed via the one-shot registry so re-opening
-            // the same notebook later doesn't repeat the panel.
-            if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
-                viewModel.pendingCustomiseNameFocus = true
-                withAnimation(.inkSpring(InkSpring.smooth)) {
-                    viewModel.isCustomisePanelOpen = true
+            // All published-property writes below are deferred to the
+            // next runloop tick. `.onAppear` can land inside the same
+            // view-update transaction that's still resolving the
+            // current body, and synchronous `@Published` mutations
+            // there fire SwiftUI's "Publishing changes from within
+            // view updates is not allowed" warning. Deferring with
+            // `DispatchQueue.main.async` clears the transaction.
+            DispatchQueue.main.async {
+                // Library "Share as PDF…" deep-link.
+                if deepLink.pendingExport {
+                    deepLink.pendingExport = false
+                    viewModel.isShowingExportSheet = true
                 }
-            } else {
-                // Item 1 — surface the floating Customise pill iff this is a
-                // freshly-created notebook we haven't already pilled this session.
-                withAnimation(.inkSpring(InkSpring.smooth)) {
-                    viewModel.markCustomisePillIfFresh()
+                // "+ new notebook → editor" hand-off — auto-open the
+                // Customise panel + request name-field focus. Consumed
+                // via the one-shot registry so re-opening doesn't repeat.
+                if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
+                    viewModel.pendingCustomiseNameFocus = true
+                    withAnimation(.inkSpring(InkSpring.smooth)) {
+                        viewModel.isCustomisePanelOpen = true
+                    }
+                } else {
+                    // Surface the floating Customise pill iff this is a
+                    // freshly-created notebook we haven't pilled this session.
+                    withAnimation(.inkSpring(InkSpring.smooth)) {
+                        viewModel.markCustomisePillIfFresh()
+                    }
                 }
-            }
-            // Search deep-link: scroll to the page that produced the
-            // result. Resolves the pageId to its current index in the
-            // notebook's pages array (reordering means the same page
-            // id can sit at a different index than when it was indexed).
-            if let pageId = pendingDeepLinkPageId,
-               let idx = viewModel.pages.firstIndex(where: { $0.id == pageId }) {
-                pendingDeepLinkPageId = nil
-                viewModel.pendingScrollPageIndex = idx
+                // Search deep-link: scroll to the result's page index
+                // (pages may have reordered since indexing).
+                if let pageId = pendingDeepLinkPageId,
+                   let idx = viewModel.pages.firstIndex(where: { $0.id == pageId }) {
+                    pendingDeepLinkPageId = nil
+                    viewModel.pendingScrollPageIndex = idx
+                }
             }
         }
         .task {
@@ -573,27 +628,41 @@ struct EditorView: View {
         .animation(.inkSpring(InkSpring.smooth), value: viewModel.isCustomisePanelOpen)
         .animation(.inkSpring(InkSpring.fade),   value: viewModel.isCustomisePillVisible)
         .onDisappear {
+            #if DEBUG
+            print("[ImageInsert] 3. EditorView.onDisappear fired — editor is being torn down")
+            #endif
             undoTimer?.invalidate()
             undoTimer = nil
             viewModel.prepareForDismissal()
         }
+        // Notification-driven @Published writes are deferred to the
+        // next runloop tick. Keyboard show/hide and ⌘W close fire
+        // through the same observer queue as the active view-update
+        // transaction, and a synchronous `viewModel.foo = …` here
+        // produces the "Publishing changes from within view updates"
+        // warning. Repeated occurrences during keyboard animations
+        // were the leading suspect for the SIGKILL crash.
         .onReceive(
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
         ) { note in
-            handleKeyboardWillShow(note)
+            Task { @MainActor in handleKeyboardWillShow(note) }
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
         ) { _ in
-            withAnimation(.inkSpring(InkSpring.smooth)) {
-                viewModel.keyboardVisibleHeight = 0
+            Task { @MainActor in
+                withAnimation(.inkSpring(InkSpring.smooth)) {
+                    viewModel.keyboardVisibleHeight = 0
+                }
             }
         }
         // ⌘W / ⌘⇧E / ⌘P / ⌘N / ⌘F come from the WindowGroup .commands modifier
         // (see InkCommands) and arrive as notifications.
         .onReceive(NotificationCenter.default.publisher(for: .inkCommandCloseNotebook)) { _ in
-            viewModel.prepareForDismissal()
-            onDismiss()
+            Task { @MainActor in
+                viewModel.prepareForDismissal()
+                onDismiss()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .inkCommandExport)) { _ in
             exportPDF()
@@ -857,13 +926,17 @@ struct EditorView: View {
             CameraPicker { image in
                 Task { await coord.handleCameraImage(image) }
             } onCancel: {
-                viewModel.activeMediaSource = nil
+                // UIKit delegate fires synchronously inside the SwiftUI
+                // dismiss path; defer the @Published mutation to the
+                // next runloop tick to break the "publishing changes
+                // from within view updates" cycle.
+                Task { @MainActor in viewModel.activeMediaSource = nil }
             }
         case .scan:
             DocumentScannerPicker { scan in
                 Task { await coord.handleScannedDocument(scan) }
             } onCancel: {
-                viewModel.activeMediaSource = nil
+                Task { @MainActor in viewModel.activeMediaSource = nil }
             }
         }
     }
