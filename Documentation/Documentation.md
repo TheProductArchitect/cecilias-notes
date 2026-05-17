@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Ink** — local-first iPad note-taking app. Swift/SwiftUI, targeting iOS/iPadOS 17+. No backend, no accounts. All data stored on-device via SwiftData; optional iCloud Drive sync mirrors the Notebooks asset directory only (the SQLite store stays local).
+**Cecilia's Notes** — local-first iPad note-taking app. Swift/SwiftUI, targeting iOS/iPadOS 17+. No backend, no accounts. All data stored on-device via SwiftData; optional iCloud Drive sync mirrors the Notebooks asset directory only (the SQLite store stays local).
 
 ## Build & Test
 
@@ -12,18 +12,18 @@ This is a pure Swift package / Xcode project. There is no `package.json`, no Mak
 
 ```bash
 # Build (simulator)
-xcodebuild -scheme Ink -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' build
+xcodebuild -scheme CeciliasNotes -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' build
 
 # Run all unit tests
-xcodebuild test -scheme Ink -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'
+xcodebuild test -scheme CeciliasNotes -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)'
 
 # Run a single test class
-xcodebuild test -scheme Ink -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' \
-  -only-testing:InkTests/StorageServiceTests
+xcodebuild test -scheme CeciliasNotes -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' \
+  -only-testing:CeciliasNotesTests/StorageServiceTests
 
 # Run a single test method
-xcodebuild test -scheme Ink -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' \
-  -only-testing:InkTests/StorageServiceTests/test_deletePage_renumbers_subsequent_pages
+xcodebuild test -scheme CeciliasNotes -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' \
+  -only-testing:CeciliasNotesTests/StorageServiceTests/test_deletePage_renumbers_subsequent_pages
 ```
 
 ## Architecture
@@ -31,7 +31,7 @@ xcodebuild test -scheme Ink -destination 'platform=iOS Simulator,name=iPad Pro 1
 ### Data flow
 
 ```
-InkApp (root)
+CeciliasNotesApp (root)
   └── environmentObject: ThemeManager   — theme state + UIWindow overrideUserInterfaceStyle
   └── environmentObject: StorageService — singleton, all SwiftData reads/writes
   └── environmentObject: CloudSyncManager — iCloud Drive mirroring state
@@ -61,18 +61,18 @@ All tokens live in `DesignSystem/` and are consumed as Swift extensions — neve
 
 | File | What it owns |
 |---|---|
-| `InkColors.swift` | `UIColor` dynamic-provider tokens + `Color` bridge. Use `UIColor` variants in UIKit/PencilKit contexts, `Color` variants in SwiftUI. |
-| `InkTypography.swift` | `Font` + `UIFont` extensions. 10 named tokens (`.inkDisplay` → `.inkMono`). |
-| `InkSpacing.swift` | `Ink.Spacing.*` and `Ink.Radius.*` as `CGFloat` constants. |
-| `InkAnimations.swift` | `InkSpring.*` presets + `.inkAnimation(_:value:)` modifier. All animations must go through these — they automatically fall back to crossfade when Reduce Motion is on. |
-| `InkComponents.swift` | `InkButton`, `InkTextField`, `.inkCard()`, `InkBadge`, `InkDivider`, `InkEmptyState`. |
-| `ThemeManager.swift` | `InkTheme` enum + `ThemeManager` (`@AppStorage`-backed, applies via `UIWindow.overrideUserInterfaceStyle` on all connected scenes). |
+| `CeciliasNotesColors.swift` | `UIColor` dynamic-provider tokens + `Color` bridge. Use `UIColor` variants in UIKit/PencilKit contexts, `Color` variants in SwiftUI. |
+| `CeciliasNotesTypography.swift` | `Font` + `UIFont` extensions. 10 named tokens (`.inkDisplay` → `.inkMono`). |
+| `CeciliasNotesSpacing.swift` | `CeciliasNotes.Spacing.*` and `CeciliasNotes.Radius.*` as `CGFloat` constants. |
+| `CeciliasNotesAnimations.swift` | `CeciliasNotesSpring.*` presets + `.inkAnimation(_:value:)` modifier. All animations must go through these — they automatically fall back to crossfade when Reduce Motion is on. |
+| `CeciliasNotesComponents.swift` | `CeciliasNotesButton`, `CeciliasNotesTextField`, `.inkCard()`, `CeciliasNotesBadge`, `CeciliasNotesDivider`, `CeciliasNotesEmptyState`. |
+| `ThemeManager.swift` | `CeciliasNotesTheme` enum + `ThemeManager` (`@AppStorage`-backed, applies via `UIWindow.overrideUserInterfaceStyle` on all connected scenes). |
 
 ### Visual rules (enforced everywhere, not just in the design system)
 
 - **Shadows:** forbidden except one — the page boundary in the editor (`CALayer` shadow: offset `0,1`, radius `4`, opacity `0.08`, colour black).
 - **Borders:** always `0.5pt` hairlines. The sole exception is the 2pt accent ring on the selected theme card in Settings.
-- **Animations:** always spring-based via `InkSpring.*`. Linear and easing animations are prohibited.
+- **Animations:** always spring-based via `CeciliasNotesSpring.*`. Linear and easing animations are prohibited.
 - **Icons:** SF Symbols only, weight `.medium`. No custom image assets.
 - **Backdrop blur:** used in exactly one place — the editor toolbar (`UIVisualEffectView` with `.systemUltraThinMaterial`).
 
@@ -86,7 +86,7 @@ All tokens live in `DesignSystem/` and are consumed as Swift extensions — neve
 
 ### Library (Stage 3)
 
-`Features/Library/` is the app's home screen. Entry point: `LibraryView` → `RootView` → `InkApp`.
+`Features/Library/` is the app's home screen. Entry point: `LibraryView` → `RootView` → `CeciliasNotesApp`.
 
 **ViewModel pattern:** `LibraryViewModel` is the single source of truth for all Library state. Views are purely declarative — no direct `StorageService` calls from any view. After every mutation the ViewModel calls `refresh()` to re-fetch from `StorageService`.
 
@@ -121,7 +121,7 @@ LibraryView  (NavigationSplitView, sidebar never collapses)
 - `SubjectRowView` and `AllNotesRow` are `.dropDestination` targets — decode `NotebookTransferID` and call `viewModel.moveNotebook(id:to:)`
 - Grid reorder (manual sort only) uses `.draggable` with a ghost preview at 60% opacity
 
-**Animations:** all card transitions use `.scale(scale: 0.85).combined(with: .opacity)`. Multi-select checkboxes spring in via `.transition(.scale.combined(with: .opacity))`. All `withAnimation` calls use `InkSpring.smooth` or `InkSpring.snappy`.
+**Animations:** all card transitions use `.scale(scale: 0.85).combined(with: .opacity)`. Multi-select checkboxes spring in via `.transition(.scale.combined(with: .opacity))`. All `withAnimation` calls use `CeciliasNotesSpring.smooth` or `CeciliasNotesSpring.snappy`.
 
 ### Editor (Stage 4) — pencil latency is paramount
 
@@ -156,7 +156,7 @@ EditorView  (ZStack — pure SwiftUI shell over a UIKit canvas)
 - Save serialises and persists on the main actor (fast). Thumbnail regeneration is dispatched to a `Task.detached(priority: .utility)`.
 - `saveStatus: SaveStatus` published state drives the indicator: `.idle → .saving → .saved (1s fade) → .idle` or `.error (persists)`.
 
-**Tool palette state** lives in `EditorViewModel.selectedTool: InkTool`. The `InkTool` enum has associated values (colour, width, opacity per case). Mapping to `PKTool` happens once per change in `CanvasContainerView.updateUIView` — the resulting `PKInkingTool` / `PKEraserTool` / `PKLassoTool` is set on `canvasView.tool`. Ruler is `canvasView.isRulerActive`.
+**Tool palette state** lives in `EditorViewModel.selectedTool: CeciliasNotesTool`. The `CeciliasNotesTool` enum has associated values (colour, width, opacity per case). Mapping to `PKTool` happens once per change in `CanvasContainerView.updateUIView` — the resulting `PKInkingTool` / `PKEraserTool` / `PKLassoTool` is set on `canvasView.tool`. Ruler is `canvasView.isRulerActive`.
 
 **Tool palette position** persisted to `UserDefaults` under `ink.toolPalette.position` as a `CGPoint` (encoded). Default: right edge, vertically centred.
 
@@ -193,7 +193,7 @@ EditorView
           ├── TextBlockOverlayView (UIHostingController host, SwiftUI)
           │   ├── Color.clear  (creates blocks on tap in text mode)
           │   └── Per-block VStack
-          │       ├── TextBlockView  (UIViewRepresentable → InkTextView)
+          │       ├── TextBlockView  (UIViewRepresentable → CeciliasNotesTextView)
           │       │   └── RichTextToolbar  (inputAccessoryView, 44pt)
           │       └── ResizeHandlesView  (8 handles, .selected state only)
           └── TextModeGestureController  (transparent UIView, hitTest gate)
@@ -210,7 +210,7 @@ EditorView
 - `.editing` → Escape or toolbar dismiss → `.idle`
 - Tapping outside any block calls `deselectAll()` → all blocks back to `.idle`
 
-**InkTextView** (UITextView subclass) adds `UIKeyCommand` for Cmd+B/I/U/K and Escape without putting the coordinator in the responder chain.
+**CeciliasNotesTextView** (UITextView subclass) adds `UIKeyCommand` for Cmd+B/I/U/K and Escape without putting the coordinator in the responder chain.
 
 **RichTextAttributes** — all attribute toggles. Pure functions on `NSMutableAttributedString`. Supports: bold, italic, underline, H1/H2/H3, bullet list, inline code, blockquote, hyperlink. Each toggle queries current state and flips it — no separate "is active" tracking needed at the call site.
 
@@ -336,7 +336,7 @@ EditorView
 **`AudioAnnotationPinView`**:
 - 32pt circle, SF Symbol `waveform` inside.
 - Idle: `inkAccent` fill, white icon.
-- Playing: pulsing ring animation (`scale(1.4)` + `opacity(0)` loop at 1.2s) — one `InkSpring.smooth` loop.
+- Playing: pulsing ring animation (`scale(1.4)` + `opacity(0)` loop at 1.2s) — one `CeciliasNotesSpring.smooth` loop.
 - Tap → shows `AudioPlayerView` as a `.popover`.
 
 **`AudioPlayerView` (popover, 320×280pt)**:
@@ -399,7 +399,7 @@ EditorView
 5. **Audio markers** — `includeTranscriptions`: microphone SF Symbol at pin position + horizontal rule + transcript in `.inkCaption` style as footnote.
 6. **Page numbers** — `"\(index+1) / \(total)"` centred 16pt from bottom edge.
 
-**Cover page** (if `includeCoverPage`): full page with `coverColorHex` background, cover texture overlay (same `CoverTextureCanvas` logic), notebook title in `.inkDisplay` centred, subject name in `.inkTitle2` `.inkTextSecondary`, export date in `.inkFootnote` `.inkTextTertiary`, "Ink" wordmark bottom-right in `.inkCaption` `.inkTextTertiary`.
+**Cover page** (if `includeCoverPage`): full page with `coverColorHex` background, cover texture overlay (same `CoverTextureCanvas` logic), notebook title in `.inkDisplay` centred, subject name in `.inkTitle2` `.inkTextSecondary`, export date in `.inkFootnote` `.inkTextTertiary`, "Cecilia's Notes" wordmark bottom-right in `.inkCaption` `.inkTextTertiary`.
 
 **`ExportOptionsView`** (`.medium` detent sheet):
 - **Page range**: segmented `[All][Current][Custom]`. Custom reveals text field (`"e.g. 1–5, 8, 12"`) with real-time validation (`.inkBorderDestructive` + error label for invalid input).
@@ -437,7 +437,7 @@ LibraryView  (gear toolbar button → fullScreenCover)
   └── SettingsView  (NavigationSplitView, 220pt sidebar + detail column)
       ├── Sidebar  (SettingsSection.allCases, List)
       └── Detail (section-specific view, driven by selectedSection)
-          ├── AppearanceSettingsView   ThemePickerView (ForEach InkTheme.allCases)
+          ├── AppearanceSettingsView   ThemePickerView (ForEach CeciliasNotesTheme.allCases)
           ├── PencilSettingsView       double-tap / pressure pills / smoothing slider / toggles
           ├── NewPagesSettingsView     page size / template horizontal scroll / auto-add
           ├── AudioSettingsView        locale picker sheet / auto-transcribe / quality
@@ -450,7 +450,7 @@ LibraryView  (gear toolbar button → fullScreenCover)
 
 **`SettingsSection` enum** — `allCases` drives both the sidebar list and the detail `switch`. Adding a section only requires a new case — no structural changes to `SettingsView`.
 
-**`ThemePickerView`** — `ForEach(InkTheme.allCases)`. Adding a theme requires only a new `InkTheme` case with four preview colours; `ThemePickerView` gets the new card automatically.
+**`ThemePickerView`** — `ForEach(CeciliasNotesTheme.allCases)`. Adding a theme requires only a new `CeciliasNotesTheme` case with four preview colours; `ThemePickerView` gets the new card automatically.
 
 **`ThemePreviewCard`** (160×200pt):
 - Background: `theme.previewBackground`.
@@ -483,7 +483,7 @@ LibraryView  (gear toolbar button → fullScreenCover)
 
 **Pencil hover preview** — only shown if `UIDevice.current.userInterfaceIdiom == .pad` (checked via `SettingsViewModel.supportsHoverPreview`).
 
-**Rate Ink** — `SKStoreReviewController.requestReview(in:)` called only if `notebookCount >= 3` AND the current version hasn't been asked before (persisted under `ink.review.requestedVersion`).
+**Rate Cecilia's Notes** — `SKStoreReviewController.requestReview(in:)` called only if `notebookCount >= 3` AND the current version hasn't been asked before (persisted under `ink.review.requestedVersion`).
 
 **`KeyboardShortcutsView`** — placeholder populated with common shortcuts; Stage 10 can add to this list without structural changes.
 
@@ -502,8 +502,8 @@ Named moments only — no raw generator usage anywhere else: `notebookCreated()`
 **`A11y` (Accessibility extensions)** — `Core/Extensions/AccessibilityExtensions.swift`. All accessibility label/hint strings live here as static computed strings (`A11y.notebookLabel(...)`, `A11y.canvasLabel(...)`, `A11y.toolLabel(...)`, `A11y.audioLabel(...)`, `A11y.mediaLabel(...)`). No literal accessibility strings appear in any view. `inkBorderWidth(base:)` and `inkSecondaryText()` View helpers respect `UIAccessibility.isDarkerSystemColorsEnabled` (high contrast). `inkTransition(_:)` collapses any transition to opacity-only when Reduce Motion is on.
 
 **Animation rules:**
-- Every `.linear` and `.easeInOut` audited and replaced with `InkSpring.*` (or `easeOut(duration: 1.2).repeatForever` for the audio-pin pulse, where exact loop timing is required).
-- Tool-switch indicator: `matchedGeometryEffect(id: "activeToolIndicator", in: toolNamespace)` slides the 32pt accent circle between tools using `InkSpring.precise`.
+- Every `.linear` and `.easeInOut` audited and replaced with `CeciliasNotesSpring.*` (or `easeOut(duration: 1.2).repeatForever` for the audio-pin pulse, where exact loop timing is required).
+- Tool-switch indicator: `matchedGeometryEffect(id: "activeToolIndicator", in: toolNamespace)` slides the 32pt accent circle between tools using `CeciliasNotesSpring.precise`.
 - New / deleted notebook cards: `.scale(scale: 0.85).combined(with: .opacity)`.
 - All `withAnimation(...)` calls go through `.inkSpring(...)` which auto-falls back to crossfade under Reduce Motion.
 
@@ -517,21 +517,21 @@ Named moments only — no raw generator usage anywhere else: `notebookCreated()`
 
 `StorageService.scheduleSpotlightReindex(for:)` is called from `updateNotebook(...)`; `removeNotebook(id:)` from `deleteNotebook(...)`.
 
-`InkApp` handles two launch paths into `DeepLinkRouter`:
+`CeciliasNotesApp` handles two launch paths into `DeepLinkRouter`:
 - `.onContinueUserActivity(CSSearchableItemActionType)` — Spotlight tap.
 - `.onOpenURL` — `ink://open/{uuid}`, `ink://library`, `ink://settings`.
 
 `LibraryView` observes `DeepLinkRouter.openNotebookId` / `openSettings` and routes to the editor / settings sheet.
 
-**Widgets** — `InkWidget/` (separate target). Two kinds:
-- `LastOpenedNotebookWidget` (small): cover colour + texture + title + page count + "Ink" wordmark. `widgetURL` deep-links to `ink://open/{id}`.
+**Widgets** — `CeciliasNotesWidget/` (separate target). Two kinds:
+- `LastOpenedNotebookWidget` (small): cover colour + texture + title + page count + "Cecilia's Notes" wordmark. `widgetURL` deep-links to `ink://open/{id}`.
 - `RecentNotebooksWidget` (medium): small layout on the left + 3-row recent list on the right with `Link(destination:)` per row.
 
 Data path: the main app writes `ink_widget_data.json` ([NotebookSummary]) to the App Group container after every notebook save (debounced 2 s via `WidgetDataWriter`). The widget reads via `WidgetDataWriter.read()` — no SwiftData dependency. Timeline reload every 15 minutes.
 
 App Group: `group.com.ink.app` (change `WidgetDataWriter.appGroup` if your bundle id differs).
 
-**App icon system** — `DesignSystem/InkIconRenderer.swift` + `Resources/AppIcon.svg` (master). Programmatic Core Graphics rendering from a 100×100 reference grid: ink-drop teardrop body forms the stem of a lowercase "i", accent circle above forms the dot. Three themes (`light`, `dark`, `tinted`); the tinted variant uses `.systemBackground`/`.label`/`.tintColor` for iOS 18+ system tinting. `IconPreviewView` (DEBUG, surfaced in `StyleGuideView`) renders the icon at 16/32/64/128/512pt in light + dark + tinted side-by-side.
+**App icon system** — `DesignSystem/CeciliasNotesIconRenderer.swift` + `Resources/AppIcon.svg` (master). Programmatic Core Graphics rendering from a 100×100 reference grid: ink-drop teardrop body forms the stem of a lowercase "i", accent circle above forms the dot. Three themes (`light`, `dark`, `tinted`); the tinted variant uses `.systemBackground`/`.label`/`.tintColor` for iOS 18+ system tinting. `IconPreviewView` (DEBUG, surfaced in `StyleGuideView`) renders the icon at 16/32/64/128/512pt in light + dark + tinted side-by-side.
 
 The renderer's `drawInkForm(in:theme:)` is the programmatic mirror of `Resources/AppIcon.svg`. Keep them synchronised.
 
@@ -540,15 +540,15 @@ The renderer's `drawInkForm(in:theme:)` is the programmatic mirror of `Resources
 **App Store metadata files** — `Resources/`:
 - `Info.plist` — privacy usage descriptions (mic, speech, photos, camera), `UIDeviceFamily=[2]` (iPad-only), `CFBundleURLTypes` with scheme `ink`.
 - `PrivacyInfo.xcprivacy` — declares no tracking, no data collection, plus required-reason API declarations for `UserDefaults` (CA92.1) and `FileTimestamp` (C617.1).
-- `Ink.entitlements` — iCloud Drive (`CloudDocuments`) for container `iCloud.com.ink.app`, App Group `group.com.ink.app`.
-- `InkWidget/InkWidget.entitlements` — App Group only.
+- `CeciliasNotes.entitlements` — iCloud Drive (`CloudDocuments`) for container `iCloud.com.ink.app`, App Group `group.com.ink.app`.
+- `CeciliasNotesWidget/CeciliasNotesWidget.entitlements` — App Group only.
 
 **Required Xcode IDE setup** (these can't be created from Swift files):
-1. Add a Widget Extension target named `InkWidget` and add the four `InkWidget/*.swift` files to it.
+1. Add a Widget Extension target named `CeciliasNotesWidget` and add the four `CeciliasNotesWidget/*.swift` files to it.
 2. Add `WidgetDataWriter.swift` (specifically the `NotebookSummary` struct) to both targets via Target Membership.
 3. Enable "App Groups" capability on both targets and check `group.com.ink.app`.
 4. Enable "iCloud" → "iCloud Documents" on the main target with container `iCloud.com.ink.app`.
-5. Run an asset-generation pass to populate `Assets.xcassets/AppIcon.appiconset` from `InkIconRenderer.assetSizes` (a small one-shot CLI script can call `renderer.render(...)` and write each PNG).
+5. Run an asset-generation pass to populate `Assets.xcassets/AppIcon.appiconset` from `CeciliasNotesIconRenderer.assetSizes` (a small one-shot CLI script can call `renderer.render(...)` and write each PNG).
 
 **Performance** — unverified by Instruments in this codebase pass. Profiling targets stated in the spec:
 - Library scrolling 60 fps with 50 notebooks: thumbnails are loaded as `Data` from the SwiftData record, no on-the-fly file I/O — already meets the bar at typical sizes. If this regresses with > 200 notebooks: add a `NSCache<NSUUID, UIImage>` 50-image cap.

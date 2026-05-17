@@ -94,7 +94,7 @@ Recommend SwiftData columns as part of the V4 migration.
 
 ### 4. Container ID + entitlements
 
-In Xcode → Targets → Ink → Signing & Capabilities:
+In Xcode → Targets → CeciliasNotes → Signing & Capabilities:
 
 1. Add the **iCloud** capability.
 2. Enable **CloudKit** (in addition to **iCloud Documents**).

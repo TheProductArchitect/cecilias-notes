@@ -1,19 +1,19 @@
 # AppIcon.appiconset
 
 The PNG files referenced in `Contents.json` are produced from
-`DesignSystem/InkIconRenderer.swift`. They are **not** committed to the
+`DesignSystem/CeciliasNotesIconRenderer.swift`. They are **not** committed to the
 repository — generating them requires UIKit at build time.
 
 ## How to populate
 
 Run this once after creating the Xcode project, from the simulator host or any
-iOS target that links `InkIconRenderer`:
+iOS target that links `CeciliasNotesIconRenderer`:
 
 ```swift
 import UIKit
-let renderer = InkIconRenderer()
+let renderer = CeciliasNotesIconRenderer()
 let outDir = URL(fileURLWithPath: "/path/to/Resources/Assets.xcassets/AppIcon.appiconset")
-for (px, name) in InkIconRenderer.assetSizes {
+for (px, name) in CeciliasNotesIconRenderer.assetSizes {
     let img = renderer.render(
         size: CGSize(width: px, height: px),
         theme: .light,

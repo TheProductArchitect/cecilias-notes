@@ -20,9 +20,14 @@ paragraphs are preferred over prose; this is a reference, not a tutorial.
   telemetry. Sync goes through the user's own iCloud account. The
   Foundation Models inference runs on-device.
 
-Internal code keeps the original `Ink` name for identifiers, file
-paths, the `ink://` URL scheme, the `iCloud.com.wave.venu.Ink`
-CloudKit container, and the `group.com.wave.venu.Ink` App Group.
+Internal Swift identifiers, file paths, target names, and the Xcode
+module are all named `CeciliasNotes`. The original `Ink` name is
+retained only where it is a stable identifier with persistent meaning
+outside the codebase: the `ink://` URL scheme, the
+`iCloud.com.wave.venu.Ink` CloudKit container, the
+`group.com.wave.venu.Ink` App Group, `Application Support/Ink/` as
+the on-disk data root, `ink.*` UserDefaults keys, and the schema
+family (`InkSchemaV1`…`V5`, renamed atomically with the next V6 bump).
 User-facing copy is "Cecilia's Notes".
 
 ---
@@ -237,7 +242,7 @@ These are non-negotiable. Violations should be flagged with
 ## Widget architecture
 
 - **App Group:** `group.com.wave.venu.Ink`. Shared between the main
-  app and the `InkWidget` extension target.
+  app and the `CeciliasNotesWidget` extension target.
 - **Written by the main app:**
   - `ink_widget_data.json` — the recents snapshot. Written by
     `WidgetDataWriter` (debounced via
@@ -248,7 +253,7 @@ These are non-negotiable. Violations should be flagged with
   - `app.launch.lastOpenDate` — splash-skip anchor, written by
     `AppGroupLaunchTracker.markOpened` on every launch.
 - **Read by the widget extension:**
-  - `InkWidgetProvider` reads the recents JSON on every timeline
+  - `CeciliasNotesWidgetProvider` reads the recents JSON on every timeline
     request (default 15-minute refresh, plus explicit reloads from
     the main app's save path).
   - Each widget's `BrandPossessive` and `GhostLetter` views read
@@ -298,12 +303,12 @@ should address. None are bugs; all are explicit deferrals.
 ## File layout
 
 ```
-Ink/Ink/                    Main app target
+CeciliasNotes/CeciliasNotes/                    Main app target
 ├── App/                    @main, RootView, DeepLinkRouter
 ├── Core/
 │   ├── Models/             @Model classes + InkSchemaV4
 │   ├── Services/           StorageService, SearchIndexService, …
-│   ├── Extensions/         ModelContainer+Ink, etc.
+│   ├── Extensions/         ModelContainer+CeciliasNotes, etc.
 │   └── Utilities/          TagValidator, NameFormatter, …
 ├── Features/
 │   ├── Library/            Home grid, search, ask sheet
@@ -315,6 +320,6 @@ Ink/Ink/                    Main app target
 ├── DesignSystem/           Colours, typography, components
 └── Resources/              Info.plist, entitlements, AppIcons, fonts
 
-Ink/InkWidget/              Widget extension target
+CeciliasNotes/CeciliasNotesWidget/              Widget extension target
 └── NewNoteWidget.swift     The five widget configurations
 ```

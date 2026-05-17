@@ -1,7 +1,7 @@
-/* Ink — Localizable Strings */
+/* Cecilia's Notes — Localizable Strings */
 
 /* General */
-"app.name" = "Ink";
+"app.name" = "Cecilia's Notes";
 
 /* Library */
 "library.title" = "Library";

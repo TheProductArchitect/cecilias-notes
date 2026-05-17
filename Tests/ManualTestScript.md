@@ -1,14 +1,14 @@
-# Ink — Manual End-to-End Test Script
+# Cecilia's Notes — Manual End-to-End Test Script
 
 This document is a tester's checklist for every major user-facing
-workflow in Ink. Walk through the sections in order on a fresh install
+workflow in Cecilia's Notes. Walk through the sections in order on a fresh install
 of the app. Each test is short (≤8 steps) and produces a verifiable
 observable outcome. Tick the **Pass / Fail / Notes** field at the end of
 each test as you go.
 
 How to run a fresh-install pass:
 
-1. On the device or simulator, delete the existing Ink build.
+1. On the device or simulator, delete the existing Cecilia's Notes build.
 2. Reset the simulator (or sign out of iCloud on a device) so iCloud
    Drive shows no `~/iCloud/Ink/` directory.
 3. Build and install fresh.
@@ -1086,7 +1086,7 @@ open.
 **Pass / Fail / Notes:** [ ]
 
 ### Test 14.3 — System-level iCloud disabled
-**Setup:** Sign out of iCloud at the OS level. Reopen Ink.
+**Setup:** Sign out of iCloud at the OS level. Reopen Cecilia's Notes.
 **Steps:**
 1. Settings → iCloud row.
 **Expected:**
@@ -1187,7 +1187,7 @@ name, editor opens.
 ### Test 18.1 — Reduce Motion: no animations
 **Setup:** iOS Settings → Accessibility → Reduce Motion ON.
 **Steps:**
-1. Open Ink, walk through onboarding, library, editor.
+1. Open Cecilia's Notes, walk through onboarding, library, editor.
 **Expected:**
 - No scale / fade animations.
 - Transitions are instant (or near-instant easeInOut).
@@ -1208,7 +1208,7 @@ name, editor opens.
 ### Test 18.3 — Dynamic Type
 **Setup:** iOS Settings → Display → Larger Text → second-largest size.
 **Steps:**
-1. Open Ink, scan every chrome surface.
+1. Open Cecilia's Notes, scan every chrome surface.
 **Expected:**
 - Toolbar / settings / library labels scale up.
 - Canvas content does NOT scale (drawings are not text).
@@ -1218,7 +1218,7 @@ name, editor opens.
 ### Test 18.4 — Increase Contrast
 **Setup:** iOS Settings → Accessibility → Increase Contrast ON.
 **Steps:**
-1. Open Ink.
+1. Open Cecilia's Notes.
 **Expected:**
 - Card borders darken visibly.
 - All text remains readable.

@@ -1,4 +1,4 @@
-# Ink — Audit Report
+# Cecilia's Notes — Audit Report
 
 **Date:** 2026-05-07
 **Auditor:** Claude Code
@@ -16,7 +16,7 @@ The following commands and verifications were *not* directly executable here:
 - VoiceOver, Dynamic Type, High Contrast, Reduce Motion behavioural verification (needs simulator)
 - Spotlight, deep-link launches (needs running app)
 - Instruments memory / leaks profiling (needs running app)
-- Asset-catalog PNG generation from `InkIconRenderer` (needs UIKit at build time)
+- Asset-catalog PNG generation from `CeciliasNotesIconRenderer` (needs UIKit at build time)
 
 All checklist items requiring those were verified by **static source analysis**
 and are flagged "**unverifiable in this environment**" where the source check
@@ -72,7 +72,7 @@ sources can't be turned into a runnable app until the user creates the
 ## Fixes applied during the audit
 
 ### Build & compile (Section 1)
-1. **`InkWidget/RecentNotebooksWidget.swift:53`** — Force-unwrap `URL(string:)!` replaced with `if let url = URL(...)` guard.
+1. **`CeciliasNotesWidget/RecentNotebooksWidget.swift:53`** — Force-unwrap `URL(string:)!` replaced with `if let url = URL(...)` guard.
 
 ### Design system (Section 2)
 2. **`Features/Settings/Sections/AppearanceSettingsView.swift:81`** — Removed `.shadow(...)` on theme card (third shadow in the app, only page boundary is allowed).
@@ -82,7 +82,7 @@ sources can't be turned into a runnable app until the user creates the
 ### Library (Section 5)
 5. **`Features/Library/Grid/NotebookCardView.swift:217–221`** — "Share as PDF…" was `.disabled(true)` stub; now calls `viewModel.requestExport(for:)` which routes through `DeepLinkRouter.pendingExport`.
 6. **`Features/Library/LibraryViewModel.swift`** — Added `pendingExportNotebookId` published property + `requestExport(for:)` method.
-7. **`App/InkApp.swift`** — `DeepLinkRouter` gained `pendingExport: Bool` flag.
+7. **`App/CeciliasNotesApp.swift`** — `DeepLinkRouter` gained `pendingExport: Bool` flag.
 8. **`Features/Library/LibraryView.swift`** — `onChange(of: viewModel.pendingExportNotebookId)` opens the editor with the export sheet pre-armed.
 9. **`Features/Editor/EditorView.swift`** — `onAppear` checks `deepLink.pendingExport` and presents `ExportOptionsView` immediately if set.
 
@@ -131,13 +131,13 @@ sources can't be turned into a runnable app until the user creates the
 - Media: 4 insertion paths, ImageProcessingService actor, transform handles, inline crop (zero third-party deps), now backed by `MediaImageCache`
 - Audio: AVAudioEngine + AVAudioFile (AAC), vDSP_rmsqv waveform, on-device transcription with `requiresOnDeviceRecognition = true` on every request, locale + quality now driven by Settings
 - PDF export: actor pipeline, vector templates, searchable text via `NSAttributedString.draw`, Y-flip, dpi scale; Share + Print now produce real PDFs
-- Settings: 7 sections; theme picker uses `ForEach(InkTheme.allCases)`; locale picker shows only on-device locales; storage metrics live; iCloud confirmation alerts; rate-app gate (3+ notebooks, once per version)
+- Settings: 7 sections; theme picker uses `ForEach(CeciliasNotesTheme.allCases)`; locale picker shows only on-device locales; storage metrics live; iCloud confirmation alerts; rate-app gate (3+ notebooks, once per version)
 - Haptics: 13 named moments, 80 ms rate limit, gated on `ink.haptics.{ui,drawing}` UserDefaults
 - Accessibility: every spec'd surface has `A11y.*` label + hint + `.isButton`; Reduce Motion folds all springs to crossfade
 - Spotlight: debounced 5 s, removed on soft-delete, deep-link via `CSSearchableItemActionType`
 - Deep links: `ink://open/{uuid}`, `ink://library`, `ink://settings` all parsed
 - Widgets: small + medium kinds, App Group JSON snapshot driven, 15-min timeline reload, `widgetURL` deep links
-- Icon: programmatic `InkIconRenderer` (light / dark / tinted), master SVG, DEBUG `IconPreviewView` in StyleGuide
+- Icon: programmatic `CeciliasNotesIconRenderer` (light / dark / tinted), master SVG, DEBUG `IconPreviewView` in StyleGuide
 
 ---
 
@@ -157,7 +157,7 @@ sources can't be turned into a runnable app until the user creates the
 | J | `deleteAttachment` / `deleteAudioAnnotation` defer physical file delete | Intentional — supports `restoreAttachment` undo |
 | K | View files reach into `StorageService.shared` directly (TextBlockOverlay, AudioPinsOverlay, AudioFilePicker) | Pragmatic; ViewModel-only refactor is substantial |
 | L | Performance verified by Instruments | Cannot run in this environment |
-| M | `AppIcon.appiconset` PNGs not generated | Needs Xcode UIKit toolchain to run `InkIconRenderer.assetSizes` |
+| M | `AppIcon.appiconset` PNGs not generated | Needs Xcode UIKit toolchain to run `CeciliasNotesIconRenderer.assetSizes` |
 | N | High-contrast `inkBorderWidth(base:)` helper exists but isn't called at every border site | Retrofit pass — opt-in by design |
 
 None of these block production correctness given the source as audited; they're follow-ups, primarily either UI-runtime checks I can't perform or design/architecture conversations that need product input.
@@ -179,8 +179,8 @@ The remaining gaps are all either (1) tasks that require an Xcode IDE project fi
 
 The path to App Store submission is:
 
-1. Create `.xcodeproj` in Xcode with `Ink` (main, iPad-only) and `InkWidget` (widget extension) targets.
-2. Wire `Resources/Info.plist`, `Resources/Ink.entitlements`, `InkWidget/InkWidget.entitlements`, `Resources/PrivacyInfo.xcprivacy` into the targets via Build Settings.
+1. Create `.xcodeproj` in Xcode with `CeciliasNotes` (main, iPad-only) and `CeciliasNotesWidget` (widget extension) targets.
+2. Wire `Resources/Info.plist`, `Resources/CeciliasNotes.entitlements`, `CeciliasNotesWidget/CeciliasNotesWidget.entitlements`, `Resources/PrivacyInfo.xcprivacy` into the targets via Build Settings.
 3. Enable the App Groups capability on both targets with `group.com.ink.app`.
 4. Enable iCloud → iCloud Documents on the main target with `iCloud.com.ink.app`.
 5. Run the icon-generation script in `AppIcon.appiconset/README.md`.

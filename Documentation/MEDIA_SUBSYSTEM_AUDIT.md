@@ -31,14 +31,14 @@ walks back-to-front so taps are tried in reverse):
 
 | # | Layer | File | Mounted in | Coordinate space | Storage |
 |---|---|---|---|---|---|
-| 1 | `PKCanvasView` (per page, lazy in warm band) | [ContinuousCanvasView.swift:787](Ink/Ink/Features/Editor/Canvas/ContinuousCanvasView.swift#L787) | `contentView` (above its renderer) | Page renderer's frame (effective height incl. extra-height extension) | `Page.strokeData: Data` (PKDrawing serialised) — SwiftData `@Model` |
-| 2 | `LectureBlocksOverlayView` (per page) | [LectureBlockView.swift:249](Ink/Ink/Features/Editor/Lecture/LectureBlockView.swift#L249) | Inside each `PageRenderer` | Receives `pageSize` = `CGSize(baseSize.width, **effective height**)` from parent — line 572 of ContinuousCanvasView | TextBlock with `content == "lecture:<uuid>"` (SwiftData) + `LectureRecord` (UserDefaults JSON) |
-| 3 | `AudioAnnotationPinsOverlayView` (per page) | [AudioAnnotationPinsOverlayView.swift](Ink/Ink/Features/Editor/Audio/AudioAnnotationPinsOverlayView.swift) | Inside each `PageRenderer` | `GeometryReader.proxy.size` — resolves to renderer.bounds, i.e. effective height | `AudioAnnotation` (SwiftData), audio file on disk |
-| 4 | `ImageAttachmentsView` (per page) | [ImageAttachmentsView.swift](Ink/Ink/Features/Editor/Media/ImageAttachmentsView.swift) | Inside each `PageRenderer` | Receives `pageSize` = `baseSize` (page's `pointSize`) explicitly | `MediaAttachmentRecord` (UserDefaults JSON) + JPEG file on disk |
-| 5 | `TemplatePatternView` (per page) | [TemplatePatternView.swift](Ink/Ink/Features/Editor/Canvas/TemplatePatternView.swift) | Inside each `PageRenderer` (autolayout to renderer bounds) | Renderer bounds (effective height) | None (rendered from `Page.backgroundTemplate`) |
-| 6 | `PageRenderer` (paper + PDF backing) | [PageRenderer.swift](Ink/Ink/Features/Editor/Canvas/PageRenderer.swift) | `contentView` | Page renderer's own frame (effective height) | `Page.pdfPageIndex` + `Notebook.sourcePDFURL`, plus `PDFTextAnnotationStore` |
-| 7 | `StickyNotesOverlayView` (single, floating) | [StickyNotesOverlayView.swift:20](Ink/Ink/Features/Editor/Annotations/StickyNotesOverlayView.swift#L20) | `overlayLayer` (full content view, all pages) | `GeometryReader.proxy.size` — **full content view size, all pages stacked** | `StickyNoteStore` (UserDefaults JSON) |
-| 8 | `TextBlockOverlayView` (single, floating) | [TextBlockOverlayView.swift](Ink/Ink/Features/Editor/TextBlocks/TextBlockOverlayView.swift) | `overlayLayer` | Reads `viewModel.currentPage.pageSize.pointSize` (base size) but lives in the full-content-view rect | TextBlock (SwiftData) |
+| 1 | `PKCanvasView` (per page, lazy in warm band) | [ContinuousCanvasView.swift:787](CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift#L787) | `contentView` (above its renderer) | Page renderer's frame (effective height incl. extra-height extension) | `Page.strokeData: Data` (PKDrawing serialised) — SwiftData `@Model` |
+| 2 | `LectureBlocksOverlayView` (per page) | [LectureBlockView.swift:249](CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureBlockView.swift#L249) | Inside each `PageRenderer` | Receives `pageSize` = `CGSize(baseSize.width, **effective height**)` from parent — line 572 of ContinuousCanvasView | TextBlock with `content == "lecture:<uuid>"` (SwiftData) + `LectureRecord` (UserDefaults JSON) |
+| 3 | `AudioAnnotationPinsOverlayView` (per page) | [AudioAnnotationPinsOverlayView.swift](CeciliasNotes/CeciliasNotes/Features/Editor/Audio/AudioAnnotationPinsOverlayView.swift) | Inside each `PageRenderer` | `GeometryReader.proxy.size` — resolves to renderer.bounds, i.e. effective height | `AudioAnnotation` (SwiftData), audio file on disk |
+| 4 | `ImageAttachmentsView` (per page) | [ImageAttachmentsView.swift](CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageAttachmentsView.swift) | Inside each `PageRenderer` | Receives `pageSize` = `baseSize` (page's `pointSize`) explicitly | `MediaAttachmentRecord` (UserDefaults JSON) + JPEG file on disk |
+| 5 | `TemplatePatternView` (per page) | [TemplatePatternView.swift](CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/TemplatePatternView.swift) | Inside each `PageRenderer` (autolayout to renderer bounds) | Renderer bounds (effective height) | None (rendered from `Page.backgroundTemplate`) |
+| 6 | `PageRenderer` (paper + PDF backing) | [PageRenderer.swift](CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageRenderer.swift) | `contentView` | Page renderer's own frame (effective height) | `Page.pdfPageIndex` + `Notebook.sourcePDFURL`, plus `PDFTextAnnotationStore` |
+| 7 | `StickyNotesOverlayView` (single, floating) | [StickyNotesOverlayView.swift:20](CeciliasNotes/CeciliasNotes/Features/Editor/Annotations/StickyNotesOverlayView.swift#L20) | `overlayLayer` (full content view, all pages) | `GeometryReader.proxy.size` — **full content view size, all pages stacked** | `StickyNoteStore` (UserDefaults JSON) |
+| 8 | `TextBlockOverlayView` (single, floating) | [TextBlockOverlayView.swift](CeciliasNotes/CeciliasNotes/Features/Editor/TextBlocks/TextBlockOverlayView.swift) | `overlayLayer` | Reads `viewModel.currentPage.pageSize.pointSize` (base size) but lives in the full-content-view rect | TextBlock (SwiftData) |
 
 **Three different mounting models, all in one canvas:**
 
@@ -82,7 +82,7 @@ between them are done ad hoc at each call site.
   page extends. ✅
 - `LectureBlocksOverlayView` is passed
   `CGSize(baseSize.width, **effectiveHeight**)`
-  ([ContinuousCanvasView.swift:572](Ink/Ink/Features/Editor/Canvas/ContinuousCanvasView.swift#L572))
+  ([ContinuousCanvasView.swift:572](CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift#L572))
   and computes positions as `block.y * pageSize.height`. When the last page
   extends, **a lecture card on that last page jumps downward** by the same
   proportion as the extension. The block's stored `y` was relative to the
@@ -127,12 +127,12 @@ across them.
 
 | Entity | Stores | File path |
 |---|---|---|
-| `Notebook` | title, pages, cover meta | [Core/Models/Notebook.swift](Ink/Ink/Core/Models/Notebook.swift) |
-| `Subject` | folder grouping for notebooks | [Core/Models/Subject.swift](Ink/Ink/Core/Models/Subject.swift) |
-| `Page` | strokeData (PKDrawing bytes), template, pageSize, pdfPageIndex | [Core/Models/Page.swift](Ink/Ink/Core/Models/Page.swift) |
-| `TextBlock` | x/y/w/h normalised, content (string), zIndex, richTextData (NSAttributedString archive) | [Core/Models/TextBlock.swift](Ink/Ink/Core/Models/TextBlock.swift) |
-| `AudioAnnotation` | pageX/Y normalised, durationSeconds, transcription, fileName, isTranscribed, amplitudeData | [Core/Models/AudioAnnotation.swift](Ink/Ink/Core/Models/AudioAnnotation.swift) |
-| `MediaAttachment` | (legacy SwiftData entity) | [Core/Models/MediaAttachment.swift](Ink/Ink/Core/Models/MediaAttachment.swift) — **declared but unused at runtime** per [MediaAttachmentRecord.swift:11](Ink/Ink/Core/Models/MediaAttachmentRecord.swift#L11) ("remains in the schema for CloudKit compatibility but is not used at runtime for image data") |
+| `Notebook` | title, pages, cover meta | [Core/Models/Notebook.swift](CeciliasNotes/CeciliasNotes/Core/Models/Notebook.swift) |
+| `Subject` | folder grouping for notebooks | [Core/Models/Subject.swift](CeciliasNotes/CeciliasNotes/Core/Models/Subject.swift) |
+| `Page` | strokeData (PKDrawing bytes), template, pageSize, pdfPageIndex | [Core/Models/Page.swift](CeciliasNotes/CeciliasNotes/Core/Models/Page.swift) |
+| `TextBlock` | x/y/w/h normalised, content (string), zIndex, richTextData (NSAttributedString archive) | [Core/Models/TextBlock.swift](CeciliasNotes/CeciliasNotes/Core/Models/TextBlock.swift) |
+| `AudioAnnotation` | pageX/Y normalised, durationSeconds, transcription, fileName, isTranscribed, amplitudeData | [Core/Models/AudioAnnotation.swift](CeciliasNotes/CeciliasNotes/Core/Models/AudioAnnotation.swift) |
+| `MediaAttachment` | (legacy SwiftData entity) | [Core/Models/MediaAttachment.swift](CeciliasNotes/CeciliasNotes/Core/Models/MediaAttachment.swift) — **declared but unused at runtime** per [MediaAttachmentRecord.swift:11](CeciliasNotes/CeciliasNotes/Core/Models/MediaAttachmentRecord.swift#L11) ("remains in the schema for CloudKit compatibility but is not used at runtime for image data") |
 
 Schema is frozen at V3. Adding a new `@Model` type collides with SwiftData's
 "Duplicate version checksums detected" — see comment in `InkSchemas.swift`.
@@ -192,10 +192,10 @@ none agreed. There's no single "where do media bytes live" answer.
 
 ### 3.4 What the previous pass already fixed for image storage
 
-[EditorViewModel.swift:147 (`commitImportedImage`)](Ink/Ink/Features/Editor/EditorViewModel.swift#L147)
+[EditorViewModel.swift:147 (`commitImportedImage`)](CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift#L147)
 was rewritten to await the file write before publishing the record (closing
 the race that produced the grey box). [ImageAttachmentsView.swift's
-loader](Ink/Ink/Features/Editor/Media/ImageAttachmentsView.swift#L328) was
+loader](CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageAttachmentsView.swift#L328) was
 given a retry path on `.mediaAttachmentsChanged` and a "missing file"
 placeholder. Those fixes are already in main and stand independently of this
 audit.
@@ -211,13 +211,13 @@ two storage strategies and likely pick the wrong one again.
 | Subsystem | API | Where state lives | Known issue |
 |---|---|---|---|
 | Double-tap | `UIPencilInteraction` + `UIPencilInteractionDelegate` | `EditorViewModel.activePencilDoubleTapAction` (`@Published`) | Setting is read from UserDefaults at init only — see below. Per-canvas interaction is created at canvas mount time and added to the canvas. Coordinator is the delegate; held strongly by the UIViewRepresentable's Context.coordinator (so retention is fine). |
-| Squeeze (Pencil Pro) | `UIPencilInteraction.SqueezeAction` (iOS 17.5+) | [PencilSqueezeDetector.swift](Ink/Ink/Features/Editor/Tools/PencilSqueezeDetector.swift) | Has its own delegate Coordinator. Separate UIPencilInteraction instance from the double-tap one. |
+| Squeeze (Pencil Pro) | `UIPencilInteraction.SqueezeAction` (iOS 17.5+) | [PencilSqueezeDetector.swift](CeciliasNotes/CeciliasNotes/Features/Editor/Tools/PencilSqueezeDetector.swift) | Has its own delegate Coordinator. Separate UIPencilInteraction instance from the double-tap one. |
 | Hover (Pencil Pro proximity) | `UIHoverGestureRecognizer` (auto-installed by PKCanvasView on iPadOS 17.5+) | None — system-managed | **Bug 3.** Hover events trigger a layout pass on PKCanvasView's drawing buffer, visibly shifting rendered strokes. Previous pass added a `disableHoverRecognisers(on:)` walk; verify it actually catches the recogniser (the system installs it asynchronously after the canvas is added; the timing window may not always match `DispatchQueue.main.async`). |
 | Pressure / tilt / azimuth | `PKDrawing.strokes[].path.controlPoints[].force/altitudeAngle/azimuthAngle` | Encoded in PKDrawing data | Not surfaced anywhere — PencilKit handles input attribute capture internally. |
 
 **Concrete double-tap risk found during the read:**
 
-[EditorViewModel.swift:647-650](Ink/Ink/Features/Editor/EditorViewModel.swift#L647-L650):
+[EditorViewModel.swift:647-650](CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift#L647-L650):
 the `activePencilDoubleTapAction` is hydrated from
 `UserDefaults.standard.string(forKey: "ink.pencil.doubletap")` exactly once
 (in `loadPersistedState`). If the user changes the Settings → Pencil →
@@ -231,7 +231,7 @@ already fixed: settings writes the same raw values the editor reads, key is
 
 **Concrete hover risk found:** the
 `Self.disableHoverRecognisers(on: canvas)` call at
-[ContinuousCanvasView.swift:851](Ink/Ink/Features/Editor/Canvas/ContinuousCanvasView.swift#L851)
+[ContinuousCanvasView.swift:851](CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift#L851)
 runs once on `DispatchQueue.main.async` after the canvas is added. PKCanvasView
 appears to add the hover recogniser **lazily on first hover event**, not on
 mount. If that's true, the call fires before the recogniser exists and is a
