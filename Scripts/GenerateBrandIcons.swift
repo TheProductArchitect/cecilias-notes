@@ -4,7 +4,7 @@
 //
 // One-off generator that produces the 26 × 7 = 182 alternate-app-icon
 // PNGs (one per Latin lowercase letter at every iOS-required pixel
-// size). Output goes to `Ink/Ink/Resources/AppIcons/Icon-<letter>-<size>.png`
+// size). Output goes to `CeciliasNotes/CeciliasNotes/Resources/AppIcons/Icon-<letter>-<size>.png`
 // and `Icon-<letter>.png` is also written for the size iOS expects to
 // find at the bare key name (1024×1024 master).
 //
@@ -12,13 +12,13 @@
 //   swift Scripts/GenerateBrandIcons.swift
 //
 // Run once after dropping `BricolageGrotesque-VariableFont_*.ttf` into
-// `Ink/Ink/Resources/Fonts/`. The script registers the font from disk
+// `CeciliasNotes/CeciliasNotes/Resources/Fonts/`. The script registers the font from disk
 // at runtime via CoreText so it doesn't need to live inside an app
 // bundle. If the font isn't present, the script falls back to the
 // system bold (San Francisco) so you still get usable placeholder
 // icons — re-run after the font lands to regenerate.
 //
-// Once generated, commit the contents of `Ink/Ink/Resources/AppIcons/`
+// Once generated, commit the contents of `CeciliasNotes/CeciliasNotes/Resources/AppIcons/`
 // into the repo. iOS expects them on disk at app launch — runtime
 // generation isn't supported by `setAlternateIconName`.
 
@@ -45,8 +45,8 @@ let letters: [Character] = (UnicodeScalar("a").value...UnicodeScalar("z").value)
 let scriptURL  = URL(fileURLWithPath: CommandLine.arguments[0])
 let scriptDir  = scriptURL.deletingLastPathComponent()
 let repoRoot   = scriptDir.deletingLastPathComponent()
-let fontDir    = repoRoot.appendingPathComponent("Ink/Ink/Resources/Fonts")
-let outputDir  = repoRoot.appendingPathComponent("Ink/Ink/Resources/AppIcons")
+let fontDir    = repoRoot.appendingPathComponent("CeciliasNotes/CeciliasNotes/Resources/Fonts")
+let outputDir  = repoRoot.appendingPathComponent("CeciliasNotes/CeciliasNotes/Resources/AppIcons")
 
 try? FileManager.default.createDirectory(at: outputDir,
                                          withIntermediateDirectories: true)

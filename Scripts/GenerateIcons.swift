@@ -129,7 +129,7 @@ let specs: [IconSpec] = [
 let scriptDir   = URL(fileURLWithPath: #file).deletingLastPathComponent()
 let repoRoot    = scriptDir.deletingLastPathComponent()
 let appiconDir  = repoRoot
-    .appendingPathComponent("Ink/Ink/Resources/Assets.xcassets/AppIcon.appiconset")
+    .appendingPathComponent("CeciliasNotes/CeciliasNotes/Resources/Assets.xcassets/AppIcon.appiconset")
 
 try FileManager.default.createDirectory(at: appiconDir,
     withIntermediateDirectories: true)

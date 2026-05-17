@@ -2,14 +2,14 @@
 #
 # Scripts/run-tests.sh
 #
-# CI-friendly test runner for Ink. Runs the InkTests (unit) and
-# InkUITests (XCUITest) targets via xcodebuild and surfaces a
+# CI-friendly test runner for Cecilia's Notes. Runs the CeciliasNotesTests (unit) and
+# CeciliasNotesUITests (XCUITest) targets via xcodebuild and surfaces a
 # human-readable summary at the end.
 #
 # Usage
 #   Scripts/run-tests.sh           # both targets
-#   Scripts/run-tests.sh unit      # InkTests only (fast, ~30s)
-#   Scripts/run-tests.sh ui        # InkUITests only (slow, ~3min)
+#   Scripts/run-tests.sh unit      # CeciliasNotesTests only (fast, ~30s)
+#   Scripts/run-tests.sh ui        # CeciliasNotesUITests only (slow, ~3min)
 #
 # Exit codes
 #   0  every selected suite passed
@@ -20,16 +20,16 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-PROJECT="Ink/Ink.xcodeproj"
-SCHEME="Ink"
-DEVICE="${INK_TEST_DEVICE:-iPad (A16)}"
+PROJECT="CeciliasNotes/CeciliasNotes.xcodeproj"
+SCHEME="CeciliasNotes"
+DEVICE="${CECILIASNOTES_TEST_DEVICE:-iPad (A16)}"
 DESTINATION="platform=iOS Simulator,name=${DEVICE}"
 
 TARGET="${1:-all}"
 case "$TARGET" in
-    unit)  TARGETS=(InkTests) ;;
-    ui)    TARGETS=(InkUITests) ;;
-    all|"") TARGETS=(InkTests InkUITests) ;;
+    unit)  TARGETS=(CeciliasNotesTests) ;;
+    ui)    TARGETS=(CeciliasNotesUITests) ;;
+    all|"") TARGETS=(CeciliasNotesTests CeciliasNotesUITests) ;;
     *)
         echo "Unknown target: $TARGET (expected: unit | ui | all)" >&2
         exit 2
@@ -44,14 +44,14 @@ else
     RED=''; GREEN=''; YELLOW=''; BOLD=''; NC=''
 fi
 
-echo "${BOLD}Ink test runner${NC}"
+echo "${BOLD}Cecilia's Notes test runner${NC}"
 echo "  scheme:     $SCHEME"
 echo "  device:     $DEVICE"
 echo "  targets:    ${TARGETS[*]}"
 echo
 
 START=$(date +%s)
-LOG=$(mktemp -t ink-tests.XXXXXX)
+LOG=$(mktemp -t ceciliasnotes-tests.XXXXXX)
 trap "rm -f $LOG" EXIT
 
 ARGS=(
