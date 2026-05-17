@@ -79,11 +79,11 @@ struct ToolPaletteView: View {
                 .offset(x: dragOffset.width, y: dragOffset.height)
         }
         .ignoresSafeArea(edges: .all)               // we manage insets manually
-        .animation(.inkSpring(CeciliasNotesSpring.snappy), value: edge)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy), value: edge)
         // Re-flow the palette when the header slides in or out so a
         // top-edge palette doesn't end up sitting under the cover-tone
         // header, and snaps back into place when the header hides.
-        .animation(.inkSpring(CeciliasNotesSpring.snappy),
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy),
                    value: viewModel.headerVisibility.isHeaderVisible)
         .onAppear {
             // Hydrate from per-notebook UserDefaults on first paint.
@@ -212,7 +212,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .accessibilityLabel(
             viewModel.shapeRecognitionEnabled
                 ? "Shape Recognition: on"
@@ -349,7 +349,7 @@ struct ToolPaletteView: View {
             .frame(width: buttonSize, height: buttonSize)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         // Long-press → variant picker. `.highPriorityGesture` makes
         // the long-press resolve *before* the Button's internal tap
         // recogniser — so a hold reaches the variant picker without
@@ -387,7 +387,7 @@ struct ToolPaletteView: View {
         // long-press — see the gesture on `categoryButton`.
         let variant = ToolCategoryStore.lastVariant(for: category)
         guard viewModel.selectedTool.identity != variant else { return }
-        withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: variant)
         }
         HapticManager.shared.toolSwitched()
@@ -397,7 +397,7 @@ struct ToolPaletteView: View {
     private func variantPicker(for category: ToolCategory) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(category.displayName)
-                .font(.inkSubhead)
+                .font(.ceciliasNotesSubhead)
                 .foregroundColor(.inkTextSecondary)
                 .padding(.horizontal, CeciliasNotes.Spacing.md)
                 .padding(.top, CeciliasNotes.Spacing.md)
@@ -418,7 +418,7 @@ struct ToolPaletteView: View {
     private func variantRow(_ variant: CeciliasNotesTool.Identity, in category: ToolCategory) -> some View {
         let isSelected = viewModel.selectedTool.identity == variant
         return Button {
-            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
                 viewModel.selectTool(identity: variant)
             }
             HapticManager.shared.toolSwitched()
@@ -426,11 +426,11 @@ struct ToolPaletteView: View {
         } label: {
             HStack(spacing: CeciliasNotes.Spacing.sm) {
                 Image(systemName: variant.systemImage)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(isSelected ? .inkAccentPrimary : .inkTextSecondary)
                     .frame(width: 22)
                 Text(variant.displayName)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(.inkTextPrimary)
                 Spacer()
                 if isSelected {
@@ -443,7 +443,7 @@ struct ToolPaletteView: View {
             .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     // MARK: Tool button
@@ -465,7 +465,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .accessibilityLabel(A11y.toolLabel(name: identity.displayName, isActive: isActive))
         .accessibilityHint(A11y.toolHint)
 
@@ -579,7 +579,7 @@ struct ToolPaletteView: View {
         // matches the spec for Feature 6.
         if identity == .image {
             if viewModel.selectedTool.identity != .image {
-                withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
                     viewModel.selectTool(identity: .image)
                 }
             }
@@ -591,7 +591,7 @@ struct ToolPaletteView: View {
         // — the eraser mode picker (formerly opened by tap-when-active)
         // moved to long-press. See `toolButton`.
         guard viewModel.selectedTool.identity != identity else { return }
-        withAnimation(.inkSpring(CeciliasNotesSpring.precise)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: identity)
         }
         HapticManager.shared.toolSwitched()
@@ -618,7 +618,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     // MARK: Size controls
@@ -651,7 +651,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: buttonSize / 2)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .disabled(!viewModel.selectedTool.hasWidth)
     }
 
@@ -666,7 +666,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: 24)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     private var sizeDecrementButton: some View {
@@ -679,7 +679,7 @@ struct ToolPaletteView: View {
                 .frame(width: buttonSize, height: buttonSize / 2)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .disabled(!viewModel.selectedTool.hasWidth)
     }
 
@@ -700,7 +700,7 @@ struct ToolPaletteView: View {
         }()
         return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             Text("Eraser")
-                .font(.inkSubhead)
+                .font(.ceciliasNotesSubhead)
                 .foregroundColor(.inkTextSecondary)
 
             VStack(spacing: 0) {
@@ -729,7 +729,7 @@ struct ToolPaletteView: View {
                 Image(systemName: mode.iconName)
                     .frame(width: 22)
                 Text(mode.displayName)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -742,7 +742,7 @@ struct ToolPaletteView: View {
             .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     private var erasePageRow: some View {
@@ -755,7 +755,7 @@ struct ToolPaletteView: View {
                 Image(systemName: "trash")
                     .frame(width: 22)
                 Text("Erase Page…")
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                 Spacer()
             }
             .foregroundColor(.inkDestructive)
@@ -763,7 +763,7 @@ struct ToolPaletteView: View {
             .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     private var sizePopover: some View {
@@ -777,7 +777,7 @@ struct ToolPaletteView: View {
 
         return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(title)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
             HStack {
                 Slider(
@@ -790,7 +790,7 @@ struct ToolPaletteView: View {
                 )
                 .tint(.inkAccentPrimary)
                 Text(formatWidth(viewModel.selectedTool.currentWidth))
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .monospacedDigit()
                     .frame(width: 36, alignment: .trailing)
@@ -824,7 +824,7 @@ struct ToolPaletteView: View {
 
                 // Spring back. The dragOffset reset is what makes the pill
                 // visually fly to its new edge — alignment is already updated.
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     dragOffset = .zero
                 }
             }

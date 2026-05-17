@@ -10,7 +10,7 @@ final class StorageServiceTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        container = try ModelContainer.inkTestContainer()
+        container = try ModelContainer.ceciliasNotesTestContainer()
         service   = StorageService(container: container)
     }
 

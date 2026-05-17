@@ -18,7 +18,7 @@ struct MediaErrorBanner: View {
                 .foregroundColor(.white)
 
             Text(message)
-                .font(.inkFootnote)
+                .font(.ceciliasNotesFootnote)
                 .foregroundColor(.white)
                 .lineLimit(2)
 
@@ -32,7 +32,7 @@ struct MediaErrorBanner: View {
                     .foregroundColor(.white.opacity(0.7))
                     .frame(width: 28, height: 28)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .inkTapTarget()
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -45,7 +45,7 @@ struct MediaErrorBanner: View {
         .offset(y: visible ? 0 : -100)
         .opacity(visible ? 1 : 0)
         .onAppear {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { visible = true }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) { visible = true }
             Task {
                 try? await Task.sleep(for: .seconds(4))
                 dismiss()
@@ -54,7 +54,7 @@ struct MediaErrorBanner: View {
     }
 
     private func dismiss() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { visible = false }
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) { visible = false }
         Task {
             try? await Task.sleep(for: .seconds(0.35))
             await MainActor.run { onDismiss() }

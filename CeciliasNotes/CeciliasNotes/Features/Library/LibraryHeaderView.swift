@@ -90,7 +90,7 @@ struct LibraryHeaderView: View {
         .sheet(isPresented: $isShowingAskSheet) {
             AskMyNotesView(libraryViewModel: viewModel)
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
         .onAppear { greeting = GreetingPicker.pick() }
     }
 
@@ -157,7 +157,7 @@ struct LibraryHeaderView: View {
         HStack(spacing: 4) {
             // Search
             Button {
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.isSearchActive.toggle()
                     if !viewModel.isSearchActive { viewModel.deactivateSearch() }
                 }
@@ -168,7 +168,7 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .keyboardShortcut("f", modifiers: .command)
 
             // Sort (existing)
@@ -207,7 +207,7 @@ struct LibraryHeaderView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.inkPressable)
+                .buttonStyle(.ceciliasNotesPressable)
                 .accessibilityLabel("Ask your notes")
             }
 
@@ -228,7 +228,7 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel("Filter by tag")
 
             // "+" — single tap goes straight to notebook creation in
@@ -250,7 +250,7 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel("New notebook")
             .disabled(!viewModel.canCreateNotebook)
             .contextMenu {
@@ -291,7 +291,7 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel("Open PDF")
 
             // Select — icon-only to fit the toolbar strip without
@@ -302,7 +302,7 @@ struct LibraryHeaderView: View {
             // recessive ring otherwise. Matches the icon-only
             // pattern of every other button in this strip.
             Button {
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.isSelecting.toggle()
                 }
             } label: {
@@ -318,7 +318,7 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel(viewModel.isSelecting ? "Exit select" : "Select")
         }
     }
@@ -356,7 +356,7 @@ struct LibraryHeaderView: View {
                 .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("delete") {
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.deleteSelectedNotebooks()
                 }
             }
@@ -365,7 +365,7 @@ struct LibraryHeaderView: View {
             .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("done") {
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.isSelecting = false
                     viewModel.selectedNotebookIds = []
                 }

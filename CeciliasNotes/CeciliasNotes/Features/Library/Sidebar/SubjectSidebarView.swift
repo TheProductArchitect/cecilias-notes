@@ -120,7 +120,7 @@ struct SubjectSidebarView: View {
             Spacer(minLength: 0)
             if !viewModel.subjects.isEmpty {
                 Button {
-                    withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                         isEditingSubjects.toggle()
                     }
                 } label: {
@@ -565,7 +565,7 @@ struct iCloudStatusView: View {
             .fontWeight(.regular)
             .foregroundStyle(symbolColor)
             .symbolEffect(.pulse, isActive: isPulsing)
-            .inkAnimation(CeciliasNotesSpring.smooth, value: symbolName)
+            .ceciliasNotesAnimation(CeciliasNotesSpring.smooth, value: symbolName)
     }
 
     /// SF Symbol per the spec — green check for synced, blue pulsing

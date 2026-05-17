@@ -116,7 +116,7 @@ extension View {
 extension View {
     /// Wraps a transition so it becomes opacity-only when Reduce Motion is on.
     /// Use this everywhere instead of raw `.transition(...)` to keep a11y consistent.
-    func inkTransition(_ transition: AnyTransition) -> some View {
+    func ceciliasNotesTransition(_ transition: AnyTransition) -> some View {
         UIAccessibility.isReduceMotionEnabled
             ? self.transition(.opacity)
             : self.transition(transition)

@@ -44,7 +44,7 @@ struct AppearanceSettingsView: View {
     private func themeOption(_ theme: CeciliasNotesTheme) -> some View {
         let isSelected = viewModel.themeManager.theme == theme
         return Button {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.themeManager.theme = theme
             }
         } label: {

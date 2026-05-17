@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Floating viewport indicator. Shown only when zoom > 1.5×.
-/// Listens to `inkCanvasViewportDidChange` notifications throttled to ~15fps.
+/// Listens to `ceciliasNotesCanvasViewportDidChange` notifications throttled to ~15fps.
 struct MinimapView: View {
     @ObservedObject var viewModel: EditorViewModel
 
@@ -58,7 +58,7 @@ struct MinimapView: View {
         .onAppear { loadThumbnail() }
         .onChange(of: viewModel.currentPage.id) { _, _ in loadThumbnail() }
         .onReceive(
-            NotificationCenter.default.publisher(for: .inkCanvasViewportDidChange)
+            NotificationCenter.default.publisher(for: .ceciliasNotesCanvasViewportDidChange)
         ) { note in
             handleViewportNotification(note)
         }
@@ -80,7 +80,7 @@ struct MinimapView: View {
                 let dy = value.translation.height * scaleY
                 let newOffset = CGPoint(x: start.x + dx, y: start.y + dy)
                 NotificationCenter.default.post(
-                    name: .inkCanvasShouldPanTo,
+                    name: .ceciliasNotesCanvasShouldPanTo,
                     object: nil,
                     userInfo: ["offset": newOffset]
                 )
@@ -150,9 +150,9 @@ struct MinimapView: View {
 // MARK: - Notifications
 
 extension Notification.Name {
-    static let inkCanvasShouldPanTo       = Notification.Name("ink.canvas.shouldPanTo")
+    static let ceciliasNotesCanvasShouldPanTo       = Notification.Name("ink.canvas.shouldPanTo")
     /// Posted by the canvas on every scroll/zoom change so the minimap
     /// (and anyone else who cares) can track the viewport. UserInfo:
     /// `offset: CGPoint`, `zoom: CGFloat`.
-    static let inkCanvasViewportDidChange = Notification.Name("ink.canvas.viewportDidChange")
+    static let ceciliasNotesCanvasViewportDidChange = Notification.Name("ink.canvas.viewportDidChange")
 }

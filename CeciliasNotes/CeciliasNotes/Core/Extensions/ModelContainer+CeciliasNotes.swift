@@ -22,11 +22,11 @@ extension ModelContainer {
     /// console only; the user just sees a non-syncing app and
     /// Settings → iCloud surfaces "sign in to iCloud to sync your
     /// notes" via `CloudSyncManager`.
-    static func inkContainer() throws -> ModelContainer {
-        let storeURL = StorageService.inkDirectoryURL
+    static func ceciliasNotesContainer() throws -> ModelContainer {
+        let storeURL = StorageService.ceciliasNotesDirectoryURL
             .appendingPathComponent("ink.sqlite")
         try FileManager.default.createDirectory(
-            at: StorageService.inkDirectoryURL,
+            at: StorageService.ceciliasNotesDirectoryURL,
             withIntermediateDirectories: true
         )
 
@@ -125,7 +125,7 @@ extension ModelContainer {
     }
 
     /// In-memory container for unit tests — no disk I/O, no CloudKit.
-    static func inkTestContainer() throws -> ModelContainer {
+    static func ceciliasNotesTestContainer() throws -> ModelContainer {
         let schema = Schema([
             Subject.self,
             Folder.self,

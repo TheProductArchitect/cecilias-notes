@@ -16,13 +16,13 @@ public enum CeciliasNotesSpring {
 
 public extension Animation {
     /// Returns the spring animation when reduce motion is off, crossfade otherwise.
-    static func inkSpring(_ spring: Animation) -> Animation {
+    static func ceciliasNotesSpring(_ spring: Animation) -> Animation {
         UIAccessibility.isReduceMotionEnabled ? .easeInOut(duration: 0.2) : spring
     }
 }
 
 public extension View {
-    func inkAnimation<V: Equatable>(_ animation: Animation, value: V) -> some View {
+    func ceciliasNotesAnimation<V: Equatable>(_ animation: Animation, value: V) -> some View {
         let resolved = UIAccessibility.isReduceMotionEnabled
             ? Animation.easeInOut(duration: 0.2)
             : animation

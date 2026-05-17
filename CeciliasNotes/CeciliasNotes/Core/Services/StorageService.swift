@@ -27,7 +27,7 @@ final class StorageService: ObservableObject {
 
     // MARK: Directory URLs
     //
-    // The SwiftData store always lives in `inkDirectoryURL` (local Application
+    // The SwiftData store always lives in `ceciliasNotesDirectoryURL` (local Application
     // Support — never synced; performance + integrity reasons). Only file
     // assets (`media/`, `audio/`, `exports/`) follow `notebooksDirectoryURL`,
     // which is dynamic: iCloud ubiquity container when sync is enabled and
@@ -37,7 +37,7 @@ final class StorageService: ObservableObject {
     // Notebooks asset directory. CloudSyncManager.enable()/disable() perform
     // the move and flip the persisted flag.
 
-    nonisolated static var inkDirectoryURL: URL {
+    nonisolated static var ceciliasNotesDirectoryURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Ink")
     }
@@ -45,7 +45,7 @@ final class StorageService: ObservableObject {
     /// Local-only path. Used as the source/destination during enable/disable
     /// migration and as the fallback when iCloud isn't available.
     nonisolated static var localNotebooksDirectoryURL: URL {
-        inkDirectoryURL.appendingPathComponent("Notebooks")
+        ceciliasNotesDirectoryURL.appendingPathComponent("Notebooks")
     }
 
     /// Resolves the notebooks asset root. Returns the iCloud ubiquity
@@ -95,7 +95,7 @@ final class StorageService: ObservableObject {
     /// clear message rather than a bare `try!`.
     private convenience init() {
         do {
-            let c = try ModelContainer.inkContainer()
+            let c = try ModelContainer.ceciliasNotesContainer()
             self.init(container: c)
         } catch {
             // Safe: SwiftData container init only fails when the on-disk SQLite
@@ -1309,7 +1309,7 @@ extension StorageService {
     func localStorageUsed() async -> StorageInfo {
         let fm = FileManager.default
 
-        let dbURL   = Self.inkDirectoryURL.appendingPathComponent("ink.sqlite")
+        let dbURL   = Self.ceciliasNotesDirectoryURL.appendingPathComponent("ink.sqlite")
         let dbBytes = (try? fm.attributesOfItem(atPath: dbURL.path)[.size] as? Int64) ?? 0
 
         var mediaBytes: Int64 = 0

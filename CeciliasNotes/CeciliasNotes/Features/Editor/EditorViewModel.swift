@@ -749,13 +749,13 @@ final class EditorViewModel: ObservableObject {
     func resetToolbarTimer() {
         toolbarHideTask?.cancel()
         if !isToolbarVisible {
-            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
         }
         toolbarHideTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3.5))
             guard !Task.isCancelled, let self else { return }
             await MainActor.run {
-                withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
                     self.isToolbarVisible = false
                 }
             }
@@ -765,7 +765,7 @@ final class EditorViewModel: ObservableObject {
     func keepToolbarVisible() {
         toolbarHideTask?.cancel()
         if !isToolbarVisible {
-            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) { isToolbarVisible = true }
         }
     }
 
@@ -788,7 +788,7 @@ final class EditorViewModel: ObservableObject {
         guard interactionGraceTask == nil else { return }
         switch headerVisibility {
         case .visible:
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .hiddenWhileWriting
             }
         case .visibleManual:
@@ -800,7 +800,7 @@ final class EditorViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(2))
                 guard !Task.isCancelled, let self else { return }
                 await MainActor.run {
-                    withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                         self.headerVisibility = .hiddenWhileWriting
                     }
                 }
@@ -815,7 +815,7 @@ final class EditorViewModel: ObservableObject {
     /// will re-hide after a 2-second grace window.
     func revealHeaderManually() {
         headerManualReHideTask?.cancel()
-        withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
             headerVisibility = .visibleManual
         }
     }
@@ -833,7 +833,7 @@ final class EditorViewModel: ObservableObject {
         headerManualReHideTask?.cancel()
         activeInteractions.insert(reason)
         if !headerVisibility.isHeaderVisible {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .visibleManual
             }
         }
@@ -855,7 +855,7 @@ final class EditorViewModel: ObservableObject {
                 self.interactionGraceTask = nil
                 guard self.notebook.autoHideHeader,
                       self.activeInteractions.isEmpty else { return }
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     self.headerVisibility = .hiddenWhileWriting
                 }
             }
@@ -879,7 +879,7 @@ final class EditorViewModel: ObservableObject {
         interactionGraceTask?.cancel()
         interactionGraceTask = nil
         if !headerVisibility.isHeaderVisible {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 headerVisibility = .visible
             }
         }
@@ -888,7 +888,7 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Focus Mode
 
     func toggleFocusMode() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             isFocusMode.toggle()
         }
     }
@@ -1169,7 +1169,7 @@ final class EditorViewModel: ObservableObject {
         }
         canvas.undoManager?.setActionName("Recognise Shape")
 
-        withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
             pendingShapeUndo = PendingShapeReplacement(
                 originalStroke: lastStroke,
                 replacementStrokeIndex: replacementIndex
@@ -1184,7 +1184,7 @@ final class EditorViewModel: ObservableObject {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
                     self?.pendingShapeUndo = nil
                 }
             }
@@ -1211,7 +1211,7 @@ final class EditorViewModel: ObservableObject {
     private func dismissShapePill() {
         shapePillDismissTask?.cancel()
         shapePillDismissTask = nil
-        withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
             pendingShapeUndo = nil
         }
     }

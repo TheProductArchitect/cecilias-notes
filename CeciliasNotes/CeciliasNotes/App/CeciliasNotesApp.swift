@@ -114,8 +114,8 @@ struct CeciliasNotesApp: App {
         // SQLite store and per-notebook resources (audio, media). This
         // runs before `StorageService.shared` resolves, so the next
         // container open creates a fresh empty DB.
-        let inkDir = StorageService.inkDirectoryURL
-        try? FileManager.default.removeItem(at: inkDir)
+        let ceciliasNotesDir = StorageService.ceciliasNotesDirectoryURL
+        try? FileManager.default.removeItem(at: ceciliasNotesDir)
     }
 
     var body: some Scene {
@@ -300,7 +300,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
     ///   2. Delete the V4 SwiftData store proactively. The audio
     ///      reshape (Step 3) drops `AudioAnnotation` columns; the
     ///      `ModelContainer` would hit the mismatch fallback at
-    ///      `inkContainer()` and wipe anyway, but doing it here
+    ///      `ceciliasNotesContainer()` and wipe anyway, but doing it here
     ///      avoids a noisy failed-open log on first launch.
     ///
     /// Files on disk under `Documents/MediaAttachments/` are left in
@@ -320,7 +320,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         // SwiftData store + WAL/SHM sidecars. Best-effort —
         // FileManager errors here are non-fatal because the
         // ModelContainer's own fallback path will recover.
-        let storeURL = StorageService.inkDirectoryURL
+        let storeURL = StorageService.ceciliasNotesDirectoryURL
             .appendingPathComponent("ink.sqlite")
         try? FileManager.default.removeItem(at: storeURL)
         for suffix in ["-shm", "-wal", "-journal"] {

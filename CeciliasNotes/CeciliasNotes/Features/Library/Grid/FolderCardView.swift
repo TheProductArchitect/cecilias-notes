@@ -45,7 +45,7 @@ struct FolderCardView: View {
 
             if isRenaming {
                 TextField("Folder name", text: $editingName)
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .multilineTextAlignment(.center)
                     .focused($renameFocused)
@@ -58,7 +58,7 @@ struct FolderCardView: View {
                     }
             } else {
                 Text(folder.name)
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -69,12 +69,12 @@ struct FolderCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
         .scaleEffect(isHovered ? 1.01 : 1.0)
         .onHover { hovered in
-            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
         }
         .contentShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
         .onTapGesture {
             if isRenaming { return }
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.navigate(into: folder)
             }
         }
@@ -95,7 +95,7 @@ struct FolderCardView: View {
             if landed { HapticManager.shared.dragReorderDropped() }
             return true
         } isTargeted: { targeted in
-            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isDropTarget = targeted }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) { isDropTarget = targeted }
         }
         .onChange(of: viewModel.renamingFolderId) { _, id in
             if id == folder.id { beginRename() }

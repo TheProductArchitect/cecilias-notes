@@ -76,13 +76,13 @@ struct LibraryView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
                 Task { @MainActor in viewModel.clearTagFilters() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .inkCommandNewNotebook)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandNewNotebook)) { _ in
                 guard viewModel.selectedSubjectId != nil else { return }
                 Task { @MainActor in viewModel.createUntitledNotebookAndOpen() }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .inkCommandSearch)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandSearch)) { _ in
                 Task { @MainActor in
-                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { viewModel.isSearchActive = true }
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) { viewModel.isSearchActive = true }
                 }
             }
             .onChange(of: deepLink.pendingQuickCapture) { _, pending in
@@ -144,7 +144,7 @@ struct LibraryView: View {
                 .zIndex(98)
             }
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isImporting)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isImporting)
         .alert(
             "Couldn't import",
             isPresented: Binding(
@@ -157,12 +157,12 @@ struct LibraryView: View {
         } message: { err in
             Text(err.errorDescription ?? "Some PDFs couldn't be imported.")
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.error)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.error)
         .background(Color(.systemBackground))
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
         .ignoresSafeArea(.keyboard, edges: keyboardObserver.isFloatingKeyboard ? .bottom : [])
-        .animation(reduceMotion ? nil : .inkSpring(CeciliasNotesSpring.snappy), value: isSidebarVisible)
+        .animation(reduceMotion ? nil : .ceciliasNotesSpring(CeciliasNotesSpring.snappy), value: isSidebarVisible)
         .sheet(isPresented: $isShowingRecentExports) {
             RecentExportsView { notebookId in
                 isShowingRecentExports = false

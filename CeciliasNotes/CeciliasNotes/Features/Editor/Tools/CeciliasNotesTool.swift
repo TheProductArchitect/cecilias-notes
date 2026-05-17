@@ -279,30 +279,30 @@ enum CeciliasNotesTool: Equatable {
     // MARK: Defaults
 
     enum Defaults {
-        private static func inkColour(_ theme: CeciliasNotesTheme) -> UIColor {
+        private static func ceciliasNotesColour(_ theme: CeciliasNotesTheme) -> UIColor {
             theme == .dark ? UIColor(hex: "#F5F5F2") : UIColor(hex: "#1D1D1B")
         }
 
         static func pen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .pen(colour: inkColour(theme), width: 2, opacity: 1.0)
+            .pen(colour: ceciliasNotesColour(theme), width: 2, opacity: 1.0)
         }
         static func fountainPen(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .fountainPen(colour: inkColour(theme), width: 2, opacity: 1.0)
+            .fountainPen(colour: ceciliasNotesColour(theme), width: 2, opacity: 1.0)
         }
         static func monoline(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .monoline(colour: inkColour(theme), width: 2)
+            .monoline(colour: ceciliasNotesColour(theme), width: 2)
         }
         static func marker(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .marker(colour: inkColour(theme), width: 6)
+            .marker(colour: ceciliasNotesColour(theme), width: 6)
         }
         static func brush(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .brush(colour: inkColour(theme), width: 6, opacity: 0.85)
+            .brush(colour: ceciliasNotesColour(theme), width: 6, opacity: 0.85)
         }
         static func crayon(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .crayon(colour: inkColour(theme), width: 5)
+            .crayon(colour: ceciliasNotesColour(theme), width: 5)
         }
         static func pencil(theme: CeciliasNotesTheme) -> CeciliasNotesTool {
-            .pencil(colour: inkColour(theme), width: 3, opacity: 1.0)
+            .pencil(colour: ceciliasNotesColour(theme), width: 3, opacity: 1.0)
         }
         static let highlighter: CeciliasNotesTool = .highlighter(colour: UIColor(hex: "#FFD60A"), width: 12)
         static let eraser: CeciliasNotesTool = .eraser(mode: .wholeStroke)

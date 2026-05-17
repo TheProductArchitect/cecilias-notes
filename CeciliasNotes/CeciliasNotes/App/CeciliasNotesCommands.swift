@@ -19,7 +19,7 @@ struct CeciliasNotesCommands: Commands {
         // ⌘N — New Notebook (replaces "New Document")
         CommandGroup(replacing: .newItem) {
             Button("New Notebook") {
-                NotificationCenter.default.post(name: .inkCommandNewNotebook, object: nil)
+                NotificationCenter.default.post(name: .ceciliasNotesCommandNewNotebook, object: nil)
             }
             .keyboardShortcut("n", modifiers: .command)
         }
@@ -27,7 +27,7 @@ struct CeciliasNotesCommands: Commands {
         // ⌘F Search Library — sits next to system Find
         CommandGroup(after: .pasteboard) {
             Button("Search Library") {
-                NotificationCenter.default.post(name: .inkCommandSearch, object: nil)
+                NotificationCenter.default.post(name: .ceciliasNotesCommandSearch, object: nil)
             }
             .keyboardShortcut("f", modifiers: .command)
         }
@@ -38,17 +38,17 @@ struct CeciliasNotesCommands: Commands {
         CommandGroup(after: .saveItem) {
             Divider()
             Button("Close Notebook") {
-                NotificationCenter.default.post(name: .inkCommandCloseNotebook, object: nil)
+                NotificationCenter.default.post(name: .ceciliasNotesCommandCloseNotebook, object: nil)
             }
             .keyboardShortcut("w", modifiers: .command)
 
             Button("Export…") {
-                NotificationCenter.default.post(name: .inkCommandExport, object: nil)
+                NotificationCenter.default.post(name: .ceciliasNotesCommandExport, object: nil)
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
 
             Button("Print…") {
-                NotificationCenter.default.post(name: .inkCommandPrint, object: nil)
+                NotificationCenter.default.post(name: .ceciliasNotesCommandPrint, object: nil)
             }
             .keyboardShortcut("p", modifiers: .command)
         }
@@ -58,9 +58,9 @@ struct CeciliasNotesCommands: Commands {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let inkCommandNewNotebook   = Notification.Name("ink.command.newNotebook")
-    static let inkCommandSearch        = Notification.Name("ink.command.search")
-    static let inkCommandCloseNotebook = Notification.Name("ink.command.closeNotebook")
-    static let inkCommandExport        = Notification.Name("ink.command.export")
-    static let inkCommandPrint         = Notification.Name("ink.command.print")
+    static let ceciliasNotesCommandNewNotebook   = Notification.Name("ink.command.newNotebook")
+    static let ceciliasNotesCommandSearch        = Notification.Name("ink.command.search")
+    static let ceciliasNotesCommandCloseNotebook = Notification.Name("ink.command.closeNotebook")
+    static let ceciliasNotesCommandExport        = Notification.Name("ink.command.export")
+    static let ceciliasNotesCommandPrint         = Notification.Name("ink.command.print")
 }

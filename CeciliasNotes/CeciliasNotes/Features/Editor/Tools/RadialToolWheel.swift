@@ -42,7 +42,7 @@ struct RadialToolWheel: View {
             if reduceMotion {
                 visible = true
             } else {
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { visible = true }
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) { visible = true }
             }
         }
     }
@@ -64,7 +64,7 @@ struct RadialToolWheel: View {
             }
             .frame(width: segmentSize, height: segmentSize)
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .position(point)
         .accessibilityLabel(item.displayName)
     }

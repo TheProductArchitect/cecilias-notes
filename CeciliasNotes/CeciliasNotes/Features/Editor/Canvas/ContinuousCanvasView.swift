@@ -1082,7 +1082,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             NotificationCenter.default.post(
-                name: .inkCanvasViewportDidChange,
+                name: .ceciliasNotesCanvasViewportDidChange,
                 object: nil,
                 userInfo: [
                     "offset": scrollView.contentOffset,

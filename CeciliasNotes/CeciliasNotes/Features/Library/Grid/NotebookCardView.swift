@@ -56,14 +56,14 @@ struct NotebookCardView: View {
         .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .scaleEffect(isHovered && !viewModel.isSelecting ? 1.01 : 1.0)
         .onHover { hovered in
-            withAnimation(.inkSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) { isHovered = hovered }
         }
         .onTapGesture {
             #if DEBUG
             print("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
             #endif
             if viewModel.isSelecting {
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.toggleSelection(notebook)
                 }
             } else {
@@ -361,7 +361,7 @@ struct NotebookCardView: View {
         }
 
         Button {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 viewModel.togglePin(notebook)
             }
         } label: {
@@ -414,7 +414,7 @@ struct NotebookCardView: View {
 
         Button(role: .destructive) {
             HapticManager.shared.notebookDeleted()
-            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                 viewModel.deleteNotebook(notebook)
             }
         } label: {
@@ -427,7 +427,7 @@ struct NotebookCardView: View {
 
 /// Lowercase relative date suited to the recessive bottom-of-card line.
 /// "today" / "yesterday" / "n days ago" / "n weeks ago" / "1 mar".
-/// `Date.inkRelative` (used elsewhere) returns capitalised forms — this
+/// `Date.ceciliasNotesRelative` (used elsewhere) returns capitalised forms — this
 /// mirror is local so the card's typography stays lowercase throughout.
 private func relativeShort(for date: Date) -> String {
     let cal = Calendar.current

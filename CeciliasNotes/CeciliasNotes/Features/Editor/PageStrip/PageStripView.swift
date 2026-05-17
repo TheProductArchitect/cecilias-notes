@@ -75,14 +75,14 @@ struct PageStripView: View {
                                 )
                         }
                     }
-                    .buttonStyle(.inkPressable)
+                    .buttonStyle(.ceciliasNotesPressable)
                 }
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.md)
             }
             .onChange(of: viewModel.currentPageIndex) { _, newIndex in
                 guard newIndex < viewModel.pages.count else { return }
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     proxy.scrollTo(viewModel.pages[newIndex].id, anchor: .center)
                 }
             }
@@ -130,7 +130,7 @@ private struct PageStripThumbnail: View {
             )
 
             Text("\(pageNumber)")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(isCurrent ? .inkAccentPrimary : .inkTextTertiary)
                 .monospacedDigit()
         }

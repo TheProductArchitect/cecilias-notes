@@ -57,25 +57,25 @@ struct AudioSettingsView: View {
             } label: {
                 HStack {
                     Text(selectedLocaleName)
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .foregroundColor(.inkTextPrimary)
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.inkRowLabel)
+                        .font(.ceciliasNotesRowLabel)
                         .foregroundColor(.inkTextTertiary)
                 }
                 .padding(CeciliasNotes.Spacing.sm)
                 .background(Color.inkBackgroundSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
 
             Text("Only on-device languages are shown. The internet is never used.")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
         }
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     // MARK: After-recording (save clip + auto-transcribe)
@@ -93,10 +93,10 @@ struct AudioSettingsView: View {
                 Toggle(isOn: $viewModel.saveAudioClips) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Save audio clips")
-                            .font(.inkBody)
+                            .font(.ceciliasNotesBody)
                             .foregroundColor(.inkTextPrimary)
                         Text("Keep the audio so you can play it back.")
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.inkTextTertiary)
                     }
                 }
@@ -109,10 +109,10 @@ struct AudioSettingsView: View {
                 Toggle(isOn: $viewModel.autoTranscribe) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Generate transcripts")
-                            .font(.inkBody)
+                            .font(.ceciliasNotesBody)
                             .foregroundColor(.inkTextPrimary)
                         Text("Convert speech to text on-device.")
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.inkTextTertiary)
                     }
                 }
@@ -123,12 +123,12 @@ struct AudioSettingsView: View {
 
             if !viewModel.saveAudioClips && !viewModel.autoTranscribe {
                 Text("With both off, recordings are discarded. Turn one on to keep something.")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
             }
         }
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     // MARK: Quality
@@ -145,16 +145,16 @@ struct AudioSettingsView: View {
             .pickerStyle(.segmented)
 
             Text("'Accurate' uses more battery and takes longer.")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
         }
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     private func cardHeader(_ title: String) -> some View {
         Text(title)
-            .font(.inkSubhead)
+            .font(.ceciliasNotesSubhead)
             .foregroundColor(.inkTextSecondary)
     }
 }
@@ -186,17 +186,17 @@ private struct LocalePickerSheet: View {
                 } label: {
                     HStack {
                         Text("System default")
-                            .font(.inkBody)
+                            .font(.ceciliasNotesBody)
                             .foregroundColor(.inkTextPrimary)
                         Spacer()
                         if selected.isEmpty {
                             Image(systemName: "checkmark")
-                                .font(.inkRowSelected)
+                                .font(.ceciliasNotesRowSelected)
                                 .foregroundColor(.inkAccentPrimary)
                         }
                     }
                 }
-                .buttonStyle(.inkPressable)
+                .buttonStyle(.ceciliasNotesPressable)
 
                 ForEach(filtered, id: \.identifier) { locale in
                     Button {
@@ -204,17 +204,17 @@ private struct LocalePickerSheet: View {
                     } label: {
                         HStack {
                             Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                                .font(.inkBody)
+                                .font(.ceciliasNotesBody)
                                 .foregroundColor(.inkTextPrimary)
                             Spacer()
                             if selected == locale.identifier {
                                 Image(systemName: "checkmark")
-                                    .font(.inkRowSelected)
+                                    .font(.ceciliasNotesRowSelected)
                                     .foregroundColor(.inkAccentPrimary)
                             }
                         }
                     }
-                    .buttonStyle(.inkPressable)
+                    .buttonStyle(.ceciliasNotesPressable)
                 }
             }
             .listStyle(.plain)

@@ -85,16 +85,16 @@ struct StyleGuideView: View {
             sectionHeader("Typography")
 
             Group {
-                typeRow(".inkDisplay",  sample: "The quick brown fox",   font: .inkDisplay)
-                typeRow(".inkTitle1",   sample: "The quick brown fox",   font: .inkTitle1)
-                typeRow(".inkTitle2",   sample: "The quick brown fox",   font: .inkTitle2)
-                typeRow(".inkHeadline", sample: "The quick brown fox",   font: .inkHeadline)
-                typeRow(".inkBody",     sample: "The quick brown fox",   font: .inkBody)
-                typeRow(".inkCallout",  sample: "The quick brown fox",   font: .inkCallout)
-                typeRow(".inkSubhead",  sample: "The quick brown fox",   font: .inkSubhead)
-                typeRow(".inkFootnote", sample: "The quick brown fox",   font: .inkFootnote)
-                typeRow(".inkCaption",  sample: "The quick brown fox",   font: .inkCaption)
-                typeRow(".inkMono",     sample: "let x: Int = 42",       font: .inkMono)
+                typeRow(".ceciliasNotesDisplay",  sample: "The quick brown fox",   font: .ceciliasNotesDisplay)
+                typeRow(".ceciliasNotesTitle1",   sample: "The quick brown fox",   font: .ceciliasNotesTitle1)
+                typeRow(".ceciliasNotesTitle2",   sample: "The quick brown fox",   font: .ceciliasNotesTitle2)
+                typeRow(".ceciliasNotesHeadline", sample: "The quick brown fox",   font: .ceciliasNotesHeadline)
+                typeRow(".ceciliasNotesBody",     sample: "The quick brown fox",   font: .ceciliasNotesBody)
+                typeRow(".ceciliasNotesCallout",  sample: "The quick brown fox",   font: .ceciliasNotesCallout)
+                typeRow(".ceciliasNotesSubhead",  sample: "The quick brown fox",   font: .ceciliasNotesSubhead)
+                typeRow(".ceciliasNotesFootnote", sample: "The quick brown fox",   font: .ceciliasNotesFootnote)
+                typeRow(".ceciliasNotesCaption",  sample: "The quick brown fox",   font: .ceciliasNotesCaption)
+                typeRow(".ceciliasNotesMono",     sample: "let x: Int = 42",       font: .ceciliasNotesMono)
             }
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -116,7 +116,7 @@ struct StyleGuideView: View {
                 ], id: \.0) { name, value in
                     HStack(spacing: CeciliasNotes.Spacing.sm) {
                         Text(".\(name)")
-                            .font(.inkMono)
+                            .font(.ceciliasNotesMono)
                             .foregroundColor(.inkTextSecondary)
                             .frame(width: 80, alignment: .leading)
                         Rectangle()
@@ -124,14 +124,14 @@ struct StyleGuideView: View {
                             .frame(width: value, height: 16)
                             .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
                         Text("\(Int(value))pt")
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.inkTextTertiary)
                     }
                 }
             }
 
             Text("Radius tokens")
-                .font(.inkFootnote)
+                .font(.ceciliasNotesFootnote)
                 .foregroundColor(.inkTextTertiary)
                 .padding(.top, CeciliasNotes.Spacing.sm)
 
@@ -151,7 +151,7 @@ struct StyleGuideView: View {
                             )
                             .frame(width: 56, height: 56)
                         Text(".\(name)")
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.inkTextTertiary)
                     }
                 }
@@ -220,7 +220,7 @@ struct StyleGuideView: View {
                 )
                 Spacer()
             }
-            .inkCard()
+            .ceciliasNotesCard()
             .padding(.vertical, CeciliasNotes.Spacing.md)
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -250,7 +250,7 @@ struct StyleGuideView: View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             sectionHeader("Animation Presets")
             Text("Reduce Motion: \(UIAccessibility.isReduceMotionEnabled ? "ON — springs replaced with crossfade" : "OFF — springs active")")
-                .font(.inkFootnote)
+                .font(.ceciliasNotesFootnote)
                 .foregroundColor(UIAccessibility.isReduceMotionEnabled ? .inkDestructive : .inkTextSecondary)
 
             ForEach([
@@ -269,14 +269,14 @@ struct StyleGuideView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.inkHeadline)
+            .font(.ceciliasNotesHeadline)
             .foregroundColor(.inkTextPrimary)
     }
 
     private func colorGroup(_ groupName: String, swatches: [(String, Color)]) -> some View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xs) {
             Text(groupName)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -300,7 +300,7 @@ struct StyleGuideView: View {
                 .frame(width: 64, height: 40)
 
             Text(name)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
                 .lineLimit(2)
                 .frame(width: 64, alignment: .leading)
@@ -310,7 +310,7 @@ struct StyleGuideView: View {
     private func typeRow(_ token: String, sample: String, font: Font) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: CeciliasNotes.Spacing.md) {
             Text(token)
-                .font(.inkMono)
+                .font(.ceciliasNotesMono)
                 .foregroundColor(.inkTextTertiary)
                 .frame(width: 120, alignment: .leading)
             Text(sample)
@@ -323,7 +323,7 @@ struct StyleGuideView: View {
         let isSelected = themeManager.theme == theme
 
         return Button {
-            withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                 themeManager.theme = theme
             }
         } label: {
@@ -355,11 +355,11 @@ struct StyleGuideView: View {
                     )
 
                 Text(theme.displayName)
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
             }
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 }
 
@@ -376,10 +376,10 @@ private struct AnimationRow: View {
         HStack(spacing: CeciliasNotes.Spacing.md) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(".\(name)")
-                    .font(.inkMono)
+                    .font(.ceciliasNotesMono)
                     .foregroundColor(.inkTextSecondary)
                 Text(description)
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
             }
             .frame(width: 180, alignment: .leading)
@@ -390,7 +390,7 @@ private struct AnimationRow: View {
                 .fill(Color.inkAccentPrimary)
                 .frame(width: 32, height: 32)
                 .offset(x: isAnimating ? 24 : -24)
-                .inkAnimation(animation, value: isAnimating)
+                .ceciliasNotesAnimation(animation, value: isAnimating)
 
             Spacer()
 
@@ -404,7 +404,7 @@ private struct AnimationRow: View {
             }
         }
         .padding(CeciliasNotes.Spacing.sm)
-        .inkCard()
+        .ceciliasNotesCard()
         .onAppear {
             Task {
                 try? await Task.sleep(for: .seconds(0.6))

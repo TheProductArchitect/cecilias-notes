@@ -189,11 +189,11 @@ struct KeyboardShortcutsView: View {
     private func shortcutRow(_ name: String, keys: String) -> some View {
         HStack {
             Text(name)
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextPrimary)
             Spacer()
             Text(keys)
-                .font(.inkMono)
+                .font(.ceciliasNotesMono)
                 .foregroundColor(.inkTextSecondary)
                 .padding(.horizontal, CeciliasNotes.Spacing.xs)
                 .padding(.vertical, CeciliasNotes.Spacing.micro)

@@ -55,7 +55,7 @@ struct EditorView: View {
                 LectureRecordingView(
                     recorder: recorder,
                     onStop: { record in
-                        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                             viewModel.endLectureMode(with: record)
                         }
                     }
@@ -64,7 +64,7 @@ struct EditorView: View {
                 .zIndex(200)
             }
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.activeLectureRecorder != nil)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.activeLectureRecorder != nil)
     }
 
     private var editorBody: some View {
@@ -103,7 +103,7 @@ struct EditorView: View {
                         safeAreaInsets: proxy.safeAreaInsets
                     )
                     .opacity(viewModel.isFocusMode ? 0.3 : 1.0)
-                    .animation(.inkSpring(CeciliasNotesSpring.fade), value: viewModel.isFocusMode)
+                    .animation(.ceciliasNotesSpring(CeciliasNotesSpring.fade), value: viewModel.isFocusMode)
                 }
 
                 // 3. Page strip (bottom) — fully hidden in Focus Mode
@@ -252,7 +252,7 @@ struct EditorView: View {
                         .contentShape(Rectangle())
                         .ignoresSafeArea()
                         .onTapGesture {
-                            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                                 viewModel.closeCustomisePanel()
                             }
                         }
@@ -280,10 +280,10 @@ struct EditorView: View {
                         } label: {
                             HStack(spacing: CeciliasNotes.Spacing.xs) {
                                 Image(systemName: "arrow.uturn.backward")
-                                    .font(.inkSubhead)
+                                    .font(.ceciliasNotesSubhead)
                                     .fontWeight(.semibold)
                                 Text("Undo Shape")
-                                    .font(.inkSubhead)
+                                    .font(.ceciliasNotesSubhead)
                                     .fontWeight(.semibold)
                             }
                             .foregroundColor(.white)
@@ -295,7 +295,7 @@ struct EditorView: View {
                                     .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
                             )
                         }
-                        .buttonStyle(.inkPressable)
+                        .buttonStyle(.ceciliasNotesPressable)
                         .padding(.top, proxy.safeAreaInsets.top + 60)   // below toolbar
                         Spacer()
                     }
@@ -315,9 +315,9 @@ struct EditorView: View {
                             } label: {
                                 HStack(spacing: CeciliasNotes.Spacing.xs) {
                                     Image(systemName: "xmark")
-                                        .font(.inkCaption)
+                                        .font(.ceciliasNotesCaption)
                                     Text("Exit Focus")
-                                        .font(.inkCaption)
+                                        .font(.ceciliasNotesCaption)
                                 }
                                 .foregroundColor(.inkTextPrimary)
                                 .padding(.horizontal, CeciliasNotes.Spacing.sm)
@@ -327,7 +327,7 @@ struct EditorView: View {
                                         .fill(Color.inkBackgroundElevated.opacity(0.85))
                                 )
                             }
-                            .buttonStyle(.inkPressable)
+                            .buttonStyle(.ceciliasNotesPressable)
                             .opacity(0.6)
                             .padding(.top, proxy.safeAreaInsets.top + CeciliasNotes.Spacing.sm)
                             .padding(.trailing, CeciliasNotes.Spacing.md)
@@ -405,7 +405,7 @@ struct EditorView: View {
                                             .fill(.regularMaterial)
                                     )
                             }
-                            .buttonStyle(.inkPressable)
+                            .buttonStyle(.ceciliasNotesPressable)
                             .padding(.leading, CeciliasNotes.Spacing.md)
                             .padding(.top, CeciliasNotes.Spacing.sm)
                             .accessibilityLabel("Back")
@@ -428,7 +428,7 @@ struct EditorView: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                                 viewModel.isFullScreen = false
                                 viewModel.resetToolbarTimer()
                             }
@@ -454,7 +454,7 @@ struct EditorView: View {
                             .tint(.white)
                             .frame(width: 200)
                         Text("Processing…")
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.white)
                     }
                     .padding(CeciliasNotes.Spacing.lg)
@@ -593,13 +593,13 @@ struct EditorView: View {
                 // via the one-shot registry so re-opening doesn't repeat.
                 if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
                     viewModel.pendingCustomiseNameFocus = true
-                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                         viewModel.isCustomisePanelOpen = true
                     }
                 } else {
                     // Surface the floating Customise pill iff this is a
                     // freshly-created notebook we haven't pilled this session.
-                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                         viewModel.markCustomisePillIfFresh()
                     }
                 }
@@ -625,8 +625,8 @@ struct EditorView: View {
                 if didStart { url.stopAccessingSecurityScopedResource() }
             }
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isCustomisePanelOpen)
-        .animation(.inkSpring(CeciliasNotesSpring.fade),   value: viewModel.isCustomisePillVisible)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isCustomisePanelOpen)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.fade),   value: viewModel.isCustomisePillVisible)
         .onDisappear {
             #if DEBUG
             print("[ImageInsert] 3. EditorView.onDisappear fired — editor is being torn down")
@@ -651,23 +651,23 @@ struct EditorView: View {
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
         ) { _ in
             Task { @MainActor in
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     viewModel.keyboardVisibleHeight = 0
                 }
             }
         }
         // ⌘W / ⌘⇧E / ⌘P / ⌘N / ⌘F come from the WindowGroup .commands modifier
         // (see CeciliasNotesCommands) and arrive as notifications.
-        .onReceive(NotificationCenter.default.publisher(for: .inkCommandCloseNotebook)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandCloseNotebook)) { _ in
             Task { @MainActor in
                 viewModel.prepareForDismissal()
                 onDismiss()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .inkCommandExport)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandExport)) { _ in
             exportPDF()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .inkCommandPrint)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandPrint)) { _ in
             printNotebook()
         }
         // Per-screen shortcuts that should be disabled outside the editor stay
@@ -724,7 +724,7 @@ struct EditorView: View {
             .accessibilityHidden(true)
         )
         .onReceive(
-            NotificationCenter.default.publisher(for: .inkCanvasShouldPanTo)
+            NotificationCenter.default.publisher(for: .ceciliasNotesCanvasShouldPanTo)
         ) { note in
             // Forward minimap pan to scroll view via the canvas container
             if let offset = note.userInfo?["offset"] as? CGPoint {
@@ -803,14 +803,14 @@ struct EditorView: View {
     }
 
     private func togglePageStrip() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isShowingPageStrip.toggle()
         }
         viewModel.resetToolbarTimer()
     }
 
     private func toggleFullScreen() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isFullScreen.toggle()
             if viewModel.isFullScreen {
                 viewModel.isShowingPageStrip = false
@@ -858,7 +858,7 @@ struct EditorView: View {
     }
 
     private func toggleRecordingPanel() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isRecordingPanelVisible.toggle()
         }
         viewModel.resetToolbarTimer()

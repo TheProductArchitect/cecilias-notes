@@ -123,7 +123,7 @@ struct StorageSettingsView: View {
                 icon: "mic"
             )
         }
-        .inkCard()
+        .ceciliasNotesCard()
         .task { await loadMediaDiagnostics() }
     }
 
@@ -135,16 +135,16 @@ struct StorageSettingsView: View {
     ) -> some View {
         HStack(spacing: CeciliasNotes.Spacing.sm) {
             Image(systemName: icon)
-                .font(.inkSectionIcon)
+                .font(.ceciliasNotesSectionIcon)
                 .foregroundColor(.inkTextSecondary)
                 .frame(width: 24)
             Text(label)
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextPrimary)
             Spacer()
             if let count, let bytes {
                 Text("\(count) · \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextSecondary)
                     .monospacedDigit()
             } else {
@@ -190,7 +190,7 @@ struct StorageSettingsView: View {
     private func metricCard(title: String, bytes: Int64?, icon: String) -> some View {
         VStack(spacing: CeciliasNotes.Spacing.xs) {
             Image(systemName: icon)
-                .font(.inkSectionIcon)
+                .font(.ceciliasNotesSectionIcon)
                 .foregroundColor(.inkTextSecondary)
 
             // Cached value (if any) is restored on view-model init
@@ -200,7 +200,7 @@ struct StorageSettingsView: View {
             // legacy "—" empty state, which read as broken.
             if let bytes {
                 Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .monospacedDigit()
                     .minimumScaleFactor(0.7)
@@ -211,12 +211,12 @@ struct StorageSettingsView: View {
             }
 
             Text(title)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     // MARK: Action rows
@@ -268,23 +268,23 @@ struct StorageSettingsView: View {
             } label: {
                 HStack(spacing: CeciliasNotes.Spacing.md) {
                     Image(systemName: "folder")
-                        .font(.inkMidIcon)
+                        .font(.ceciliasNotesMidIcon)
                         .foregroundColor(.inkAccentPrimary)
                         .frame(width: 24)
                     Text("View in Files")
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .foregroundColor(.inkAccentPrimary)
                     Spacer()
                     Image(systemName: "arrow.up.right")
-                        .font(.inkTag)
+                        .font(.ceciliasNotesTag)
                         .foregroundColor(.inkTextTertiary)
                 }
                 .padding(.horizontal, CeciliasNotes.Spacing.md)
                 .padding(.vertical, CeciliasNotes.Spacing.sm)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
         }
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     private func actionRow(
@@ -300,24 +300,24 @@ struct StorageSettingsView: View {
         Button(action: disabled ? {} : action) {
             HStack(spacing: CeciliasNotes.Spacing.md) {
                 Image(systemName: icon)
-                    .font(.inkMidIcon)
+                    .font(.ceciliasNotesMidIcon)
                     .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: CeciliasNotes.Spacing.xs) {
                         Text(title)
-                            .font(.inkBody)
+                            .font(.ceciliasNotesBody)
                             .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
                         if let detail {
                             Text(detail)
-                                .font(.inkCaption)
+                                .font(.ceciliasNotesCaption)
                                 .foregroundColor(.inkTextTertiary)
                         }
                     }
                     if disabled, let sub = disabledSubLabel {
                         Text(sub)
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.inkTextTertiary)
                     }
                 }
@@ -331,7 +331,7 @@ struct StorageSettingsView: View {
             .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, CeciliasNotes.Spacing.sm)
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .disabled(disabled || isLoading)
     }
 

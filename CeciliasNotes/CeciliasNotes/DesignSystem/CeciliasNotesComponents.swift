@@ -37,7 +37,7 @@ public struct CeciliasNotesButton: View {
                         .scaleEffect(0.85)
                 } else {
                     Text(label)
-                        .font(.inkHeadline)
+                        .font(.ceciliasNotesHeadline)
                         .foregroundColor(foregroundColor)
                 }
             }
@@ -118,14 +118,14 @@ public struct CeciliasNotesTextField: View {
                 }
 
                 TextField(placeholder, text: $text)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(.inkTextPrimary)
                     .focused($isFocused)
                     .frame(minHeight: 44)
 
                 if let maxLength {
                     Text("\(text.count)/\(maxLength)")
-                        .font(.inkCaption)
+                        .font(.ceciliasNotesCaption)
                         .foregroundColor(text.count >= maxLength ? .inkDestructive : .inkTextTertiary)
                         .monospacedDigit()
                 }
@@ -135,7 +135,7 @@ public struct CeciliasNotesTextField: View {
             Rectangle()
                 .fill(isFocused ? Color.inkAccentPrimary : Color.inkBorderDefault)
                 .frame(height: 0.5)
-                .inkAnimation(CeciliasNotesSpring.precise, value: isFocused)
+                .ceciliasNotesAnimation(CeciliasNotesSpring.precise, value: isFocused)
         }
         .onChange(of: text) { _, newValue in
             if let maxLength, newValue.count > maxLength {
@@ -145,7 +145,7 @@ public struct CeciliasNotesTextField: View {
     }
 }
 
-// MARK: - .inkCard() modifier
+// MARK: - .ceciliasNotesCard() modifier
 
 private struct CeciliasNotesCardModifier: ViewModifier {
     func body(content: Content) -> some View {
@@ -160,7 +160,7 @@ private struct CeciliasNotesCardModifier: ViewModifier {
 }
 
 public extension View {
-    func inkCard() -> some View {
+    func ceciliasNotesCard() -> some View {
         modifier(CeciliasNotesCardModifier())
     }
 }
@@ -184,7 +184,7 @@ public struct CeciliasNotesBadge: View {
 
     public var body: some View {
         Text(text)
-            .font(style == .count ? .inkCaption : .inkFootnote)
+            .font(style == .count ? .ceciliasNotesCaption : .ceciliasNotesFootnote)
             .fontWeight(style == .count ? .semibold : .regular)
             .foregroundColor(foregroundColor)
             .padding(.horizontal, style == .count ? CeciliasNotes.Spacing.xs : CeciliasNotes.Spacing.sm)
@@ -253,12 +253,12 @@ public struct CeciliasNotesEmptyState: View {
 
             VStack(spacing: CeciliasNotes.Spacing.xs) {
                 Text(title)
-                    .font(.inkTitle2)
+                    .font(.ceciliasNotesTitle2)
                     .foregroundColor(.inkTextSecondary)
                     .multilineTextAlignment(.center)
 
                 Text(subtitle)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(.inkTextTertiary)
                     .multilineTextAlignment(.center)
             }

@@ -809,7 +809,7 @@ final class LibraryViewModel: ObservableObject {
         // style the notebook without an extra tap.
         NewNotebookCustomiseTrigger.mark(nb.id)
         // Scroll-to is communicated via selectedNotebookId
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             selectedNotebookId = nb.id
         }
     }
@@ -1037,7 +1037,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func deleteNotebook(_ notebook: Notebook) {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             do {
                 try storage.deleteNotebook(notebook)
                 notebooks.removeAll     { $0.id == notebook.id }
@@ -1060,7 +1060,7 @@ final class LibraryViewModel: ObservableObject {
         }
         // Animate the model side only after the storage round; on failure the
         // refresh() at end will reconcile any rows that didn't actually delete.
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             notebooks.removeAll     { ids.contains($0.id) }
             pinnedNotebooks.removeAll { ids.contains($0.id) }
         }

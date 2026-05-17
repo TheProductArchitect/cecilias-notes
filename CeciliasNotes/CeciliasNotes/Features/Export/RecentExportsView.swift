@@ -52,7 +52,7 @@ struct RecentExportsView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundColor(.inkTextTertiary)
             Text("No exports yet")
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextSecondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -94,7 +94,7 @@ struct RecentExportsView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(record.notebookTitle)
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .foregroundColor(.inkTextPrimary)
                         .lineLimit(1)
 
@@ -105,7 +105,7 @@ struct RecentExportsView: View {
                         Text("·")
                         Text("\(record.pageCount) pages")
                     }
-                    .font(.inkFootnote)
+                    .font(.ceciliasNotesFootnote)
                     .foregroundColor(.inkTextSecondary)
                 }
 
@@ -120,7 +120,7 @@ struct RecentExportsView: View {
             .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     // MARK: - Load

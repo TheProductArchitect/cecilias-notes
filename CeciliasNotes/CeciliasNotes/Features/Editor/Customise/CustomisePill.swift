@@ -37,11 +37,11 @@ struct CustomisePill: View {
                 onTap()
             } label: {
                 Text("Customise")
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextPrimary)
                     .lineLimit(1)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
 
             Button {
                 onDismiss()
@@ -51,7 +51,7 @@ struct CustomisePill: View {
                     .foregroundColor(.inkTextTertiary)
                     .frame(width: 22, height: 22)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel("Dismiss customise pill")
         }
         .padding(.leading, CeciliasNotes.Spacing.sm)
@@ -89,7 +89,7 @@ struct CustomisePill: View {
         dismissTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            withAnimation(.inkSpring(CeciliasNotesSpring.fade)) {
+            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
                 onDismiss()
             }
         }

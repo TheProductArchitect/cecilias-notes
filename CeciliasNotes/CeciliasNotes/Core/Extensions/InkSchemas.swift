@@ -12,7 +12,7 @@ import SwiftData
 // bump the version identifier each time the schema evolves; no
 // migration plan is required because the container's local
 // fallback wipes the store on schema mismatch
-// (`ModelContainer.inkContainer()`).
+// (`ModelContainer.ceciliasNotesContainer()`).
 //
 // If the schema ever needs *online* migration, the documented
 // escape hatch in SwiftData is to give each version *structurally

@@ -21,7 +21,7 @@ struct IconPreviewView: View {
 
             Text("Renders via BrandIconRenderer.render(letter:size:). "
                + "Generation script: Scripts/GenerateBrandIcons.swift.")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -39,7 +39,7 @@ struct IconPreviewView: View {
                                                     style: .continuous))
 
                     Text("\(Int(px))")
-                        .font(.inkCaption)
+                        .font(.ceciliasNotesCaption)
                         .foregroundColor(.inkTextTertiary)
                 }
             }
@@ -49,7 +49,7 @@ struct IconPreviewView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.inkHeadline)
+            .font(.ceciliasNotesHeadline)
             .foregroundColor(.inkTextPrimary)
     }
 }

@@ -77,7 +77,7 @@ struct SearchResultsView: View {
             }
         } header: {
             Text(title)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.sm)
@@ -122,7 +122,7 @@ private struct SearchResultRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(notebook?.title ?? "Unknown")
-                            .font(.inkSubhead)
+                            .font(.ceciliasNotesSubhead)
                             .foregroundColor(.inkTextPrimary)
                             .lineLimit(1)
 
@@ -144,7 +144,7 @@ private struct SearchResultRow: View {
                         // language's use of italic copy for supporting
                         // information throughout the app.
                         Text(snippetWithOCRSuffix())
-                            .font(.inkFootnote)
+                            .font(.ceciliasNotesFootnote)
                             .foregroundColor(.inkTextSecondary)
                             .lineLimit(2)
                     }
@@ -160,7 +160,7 @@ private struct SearchResultRow: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     /// Builds the per-row snippet:
@@ -194,7 +194,7 @@ private struct SearchResultRow: View {
         while let r = lower.range(of: needle, range: searchStart..<lower.endIndex) {
             if let start = AttributedString.Index(r.lowerBound, within: attributed),
                let end   = AttributedString.Index(r.upperBound, within: attributed) {
-                attributed[start..<end].font = .inkFootnote.bold()
+                attributed[start..<end].font = .ceciliasNotesFootnote.bold()
                 attributed[start..<end].foregroundColor = UIColor.inkAccentPrimary
             }
             searchStart = r.upperBound

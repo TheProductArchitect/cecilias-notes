@@ -70,14 +70,14 @@ struct RecordingPanelView: View {
     private var idleContent: some View {
         VStack(spacing: CeciliasNotes.Spacing.sm) {
             Text("Record Audio")
-                .font(.inkHeadline)
+                .font(.ceciliasNotesHeadline)
                 .foregroundColor(.inkTextPrimary)
 
             HStack(spacing: CeciliasNotes.Spacing.lg) {
                 if transcribeEnabled {
                     Toggle(isOn: $viewModel.isTranscriptionEnabled) {
                         Text("Transcribe")
-                            .font(.inkBody)
+                            .font(.ceciliasNotesBody)
                             .foregroundColor(.inkTextSecondary)
                     }
                     .toggleStyle(.switch)
@@ -94,7 +94,7 @@ struct RecordingPanelView: View {
                         .foregroundColor(.inkTextSecondary)
                         .frame(width: 44, height: 44)
                 }
-                .buttonStyle(.inkPressable)
+                .buttonStyle(.ceciliasNotesPressable)
 
                 Button {
                     HapticManager.shared.recordingStarted()
@@ -109,14 +109,14 @@ struct RecordingPanelView: View {
                                 .foregroundColor(.white)
                         )
                 }
-                .buttonStyle(.inkPressable)
+                .buttonStyle(.ceciliasNotesPressable)
             }
 
             if !saveAudioClips && !autoTranscribe {
                 // Recording is currently a no-op — surface the reason
                 // rather than silently discarding the user's voice.
                 Text("Audio and transcript are both off in Settings. Recordings won't be saved.")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -124,10 +124,10 @@ struct RecordingPanelView: View {
 
             Button { dismiss() } label: {
                 Text("Cancel")
-                    .font(.inkSubhead)
+                    .font(.ceciliasNotesSubhead)
                     .foregroundColor(.inkTextTertiary)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
         }
     }
 
@@ -137,7 +137,7 @@ struct RecordingPanelView: View {
         VStack(spacing: CeciliasNotes.Spacing.sm) {
             HStack {
                 Text(formatElapsed(elapsedSeconds))
-                    .font(.inkMono)
+                    .font(.ceciliasNotesMono)
                     .foregroundColor(.inkTextPrimary)
                     .monospacedDigit()
 
@@ -156,7 +156,7 @@ struct RecordingPanelView: View {
                                 .foregroundColor(.white)
                         )
                 }
-                .buttonStyle(.inkPressable)
+                .buttonStyle(.ceciliasNotesPressable)
             }
 
             WaveformView(mode: .live(levels: liveLevels))
@@ -175,7 +175,7 @@ struct RecordingPanelView: View {
                 .tint(.inkAccentPrimary)
 
             Text("Processing…")
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextSecondary)
         }
     }
@@ -215,7 +215,7 @@ struct RecordingPanelView: View {
     // MARK: - Helpers
 
     private func dismiss() {
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             viewModel.isRecordingPanelVisible = false
         }
     }

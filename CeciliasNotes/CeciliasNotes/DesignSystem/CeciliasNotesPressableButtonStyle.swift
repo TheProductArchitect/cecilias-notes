@@ -28,9 +28,9 @@ public struct CeciliasNotesPressableButtonStyle: ButtonStyle {
 }
 
 public extension ButtonStyle where Self == CeciliasNotesPressableButtonStyle {
-    /// `Button(...).buttonStyle(.inkPressable)` — the standard press feedback
+    /// `Button(...).buttonStyle(.ceciliasNotesPressable)` — the standard press feedback
     /// for every interactive surface in Cecilia's Notes.
-    static var inkPressable: CeciliasNotesPressableButtonStyle { CeciliasNotesPressableButtonStyle() }
+    static var ceciliasNotesPressable: CeciliasNotesPressableButtonStyle { CeciliasNotesPressableButtonStyle() }
 }
 
 // MARK: - Hit target expansion
@@ -42,7 +42,7 @@ public extension View {
     ///
     /// Usage:
     ///     Button { ... } label: { Image(...).frame(width: 36, height: 36) }
-    ///         .buttonStyle(.inkPressable)
+    ///         .buttonStyle(.ceciliasNotesPressable)
     ///         .inkTapTarget()                  // ← gives a 44×44 hit area
     func inkTapTarget(minSize: CGFloat = 44) -> some View {
         self

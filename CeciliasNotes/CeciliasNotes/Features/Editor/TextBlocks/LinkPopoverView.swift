@@ -16,7 +16,7 @@ struct LinkPopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(existingURL == nil ? "Add Link" : "Edit Link")
-                .font(.inkSubhead)
+                .font(.ceciliasNotesSubhead)
                 .foregroundColor(.inkTextPrimary)
 
             HStack(spacing: CeciliasNotes.Spacing.xs) {
@@ -25,7 +25,7 @@ struct LinkPopoverView: View {
                     .foregroundColor(.inkTextTertiary)
 
                 TextField("https://", text: $urlText)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(.inkTextPrimary)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
@@ -44,7 +44,7 @@ struct LinkPopoverView: View {
                         onRemove()
                         isPresented = false
                     }
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                 }
 
                 Spacer()
@@ -52,13 +52,13 @@ struct LinkPopoverView: View {
                 Button("Cancel") {
                     isPresented = false
                 }
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextSecondary)
 
                 Button("Apply") {
                     tryApply()
                 }
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkAccentPrimary)
                 .disabled(!isValidURL)
             }

@@ -31,9 +31,9 @@ struct NotebookGridView: View {
                 .opacity(0)
                 .accessibilityHidden(true)
         )
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSearchActive)
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
-        .animation(.inkSpring(CeciliasNotesSpring.snappy), value: viewModel.folderPath.map(\.id))
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSearchActive)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy), value: viewModel.folderPath.map(\.id))
     }
 
     // MARK: Grid
@@ -66,8 +66,8 @@ struct NotebookGridView: View {
                 .padding(.top, 24)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
-                .animation(.inkSpring(CeciliasNotesSpring.smooth), value: levelFolders.map(\.id))
-                .animation(.inkSpring(CeciliasNotesSpring.smooth), value: levelNotebooks.map(\.id))
+                .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: levelFolders.map(\.id))
+                .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: levelNotebooks.map(\.id))
             }
             // Scrolling the grid dismisses any open inline-rename
             // keyboard immediately. Works for floating + docked
@@ -150,7 +150,7 @@ struct NotebookGridView: View {
                     .fontWeight(.medium)
                     .foregroundColor(.inkTextTertiary)
                 TextField("Search notes…", text: $viewModel.searchText)
-                    .font(.inkBody)
+                    .font(.ceciliasNotesBody)
                     .foregroundColor(.inkTextPrimary)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
@@ -161,7 +161,7 @@ struct NotebookGridView: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.inkTextTertiary)
                     }
-                    .buttonStyle(.inkPressable)
+                    .buttonStyle(.ceciliasNotesPressable)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -304,32 +304,32 @@ private struct BreadcrumbBar: View {
     var body: some View {
         HStack(spacing: CeciliasNotes.Spacing.xs) {
             Button {
-                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.navigateUp()
                 }
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.inkHeadline)
+                    .font(.ceciliasNotesHeadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.inkAccentPrimary)
                     .frame(width: 32, height: 32)
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel("Back")
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     // Subject root crumb
                     Button {
-                        withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                             viewModel.navigateToSubjectRoot()
                         }
                     } label: {
                         Text(viewModel.selectedSubjectName)
-                            .font(.inkSubhead)
+                            .font(.ceciliasNotesSubhead)
                             .foregroundColor(.inkAccentPrimary)
                     }
-                    .buttonStyle(.inkPressable)
+                    .buttonStyle(.ceciliasNotesPressable)
 
                     // Folder segments
                     ForEach(Array(viewModel.folderPath.enumerated()), id: \.element.id) { idx, folder in
@@ -340,20 +340,20 @@ private struct BreadcrumbBar: View {
                         if idx == viewModel.folderPath.count - 1 {
                             // Leaf — non-tappable, primary text
                             Text(folder.name)
-                                .font(.inkSubhead)
+                                .font(.ceciliasNotesSubhead)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.inkTextPrimary)
                         } else {
                             Button {
-                                withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) {
+                                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                                     viewModel.navigateToBreadcrumb(index: idx)
                                 }
                             } label: {
                                 Text(folder.name)
-                                    .font(.inkSubhead)
+                                    .font(.ceciliasNotesSubhead)
                                     .foregroundColor(.inkAccentPrimary)
                             }
-                            .buttonStyle(.inkPressable)
+                            .buttonStyle(.ceciliasNotesPressable)
                         }
                     }
                 }

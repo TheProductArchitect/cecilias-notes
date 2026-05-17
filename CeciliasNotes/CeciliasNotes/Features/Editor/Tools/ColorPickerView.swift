@@ -52,13 +52,13 @@ struct ColorPickerView: View {
                     Image(systemName: "eyedropper")
                         .foregroundColor(.inkAccentPrimary)
                     Text("Custom Colour…")
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .foregroundColor(.inkAccentPrimary)
                     Spacer()
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.inkPressable)
+            .buttonStyle(.ceciliasNotesPressable)
 
             // Opacity (pen + pencil only)
             if viewModel.selectedTool.hasOpacity {
@@ -88,7 +88,7 @@ struct ColorPickerView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
             content()
         }
@@ -117,7 +117,7 @@ struct ColorPickerView: View {
                 }
             }
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
     }
 
     // MARK: Opacity slider
@@ -126,11 +126,11 @@ struct ColorPickerView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Opacity")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
                 Spacer()
                 Text("\(Int(viewModel.selectedTool.currentOpacity * 100))%")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextSecondary)
                     .monospacedDigit()
             }

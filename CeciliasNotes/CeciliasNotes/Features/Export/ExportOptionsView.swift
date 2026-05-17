@@ -105,7 +105,7 @@ struct ExportOptionsView: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
                     )
-                    .transition(.opacity.animation(.inkSpring(CeciliasNotesSpring.precise)))
+                    .transition(.opacity.animation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)))
             } else {
                 ProgressView()
                     .tint(.inkAccentPrimary)
@@ -130,7 +130,7 @@ struct ExportOptionsView: View {
             if rangeTag == 2 {
                 VStack(alignment: .leading, spacing: 4) {
                     TextField("e.g. 1–5, 8, 12", text: $customRange)
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.done)
                         .padding(CeciliasNotes.Spacing.sm)
@@ -144,7 +144,7 @@ struct ExportOptionsView: View {
 
                     if let err = rangeError {
                         Text(err)
-                            .font(.inkCaption)
+                            .font(.ceciliasNotesCaption)
                             .foregroundColor(.red)
                     }
                 }
@@ -165,7 +165,7 @@ struct ExportOptionsView: View {
             .pickerStyle(.segmented)
 
             Text("Estimated size: \(estimatedSizeLabel)")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextSecondary)
         }
     }
@@ -180,7 +180,7 @@ struct ExportOptionsView: View {
             CeciliasNotesDivider()
             toggleRow("Include audio transcripts", systemImage: "waveform",   value: $options.includeTranscriptions)
         }
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     // MARK: - Export button
@@ -210,27 +210,27 @@ struct ExportOptionsView: View {
                     .stroke(Color.inkAccentPrimary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: 80, height: 80)
                     .rotationEffect(.degrees(-90))
-                    .animation(.inkSpring(CeciliasNotesSpring.smooth), value: exportProgress)
+                    .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: exportProgress)
 
                 Text("\(Int(exportProgress * 100))%")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextSecondary)
                     .monospacedDigit()
             }
 
             Text(progressLabel)
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextSecondary)
                 .monospacedDigit()
 
             Button("Cancel") {
                 exportTask?.cancel()
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     exportState = .options
                 }
             }
-            .buttonStyle(.inkPressable)
-            .font(.inkSubhead)
+            .buttonStyle(.ceciliasNotesPressable)
+            .font(.ceciliasNotesSubhead)
             .foregroundColor(.inkTextTertiary)
 
             Spacer()
@@ -247,15 +247,15 @@ struct ExportOptionsView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
                 .foregroundColor(.inkAccentPrimary)
-                .inkAnimation(CeciliasNotesSpring.snappy, value: exportState == .success)
+                .ceciliasNotesAnimation(CeciliasNotesSpring.snappy, value: exportState == .success)
 
             if let result = exportResult {
                 VStack(spacing: 4) {
                     Text("Export complete")
-                        .font(.inkHeadline)
+                        .font(.ceciliasNotesHeadline)
                         .foregroundColor(.inkTextPrimary)
                     Text("\(result.pageCount) pages · \(ByteCountFormatter.string(fromByteCount: result.fileSizeBytes, countStyle: .file))")
-                        .font(.inkSubhead)
+                        .font(.ceciliasNotesSubhead)
                         .foregroundColor(.inkTextSecondary)
                 }
 
@@ -271,8 +271,8 @@ struct ExportOptionsView: View {
                     .frame(maxWidth: .infinity)
 
                     Button("Done") { onDismiss() }
-                        .buttonStyle(.inkPressable)
-                        .font(.inkSubhead)
+                        .buttonStyle(.ceciliasNotesPressable)
+                        .font(.ceciliasNotesSubhead)
                         .foregroundColor(.inkTextTertiary)
                 }
             }
@@ -293,20 +293,20 @@ struct ExportOptionsView: View {
                 .foregroundColor(.red)
 
             Text(exportError ?? "Export failed.")
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextSecondary)
                 .multilineTextAlignment(.center)
 
             CeciliasNotesButton("Try Again", style: .primary) {
-                withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     exportState = .options
                 }
             }
             .frame(maxWidth: .infinity)
 
             Button("Cancel") { onDismiss() }
-                .buttonStyle(.inkPressable)
-                .font(.inkSubhead)
+                .buttonStyle(.ceciliasNotesPressable)
+                .font(.ceciliasNotesSubhead)
                 .foregroundColor(.inkTextTertiary)
 
             Spacer()
@@ -318,14 +318,14 @@ struct ExportOptionsView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.inkSubhead)
+            .font(.ceciliasNotesSubhead)
             .foregroundColor(.inkTextSecondary)
     }
 
     private func toggleRow(_ label: String, systemImage: String, value: Binding<Bool>) -> some View {
         Toggle(isOn: value) {
             Label(label, systemImage: systemImage)
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextPrimary)
         }
         .toggleStyle(.switch)
@@ -436,7 +436,7 @@ struct ExportOptionsView: View {
 
     private func startExport() {
         completedPages = 0
-        withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { exportState = .exporting }
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) { exportState = .exporting }
         let nb   = notebook
         let pgs  = pages
         let opts = options
@@ -455,7 +455,7 @@ struct ExportOptionsView: View {
                 }
                 await MainActor.run {
                     exportResult = result
-                    withAnimation(.inkSpring(CeciliasNotesSpring.snappy)) { exportState = .success }
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) { exportState = .success }
                     HapticManager.shared.exportCompleted()
                 }
             } catch is CancellationError {
@@ -463,7 +463,7 @@ struct ExportOptionsView: View {
             } catch {
                 await MainActor.run {
                     exportError = error.localizedDescription
-                    withAnimation(.inkSpring(CeciliasNotesSpring.smooth)) { exportState = .error }
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) { exportState = .error }
                     HapticManager.shared.exportFailed()
                 }
             }

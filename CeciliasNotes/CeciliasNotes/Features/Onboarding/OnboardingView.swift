@@ -61,7 +61,7 @@ struct OnboardingView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.inkSpring(CeciliasNotesSpring.smooth), value: isPersonalising)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: isPersonalising)
     }
 
     // MARK: Form
@@ -72,17 +72,17 @@ struct OnboardingView: View {
 
             // Live wordmark preview — the moment that sells personalisation.
             BrandWordmark(letter: previewLetter, size: 96)
-                .inkAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
+                .ceciliasNotesAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
                 .frame(height: 120)
                 .accessibilityLabel("Wordmark preview")
 
             VStack(spacing: CeciliasNotes.Spacing.md) {
                 Text("What should we call this?")
-                    .font(.inkHeadline)
+                    .font(.ceciliasNotesHeadline)
                     .foregroundColor(.inkTextPrimary)
 
                 TextField("Your name", text: $inputText)
-                    .font(.inkTitle2)
+                    .font(.ceciliasNotesTitle2)
                     .foregroundColor(.inkTextPrimary)
                     .multilineTextAlignment(.center)
                     .focused($fieldFocused)
@@ -107,7 +107,7 @@ struct OnboardingView: View {
                 // Reserved-height validation slot — empty by default so
                 // the layout doesn't jump when the message appears.
                 Text(validationError ? "Letters only, please." : " ")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(validationError ? .inkDestructive : .clear)
                     .frame(height: 18)
             }
@@ -120,7 +120,7 @@ struct OnboardingView: View {
                 .frame(maxWidth: 280)
                 .disabled(!isValidInput)
                 .opacity(isValidInput ? 1 : 0.4)
-                .animation(.inkSpring(CeciliasNotesSpring.fade), value: isValidInput)
+                .animation(.ceciliasNotesSpring(CeciliasNotesSpring.fade), value: isValidInput)
 
             Spacer()
         }
@@ -206,7 +206,7 @@ private struct PersonalisingTransition: View {
             BrandWordmark(letter: letter, size: 120)
                 .scaleEffect(pulse, anchor: .bottomTrailing)
             Text("Personalising your app…")
-                .font(.inkHeadline)
+                .font(.ceciliasNotesHeadline)
                 .foregroundColor(.inkTextSecondary)
             Spacer()
         }
@@ -243,15 +243,15 @@ struct YourNameCard: View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             HStack(alignment: .center, spacing: CeciliasNotes.Spacing.md) {
                 BrandWordmark(letter: previewLetter, size: 36)
-                    .inkAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
+                    .ceciliasNotesAnimation(CeciliasNotesSpring.snappy, value: previewLetter)
                     .frame(width: 56, height: 44, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Your Name")
-                        .font(.inkBody)
+                        .font(.ceciliasNotesBody)
                         .foregroundColor(.inkTextPrimary)
                     TextField("Add your name", text: $buffer)
-                        .font(.inkSubhead)
+                        .font(.ceciliasNotesSubhead)
                         .foregroundColor(.inkTextSecondary)
                         .focused($focused)
                         .submitLabel(.done)
@@ -281,7 +281,7 @@ struct YourNameCard: View {
                         .foregroundColor(.inkTextTertiary)
                 }
             }
-            .font(.inkCaption)
+            .font(.ceciliasNotesCaption)
             .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.bottom, CeciliasNotes.Spacing.sm)
         }

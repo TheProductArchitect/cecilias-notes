@@ -63,11 +63,11 @@ struct PencilSettingsView: View {
             .background(Color(.systemBackground))
 
             Text("Overrides your system Pencil settings when using Cecilia's Notes.")
-                .font(.inkCaption)
+                .font(.ceciliasNotesCaption)
                 .foregroundColor(.inkTextTertiary)
         }
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     private func doubleTapRow(_ action: DoubleTapAction) -> some View {
@@ -90,7 +90,7 @@ struct PencilSettingsView: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -105,7 +105,7 @@ struct PencilSettingsView: View {
                     value: $viewModel.fingerDrawingEnabled
                 )
                 Text("Allow drawing with your finger. When off, finger gestures scroll and zoom the canvas.")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
                     .padding(.bottom, CeciliasNotes.Spacing.sm)
@@ -120,7 +120,7 @@ struct PencilSettingsView: View {
                     value: $viewModel.drawingHapticsEnabled
                 )
                 Text("Subtle vibration as you draw.")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
                     .padding(.bottom, CeciliasNotes.Spacing.sm)
@@ -135,7 +135,7 @@ struct PencilSettingsView: View {
                 )
             }
         }
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     // MARK: Squeeze (Apple Pencil Pro)
@@ -161,11 +161,11 @@ struct PencilSettingsView: View {
                 .background(Color(.systemBackground))
 
                 Text("Squeeze your Apple Pencil Pro to trigger this action.")
-                    .font(.inkCaption)
+                    .font(.ceciliasNotesCaption)
                     .foregroundColor(.inkTextTertiary)
             }
             .padding(CeciliasNotes.Spacing.md)
-            .inkCard()
+            .ceciliasNotesCard()
 
             if viewModel.squeezeAction == .tool {
                 squeezeToolCard
@@ -193,7 +193,7 @@ struct PencilSettingsView: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -215,7 +215,7 @@ struct PencilSettingsView: View {
             .background(Color(.systemBackground))
         }
         .padding(CeciliasNotes.Spacing.md)
-        .inkCard()
+        .ceciliasNotesCard()
     }
 
     private func squeezeToolRow(_ choice: SqueezeToolChoice) -> some View {
@@ -238,14 +238,14 @@ struct PencilSettingsView: View {
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.inkPressable)
+        .buttonStyle(.ceciliasNotesPressable)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func toggleRow(_ label: String, systemImage: String, value: Binding<Bool>) -> some View {
         Toggle(isOn: value) {
             Label(label, systemImage: systemImage)
-                .font(.inkBody)
+                .font(.ceciliasNotesBody)
                 .foregroundColor(.inkTextPrimary)
         }
         .toggleStyle(.switch)
@@ -256,7 +256,7 @@ struct PencilSettingsView: View {
 
     private func cardHeader(_ title: String) -> some View {
         Text(title)
-            .font(.inkSubhead)
+            .font(.ceciliasNotesSubhead)
             .foregroundColor(.inkTextSecondary)
     }
 }

@@ -950,7 +950,7 @@ final class ExportService {
             ctx.fill(ruleRect)
 
             let attrs: [NSAttributedString.Key: Any] = [
-                .font:            UIFont.inkCaption,
+                .font:            UIFont.ceciliasNotesCaption,
                 .foregroundColor: UIColor.inkTextSecondary,
             ]
             let textRect = CGRect(x: 8, y: footnoteY + 4, width: bounds.width - 16, height: 60)
@@ -962,7 +962,7 @@ final class ExportService {
 
     private func drawPageNumber(_ label: String, ctx: CGContext, bounds: CGRect) {
         let attrs: [NSAttributedString.Key: Any] = [
-            .font:            UIFont.inkCaption,
+            .font:            UIFont.ceciliasNotesCaption,
             .foregroundColor: UIColor.inkTextSecondary,
         ]
         let size   = (label as NSString).size(withAttributes: attrs)
@@ -984,9 +984,9 @@ final class ExportService {
 
         let cx = bounds.midX
 
-        // Notebook title — .inkDisplay (34pt light)
+        // Notebook title — .ceciliasNotesDisplay (34pt light)
         let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font:            UIFont.inkDisplay,
+            .font:            UIFont.ceciliasNotesDisplay,
             .foregroundColor: UIColor.white,
         ]
         let titleStr  = notebook.title as NSString
@@ -996,9 +996,9 @@ final class ExportService {
             withAttributes: titleAttrs
         )
 
-        // Export date — .inkFootnote (13pt) text.tertiary
+        // Export date — .ceciliasNotesFootnote (13pt) text.tertiary
         let dateAttrs: [NSAttributedString.Key: Any] = [
-            .font:            UIFont.inkFootnote,
+            .font:            UIFont.ceciliasNotesFootnote,
             .foregroundColor: UIColor.white.withAlphaComponent(0.55),
         ]
         let dateStr  = Self.coverDateString() as NSString
@@ -1008,9 +1008,9 @@ final class ExportService {
             withAttributes: dateAttrs
         )
 
-        // "Cecilia's Notes" wordmark — bottom-right, .inkCaption (12pt)
+        // "Cecilia's Notes" wordmark — bottom-right, .ceciliasNotesCaption (12pt)
         let markAttrs: [NSAttributedString.Key: Any] = [
-            .font:            UIFont.inkCaption,
+            .font:            UIFont.ceciliasNotesCaption,
             .foregroundColor: UIColor.white.withAlphaComponent(0.40),
         ]
         let markStr  = "Cecilia's Notes" as NSString
