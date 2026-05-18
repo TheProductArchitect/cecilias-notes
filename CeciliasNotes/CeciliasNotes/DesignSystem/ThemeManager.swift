@@ -92,36 +92,23 @@ public final class ThemeManager: ObservableObject {
     private func updateAppIcon() {
         // TODO (post-1.0): When Midnight icon variants ship, compose
         // `\(current.appIconAssetPrefix)-\(letter)` instead. For now,
-        // keep using the existing per-letter family so we don't try
-        // to set a non-existent icon name and trigger a console error.
-        guard let letter = currentUserInitial() else {
-            UIApplication.shared.setAlternateIconName(nil) { error in
-                if let error = error {
-                    print("[Theme] Reset to primary icon failed: \(error)")
-                }
-            }
-            return
-        }
-        let iconName = "Icon-\(letter)"
-        UIApplication.shared.setAlternateIconName(iconName) { error in
-            if let error = error {
-                print("[Theme] App icon swap failed: \(error)")
-            }
-        }
-    }
-
-    /// Lowercase initial of the user's name, or nil if none set. Mirrors
-    /// the existing per-letter app-icon convention (Resources/AppIcons/
-    /// Icon-a.png … Icon-z.png).
-    private func currentUserInitial() -> String? {
+        // resolve through `BrandIcon.variantKey(forName:)` so this path
+        // is byte-identical to the onboarding icon-switch path in
+        // `PersonalIdentity.updateAppIcon(for:)` — both must agree on
+        // the alternate icon name passed to UIKit (just "a"…"z", which
+        // matches the `CFBundleAlternateIcons` keys in Info.plist).
+        let app = UIApplication.shared
+        guard app.supportsAlternateIcons else { return }
         let name = defaults.string(forKey: PersonalIdentity.nameKey)
             ?? UserDefaults.standard.string(forKey: PersonalIdentity.nameKey)
             ?? ""
-        guard let first = name.first else { return nil }
-        let lowered = String(first).lowercased()
-        // Only a–z map to icons; anything else (digits, accented chars
-        // we don't have an asset for) falls back to the primary icon.
-        return ("a"..."z").contains(lowered) ? lowered : nil
+        let key = BrandIcon.variantKey(forName: name)
+        if app.alternateIconName == key { return }
+        app.setAlternateIconName(key) { error in
+            if let error = error {
+                print("[Theme] setAlternateIconName(\(key ?? "nil")) failed: \(error)")
+            }
+        }
     }
 }
 

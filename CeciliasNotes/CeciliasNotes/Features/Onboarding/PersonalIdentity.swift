@@ -158,18 +158,25 @@ func libraryGreeting(forName name: String) -> String {
 @MainActor
 func updateAppIcon(for name: String) {
     let app = UIApplication.shared
+    // Diagnostic logging (Step 0.75 Phase G regression diagnosis). Unconditional
+    // so the iPad device console surfaces it without a debug build attach.
+    // Remove once the icon-switch regression root cause is identified.
+    print("[BrandIcon][diag] updateAppIcon(for: \"\(name)\") called")
+    print("[BrandIcon][diag] supportsAlternateIcons = \(app.supportsAlternateIcons)")
     guard app.supportsAlternateIcons else { return }
     let key = BrandIcon.variantKey(forName: name)
+    print("[BrandIcon][diag] resolved key = \(key ?? "nil"), currentAlternate = \(app.alternateIconName ?? "nil")")
     // setAlternateIconName(nil) reverts to the default icon. Calling it
     // when already at the default is harmless (no alert).
-    if app.alternateIconName == key { return }
+    if app.alternateIconName == key {
+        print("[BrandIcon][diag] no-op: already at \(key ?? "nil")")
+        return
+    }
     app.setAlternateIconName(key) { error in
         if let error = error {
-            // Fail silently in production — there's no recovery action
-            // we can offer the user. Print so dev builds surface bugs.
-            #if DEBUG
-            print("[BrandIcon] setAlternateIconName(\(key ?? "nil")) failed: \(error)")
-            #endif
+            print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
+        } else {
+            print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
         }
     }
 }
