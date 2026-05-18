@@ -262,17 +262,25 @@ extension Theme {
         widgetBackgroundAssetName: "WidgetBackground-Midnight",
         splashAssetName:           "Splash-Midnight",
 
-        // Cover palette — Phase C will replace with Midnight-tuned values.
-        // Until then, mirror Default so the field is non-empty.
+        // Cover palette — Midnight-tuned variants (Phase C).
+        // Each tone preserves its hue identity from the Default palette
+        // (NotebookCoverTone) but shifts luminance to read correctly
+        // against the Midnight library background (#111110). Bipolar
+        // distribution preserved: 3 paper tones (78-94% luminance) +
+        // 5 fabric/leather tones (15-36%). See the Phase C palette
+        // proposal for per-tone reasoning. The picker doesn't read
+        // from this field yet; CustomisePanel still iterates
+        // NotebookCoverTone.allCases. Wiring is a post-Step-0.75
+        // feature.
         coverPalette: [
-            Color(hex: "#f5f0e8"),
-            Color(hex: "#ffffff"),
-            Color(hex: "#e8e8e4"),
-            Color(hex: "#2e2e2e"),
-            Color(hex: "#1a1a2e"),
-            Color(hex: "#2a2e28"),
-            Color(hex: "#2e2228"),
-            Color(hex: "#0a0a0a"),
+            Color(hex: "#E8E0D0"),  // parchment  (warm aged-paper, soft on dark)
+            Color(hex: "#F0F0EC"),  // studioWhite (gallery white, soft warmth)
+            Color(hex: "#C8C8C4"),  // ash        (light cool grey)
+            Color(hex: "#5C5C58"),  // coal       (medium warm grey, lifted from #2E2E2E)
+            Color(hex: "#3A3A52"),  // midnight   (medium blue-indigo, the navy cover tone)
+            Color(hex: "#4A4E46"),  // moss       (medium olive, green undertone preserved)
+            Color(hex: "#4E3E46"),  // dusk       (medium mauve, pink-purple undertone)
+            Color(hex: "#262624"),  // inkBlack   (near-black; deliberate user choice only)
         ],
 
         // Waveform

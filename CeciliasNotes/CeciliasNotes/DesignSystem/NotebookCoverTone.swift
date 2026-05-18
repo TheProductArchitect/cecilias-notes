@@ -13,6 +13,13 @@ enum NotebookCoverTone: String, Codable, CaseIterable {
     case studioWhite
     case ash
     case coal
+    /// `midnight` is a cover-tone NAME — a navy/indigo notebook colour
+    /// (#1a1a2e). It is NOT the `Theme.midnight` dark theme. The two
+    /// share a word but represent unrelated concepts: this is a cover
+    /// surface the user can pick (and that stays that hex regardless
+    /// of the current theme), the other is the user's chosen dark
+    /// theme. Don't rename either — both names are user-facing and
+    /// established. Just be aware of the overlap.
     case midnight
     case moss
     case dusk
