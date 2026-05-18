@@ -110,10 +110,24 @@
     </dict>
 
     <!-- Launch -->
+    <!-- LaunchBackground is a colorset in Assets.xcassets with light
+         (#FAFAF8 — theme.default.background) and dark (#111110 —
+         theme.midnight.background) variants. iOS picks the variant
+         based on the device's system appearance setting at launch
+         time — the LaunchScreen runs before the app fully initialises,
+         so it can't read the user's chosen theme. If the user picked
+         Midnight but the system is in Light mode, the launch screen
+         briefly renders light before the app takes over and applies
+         .preferredColorScheme(.dark). This is unavoidable and
+         acceptable.
+         Phase F renamed from `InkLaunchBackground` (leftover from
+         the Ink → CeciliasNotes rename pass; the asset never
+         existed, so the launch screen had been falling back to
+         the system default). -->
     <key>UILaunchScreen</key>
     <dict>
         <key>UIColorName</key>
-        <string>InkLaunchBackground</string>
+        <string>LaunchBackground</string>
     </dict>
 
     <!-- No bundled custom fonts. The brand uses SF Pro Display
