@@ -19,6 +19,7 @@ struct LibraryHeaderView: View {
 
     @ObservedObject var viewModel: LibraryViewModel
     @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
+    @Environment(\.theme) private var theme
 
     @State private var greeting: String = ""
     @State private var showMoveSheet = false
@@ -66,7 +67,7 @@ struct LibraryHeaderView: View {
         }
         .frame(height: 180)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
+        .background(theme.background)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Color.inkTextPrimary)

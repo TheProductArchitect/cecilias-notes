@@ -14,6 +14,7 @@ struct CoverTonePickerView: View {
     let onDismiss: () -> Void
 
     @State private var selected: NotebookCoverTone
+    @Environment(\.theme) private var theme
 
     init(notebook: Notebook, onDismiss: @escaping () -> Void) {
         self.notebook  = notebook
@@ -54,7 +55,7 @@ struct CoverTonePickerView: View {
                 .foregroundStyle(Color.inkRecessiveTertiary)
         }
         .padding(20)
-        .background(Color(.systemBackground))
+        .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
     }
 

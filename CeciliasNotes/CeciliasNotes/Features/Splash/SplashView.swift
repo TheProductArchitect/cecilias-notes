@@ -38,6 +38,7 @@ struct SplashView: View {
     @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
     @AppStorage("app.splash.firstLaunchSeen") private var firstLaunchSeen: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
 
     /// Called when the splash animation has completed and the parent
     /// should transition away.
@@ -122,7 +123,7 @@ struct SplashView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color(.systemBackground)
+                theme.background
                     .ignoresSafeArea()
 
                 // Ghost letter — typographic texture behind the title.
@@ -163,7 +164,7 @@ struct SplashView: View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text(NameFormatter.mastheadPossessive(for: userName))
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(theme.foreground)
                 Text(".")
                     .foregroundStyle(Color.brandAccent)
             }
@@ -173,7 +174,7 @@ struct SplashView: View {
             Text("notes")
                 .font(.system(size: wordmarkSize, weight: .heavy))
                 .tracking(-0.05 * wordmarkSize)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(theme.foreground)
 
             // Spacer between wordmark and sign-off.
             Spacer().frame(height: 16)

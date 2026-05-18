@@ -5,19 +5,7 @@ import SwiftUI
 /// name appears. Flat white surface, no cards, no icons.
 struct AboutSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let labelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
-    private static let captionColour = Color(
-        light: Color(hex: "#bbbbbb"),
-        dark:  Color(hex: "#555553")
-    )
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ScrollView {
@@ -32,7 +20,7 @@ struct AboutSettingsView: View {
             .padding(.top, 28)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
     }
 
     // MARK: Cecilia brand moment
@@ -47,17 +35,17 @@ struct AboutSettingsView: View {
                 Text("cecilia's notes")
                     .font(.system(size: 17, weight: .heavy))
                     .tracking(-0.05 * 17)
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(theme.foreground)
                 Text("·")
                     .font(.system(size: 17, weight: .heavy))
                     .foregroundStyle(Color.brandAccent)
             }
             Text(viewModel.appVersion.lowercased())
                 .font(.system(size: 9))
-                .foregroundStyle(Self.labelColour)
+                .foregroundStyle(theme.recessiveQuaternary)
             Text("made with care. yours to keep.")
                 .font(.system(size: 11).italic())
-                .foregroundStyle(Self.captionColour)
+                .foregroundStyle(theme.foregroundSubtle)
                 .padding(.top, 6)
         }
     }
@@ -76,7 +64,7 @@ struct AboutSettingsView: View {
     private var privacySection: some View {
         Text("no backend. no accounts. all data stays on your device.")
             .font(.system(size: 11).italic())
-            .foregroundStyle(Self.captionColour)
+            .foregroundStyle(theme.foregroundSubtle)
             .padding(.top, 4)
     }
 
@@ -85,9 +73,9 @@ struct AboutSettingsView: View {
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             actionRow("send feedback") { sendFeedback() }
-            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            Rectangle().fill(theme.hairline).frame(height: 0.5)
             actionRow("rate cecilia's notes") { viewModel.requestReviewIfEligible() }
-            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            Rectangle().fill(theme.hairline).frame(height: 0.5)
         }
     }
 
@@ -119,7 +107,7 @@ struct AboutSettingsView: View {
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
             .contentShape(Rectangle())
         }
@@ -133,7 +121,7 @@ struct AboutSettingsView: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.labelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 
     private func sendFeedback() {

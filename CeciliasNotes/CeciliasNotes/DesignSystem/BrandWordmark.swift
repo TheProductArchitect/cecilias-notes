@@ -31,13 +31,19 @@ struct BrandWordmark: View {
     }
 
     private let mode: Mode
-    private let onDarkBackground: Bool
+
+    /// Theme drives every colour the wordmark renders. Reads from
+    /// `@Environment(\.theme)` so name/notes/accent flip automatically
+    /// when the user switches Default ↔ Midnight. Pre-D1 there was an
+    /// `onDarkBackground: Bool` parameter that gated hardcoded literals;
+    /// it was structurally theme-blind and every caller relied on its
+    /// `false` default.
+    @Environment(\.theme) private var theme
 
     /// The masthead inline composition: `[name]'s notes·` with the name
     /// auto-sized by length and "notes·" pinned at 18 pt.
-    init(userName: String, onDarkBackground: Bool = false) {
+    init(userName: String) {
         self.mode = .inline(userName: userName)
-        self.onDarkBackground = onDarkBackground
     }
 
     /// Single-letter preview used by the onboarding live preview and
@@ -46,7 +52,6 @@ struct BrandWordmark: View {
     /// is a typographic sketch rather than the full wordmark.
     init(letter: Character, size: CGFloat) {
         self.mode = .letter(letter, size)
-        self.onDarkBackground = false
     }
 
     var body: some View {
@@ -98,10 +103,10 @@ struct BrandWordmark: View {
             Text(String(letter).lowercased())
                 .font(BrandFont.wordmark(size: size))
                 .tracking(-0.05 * size)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(theme.foreground)
             Text(".")
                 .font(BrandFont.wordmark(size: size))
-                .foregroundStyle(Color.brandAccent)
+                .foregroundStyle(theme.accent)
         }
         .accessibilityHidden(true)
     }
@@ -127,20 +132,15 @@ struct BrandWordmark: View {
     }
 
     // MARK: Colours
+    //
+    // All three are theme-driven via `@Environment(\.theme)`. The wordmark
+    // automatically flips when the user switches Default ↔ Midnight.
 
-    private var nameColor: Color {
-        onDarkBackground ? .white : Color(hex: "#0a0a0a")
-    }
+    private var nameColor: Color { theme.foreground }
 
-    private var notesColor: Color {
-        onDarkBackground
-            ? Color.white.opacity(0.35)
-            : Color(hex: "#aaaaaa")
-    }
+    private var notesColor: Color { theme.foregroundMuted }
 
-    private var brandAccent: Color {
-        onDarkBackground ? Color(hex: "#0A84FF") : Color(hex: "#007AFF")
-    }
+    private var brandAccent: Color { theme.accent }
 }
 
 // MARK: - Brand font (SF Pro system)

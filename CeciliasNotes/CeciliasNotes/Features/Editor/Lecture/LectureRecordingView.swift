@@ -27,15 +27,11 @@ struct LectureRecordingView: View {
     @State private var levelSamples: [Float] = Array(repeating: 0, count: 40)
     @State private var sampleTimer: Timer?
     @FocusState private var titleFocused: Bool
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ZStack {
-            Color(.systemBackground).ignoresSafeArea()
+            theme.background.ignoresSafeArea()
 
             // Ghost letter — first letter of title, "L" fallback.
             GhostLetter(

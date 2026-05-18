@@ -13,6 +13,7 @@ import SwiftUI
 struct AskMyNotesView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     @State private var query: String = ""
     @State private var answer: String = ""
@@ -32,15 +33,10 @@ struct AskMyNotesView: View {
     @State private var streamTask: Task<Void, Never>?
     @FocusState private var inputFocused: Bool
 
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().background(Self.hairlineColour)
+            Divider().background(theme.hairline)
             if IntelligenceService.shared.canRun {
                 scrollableAnswer
                 inputBar
@@ -59,7 +55,7 @@ struct AskMyNotesView: View {
                 Spacer(minLength: 0)
             }
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear {
@@ -206,7 +202,7 @@ struct AskMyNotesView: View {
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
-                                        .strokeBorder(Self.hairlineColour, lineWidth: 0.5)
+                                        .strokeBorder(theme.hairline, lineWidth: 0.5)
                                 )
                         }
                         .buttonStyle(.plain)
@@ -272,7 +268,7 @@ struct AskMyNotesView: View {
                             .padding(.vertical, 4)
                             .background(
                                 Capsule()
-                                    .strokeBorder(Self.hairlineColour, lineWidth: 0.5)
+                                    .strokeBorder(theme.hairline, lineWidth: 0.5)
                             )
                     }
                     .buttonStyle(.plain)
@@ -318,7 +314,7 @@ struct AskMyNotesView: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 12)
         .overlay(alignment: .top) {
-            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            Rectangle().fill(theme.hairline).frame(height: 0.5)
         }
     }
 
@@ -445,7 +441,7 @@ struct AskMyNotesView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Self.hairlineColour.opacity(0.6))
+                .fill(theme.hairline.opacity(0.6))
         )
     }
 
@@ -476,7 +472,7 @@ struct AskMyNotesView: View {
                                 .padding(.vertical, 6)
                                 .background(
                                     Capsule()
-                                        .strokeBorder(Self.hairlineColour, lineWidth: 0.5)
+                                        .strokeBorder(theme.hairline, lineWidth: 0.5)
                                 )
                         }
                         .buttonStyle(.plain)

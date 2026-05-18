@@ -26,16 +26,9 @@ struct SubjectSidebarView: View {
     /// each row. Not persisted — leaving and re-entering the sidebar
     /// resets to the default browse state.
     @State private var isEditingSubjects: Bool = false
+    @Environment(\.theme) private var theme
 
     private static let horizontalInset: CGFloat = 13
-
-    /// Subject-count colour — #aaa light / dim dark equivalent. Slightly
-    /// darker than the all-purpose `inkRecessiveQuinary` (which has to
-    /// stay light enough for sidebar dividers).
-    private static let countColor = Color(
-        light: Color(hex: "#aaaaaa"),
-        dark:  Color(hex: "#5e5e5c")
-    )
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,7 +57,7 @@ struct SubjectSidebarView: View {
         // keyboard inset to the closest enclosing scrollable container,
         // which is this outer VStack. See Bug 3.
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(Color.inkRecessiveQuinary)
@@ -141,7 +134,7 @@ struct SubjectSidebarView: View {
     private var allNotesRow: some View {
         AllNotesListRow(
             viewModel: viewModel,
-            countColor: Self.countColor
+            countColor: theme.foregroundSubtle
         )
     }
 
@@ -149,7 +142,7 @@ struct SubjectSidebarView: View {
         SubjectListRow(
             subject: subject,
             viewModel: viewModel,
-            countColor: Self.countColor,
+            countColor: theme.foregroundSubtle,
             isEditing: isEditingSubjects
         )
     }
@@ -369,6 +362,7 @@ private struct SubjectListRow: View {
     let isEditing: Bool
 
     @Query private var notebooks: [Notebook]
+    @Environment(\.theme) private var theme
 
     init(
         subject: Subject,
@@ -546,7 +540,7 @@ private struct SubjectListRow: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color(.systemBackground))
+                        .fill(theme.surfaceElevated)
                         .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 2)
                 )
                 .onAppear { HapticManager.shared.dragReorderStarted() }

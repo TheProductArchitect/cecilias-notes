@@ -7,15 +7,7 @@ import SwiftUI
 /// a hairline-bottom row instead of a card.
 struct AppearanceSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let labelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ScrollView {
@@ -27,31 +19,35 @@ struct AppearanceSettingsView: View {
             .padding(.top, 24)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
     }
 
     private var themeSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("theme")
             HStack(alignment: .top, spacing: 16) {
-                ForEach(Theme.all) { theme in
-                    themeOption(theme)
+                ForEach(Theme.all) { choice in
+                    themeOption(choice)
                 }
                 Spacer(minLength: 0)
             }
         }
     }
 
-    private func themeOption(_ theme: Theme) -> some View {
-        let isSelected = viewModel.themeManager.current.id == theme.id
+    /// `choice` is the theme this swatch represents; `theme` (env) is the
+    /// user's currently-selected theme — used for chrome that should
+    /// reflect the current state (unselected border colour, recessive
+    /// label text) rather than the previewed swatch.
+    private func themeOption(_ choice: Theme) -> some View {
+        let isSelected = viewModel.themeManager.current.id == choice.id
         return Button {
             withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
-                viewModel.themeManager.setTheme(theme)
+                viewModel.themeManager.setTheme(choice)
             }
         } label: {
             VStack(spacing: 8) {
                 ZStack {
-                    theme.background
+                    choice.background
                 }
                 .frame(width: 80, height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
@@ -60,18 +56,18 @@ struct AppearanceSettingsView: View {
                         .strokeBorder(
                             isSelected
                                 ? Color.brandAccent
-                                : Self.hairlineColour,
+                                : theme.hairline,
                             lineWidth: isSelected ? 1.5 : 0.5
                         )
                 )
 
-                Text(theme.displayName.lowercased())
+                Text(choice.displayName.lowercased())
                     .font(.system(size: 9))
-                    .foregroundStyle(Self.labelColour)
+                    .foregroundStyle(theme.recessiveQuaternary)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(theme.displayName) theme")
+        .accessibilityLabel("\(choice.displayName) theme")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -95,7 +91,7 @@ struct AppearanceSettingsView: View {
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
     }
@@ -105,6 +101,6 @@ struct AppearanceSettingsView: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.labelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 }

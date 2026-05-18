@@ -11,6 +11,7 @@ import UIKit
 ///     the *current* orientation, animated with `CeciliasNotesSpring.snappy`.
 struct ToolPaletteView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     /// Bounds of the parent — used for snap-to-edge calculations.
     let parentSize: CGSize
@@ -290,7 +291,7 @@ struct ToolPaletteView: View {
 
     private var paletteBackground: some View {
         RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(Color(.systemBackground).opacity(0.96))
+            .fill(theme.surfaceElevated.opacity(0.96))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(Color.inkRecessiveQuaternary, lineWidth: 0.5)

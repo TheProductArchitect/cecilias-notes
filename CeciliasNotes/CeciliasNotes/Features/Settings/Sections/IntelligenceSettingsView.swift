@@ -9,19 +9,7 @@ import SwiftUI
 /// uppercase section labels, hairline-only row chrome, no card fills.
 struct IntelligenceSettingsView: View {
     @ObservedObject private var intelligence = IntelligenceService.shared
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let labelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
-    private static let captionColour = Color(
-        light: Color(hex: "#aaaaaa"),
-        dark:  Color(hex: "#5e5e5c")
-    )
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ScrollView {
@@ -32,7 +20,7 @@ struct IntelligenceSettingsView: View {
             .padding(.top, 24)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
     }
 
     private var masterToggle: some View {
@@ -46,7 +34,7 @@ struct IntelligenceSettingsView: View {
                         .foregroundStyle(Color.inkTextPrimary)
                     Text("summaries, suggested titles, and ask your notes — all run on this device. nothing leaves it.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Self.captionColour)
+                        .foregroundStyle(theme.foregroundSubtle)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -56,7 +44,7 @@ struct IntelligenceSettingsView: View {
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
     }
@@ -66,6 +54,6 @@ struct IntelligenceSettingsView: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.labelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 }

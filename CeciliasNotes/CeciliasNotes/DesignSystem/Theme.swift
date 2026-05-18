@@ -72,9 +72,12 @@ public struct Theme: Identifiable, Equatable, Hashable {
 
     // MARK: Borders & separators (Flag #2 — 4 fields)
 
-    /// The line between list items — semantically different from a
-    /// card outline even when the value matches.
+    /// The line between list items — primary content boundary.
     public let separator: Color
+    /// Section dividers within a panel — barely-there boundary
+    /// communicating "secondary grouping" rather than "list row break."
+    /// One tier subtler than `separator` (D1 — Bucket 4 consolidation).
+    public let hairline: Color
     /// Hairline outline (typically alpha 0.06–0.08).
     public let borderSubtle: Color
     /// Standard outline weight (typically alpha 0.12).
@@ -164,6 +167,7 @@ extension Theme {
 
         // Borders — alpha overlays on black (light mode)
         separator:       Color.black.opacity(0.06),
+        hairline:        Color.black.opacity(0.04),
         borderSubtle:    Color.black.opacity(0.06),
         borderDefault:   Color.black.opacity(0.12),
         borderEmphasis:  Color.black.opacity(0.24),
@@ -234,6 +238,7 @@ extension Theme {
 
         // Borders — alpha overlays on white (dark mode)
         separator:       Color.white.opacity(0.08),
+        hairline:        Color.white.opacity(0.06),
         borderSubtle:    Color.white.opacity(0.08),
         borderDefault:   Color.white.opacity(0.12),
         borderEmphasis:  Color.white.opacity(0.24),

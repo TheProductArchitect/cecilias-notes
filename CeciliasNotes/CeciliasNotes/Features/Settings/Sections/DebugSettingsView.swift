@@ -12,22 +12,10 @@ import SwiftUI
 /// it's labelled accordingly.
 struct DebugSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @Environment(\.theme) private var theme
 
     @State private var isGenerating = false
     @State private var statusLine: String?
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let labelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
-    private static let captionColour = Color(
-        light: Color(hex: "#aaaaaa"),
-        dark:  Color(hex: "#5e5e5c")
-    )
 
     var body: some View {
         ScrollView {
@@ -38,14 +26,14 @@ struct DebugSettingsView: View {
                 if let statusLine {
                     Text(statusLine)
                         .font(.system(size: 11))
-                        .foregroundStyle(Self.captionColour)
+                        .foregroundStyle(theme.foregroundSubtle)
                 }
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .overlay {
             if isGenerating {
                 Color.black.opacity(0.3)
@@ -73,15 +61,15 @@ struct DebugSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("theme (Phase B debug)")
             VStack(spacing: 0) {
-                ForEach(Theme.all) { theme in
-                    let isSelected = viewModel.themeManager.current.id == theme.id
+                ForEach(Theme.all) { choice in
+                    let isSelected = viewModel.themeManager.current.id == choice.id
                     Button {
                         withAnimation {
-                            viewModel.themeManager.setTheme(theme)
+                            viewModel.themeManager.setTheme(choice)
                         }
                     } label: {
                         HStack {
-                            Text(theme.displayName)
+                            Text(choice.displayName)
                                 .font(.system(size: 13))
                                 .foregroundStyle(Color.inkTextPrimary)
                             Spacer()
@@ -94,7 +82,7 @@ struct DebugSettingsView: View {
                         .padding(.vertical, 12)
                         .overlay(alignment: .bottom) {
                             Rectangle()
-                                .fill(Self.hairlineColour)
+                                .fill(theme.hairline)
                                 .frame(height: 0.5)
                         }
                     }
@@ -144,7 +132,7 @@ struct DebugSettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
         .buttonStyle(.plain)
@@ -186,7 +174,7 @@ struct DebugSettingsView: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.labelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 }
 #endif

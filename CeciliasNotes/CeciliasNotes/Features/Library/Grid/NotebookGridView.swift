@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotebookGridView: View {
     @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
 
     private let columns = [GridItem(.adaptive(minimum: 168), spacing: 16)]
 
@@ -18,7 +19,7 @@ struct NotebookGridView: View {
                 gridArea
             }
         }
-        .background(Color(.systemBackground))
+        .background(theme.background)
         // Hidden ⌘N — the toolbar strip lives in the masthead now,
         // but keeping the keystroke bound here means the shortcut
         // works whenever focus is in the grid pane.

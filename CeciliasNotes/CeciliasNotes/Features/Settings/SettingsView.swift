@@ -13,16 +13,9 @@ struct SettingsView: View {
 
     @StateObject private var viewModel: SettingsViewModel
     @State private var selectedSection: SettingsSection = .appearance
+    @Environment(\.theme) private var theme
 
     private static let railWidth: CGFloat = 220
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let sectionLabelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
 
     init(
         cloudSyncManager: CloudSyncManager,
@@ -43,18 +36,18 @@ struct SettingsView: View {
             HStack(spacing: 0) {
                 rail
                     .frame(width: Self.railWidth)
-                    .background(Color(.systemBackground))
+                    .background(theme.surface)
 
                 Rectangle()
-                    .fill(Self.hairlineColour)
+                    .fill(theme.hairline)
                     .frame(width: 0.5)
 
                 detailView
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(.systemBackground))
+                    .background(theme.surface)
             }
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .toolbar(.hidden, for: .navigationBar)
         .background(
             VStack(spacing: 0) {

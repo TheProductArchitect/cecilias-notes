@@ -77,6 +77,7 @@ enum AnnotationListItem: Identifiable, Hashable {
 struct AnnotationListSheet: View {
     @ObservedObject var viewModel: EditorViewModel
     let onDismiss: () -> Void
+    @Environment(\.theme) private var theme
 
     /// Tick to force a re-fetch when either store changes. SwiftUI
     /// doesn't redraw on `NotificationCenter` posts by itself; the
@@ -88,7 +89,7 @@ struct AnnotationListSheet: View {
             header
             content
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .onReceive(
             NotificationCenter.default.publisher(for: .pdfTextAnnotationsChanged)
         ) { _ in refreshTick &+= 1 }
@@ -183,7 +184,7 @@ struct AnnotationListSheet: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color(.systemBackground))
+        .background(theme.surface)
     }
 
     // MARK: Data

@@ -24,18 +24,7 @@ struct CloudSettingsView: View {
     /// `.temporarilyUnavailable`) collapses to the sign-in prompt.
     @State private var iCloudAccountStatus: CKAccountStatus?
 
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
-    private static let labelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
-    private static let captionColour = Color(
-        light: Color(hex: "#aaaaaa"),
-        dark:  Color(hex: "#5e5e5c")
-    )
+    @Environment(\.theme) private var theme
 
     init(viewModel: SettingsViewModel) {
         self.viewModel = viewModel
@@ -55,7 +44,7 @@ struct CloudSettingsView: View {
             .padding(.top, 24)
             .padding(.bottom, 28)
         }
-        .background(Color(.systemBackground))
+        .background(theme.surface)
         .task { await loadiCloudUsage() }
         .alert("Enable iCloud sync?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
@@ -88,7 +77,7 @@ struct CloudSettingsView: View {
                         .foregroundStyle(Color.inkTextPrimary)
                     Text("notebooks sync across your devices via iCloud drive.")
                         .font(.system(size: 11))
-                        .foregroundStyle(Self.captionColour)
+                        .foregroundStyle(theme.foregroundSubtle)
                 }
                 Spacer()
                 Toggle("", isOn: Binding(
@@ -102,7 +91,7 @@ struct CloudSettingsView: View {
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
     }
@@ -118,13 +107,13 @@ struct CloudSettingsView: View {
                 if let lastSynced = cloud.lastSyncedAt {
                     Text("last synced \(relativeDate(lastSynced))")
                         .font(.system(size: 11))
-                        .foregroundStyle(Self.captionColour)
+                        .foregroundStyle(theme.foregroundSubtle)
                 }
             }
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
 
             Button {
@@ -152,7 +141,7 @@ struct CloudSettingsView: View {
     private var statusRow: some View {
         Text(statusText)
             .font(.system(size: 12).italic())
-            .foregroundStyle(Self.captionColour)
+            .foregroundStyle(theme.foregroundSubtle)
             .task { await refreshAccountStatus() }
             .onReceive(NotificationCenter.default.publisher(
                 for: .CKAccountChanged
@@ -208,7 +197,7 @@ struct CloudSettingsView: View {
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
     }
@@ -220,7 +209,7 @@ struct CloudSettingsView: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.labelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 
     private func relativeDate(_ date: Date) -> String {

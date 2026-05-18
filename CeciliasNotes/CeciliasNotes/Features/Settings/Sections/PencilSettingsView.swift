@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PencilSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @Environment(\.theme) private var theme
 
     /// Bind the segmented picker against `@AppStorage` directly rather
     /// than routing through `viewModel.doubleTapAction`.
@@ -60,7 +61,7 @@ struct PencilSettingsView: View {
                     }
                 }
             }
-            .background(Color(.systemBackground))
+            .background(theme.surface)
 
             Text("Overrides your system Pencil settings when using Cecilia's Notes.")
                 .font(.ceciliasNotesCaption)
@@ -158,7 +159,7 @@ struct PencilSettingsView: View {
                         }
                     }
                 }
-                .background(Color(.systemBackground))
+                .background(theme.surface)
 
                 Text("Squeeze your Apple Pencil Pro to trigger this action.")
                     .font(.ceciliasNotesCaption)
@@ -212,7 +213,7 @@ struct PencilSettingsView: View {
                     }
                 }
             }
-            .background(Color(.systemBackground))
+            .background(theme.surface)
         }
         .padding(CeciliasNotes.Spacing.md)
         .ceciliasNotesCard()

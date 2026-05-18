@@ -14,6 +14,7 @@ struct LibraryView: View {
     /// collapsed.
     @AppStorage("library.sidebar.visible") private var isSidebarVisible: Bool = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
 
     /// The notebook currently being edited (if any). Drives the full-screen Editor cover.
     @State private var editingNotebook: Notebook?
@@ -101,7 +102,7 @@ struct LibraryView: View {
                 if isSidebarVisible {
                     SubjectSidebarView(viewModel: viewModel)
                         .frame(width: Self.sidebarWidth)
-                        .background(Color(.systemBackground))
+                        .background(theme.surface)
                         .transition(.move(edge: .leading))
                 }
                 NotebookGridView(viewModel: viewModel)
@@ -158,7 +159,7 @@ struct LibraryView: View {
             Text(err.errorDescription ?? "Some PDFs couldn't be imported.")
         }
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.error)
-        .background(Color(.systemBackground))
+        .background(theme.background)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
         .ignoresSafeArea(.keyboard, edges: keyboardObserver.isFloatingKeyboard ? .bottom : [])

@@ -159,11 +159,7 @@ private struct StickyNotePopoverEditor: View {
 
     @State private var draft: String = ""
     @FocusState private var focused: Bool
-
-    private static let hairlineColour = Color(
-        light: Color(hex: "#f5f5f5"),
-        dark:  Color(hex: "#1f1f1d")
-    )
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -195,7 +191,7 @@ private struct StickyNotePopoverEditor: View {
         }
         .padding(14)
         .frame(width: 260)
-        .background(Color(.systemBackground))
+        .background(theme.surfaceElevated)
         .onAppear {
             draft = note.body
             focused = true

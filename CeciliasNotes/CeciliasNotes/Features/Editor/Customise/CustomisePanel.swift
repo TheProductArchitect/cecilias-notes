@@ -39,14 +39,13 @@ struct CustomisePanel: View {
     private let coverSwatchSize    = CGSize(width: 64, height: 85)
     private let templateThumbSize  = CGSize(width: 64, height: 85)
 
-    private static let hairlineColour = Color(
-        light: Color(hex: "#ebebeb"),
-        dark:  Color(hex: "#2a2a28")
-    )
-    private static let sectionLabelColour = Color(
-        light: Color(hex: "#999999"),
-        dark:  Color(hex: "#6a6a67")
-    )
+    // Hairline + section-label palette migrated to Theme (D1 — Bucket 4
+    // consolidation). Note: CustomisePanel's hairlineColour was slightly
+    // darker than the Settings-family (#ebebeb vs #f5f5f5 light, #2a2a28
+    // vs #1f1f1d dark). theme.hairline sits between the two; CustomisePanel
+    // hairlines become marginally less prominent after migration. Phase G
+    // can re-tune theme.hairline's alpha if the new rendering reads off.
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -106,7 +105,7 @@ struct CustomisePanel: View {
                 ),
                 style: .continuous
             )
-            .fill(Color(.systemBackground))
+            .fill(theme.surface)
             .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
         )
         .transition(.move(edge: .top).combined(with: .opacity))
@@ -161,7 +160,7 @@ struct CustomisePanel: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Self.hairlineColour).frame(height: 1)
+            Rectangle().fill(theme.hairline).frame(height: 1)
         }
     }
 
@@ -181,7 +180,7 @@ struct CustomisePanel: View {
                 }
                 .padding(.vertical, 8)
                 .overlay(alignment: .bottom) {
-                    Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                    Rectangle().fill(theme.hairline).frame(height: 0.5)
                 }
                 // Keyboard toolbar "Done" — single dismiss path
                 // that works under floating + docked keyboards.
@@ -229,7 +228,7 @@ struct CustomisePanel: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(Capsule().fill(Self.hairlineColour))
+                .background(Capsule().fill(theme.hairline))
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -250,7 +249,7 @@ struct CustomisePanel: View {
                 HStack(spacing: 6) {
                     Text("suggested")
                         .font(.system(size: 9, weight: .regular).italic())
-                        .foregroundStyle(Self.sectionLabelColour)
+                        .foregroundStyle(theme.recessiveQuaternary)
                     Spacer()
                 }
 
@@ -265,7 +264,7 @@ struct CustomisePanel: View {
                                 .background(
                                     Capsule()
                                         .strokeBorder(
-                                            Self.hairlineColour,
+                                            theme.hairline,
                                             lineWidth: 0.5
                                         )
                                 )
@@ -377,7 +376,7 @@ struct CustomisePanel: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .overlay(
-                    Capsule().strokeBorder(Self.hairlineColour, lineWidth: 0.5)
+                    Capsule().strokeBorder(theme.hairline, lineWidth: 0.5)
                 )
                 .contentShape(Capsule())
         }
@@ -511,7 +510,7 @@ struct CustomisePanel: View {
                     .strokeBorder(
                         isSelected
                             ? Color.brandAccent
-                            : (tone.requiresBorder ? Self.hairlineColour : Color.clear),
+                            : (tone.requiresBorder ? theme.hairline : Color.clear),
                         lineWidth: isSelected ? 1.5 : 0.5
                     )
             )
@@ -562,13 +561,13 @@ struct CustomisePanel: View {
 
                     if index < PageSize.allCases.count - 1 {
                         Rectangle()
-                            .fill(Self.hairlineColour)
+                            .fill(theme.hairline)
                             .frame(width: 0.5, height: 18)
                     }
                 }
             }
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
     }
@@ -598,7 +597,7 @@ struct CustomisePanel: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(category.displayName)
                         .font(.system(size: 9, weight: .regular).italic())
-                        .foregroundStyle(Self.sectionLabelColour)
+                        .foregroundStyle(theme.recessiveQuaternary)
 
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -615,7 +614,7 @@ struct CustomisePanel: View {
             if locked {
                 Text("set when you started writing")
                     .font(.system(size: 9, weight: .regular).italic())
-                    .foregroundStyle(Self.sectionLabelColour)
+                    .foregroundStyle(theme.recessiveQuaternary)
             }
         }
     }
@@ -634,7 +633,7 @@ struct CustomisePanel: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .strokeBorder(
-                                isSelected ? Color.brandAccent : Self.hairlineColour,
+                                isSelected ? Color.brandAccent : theme.hairline,
                                 lineWidth: isSelected ? 1.5 : 0.5
                             )
                     )
@@ -645,7 +644,7 @@ struct CustomisePanel: View {
 
             Text(template.displayName.lowercased())
                 .font(.system(size: 8).italic())
-                .foregroundStyle(Self.sectionLabelColour)
+                .foregroundStyle(theme.recessiveQuaternary)
         }
         .accessibilityLabel("Template \(template.displayName)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -693,7 +692,7 @@ struct CustomisePanel: View {
                 showAnnotationList = true
             }
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
         // Phase 5B: AnnotationListSheet is presented through
@@ -819,7 +818,7 @@ struct CustomisePanel: View {
         }
         .frame(height: 44)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Self.hairlineColour).frame(height: 0.5)
+            Rectangle().fill(theme.hairline).frame(height: 0.5)
         }
     }
 
@@ -857,7 +856,7 @@ struct CustomisePanel: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Self.sectionLabelColour)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 
     private func commitTitle() {
