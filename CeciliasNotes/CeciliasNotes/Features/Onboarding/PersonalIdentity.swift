@@ -187,9 +187,18 @@ func updateAppIcon(for name: String) {
 
 /// Apply any icon update queued by `updateAppIcon(for:)`. Safe to call
 /// from any settled view's `onAppear` — no-ops if no update is pending.
-/// Clears the pending flag UNCONDITIONALLY (success OR failure) so a
-/// presentation failure doesn't trigger a retry on every subsequent
-/// library appearance.
+/// Clears the pending flag UNCONDITIONALLY (so the retry loop owns the
+/// outcome end-to-end; we never re-trigger on every subsequent library
+/// appearance even if every retry fails).
+///
+/// **Retries:** iOS 26's `LSIconAlertManager` returns POSIX EAGAIN
+/// ("Resource temporarily unavailable", code 35) when it can't acquire
+/// its presentation token — usually because keyboard/sheet teardown is
+/// still in flight or LaunchServices hasn't finished indexing alternate
+/// icons on a fresh install. EAGAIN is documented as "retry later," so
+/// we do exactly that: 5 attempts at 0s/0.5s/1s/2s/4s, bailing the
+/// instant one succeeds. Max wall-clock budget 7.5s. Caller doesn't
+/// block — the retry loop runs in a detached Task.
 @MainActor
 func applyPendingIconUpdateIfNeeded() {
     let defaults = UserDefaults.standard
@@ -204,11 +213,38 @@ func applyPendingIconUpdateIfNeeded() {
         print("[BrandIcon][diag] no-op: already at \(key ?? "nil")")
         return
     }
-    app.setAlternateIconName(key) { error in
-        if let error = error {
-            print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
-        } else {
-            print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
-        }
+    Task { @MainActor in
+        await setAlternateIconWithBackoff(key)
     }
+}
+
+/// EAGAIN-aware retry loop around `setAlternateIconName(_:)`. Returns
+/// on first success or after exhausting the schedule. See
+/// `applyPendingIconUpdateIfNeeded()` for the rationale.
+@MainActor
+private func setAlternateIconWithBackoff(_ key: String?) async {
+    // Delays in milliseconds before each attempt. First attempt is
+    // immediate; subsequent waits give iOS time to drain whatever
+    // resource was unavailable.
+    let delaysMs: [UInt64] = [0, 500, 1_000, 2_000, 4_000]
+    for (index, delayMs) in delaysMs.enumerated() {
+        let attempt = index + 1
+        if delayMs > 0 {
+            try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+        }
+        print("[BrandIcon][diag] attempt \(attempt)/\(delaysMs.count): setAlternateIconName(\(key ?? "nil"))")
+        let succeeded: Bool = await withCheckedContinuation { cont in
+            UIApplication.shared.setAlternateIconName(key) { error in
+                if let error = error {
+                    print("[BrandIcon][diag] attempt \(attempt) FAILED: \(error)")
+                    cont.resume(returning: false)
+                } else {
+                    print("[BrandIcon][diag] attempt \(attempt) SUCCESS")
+                    cont.resume(returning: true)
+                }
+            }
+        }
+        if succeeded { return }
+    }
+    print("[BrandIcon][diag] gave up after \(delaysMs.count) attempts — icon unchanged")
 }
