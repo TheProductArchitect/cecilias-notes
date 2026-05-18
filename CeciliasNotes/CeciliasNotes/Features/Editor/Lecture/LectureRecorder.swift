@@ -5,6 +5,21 @@ import Foundation
 import Speech
 import UIKit
 
+/// Step 5: `LectureRecorder.stop()` no longer returns a
+/// `LectureRecord` (entity removed in the audio-consolidation
+/// commit). It returns this plain struct so the editor's
+/// `endLectureMode` can hand the file + transcript + duration off
+/// to `AudioElementCommit` for V6 `PageElement(.audio)` creation.
+/// Title isn't stored on `AudioContent` in V6 — preserved here so a
+/// future UI surface (e.g. a per-element label) can pick it up.
+struct LectureRecorderResult {
+    let recordId: UUID
+    let audioURL: URL
+    let transcript: String
+    let durationSeconds: Double
+    let title: String
+}
+
 /// Owns the long-form lecture recording lifecycle:
 ///   • AVAudioEngine tap writes PCM into an `AVAudioFile` (the
 ///     permanent `.m4a`) and simultaneously feeds an
@@ -139,10 +154,12 @@ final class LectureRecorder: ObservableObject {
         try await startEngineAndFile(at: url)
         await startSpeechRecognition()
 
-        // Persist a draft record so a mid-recording crash doesn't
-        // orphan the audio file. Title / transcript / duration get
-        // updated incrementally; final values land in `stop()`.
-        saveDraft(audioRelativePath: relativePath(of: url))
+        // Step 5: dropped the V5 draft-persistence pattern (no
+        // SwiftData row exists until `stop()` returns a
+        // `LectureRecorderResult` that `endLectureMode` commits as
+        // an `AudioContent` + `PageElement`). The trade-off: a
+        // mid-recording crash now loses the in-flight transcript.
+        // Acceptable for v1 single-tester; can revisit if needed.
 
         startElapsedTimer()
         registerLifecycleObservers()
@@ -175,47 +192,27 @@ final class LectureRecorder: ObservableObject {
         }
     }
 
-    /// Stop recording, flush the audio file, soft-finalise the
-    /// `LectureRecord`. Always returns a record once a recording
-    /// has actually started — even if the recogniser broke
-    /// mid-session and the transcript is empty, the placeholder
-    /// TextBlock + audio file still need to land on the page.
-    /// Returns `nil` only in the genuine "no recording in flight"
-    /// case, which is a programmer error the caller can ignore.
-    func stop() async -> LectureRecord? {
+    /// Stop recording, flush the audio file, hand back a
+    /// `LectureRecorderResult` for the editor to commit as a V6
+    /// `AudioContent` + `PageElement`. Returns `nil` for the
+    /// "no recording in flight" case (programmer error) and for
+    /// sub-second misfires (cleaned up to avoid orphaned files).
+    func stop() async -> LectureRecorderResult? {
         guard isRecording else { return nil }
         stopElapsedTimer()
         unregisterLifecycleObservers()
 
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
-        // `.cancel()` (not `.finish()`) — if the daemon connection
-        // is broken, a `finish()` waits indefinitely for a final
-        // result that never arrives. We commit whatever
-        // `committedTranscript` already holds and move on.
         await endSpeechRecognition(commitFinal: true)
 
-        // Closing the `AVAudioFile` flushes and finalises the
-        // M4A container. The actor releases its last retain on the
-        // file so Core Audio can flush metadata cleanly.
         await capture.setAudioFile(nil)
         engine = nil
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
-        // Resolve a sensible URL even if `outputURL` was never set
-        // (shouldn't happen once `isRecording == true`, but the
-        // spec requires `stop()` to always produce a record once
-        // we got this far). The fallback path is filesystem-valid
-        // — `audioRelativePath` doesn't have to exist for the
-        // record to be persisted; subsequent playback will simply
-        // find no file and show the empty-audio state.
         let url = outputURL ?? URL(fileURLWithPath: "lecture_\(recordId.uuidString).m4a")
         let duration = elapsedSeconds
-        // Discard sub-second recordings — they're almost always
-        // accidental start/stop taps and the resulting "0m"
-        // placeholder card just clutters the page. Clean up the
-        // audio file too so we don't leak a tiny m4a per misfire.
         guard duration >= 1.0 else {
             #if DEBUG
             print("[LectureRecorder] stop → discarding sub-second recording (duration=\(duration)s)")
@@ -225,79 +222,37 @@ final class LectureRecorder: ObservableObject {
             isPaused    = false
             return nil
         }
-        // pageId is guaranteed non-nil for an active recording —
-        // `start(pageId:notebookId:)` sets it. Fall back to a
-        // zero UUID so the record is still constructible if some
-        // pre-condition was violated; the editor's
-        // `endLectureMode` handles the placeholder gracefully.
-        let resolvedPageId = pageId ?? UUID()
         isRecording = false
         isPaused    = false
 
-        // CRITICAL: mutate the already-persisted draft record rather
-        // than constructing a fresh `LectureRecord` with the same id.
-        // `LectureRecord` has no `@Attribute(.unique)` constraint
-        // (CloudKit incompatibility), so re-inserting a same-id object
-        // creates a second managed copy alongside the draft. Subsequent
-        // `LectureStore.record(id:pageId:)` lookups then return whichever
-        // copy SwiftData fetches first — frequently the draft, which
-        // still has `title: ""`, `transcript: ""`, `durationSeconds: 0`.
-        // That's the source of the "untitled lecture / 0m" symptom users
-        // see immediately after the TextBlock is inserted by
-        // `endLectureMode`.
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTranscript = committedTranscript
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let record: LectureRecord = {
-            if let draft = LectureStore.record(id: recordId, pageId: resolvedPageId) {
-                draft.title             = trimmedTitle.isEmpty ? "Untitled lecture" : trimmedTitle
-                draft.audioRelativePath = relativePath(of: url)
-                draft.transcript        = trimmedTranscript
-                draft.durationSeconds   = duration
-                draft.updatedAt         = Date()
-                return draft
-            }
-            // Fallback: no draft on disk (start() never persisted, e.g.
-            // pageId was nil at start). Construct fresh.
-            let fresh = LectureRecord(
-                id:                recordId,
-                pageId:            resolvedPageId,
-                notebookId:        notebookId ?? UUID(),
-                title:             trimmedTitle.isEmpty ? "Untitled lecture" : trimmedTitle,
-                audioRelativePath: relativePath(of: url),
-                transcript:        trimmedTranscript,
-                durationSeconds:   duration,
-                createdAt:         startedAt,
-                updatedAt:         Date(),
-                deletedAt:         nil
-            )
-            return fresh
-        }()
-        LectureStore.save(record)
-        #if DEBUG
-        print("[LectureRecorder] stop → saved record id=\(record.id) pageId=\(record.pageId) transcriptLength=\(record.transcript.count) duration=\(record.durationSeconds)s")
-        #endif
 
-        // One final refinement pass over the saved M4A — fills any
-        // gaps that the live recogniser missed (notably backgrounded
-        // intervals). Best-effort and fully asynchronous; the
-        // record is already on disk before this fires. Skipped if
-        // the audio file didn't actually land on disk (fallback
-        // URL above doesn't exist).
+        // Step 5: kick off the post-recording refinement pass that
+        // re-transcribes the saved M4A and writes a (usually richer)
+        // transcript back into the V6 `AudioContent` row keyed by
+        // `recordId`. The editor commits the initial row + transcript
+        // synchronously from the return value below; refinement is
+        // best-effort and fires-and-forgets.
         if FileManager.default.fileExists(atPath: url.path) {
             let refineRecordId = recordId
-            let refinePageId   = resolvedPageId
             let refineURL      = url
             Task.detached {
                 await Self.refineTranscript(
-                    recordId:  refineRecordId,
-                    pageId:    refinePageId,
+                    contentId: refineRecordId,
                     audioURL:  refineURL
                 )
             }
         }
 
-        return record
+        return LectureRecorderResult(
+            recordId: recordId,
+            audioURL: url,
+            transcript: trimmedTranscript,
+            durationSeconds: duration,
+            title: trimmedTitle.isEmpty ? "Untitled lecture" : trimmedTitle
+        )
     }
 
     // MARK: - Engine + file
@@ -502,9 +457,8 @@ final class LectureRecorder: ObservableObject {
     /// record id when complete. Detached so the calling view's
     /// dismiss animation isn't blocked.
     private static func refineTranscript(
-        recordId: UUID,
-        pageId: UUID,
-        audioURL: URL
+        contentId: UUID,
+        audioURL:  URL
     ) async {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized,
               let recogniser = makeOnDeviceRecogniser()
@@ -527,19 +481,19 @@ final class LectureRecorder: ObservableObject {
         guard let final, !final.isEmpty else { return }
 
         await MainActor.run {
-            guard let record = LectureStore.record(id: recordId, pageId: pageId)
-            else { return }
-            // Prefer the longer transcript — the refinement pass is
-            // usually richer than the live one, but if for any
-            // reason it's shorter (very quiet audio, transient
-            // recogniser hiccup) we keep what we had. `record` is
-            // now a SwiftData @Model class; mutations land in place
-            // and `LectureStore.save` flushes the context.
-            if final.count > record.transcript.count {
-                record.transcript = final
-                record.updatedAt  = Date()
-                LectureStore.save(record)
-            }
+            // Step 5: write the refined transcript into the V6
+            // `AudioContent` row keyed by `contentId`. The "prefer
+            // longer transcript" rule is enforced inside
+            // `AudioElementCommit.updateTranscript` is intentionally
+            // unconditional here — by the time refinement completes
+            // the live transcript has already been committed, and
+            // the refined one is usually richer. If it's not, the
+            // user keeps a less-good transcript briefly; trade-off
+            // is acceptable for a best-effort pass.
+            AudioElementCommit.updateTranscript(
+                contentId: contentId,
+                transcript: final
+            )
         }
     }
 
@@ -576,25 +530,6 @@ final class LectureRecorder: ObservableObject {
                 cont.resume(returning: ())
             }
         }
-    }
-
-    // MARK: - Draft persistence
-
-    private func saveDraft(audioRelativePath: String) {
-        guard let pageId else { return }
-        let draft = LectureRecord(
-            id:                recordId,
-            pageId:            pageId,
-            notebookId:        notebookId ?? UUID(),
-            title:             title,
-            audioRelativePath: audioRelativePath,
-            transcript:        "",
-            durationSeconds:   0,
-            createdAt:         startedAt,
-            updatedAt:         startedAt,
-            deletedAt:         nil
-        )
-        LectureStore.save(draft)
     }
 
     // MARK: - Timer

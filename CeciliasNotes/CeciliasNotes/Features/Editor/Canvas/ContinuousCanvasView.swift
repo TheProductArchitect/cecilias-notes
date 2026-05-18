@@ -327,7 +327,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // Strong ref — UIHostingController keeps the SwiftUI overlay
         // alive. Released when the coordinator deinits (i.e. when the
         // editor view is dismissed).
-        var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>?
+        // Step 5 retired the V5 `AudioAnnotationCardsOverlayView`
+        // global-overlay slot; audio is per-page now via the V6
+        // `AudioElementsOverlayView` mounted inside each renderer.
+        // The unused slot stays nil — leaving it here so future
+        // diagnostic hooks have a place to live without a struct
+        // change.
+        var audioPinsHost: UIView?
 
         struct PageHostState {
             let pageId: UUID
@@ -353,10 +359,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// (legacy path with the PDFTextAnnotationStore
             /// overlay stacked on top).
             var pdfPagesHost:  UIHostingController<PDFPageElementsOverlayView>
-            /// Audio annotation pins overlay (ABOVE the canvas).
-            var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>
-            /// Lecture-block overlay (ABOVE the canvas).
-            var lectureHost:   UIHostingController<LectureBlocksOverlayView>
+            /// V6 audio-element overlay (ABOVE the canvas).
+            /// Step 5: replaced both `AudioAnnotationCardsOverlayView`
+            /// (short notes) and `LectureBlocksOverlayView` (long-
+            /// form recordings) — consolidated into a single
+            /// `AudioElementsOverlayView` per the audio-migration
+            /// decision.
+            var audioHost:     UIHostingController<AudioElementsOverlayView>
             /// Sticky-notes overlay (ABOVE the canvas). Phase 3b: was a
             /// single global overlay in `overlayLayer`, now per-page.
             var stickyHost:    UIHostingController<StickyNotesOverlayView>
@@ -588,55 +597,29 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 pdfPagesHost.attachAsChild(of: renderer)
 
-                // Audio annotation overlay — per-page, scoped to
-                // this page's id. Phase 4B: replaced the pin overlay
-                // with full-width cards stacked from the top of the
-                // page. Cards are always interactive (tap to expand
-                // transcript, long-press for context menu) regardless
-                // of the selected tool.
-                let audioPinsHost = UIHostingController(
-                    rootView: AudioAnnotationCardsOverlayView(
+                // Step 5: V6 audio-element overlay — replaces both
+                // the legacy `AudioAnnotationCardsOverlayView` and
+                // `LectureBlocksOverlayView` in one mount. Short
+                // notes and lectures share `AudioContent` now;
+                // each renders as a compact `AudioElementView`
+                // strip with play/pause/seek + selection chrome.
+                let audioHost = UIHostingController(
+                    rootView: AudioElementsOverlayView(
                         viewModel: viewModel,
                         pageId: page.id,
                         coordinateSpace: pageCS
                     )
                 )
-                audioPinsHost.view.backgroundColor = .clear
-                audioPinsHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(audioPinsHost.view)
+                audioHost.view.backgroundColor = .clear
+                audioHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(audioHost.view)
                 NSLayoutConstraint.activate([
-                    audioPinsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    audioPinsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    audioPinsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    audioPinsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                    audioHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    audioHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    audioHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    audioHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
-                audioPinsHost.attachAsChild(of: renderer)
-
-                // Lecture-block overlay — per-page, renders the
-                // proper `LectureBlockView` (header / summary /
-                // transcript toggle / playback) in place of any
-                // `lecture:<uuid>` TextBlock on this page. The
-                // legacy routing path via `TextBlockOverlayView`
-                // is not mounted in the canvas hierarchy, so this
-                // overlay is the only render site for lecture
-                // blocks until that view is wired in.
-                let lectureHost = UIHostingController(
-                    rootView: LectureBlocksOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                lectureHost.view.backgroundColor = .clear
-                lectureHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(lectureHost.view)
-                NSLayoutConstraint.activate([
-                    lectureHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    lectureHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    lectureHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    lectureHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                lectureHost.attachAsChild(of: renderer)
+                audioHost.attachAsChild(of: renderer)
 
                 // Sticky-notes overlay — per-page mount (Phase 3b).
                 let stickyHost = UIHostingController(
@@ -712,8 +695,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     templateHost:  templateHost,
                     imagesHost:    imagesHost,
                     pdfPagesHost:  pdfPagesHost,
-                    audioPinsHost: audioPinsHost,
-                    lectureHost:   lectureHost,
+                    audioHost:     audioHost,
                     stickyHost:    stickyHost,
                     textBlockHost: textBlockHost,
                     textElementsHost: textElementsHost,
@@ -751,8 +733,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].templateHost.detachFromParentVC()
                 hosts[i].imagesHost.detachFromParentVC()
                 hosts[i].pdfPagesHost.detachFromParentVC()
-                hosts[i].audioPinsHost.detachFromParentVC()
-                hosts[i].lectureHost.detachFromParentVC()
+                hosts[i].audioHost.detachFromParentVC()
                 hosts[i].stickyHost.detachFromParentVC()
                 hosts[i].textBlockHost.detachFromParentVC()
                 hosts[i].textElementsHost.detachFromParentVC()
@@ -1118,28 +1099,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 case tool.isCursorMode:
                     // Cursor mode: text elements first (so tap-to-
-                    // edit reaches them), then sticky/lecture/PDF/
-                    // images for selection of those primitives.
-                    // Step 4.5: PDF pages slot above images per the
-                    // host stack default — selectable in cursor mode
-                    // like every other PageElement-backed primitive.
+                    // edit reaches them), then sticky/audio/PDF/
+                    // images for selection. Step 5: lecture host
+                    // collapsed into the audio host — single audio
+                    // overlay covers both short notes and lectures.
                     renderer.bringSubviewToFront(h.imagesHost.view)
                     renderer.bringSubviewToFront(h.pdfPagesHost.view)
-                    renderer.bringSubviewToFront(h.audioPinsHost.view)
-                    renderer.bringSubviewToFront(h.lectureHost.view)
+                    renderer.bringSubviewToFront(h.audioHost.view)
                     renderer.bringSubviewToFront(h.stickyHost.view)
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 default:
                     // Drawing tools — restore the original stacking
-                    // order (text on top, then sticky, lecture, audio,
+                    // order (text on top, then sticky, audio,
                     // images, template). Image / sticky / text all need
                     // to render under the canvas anyway when a drawing
                     // tool is active.
                     renderer.bringSubviewToFront(h.textBlockHost.view)
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                     renderer.bringSubviewToFront(h.stickyHost.view)
-                    renderer.bringSubviewToFront(h.lectureHost.view)
-                    renderer.bringSubviewToFront(h.audioPinsHost.view)
+                    renderer.bringSubviewToFront(h.audioHost.view)
                     renderer.bringSubviewToFront(h.pdfPagesHost.view)
                 }
             }

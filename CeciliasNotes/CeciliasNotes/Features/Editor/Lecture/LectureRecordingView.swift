@@ -19,9 +19,12 @@ import SwiftUI
 struct LectureRecordingView: View {
     @ObservedObject var recorder: LectureRecorder
     /// Called when the user confirms "end lecture?" — receives the
-    /// saved record so the host editor can insert the post-stop
-    /// placeholder TextBlock and route search index re-indexing.
-    let onStop: (LectureRecord?) -> Void
+    /// `LectureRecorderResult` so the host editor can adopt the
+    /// audio file into `MediaStorage.audio/` and commit a V6
+    /// `PageElement(.audio) + AudioContent` via
+    /// `AudioElementCommit`. Step 5 changed the type from
+    /// `LectureRecord?` (V5 entity, deleted) to this plain struct.
+    let onStop: (LectureRecorderResult?) -> Void
 
     @State private var showStopConfirm = false
     @State private var levelSamples: [Float] = Array(repeating: 0, count: 40)

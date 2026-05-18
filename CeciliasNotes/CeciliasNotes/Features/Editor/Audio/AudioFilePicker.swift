@@ -87,29 +87,29 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 // can't return it across the actor boundary. Phase
                 // 5A+5C Step 3: `fileName` / `fileSizeBytes` no
                 // longer stored on the record.
-                let inserted: UUID? = await MainActor.run {
+                // Step 5: V6 commit path. `insertAudioFile` creates
+                // a `PageElement(.audio)` + `AudioContent` via the
+                // shared `AudioElementCommit` helper. `pinPoint` is
+                // no longer plumbed through — the commit helper
+                // applies a top-left default; the user can drag the
+                // strip after insert via cursor mode.
+                await MainActor.run {
                     viewModel.insertAudioFile(
                         recordId: annotationId,
-                        duration: duration,
-                        at: pinPoint
-                    )?.id
-                }
-
-                await MainActor.run {
+                        duration: duration
+                    )
                     viewModel.recordingState = .idle
                 }
-                guard let insertedId = inserted else { return }
 
-                // Background transcription
+                // Background transcription writes the result onto
+                // the AudioContent row keyed by `annotationId` via
+                // `AudioElementCommit.updateTranscript` (called
+                // inside SpeechTranscriber).
                 let shouldTranscribe = await MainActor.run { viewModel.isTranscriptionEnabled }
                 if shouldTranscribe {
                     let capturedURL = destURL
-                    let capturedId  = insertedId
-                    Task.detached(priority: .utility) { [weak viewModel] in
-                        await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
-                        await MainActor.run { [weak viewModel] in
-                            viewModel?.refreshCurrentPageAudioAnnotations()
-                        }
+                    Task.detached(priority: .utility) {
+                        await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: annotationId)
                     }
                 }
             } catch {

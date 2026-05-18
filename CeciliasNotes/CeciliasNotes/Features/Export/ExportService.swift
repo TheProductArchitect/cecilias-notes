@@ -943,29 +943,28 @@ final class ExportService {
     // MARK: - Audio markers
 
     private func drawAudioMarkers(_ page: Page, ctx: CGContext, bounds: CGRect) {
-        // Phase 5A+5C Step 3: `AudioRecord` is denormalised by
-        // pageId — fetch via the storage façade rather than a
-        // (now-removed) `Page.audioAnnotations` relationship.
-        let records = StorageService.shared.fetchAudioRecords(forPageId: page.id)
-        guard !records.isEmpty else { return }
+        // Step 5: read V6 `PageElement(.audio)` rows. Geometry is
+        // the strip's normalised rect (audio elements are 50pt
+        // tall strips, not pins). Renders a small waveform icon at
+        // the top-left of each strip rect + transcript footnote.
+        let elements = StorageService.shared.fetchAudioElements(forPageId: page.id)
+        guard !elements.isEmpty else { return }
 
-        for ann in records {
-            let pinX = CGFloat(ann.normalizedX) * bounds.width
-            let pinY = CGFloat(ann.normalizedY) * bounds.height
+        for element in elements {
+            let stripX = CGFloat(element.normalizedX) * bounds.width
+            let stripY = CGFloat(element.normalizedY) * bounds.height
             let pinSize: CGFloat = 16
 
-            // Microphone symbol (filled circle + mic icon rendered as UIImage)
             let config = UIImage.SymbolConfiguration(pointSize: pinSize, weight: .medium)
             if let mic = UIImage(systemName: "waveform", withConfiguration: config)?
                 .withTintColor(UIColor(ThemeManager.shared.current.accent), renderingMode: .alwaysOriginal) {
-                mic.draw(at: CGPoint(x: pinX - pinSize / 2, y: pinY - pinSize / 2))
+                mic.draw(at: CGPoint(x: stripX, y: stripY))
             }
 
-            // Transcription footnote — `transcript` is non-optional String now.
-            let transcript = ann.transcript
+            let transcript = element.audioContent?.transcript ?? ""
             guard !transcript.isEmpty else { continue }
 
-            let footnoteY = pinY + pinSize + 4
+            let footnoteY = stripY + pinSize + 4
             let ruleRect  = CGRect(x: 0, y: footnoteY, width: bounds.width, height: 0.5)
             ctx.setFillColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.3).cgColor)
             ctx.fill(ruleRect)

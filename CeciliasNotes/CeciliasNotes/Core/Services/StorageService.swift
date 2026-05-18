@@ -763,38 +763,13 @@ extension StorageService {
             // each element + ImageContent with fresh UUIDs, and
             // copying the underlying file bytes is a follow-up.
             // No callers rely on it today.
-            // Audio records are denormalised by pageId — fetch them
-            // for the source page, clone each one with new ids
-            // pointing at the new page + notebook, and copy the audio
-            // file via `MediaStorage.url(for: .audio, id:)`.
-            let sourcePageId = page.id
-            let sourceRecords: [AudioRecord] = (try? context.fetch(
-                FetchDescriptor<AudioRecord>(
-                    predicate: #Predicate {
-                        $0.pageId == sourcePageId && $0.deletedAt == nil
-                    }
-                )
-            )) ?? []
-            for source in sourceRecords {
-                let cloneId = UUID()
-                let clone = AudioRecord(
-                    id:              cloneId,
-                    pageId:          newPage.id,
-                    notebookId:      copy.id,
-                    normalizedX:     source.normalizedX,
-                    normalizedY:     source.normalizedY,
-                    durationSeconds: source.durationSeconds,
-                    amplitudes:      source.amplitudes,
-                    transcript:      source.transcript,
-                    createdAt:       source.createdAt,
-                    updatedAt:       Date()
-                )
-                context.insert(clone)
-                try await copyFile(
-                    from: MediaStorage.url(for: .audio, id: source.id),
-                    to:   MediaStorage.url(for: .audio, id: cloneId)
-                )
-            }
+            // Step 5: audio elements are V6 `PageElement(.audio)`
+            // rows. Notebook-copy doesn't clone them in this pass —
+            // same deferral as image elements above. A follow-up
+            // can fetch by pageId, clone each PageElement +
+            // AudioContent with fresh ids, and copy the bytes via
+            // `MediaStorage.url(for: .audio, id:)`. No callers
+            // rely on it today.
         }
 
         copy.totalPageCount = (copy.pages ?? []).count
@@ -1121,118 +1096,33 @@ extension StorageService {
     }
 }
 
-// MARK: - Audio Records
+// MARK: - Audio elements (V6)
 //
-// Phase 5A+5C Step 3: `AudioAnnotation` reshaped into `AudioRecord`.
-// No relationship to `Page` — records are denormalised by `pageId`
-// and queried via `FetchDescriptor`. The audio file URL is derived
-// directly from `record.id` (`MediaStorage.url(for: .audio, id:)`)
-// so there's no `fileName` field on the record any more.
+// Step 5: `AudioRecord` + `LectureRecord` entities were retired in
+// favour of `PageElement(kind: .audio) + AudioContent`. The legacy
+// `addAudioRecord` / `updateTranscription` / `updateAmplitudes` /
+// `deleteAudioRecord` / `insertAudioFile` / `fetchAudioRecord` /
+// `fetchAudioRecords` / `moveAudioRecord` / `audioURL(for:)`
+// helpers all went away — call sites now talk to
+// `AudioElementCommit` (writes) and read directly from SwiftData
+// via the per-page overlay's fetch descriptor (reads).
 
 extension StorageService {
 
-    /// Insert a fresh `AudioRecord` for a page. Called by
-    /// `EditorViewModel.startRecording` when the user taps the
-    /// quick-record button. The audio bytes don't exist yet — they
-    /// land on disk under `MediaStorage.url(for: .audio, id: record.id)`
-    /// once recording stops.
-    @discardableResult
-    func addAudioRecord(
-        to page: Page,
-        duration: Double,
-        at point: CGPoint
-    ) throws -> AudioRecord {
-        let record = AudioRecord(
-            pageId:          page.id,
-            notebookId:      page.notebookId,
-            normalizedX:     Double(point.x),
-            normalizedY:     Double(point.y),
-            durationSeconds: duration
-        )
-        context.insert(record)
-        page.updatedAt = Date()
-        try context.save()
-        return record
-    }
-
-    /// Update the transcript text on a record. Called by
-    /// `SpeechTranscriber` once on-device recognition completes.
-    /// Word-level segments are no longer stored — the popover player
-    /// that used them was deleted in Phase 4B.
-    func updateTranscription(_ record: AudioRecord, text: String) throws {
-        record.transcript = text
-        record.updatedAt  = Date()
-        try context.save()
-    }
-
-    /// Update the waveform amplitudes array on a record. Called by
-    /// `SpeechTranscriber` once amplitude extraction completes.
-    /// `[Float]` is stored natively by SwiftData — no JSON
-    /// round-trip.
-    func updateAmplitudes(_ record: AudioRecord, amplitudes: [Float]) throws {
-        record.amplitudes = amplitudes
-        record.updatedAt  = Date()
-        try context.save()
-    }
-
-    func deleteAudioRecord(_ record: AudioRecord) throws {
-        record.deletedAt = Date()
-        record.updatedAt = Date()
-        try context.save()
-    }
-
-    /// Returns the on-disk URL for a record's audio file. Pure
-    /// passthrough to `MediaStorage`.
-    func audioURL(for record: AudioRecord) -> URL {
-        MediaStorage.url(for: .audio, id: record.id)
-    }
-
-    /// Called by `AudioFilePicker` after the file is already copied
-    /// into `MediaStorage.url(for: .audio, id:)`.
-    @discardableResult
-    func insertAudioFile(
-        to page: Page,
-        recordId: UUID,
-        duration: Double,
-        at point: CGPoint
-    ) throws -> AudioRecord {
-        let record = AudioRecord(
-            id:              recordId,
-            pageId:          page.id,
-            notebookId:      page.notebookId,
-            normalizedX:     Double(point.x),
-            normalizedY:     Double(point.y),
-            durationSeconds: duration
-        )
-        context.insert(record)
-        page.updatedAt = Date()
-        try context.save()
-        return record
-    }
-
-    func fetchAudioRecord(id: UUID) -> AudioRecord? {
-        var descriptor = FetchDescriptor<AudioRecord>(
-            predicate: #Predicate { $0.id == id && $0.deletedAt == nil }
-        )
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
-    }
-
-    /// Active records for a page, oldest-first.
-    func fetchAudioRecords(forPageId pageId: UUID) -> [AudioRecord] {
-        let descriptor = FetchDescriptor<AudioRecord>(
-            predicate: #Predicate { $0.pageId == pageId && $0.deletedAt == nil },
+    /// V6 helper for consumers that need every active audio element
+    /// for a given page (SearchIndexService transcript ingest,
+    /// ExportService PDF render). Filters `kind == .audio` post-
+    /// fetch in Swift because `#Predicate` on iOS 26 rejects
+    /// enum-case equality inside key-path comparisons.
+    func fetchAudioElements(forPageId pageId: UUID) -> [PageElement] {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            },
             sortBy: [SortDescriptor(\.createdAt)]
         )
-        return (try? context.fetch(descriptor)) ?? []
-    }
-
-    /// Moves a record's anchor to a new normalised position.
-    func moveAudioRecord(_ record: AudioRecord, to point: CGPoint) throws {
-        record.normalizedX = Double(point.x)
-        record.normalizedY = Double(point.y)
-        record.updatedAt   = Date()
-        try context.save()
+        let all = (try? context.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .audio }
     }
 }
 
@@ -1279,20 +1169,22 @@ extension StorageService {
             ))
         }
 
-        // Audio transcripts (Phase 5A+5C Step 3: AudioAnnotation
-        // reshaped into AudioRecord; transcript is non-optional and
-        // empty when unrecognised).
-        let audioRecords = (try? context.fetch(
-            FetchDescriptor<AudioRecord>(predicate: #Predicate { $0.deletedAt == nil })
-        )) ?? []
-        for rec in audioRecords {
-            guard !rec.transcript.isEmpty,
-                  rec.transcript.lowercased().contains(q),
-                  let nbId = pageToNotebook[rec.pageId] else { continue }
+        // Audio transcripts — Step 5: V6 `PageElement(.audio)` rows
+        // carry the transcript on the linked `AudioContent`.
+        let audioElements = (try? context.fetch(
+            FetchDescriptor<PageElement>(
+                predicate: #Predicate { $0.deletedAt == nil }
+            )
+        ))?.filter { $0.kind == .audio } ?? []
+        for element in audioElements {
+            guard let transcript = element.audioContent?.transcript,
+                  !transcript.isEmpty,
+                  transcript.lowercased().contains(q),
+                  let nbId = pageToNotebook[element.pageId] else { continue }
             results.append(SearchResult(
                 notebookId: nbId,
-                pageId: rec.pageId,
-                context: String(rec.transcript.prefix(120)),
+                pageId: element.pageId,
+                context: String(transcript.prefix(120)),
                 type: .transcription
             ))
         }
@@ -1368,17 +1260,17 @@ extension StorageService {
                 throw CeciliasNotesStorageError.fileWriteFailed(error)
             }
         }
-        // Soft-delete all AudioRecord rows (Phase 5A+5C Step 3 —
-        // type renamed, `isDeleted` Bool replaced by `deletedAt`
-        // nullable as the soft-delete signal).
-        let descriptor = FetchDescriptor<AudioRecord>(
+        // Step 5: soft-delete every V6 audio element. Short notes
+        // and lectures share the same `PageElement(.audio)` row
+        // now, so one sweep covers both.
+        let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.deletedAt == nil }
         )
-        let records = (try? context.fetch(descriptor)) ?? []
+        let elements = (try? context.fetch(descriptor)) ?? []
         let now = Date()
-        for rec in records {
-            rec.deletedAt = now
-            rec.updatedAt = now
+        for element in elements where element.kind == .audio {
+            element.deletedAt = now
+            element.updatedAt = now
         }
         try context.save()
     }
@@ -1481,12 +1373,12 @@ extension StorageService {
         // by `ImageContent.id` (which matches the filename UUID),
         // then drop the row.
         purgeImageElements(forPageIds: pageIds)
-        // Lecture records live in UserDefaults; their audio files
-        // sit under `notebookDir/audio/` and are already swept by
-        // the `removeItem(at: dir)` above. `forget(pageIds:)` is
-        // still called so the per-page dictionary doesn't retain
-        // orphaned record metadata.
-        LectureStore.forget(pageIds: pageIds)
+        // Step 5: audio elements (`PageElement(.audio)` + `AudioContent`).
+        // Same pattern as `purgeImageElements`: fetch by pageId,
+        // delete files via `AudioContent.fileURL`, then drop the
+        // rows (cascade-deletes AudioContent). LectureStore is
+        // gone — the legacy V5 lecture metadata went with it.
+        purgeAudioElements(forPageIds: pageIds)
         // AI caches — summary in UserDefaults, embedding in a
         // Documents/embeddings/<uuid>.bin file. Both live on-device
         // and the notebook being permanently removed means both
@@ -1519,6 +1411,27 @@ extension StorageService {
         let fm = FileManager.default
         for element in elements where element.kind == .image {
             if let content = element.imageContent {
+                try? fm.removeItem(at: content.fileURL)
+            }
+            context.delete(element)
+        }
+        try? context.save()
+    }
+
+    /// Step 5: hard-delete V6 audio elements + their backing m4a
+    /// files for the given pages. Mirrors `purgeImageElements`.
+    /// SwiftData cascade-deletes `AudioContent` when the parent
+    /// `PageElement` is removed.
+    private func purgeAudioElements(forPageIds pageIds: [UUID]) {
+        guard !pageIds.isEmpty else { return }
+        let pageIdSet = Set(pageIds)
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { pageIdSet.contains($0.pageId) }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        let fm = FileManager.default
+        for element in elements where element.kind == .audio {
+            if let content = element.audioContent {
                 try? fm.removeItem(at: content.fileURL)
             }
             context.delete(element)

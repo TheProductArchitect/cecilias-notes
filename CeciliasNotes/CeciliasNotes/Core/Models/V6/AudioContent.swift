@@ -5,10 +5,14 @@ import SwiftData
 /// bytes live in `MediaStorage` at
 /// `Documents/MediaAttachments/audio/<id>.m4a`.
 ///
-/// V6 (Step 1): inert. The legacy `AudioRecord` (and
-/// `LectureRecord`) entities still serve recording + playback until
-/// Steps 5-6 migrate onto this row and build the paired-block
-/// recording flow.
+/// V6 (Step 5): live. `AudioElementsOverlayView` renders one of
+/// these per `PageElement(kind: .audio)` as a compact play-pause-
+/// time-progress strip; legacy `AudioRecord` and `LectureRecord`
+/// entities were removed in the same commit (consolidate
+/// decision per architecture §5/§9 — short notes and long-form
+/// recordings are the same operation conceptually). The full
+/// paired-block dictation UX (live transcript on page above the
+/// strip) lands in Step 6.
 ///
 /// **Pairing semantics** (architecture doc §9):
 ///   • `anchorText` points at the FIRST `TextContent` span of the
@@ -67,5 +71,15 @@ final class AudioContent {
         self.timingMapData   = timingMapData
         self.createdAt       = createdAt
         self.updatedAt       = updatedAt
+    }
+
+    // MARK: - Convenience
+
+    /// On-disk URL for the audio bytes. Mirrors the convention
+    /// `ImageContent.fileURL` established in Step 4 — `id` is the
+    /// filename stem; extension is always `m4a` (AVAudioFile writes
+    /// AAC/M4A in `AudioRecorder`).
+    var fileURL: URL {
+        MediaStorage.url(for: .audio, id: id)
     }
 }

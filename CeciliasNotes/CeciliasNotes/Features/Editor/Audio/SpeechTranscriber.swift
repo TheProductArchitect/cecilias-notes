@@ -147,105 +147,41 @@ actor SpeechTranscriber {
         }
     }
 
-    /// Transcribes an M4A file then persists the result and amplitude data.
-    /// Takes annotation `id` (not the model) to avoid cross-actor SwiftData access.
-    /// All StorageService calls are dispatched back to the main actor.
+    /// Transcribes an M4A file and writes the transcript onto the
+    /// V6 `AudioContent` row keyed by `annotationId`.
+    ///
+    /// Step 5: dropped the amplitude-extraction write — the V5
+    /// `AudioRecord.amplitudes` field is gone and the new
+    /// `AudioElementView` strip uses a time-based progress bar
+    /// rather than a waveform. Amplitude data can come back when a
+    /// real waveform widget ships.
     func transcribe(url: URL, annotationId: UUID) async {
-        #if DEBUG
-        let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-        print("[Audio] transcribe(url:) start file=\(url.lastPathComponent) size=\(fileSize)B")
-        #endif
-        // 1. Amplitude extraction — no speech permission needed
-        let amplitudes = await extractAmplitudes(from: url)
-        #if DEBUG
-        print("[Audio] transcribe(url:) amplitudes extracted count=\(amplitudes.count)")
-        #endif
-        if !amplitudes.isEmpty {
-            #if DEBUG
-            print("[Audio] transcribe(url:) about to write amplitudes on main")
-            #endif
-            await MainActor.run {
-                if let record = StorageService.shared.fetchAudioRecord(id: annotationId) {
-                    try? StorageService.shared.updateAmplitudes(record, amplitudes: amplitudes)
-                }
-            }
-            #if DEBUG
-            print("[Audio] transcribe(url:) amplitude write complete")
-            #endif
-        }
-
-        // 2. Speech recognition — on-device only
+        // Speech recognition — on-device only
         let permission = await requestSpeechPermission()
-        #if DEBUG
-        print("[Audio] transcribe(url:) speech permission=\(permission)")
-        #endif
-        guard permission, let recognizer = makeSupportedRecognizer() else {
-            #if DEBUG
-            print("[Audio] transcribe(url:) bailing — no recognizer or no permission")
-            #endif
-            return
-        }
-        #if DEBUG
-        print("[Audio] transcribe(url:) recognizer locale=\(recognizer.locale.identifier) isAvailable=\(recognizer.isAvailable) supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
-        #endif
+        guard permission, let recognizer = makeSupportedRecognizer() else { return }
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults  = false
         request.requiresOnDeviceRecognition = true      // CRITICAL: no network
         request.taskHint                    = Self.currentTaskHint()
 
-        let transcriptionResult: (text: String, segments: [TranscriptionSegment])? =
-            await withCheckedContinuation { cont in
-                recognizer.recognitionTask(with: request) { result, error in
-                    if let error {
-                        #if DEBUG
-                        print("[Audio] transcribe(url:) recognition error: \(error.localizedDescription)")
-                        #endif
-                        cont.resume(returning: nil)
-                        return
-                    }
-                    guard let result, result.isFinal else { return }
-                    let text = result.bestTranscription.formattedString
-                    let segs = result.bestTranscription.segments.map {
-                        TranscriptionSegment(
-                            word:       $0.substring,
-                            startTime:  $0.timestamp,
-                            endTime:    $0.timestamp + $0.duration,
-                            confidence: $0.confidence
-                        )
-                    }
-                    cont.resume(returning: (text: text, segments: segs))
+        let transcriptionResult: String? = await withCheckedContinuation { cont in
+            recognizer.recognitionTask(with: request) { result, error in
+                if error != nil {
+                    cont.resume(returning: nil)
+                    return
                 }
+                guard let result, result.isFinal else { return }
+                cont.resume(returning: result.bestTranscription.formattedString)
             }
+        }
+        guard let text = transcriptionResult, !text.isEmpty else { return }
 
-        #if DEBUG
-        print("[Audio] transcribe(url:) result len=\(transcriptionResult?.text.count ?? -1)")
-        #endif
-        guard let result = transcriptionResult else { return }
-
-        #if DEBUG
-        print("[Audio] transcribe(url:) about to write transcript on main isMain=\(Thread.isMainThread)")
-        #endif
         await MainActor.run {
-            #if DEBUG
-            print("[Audio] transcribe(url:) on main: fetching record")
-            #endif
-            guard let record = StorageService.shared.fetchAudioRecord(id: annotationId) else {
-                #if DEBUG
-                print("[Audio] transcribe(url:) record gone — skipping write")
-                #endif
-                return
-            }
-            #if DEBUG
-            print("[Audio] transcribe(url:) on main: writing transcript len=\(result.text.count)")
-            #endif
-            // Phase 5A+5C Step 3: word-level segments dropped (the
-            // popover that consumed them was deleted in Phase 4B).
-            // Single-call write of just the text.
-            try? StorageService.shared.updateTranscription(record, text: result.text)
-            #if DEBUG
-            print("[Audio] transcribe(url:) on main: write complete")
-            #endif
+            AudioElementCommit.updateTranscript(
+                contentId: annotationId,
+                transcript: text
+            )
         }
     }
 

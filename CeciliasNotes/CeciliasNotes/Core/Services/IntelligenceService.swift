@@ -217,48 +217,11 @@ final class IntelligenceService: ObservableObject {
 
     // MARK: - Lecture summary (Pass B)
 
-    /// Public hook from `EditorViewModel.endLectureMode` after a
-    /// lecture record is saved. Generates a summary + bullet list on
-    /// a background task, then re-saves the record into
-    /// `LectureStore` so the bound view picks up the new fields via
-    /// the `.lectureRecordUpdated` notification.
-    ///
-    /// Silent no-op when `canRun` is false (iOS 18, framework
-    /// absent, or user-disabled). The architecture rule is strict:
-    /// no "AI unavailable" placeholders ever surface to the editor.
-    func generateLectureSummary(for record: LectureRecord) async {
-        guard canRun else { return }
-        // Mark this record as in-flight before the model call so the
-        // bound view can show "summarising…" while we wait. Cleared
-        // in `defer` regardless of success / parse failure / early
-        // return — the published Set always reflects reality.
-        pendingLectureSummaryIds.insert(record.id)
-        defer { pendingLectureSummaryIds.remove(record.id) }
-        // iOS 26 / FoundationModels gate is enforced inside
-        // `summariseLecture`. The `canRun` guard above is the user-
-        // facing toggle.
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            guard let result = await summariseLecture(transcript: record.transcript)
-            else { return }
-            // Look up the latest record state before writing so a
-            // concurrent edit (rename, transcript refinement pass)
-            // isn't clobbered. If the record is gone (soft-deleted
-            // or purged) we silently skip the write.
-            // `LectureRecord` is now a SwiftData @Model class — the
-            // re-fetched instance is the SAME managed object as
-            // anything else the context vends, so property mutations
-            // land in place. `LectureStore.save` flushes the context
-            // and posts `.lectureRecordUpdated` for us.
-            guard let fresh = LectureStore.record(id: record.id, pageId: record.pageId)
-            else { return }
-            fresh.summary        = result.paragraph
-            fresh.summaryBullets = result.bullets
-            fresh.updatedAt      = Date()
-            LectureStore.save(fresh)
-        }
-        #endif
-    }
+    // Step 5: `generateLectureSummary(for: LectureRecord)` removed
+    // alongside the V5 `LectureRecord` + `summary` / `summaryBullets`
+    // fields. AudioContent in V6 carries only `transcript`. AI
+    // summary surfaces re-land in Step 11 against the unified
+    // `AIProvider` protocol (architecture §11 / §14.5).
 
     #if canImport(FoundationModels)
     /// One-shot lecture summary via Foundation Models. Returns `nil`

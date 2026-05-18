@@ -255,31 +255,25 @@ final class SearchIndexService {
                 .filter { !$0.isDeleted }
                 .map(\.content)
                 .joined(separator: "\n")
-            // Phase 5A+5C Step 3: audio transcripts come from the
-            // denormalised `AudioRecord` fetch — there's no longer
-            // a `Page.audioAnnotations` relationship.
-            let transcriptText = StorageService.shared
-                .fetchAudioRecords(forPageId: page.id)
-                .map(\.transcript)
-                .filter { !$0.isEmpty }
-                .joined(separator: "\n")
+            // Step 5: audio transcripts come from V6
+            // `PageElement(.audio)` rows — short notes and lectures
+            // were consolidated into the unified AudioContent type.
             // FUTURE: OCR on imported images via VNRecognizeTextRequest —
-            // read `MediaAttachmentStore.records(for: page.id)` here, run
-            // each record's image through the same Vision pipeline as
-            // `HandwritingOCRService`, and merge the result into the page
-            // entry alongside the existing handwriting OCR text. Skipped
-            // this pass — images are placed but their contents aren't
-            // searchable yet.
-            //
-            // Long-form lecture transcripts live in `LectureStore`
-            // (UserDefaults side-channel), not on `Page`. Pulled in
-            // here so the index covers every spoken-word surface
-            // through a single sweep.
-            let lectureTranscriptText = LectureStore
-                .allActiveRecords(for: page.id)
-                .map(\.transcript)
+            // run each image through the Vision pipeline as
+            // HandwritingOCRService does, and merge the result here.
+            // Skipped this pass — images are placed but their
+            // contents aren't searchable yet.
+            let audioElements = StorageService.shared
+                .fetchAudioElements(forPageId: page.id)
+            let transcriptText = audioElements
+                .compactMap { $0.audioContent?.transcript }
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
+            // No separate "lecture transcript" channel — same
+            // AudioContent.transcript is the source of truth. The
+            // page-entry field stays for backwards compatibility
+            // with the cached index format.
+            let lectureTranscriptText = ""
 
             var pageEntry = entry.pages[page.id.uuidString] ?? PageIndexEntry(
                 pageId:                 page.id,

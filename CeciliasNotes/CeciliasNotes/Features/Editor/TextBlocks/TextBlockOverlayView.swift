@@ -131,17 +131,13 @@ struct TextBlockOverlayView: View {
         let ptRect  = layout.pointRect(pageSize: pageSize)
         let height  = blockHeights[block.id] ?? ptRect.height
 
-        // Lecture-block routing. When the body's first line matches
-        // `lecture:<uuid>` we render `LectureBlockView` instead of
-        // the regular `TextBlockView`. The frame + position are
-        // owned by the same TextBlock layout math so the block sits
-        // exactly where the user dropped it — only the *contents*
-        // of the rectangle change. No move / resize / selection
-        // chrome for lecture blocks; the page is the scroll surface.
-        if let lectureId = LectureBlockView.parseRecordId(fromBody: block.content) {
-            LectureBlockView(recordId: lectureId, pageId: block.pageId)
-                .frame(width: ptRect.width, alignment: .topLeading)
-                .position(x: ptRect.midX, y: ptRect.minY + height / 2)
+        // Step 5: `LectureBlockView` removed alongside the
+        // `LectureRecord` entity. Legacy `lecture:<uuid>`-prefixed
+        // TextBlocks (none exist in V6 — wipe-and-rebuild) would
+        // render as plain text via the `else` branch below; no
+        // routing needed.
+        if false {
+            EmptyView()
         } else {
             VStack(spacing: 0) {
                 TextBlockView(

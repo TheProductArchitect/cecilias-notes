@@ -1,0 +1,326 @@
+import SwiftData
+import SwiftUI
+import UIKit
+
+/// Renders one V6 `PageElement` of kind `.audio` as a compact play
+/// strip per architecture §9: ~50pt tall, play/pause + elapsed-of-
+/// total time label + thin progress bar.
+///
+/// First interactive PageElement-backed view — the playback state
+/// lives on `AudioPlaybackController` (one per view instance) rather
+/// than on the element/content models, which stay pure data.
+///
+/// Layout deviations from the image/PDF chrome:
+///   • Strip height locked at 50pt; only width is resizable.
+///   • Corner handles drive width-only resize (height stays fixed).
+///   • Pinch is disabled — keeps interaction surface clean given
+///     play/pause + seek live on the strip body.
+///   • Rotation supported via the toolbar rotate button (90°
+///     steps) — rare but free given the shared chrome pattern.
+struct AudioElementView: View {
+
+    @Bindable var element: PageElement
+    @Bindable var content: AudioContent
+    let pageSize: CGSize
+    @Binding var isSelected: Bool
+    let onDelete: () -> Void
+
+    @Environment(\.theme) private var theme
+    @StateObject private var player = AudioPlaybackController()
+
+    @State private var dragOffset: CGSize = .zero
+    @State private var resizeDelta: ResizeDelta? = nil
+    @State private var seekDragSeconds: Double? = nil
+
+    private static let stripHeight: CGFloat = 50
+    private static let handleSize: CGFloat = 10
+    private static let toolbarGap: CGFloat = 8
+    private static let minNormalizedWidth: Double = 0.10
+
+    private struct ResizeDelta: Equatable {
+        var corner: Corner
+        var translation: CGSize
+    }
+    private enum Corner: Equatable { case left, right }
+
+    var body: some View {
+        let base = CGRect(
+            x: element.normalizedX * pageSize.width,
+            y: element.normalizedY * pageSize.height,
+            width: element.normalizedWidth * pageSize.width,
+            height: Self.stripHeight
+        )
+        let displayed = displayedRect(base: base)
+
+        ZStack(alignment: .topLeading) {
+            strip(width: displayed.width)
+                .rotationEffect(.radians(element.rotation))
+                .frame(width: displayed.width, height: displayed.height)
+                .position(x: displayed.midX, y: displayed.midY)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        if !isSelected { isSelected = true }
+                    }
+                )
+                .gesture(isSelected ? bodyDragGesture : nil)
+
+            if isSelected {
+                selectionChrome(rect: displayed)
+            }
+        }
+        .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+        .onAppear { player.load(url: content.fileURL) }
+        .onDisappear { player.pause() }
+    }
+
+    // MARK: - Strip body
+
+    @ViewBuilder
+    private func strip(width: CGFloat) -> some View {
+        HStack(spacing: 10) {
+            playPauseButton
+            timeLabel
+            progressTrack
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+                )
+        )
+    }
+
+    private var playPauseButton: some View {
+        Button {
+            player.togglePlayPause()
+        } label: {
+            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.accent)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(theme.accentMuted))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+    }
+
+    private var timeLabel: some View {
+        let totalDuration = player.duration > 0 ? player.duration : content.durationSeconds
+        return Text("\(format(player.currentTime)) / \(format(totalDuration))")
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .foregroundStyle(theme.foregroundMuted)
+            .lineLimit(1)
+    }
+
+    private var progressTrack: some View {
+        GeometryReader { geo in
+            let totalDuration = player.duration > 0 ? player.duration : max(content.durationSeconds, 0.01)
+            let active = seekDragSeconds ?? player.currentTime
+            let fraction = totalDuration > 0 ? min(1, max(0, active / totalDuration)) : 0
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.borderSubtle)
+                    .frame(height: 3)
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(width: geo.size.width * fraction, height: 3)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(seekGesture(totalDuration: totalDuration, width: geo.size.width))
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private func seekGesture(totalDuration: Double, width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let fraction = min(1, max(0, value.location.x / width))
+                seekDragSeconds = fraction * totalDuration
+            }
+            .onEnded { _ in
+                if let target = seekDragSeconds {
+                    player.seek(to: target)
+                }
+                seekDragSeconds = nil
+            }
+    }
+
+    private func format(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        let minutes = s / 60
+        let secs = s % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
+
+    // MARK: - Selection chrome (width-only resize + rotate + delete)
+
+    private func displayedRect(base: CGRect) -> CGRect {
+        if let r = resizeDelta {
+            return resizedRect(base: base, corner: r.corner, translation: r.translation)
+        }
+        let cx = base.midX + dragOffset.width
+        let cy = base.midY + dragOffset.height
+        return CGRect(
+            x: cx - base.width / 2,
+            y: cy - base.height / 2,
+            width: base.width,
+            height: base.height
+        )
+    }
+
+    /// Width-only resize. Left handle anchors the right edge; right
+    /// handle anchors the left edge. Height stays fixed at the
+    /// strip's natural 50pt.
+    private func resizedRect(base: CGRect, corner: Corner, translation: CGSize) -> CGRect {
+        let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
+        switch corner {
+        case .left:
+            let proposedW = max(minW, base.width - translation.width)
+            return CGRect(
+                x: base.maxX - proposedW,
+                y: base.minY,
+                width: proposedW,
+                height: base.height
+            )
+        case .right:
+            let proposedW = max(minW, base.width + translation.width)
+            return CGRect(
+                x: base.minX,
+                y: base.minY,
+                width: proposedW,
+                height: base.height
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func selectionChrome(rect: CGRect) -> some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(
+                theme.accent,
+                style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+            )
+            .frame(width: rect.width, height: rect.height)
+            .position(x: rect.midX, y: rect.midY)
+            .allowsHitTesting(false)
+
+        // Two handles — left edge mid + right edge mid — for the
+        // width-only resize affordance.
+        widthHandle(.left,  at: CGPoint(x: rect.minX, y: rect.midY))
+        widthHandle(.right, at: CGPoint(x: rect.maxX, y: rect.midY))
+
+        floatingToolbar()
+            .position(
+                x: rect.midX,
+                y: max(14, rect.minY - Self.toolbarGap - 14)
+            )
+    }
+
+    private func widthHandle(_ corner: Corner, at point: CGPoint) -> some View {
+        Capsule()
+            .fill(theme.accent)
+            .frame(width: 4, height: 18)
+            .contentShape(Rectangle().inset(by: -8))
+            .position(point)
+            .gesture(resizeGesture(for: corner))
+    }
+
+    private func floatingToolbar() -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(theme.foreground)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+                .gesture(bodyDragGesture)
+
+            Button {
+                rotate90()
+            } label: {
+                Image(systemName: "rotate.right")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+        )
+    }
+
+    // MARK: - Gestures
+
+    private var bodyDragGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                dragOffset = value.translation
+            }
+            .onEnded { value in
+                let dxNorm = value.translation.width  / pageSize.width
+                let dyNorm = value.translation.height / pageSize.height
+                element.normalizedX = clampNorm(element.normalizedX + Double(dxNorm))
+                element.normalizedY = clampNorm(element.normalizedY + Double(dyNorm))
+                element.updatedAt   = Date()
+                dragOffset = .zero
+            }
+    }
+
+    private func resizeGesture(for corner: Corner) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                resizeDelta = ResizeDelta(corner: corner, translation: value.translation)
+            }
+            .onEnded { value in
+                let base = CGRect(
+                    x: element.normalizedX * pageSize.width,
+                    y: element.normalizedY * pageSize.height,
+                    width: element.normalizedWidth * pageSize.width,
+                    height: Self.stripHeight
+                )
+                let new = resizedRect(base: base, corner: corner, translation: value.translation)
+                element.normalizedX     = clampNorm(Double(new.minX) / Double(pageSize.width))
+                element.normalizedWidth = min(1, Double(new.width) / Double(pageSize.width))
+                // Height stays fixed — normalize against current pageSize
+                // so a future page-size change preserves the visual height.
+                element.normalizedHeight = Double(Self.stripHeight) / Double(pageSize.height)
+                element.updatedAt        = Date()
+                resizeDelta = nil
+            }
+    }
+
+    private func rotate90() {
+        let next = element.rotation + .pi / 2
+        let twoPi = 2 * Double.pi
+        element.rotation = next.truncatingRemainder(dividingBy: twoPi)
+        element.updatedAt = Date()
+    }
+
+    private func clampNorm(_ v: Double) -> Double { max(0, min(1, v)) }
+}

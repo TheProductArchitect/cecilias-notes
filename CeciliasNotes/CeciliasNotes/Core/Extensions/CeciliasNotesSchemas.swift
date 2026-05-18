@@ -34,20 +34,20 @@ import SwiftData
 enum CeciliasNotesSchemaV5: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     static var models: [any PersistentModel.Type] {
-        // Historical V5 reference. `ImageRecord` was a V5 entity
-        // but was deleted from the codebase in Step 4 once the V6
-        // image migration shipped; the list below drops it because
-        // the type no longer compiles. Anyone needing the original
-        // V5 shape can recover it from git history at the commit
-        // tagged for Step 4.
+        // Historical V5 reference. Several V5 entities have been
+        // deleted from the codebase as later steps shipped:
+        //   • `ImageRecord` (Step 4 — image migration)
+        //   • `AudioRecord` + `LectureRecord` (Step 5 — audio
+        //     consolidation)
+        // The list below drops them because the types no longer
+        // compile. Anyone needing the original V5 shape can recover
+        // it from git history at the respective step commits.
         [
             Subject.self,
             Folder.self,
             Notebook.self,
             Page.self,
             TextBlock.self,
-            AudioRecord.self,
-            LectureRecord.self,
         ]
     }
 }
@@ -57,22 +57,22 @@ enum CeciliasNotesSchemaV6: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             // V5 entities kept so existing rendering keeps working
-            // through Steps 2-9 of the migration. `ImageRecord` was
-            // removed in Step 4 (image migration); its rendering
-            // and persistence layers are fully replaced by
-            // `PageElement(kind: .image) + ImageContent`.
+            // through Steps 2-9 of the migration. Removed in earlier
+            // step commits: `ImageRecord` (Step 4),
+            // `AudioRecord` + `LectureRecord` (Step 5 — consolidated
+            // into `AudioContent`).
             Subject.self,
             Folder.self,
             Notebook.self,
             Page.self,
             TextBlock.self,
-            AudioRecord.self,
-            LectureRecord.self,
             // V6 unified element model — `PageElement` plus seven
             // polymorphic content entities. Live for `.text`
-            // (Step 3) and `.image` (Step 4); the remaining kinds
-            // are inert until Steps 5-9 migrate their respective
-            // surfaces onto `PageElement`.
+            // (Step 3), `.image` (Step 4), `.pdfPage` (Step 4.5
+            // Workflow B), and `.audio` (Step 5); the remaining
+            // kinds (.stroke, .stickyNote, .shape) are inert until
+            // Steps 7-9 migrate their respective surfaces onto
+            // `PageElement`.
             PageElement.self,
             StrokeContent.self,
             ImageContent.self,

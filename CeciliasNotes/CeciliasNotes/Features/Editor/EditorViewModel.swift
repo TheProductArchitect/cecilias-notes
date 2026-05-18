@@ -390,9 +390,6 @@ final class EditorViewModel: ObservableObject {
     // MARK: Media insert coordinator (lazy to break init cycle)
     lazy var mediaInsertCoordinator: MediaInsertCoordinator = MediaInsertCoordinator(viewModel: self)
 
-    // MARK: Audio annotations
-    @Published private(set) var currentPageAudioAnnotations: [AudioRecord] = []
-
     // MARK: Sticky notes
     //
     // Side-channel storage (`StickyNoteStore`) keeps the V3 schema
@@ -606,7 +603,6 @@ final class EditorViewModel: ObservableObject {
 
         resetToolbarTimer()
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
 
         // App-background flush for the PDF annotation writer. We
@@ -1409,7 +1405,6 @@ final class EditorViewModel: ObservableObject {
         // lands.
         currentPageIndex = newIndex
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
         pendingScrollPageIndex = newIndex
         return true
@@ -1564,7 +1559,6 @@ final class EditorViewModel: ObservableObject {
         pages = fetched
         currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageAudioAnnotations()
         refreshCurrentPageStickyNotes()
     }
 
@@ -1574,26 +1568,10 @@ final class EditorViewModel: ObservableObject {
             .sorted { $0.zIndex < $1.zIndex }
     }
 
-    func refreshCurrentPageAudioAnnotations() {
-        // Skip re-publish when the array is bit-for-bit identical —
-        // the post-transcribe path can fire this multiple times in
-        // quick succession (amplitude write, transcript write, refine
-        // pass) and re-publishing the same array still triggers
-        // SwiftUI re-renders for every observer. Cheap deep equality
-        // via id list + transcript-emptiness flag covers the
-        // meaningful changes the audio overlay actually re-renders
-        // for. (Phase 5A+5C Step 3: `isTranscribed` flag removed —
-        // derive from `!transcript.isEmpty`.)
-        let next = storage.fetchAudioRecords(forPageId: currentPage.id)
-        let nextIds = next.map { $0.id }
-        let prevIds = currentPageAudioAnnotations.map { $0.id }
-        if nextIds == prevIds {
-            let nextTr = next.map { !$0.transcript.isEmpty }
-            let prevTr = currentPageAudioAnnotations.map { !$0.transcript.isEmpty }
-            if nextTr == prevTr { return }
-        }
-        currentPageAudioAnnotations = next
-    }
+    // Step 5: `refreshCurrentPageAudioAnnotations` removed.
+    // `AudioElementsOverlayView` reads V6 `PageElement(.audio)`
+    // rows directly via SwiftData; the page-state cache the legacy
+    // overlay needed no longer exists.
 
     // MARK: - Sticky notes
 
@@ -1659,111 +1637,69 @@ final class EditorViewModel: ObservableObject {
     }
 
     /// Called by `LectureRecordingView.onStop` after the user
-    /// confirms "end". Inserts the post-stop placeholder TextBlock,
-    /// kicks the search index to ingest the transcript, and drops
-    /// the recorder so the editor view restores.
-    func endLectureMode(with record: LectureRecord?) {
+    /// confirms "end". Step 5 rewired this onto the V6 unified
+    /// model: the recorder hands back a `LectureRecorderResult`
+    /// carrying the file URL + transcript + duration; we move the
+    /// file from `MediaStorage.lectures/` into `MediaStorage.audio/`
+    /// (so the AudioContent.fileURL convention resolves) and create
+    /// a `PageElement(.audio) + AudioContent` via the shared
+    /// commit helper.
+    ///
+    /// The legacy `lecture:<uuid>` TextBlock placeholder is gone —
+    /// V6 renders the recording as an `AudioElementView` strip
+    /// directly; the transcript text lives on `AudioContent`. Step 6
+    /// will add a paired on-page TextContent for the transcript.
+    func endLectureMode(with result: LectureRecorderResult?) {
         defer { activeLectureRecorder = nil }
-        guard let record else {
+        guard let result else {
             #if DEBUG
-            print("[EditorViewModel] endLectureMode called with nil record — no placeholder inserted")
+            print("[EditorViewModel] endLectureMode called with nil result — no element inserted")
             #endif
             return
         }
 
-        // Placeholder TextBlock body is just the marker — Pass B's
-        // `LectureBlockView` looks up the full record from
-        // `LectureStore` via the UUID suffix. Earlier passes also
-        // appended a duration display line and (briefly) the full
-        // transcript; both are gone here because the block view
-        // renders title + duration + summary + transcript from the
-        // record itself. Old serialised TextBlocks with the extra
-        // lines continue to parse — `LectureBlockView` ignores
-        // everything after the first line.
-        //
-        // `LectureBlocksOverlayView` filters by
-        // `block.content.hasPrefix("lecture:")` (NOT a `body`
-        // property — TextBlock's text lives in `content`), so the
-        // exact string shape below is the contract that drives the
-        // per-page lecture-block rendering.
-        let content = "lecture:\(record.id.uuidString)"
-        // Default placement per `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.C:
-        // - Anchor at normalised (0.05, 0.05) — top-leading inset 5%
-        //   from each edge, width 0.9 (90% of page width).
-        // - Stack subsequent cards 0.03 normalised below the previous
-        //   bottom (≈ 30 pt at A4). Falls back to the default top
-        //   anchor if no existing lecture cards are on the page.
-        // - Height seed of 0.18 is a placeholder — the overlay's
-        //   `LectureBlockView` measures its own intrinsic height at
-        //   render time and isn't constrained by the stored value;
-        //   the seed only matters when this block is later edited as
-        //   plain text via the legacy text-block path.
-        let placement = nextLectureCardRect(on: currentPage)
-        let inserted: Bool = {
-            do {
-                _ = try storage.createTextBlock(
-                    on: currentPage, content: content, normalizedRect: placement
-                )
-                return true
-            } catch {
-                return false
-            }
-        }()
-        refreshCurrentPageTextBlocks()
-        #if DEBUG
-        print("[EditorViewModel] endLectureMode → inserted=\(inserted) at \(placement) on pageId=\(currentPage.id)")
-        #endif
+        let contentId = result.recordId
+        let sourceURL = result.audioURL
+        let pageId = currentPage.id
+        let notebookId = notebook.id
+        let pageSize = currentPage.pageSize.pointSize
+        let duration = result.durationSeconds
+        let transcript = result.transcript
 
-        // Bump the search index synchronously so the transcript is
-        // searchable as soon as the user tries to find it. The pass
-        // pulls from `LectureStore` for the lecture transcript field.
+        // The lecture file landed under `MediaStorage.lectures/<id>.m4a`
+        // during recording (see `LectureRecorder.start`). Adopt it
+        // into the unified `audio/` directory so `AudioContent.fileURL`
+        // resolves; commit the element after the move succeeds.
+        Task { @MainActor in
+            let adopted = await MediaStorage.adoptAudio(at: sourceURL, id: contentId)
+            guard adopted != nil else {
+                #if DEBUG
+                print("[EditorViewModel] endLectureMode: adoptAudio failed for \(sourceURL.lastPathComponent)")
+                #endif
+                return
+            }
+            AudioElementCommit.commit(
+                contentId: contentId,
+                pageId: pageId,
+                notebookId: notebookId,
+                pageSize: pageSize,
+                durationSeconds: duration,
+                transcript: transcript
+            )
+        }
+
+        // Bump the search index so the transcript is searchable
+        // immediately. SearchIndexService reads AudioContent rows
+        // for transcript text after the Step 5 rewire.
         SearchIndexService.shared.rebuildSynchronousMetadata(for: notebook)
 
-        // Pass B — kick off AI summary generation on a detached
-        // utility task. Silent no-op on iOS 18 / when canRun is
-        // false; the editor never surfaces an "AI unavailable"
-        // placeholder. The completion writes the updated record
-        // back into `LectureStore`, which posts
-        // `.lectureRecordUpdated` so `LectureBlockView` swaps
-        // "summarising…" for the generated content live.
-        Task.detached(priority: .utility) {
-            await IntelligenceService.shared.generateLectureSummary(for: record)
-        }
-    }
-
-    /// Compute the normalised rect a freshly-recorded lecture/audio card
-    /// should occupy on `page`. Stacks beneath any existing lecture
-    /// cards on the same page using a fixed 0.03 normalised vertical
-    /// gap. Spec defaults: width 0.9, leading inset 0.05, top inset
-    /// 0.05 for the first card, height seed 0.18.
-    /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.C.
-    private func nextLectureCardRect(on page: Page) -> CGRect {
-        let leading: CGFloat   = 0.05
-        let topInset: CGFloat  = 0.05
-        let width: CGFloat     = 0.9
-        let stackGap: CGFloat  = 0.03
-        let heightSeed: CGFloat = 0.18
-
-        let existing = (page.textBlocks ?? [])
-            .filter { !$0.isDeleted && $0.content.hasPrefix("lecture:") }
-            .sorted { $0.y < $1.y }
-
-        let topY: CGFloat
-        if let last = existing.last {
-            topY = min(0.95 - heightSeed, CGFloat(last.y) + CGFloat(last.height) + stackGap)
-        } else {
-            topY = topInset
-        }
-        return CGRect(x: leading, y: topY, width: width, height: heightSeed)
-    }
-
-    private func formatLectureDuration(_ seconds: Double) -> String {
-        let total = Int(seconds)
-        let h = total / 3600
-        let m = (total % 3600) / 60
-        if h > 0 { return "\(h)h \(m)m" }
-        if m > 0 { return "\(m) min" }
-        return "\(total) sec"
+        // Step 5: `IntelligenceService.generateLectureSummary` was
+        // removed — it depended on the V5 `LectureRecord` entity's
+        // `summary`/`summaryBullets` fields, which `AudioContent`
+        // doesn't carry in V6. Per architecture §11, AI features
+        // (summarise / generate-from / ask) come in Step 11 against
+        // a uniform `AIProvider` protocol; this hook is intentionally
+        // dropped until then.
     }
 
     func deleteStickyNote(id: UUID) {
@@ -1815,49 +1751,22 @@ final class EditorViewModel: ObservableObject {
         scheduleAutosave()
     }
 
-    func moveAudioAnnotation(_ record: AudioRecord, to point: CGPoint) {
-        try? storage.moveAudioRecord(record, to: point)
-        refreshCurrentPageAudioAnnotations()
-        scheduleAutosave()
-    }
-
-    func deleteAudioAnnotation(_ record: AudioRecord) {
-        try? storage.deleteAudioRecord(record)
-        refreshCurrentPageAudioAnnotations()
-        scheduleAutosave()
-    }
-
     /// Inserts an audio file (already copied into
-    /// `MediaStorage.url(for: .audio, id:)`) into the current page.
-    /// Used by `AudioFilePicker` after copy/transcode completes.
-    /// Phase 5A+5C Step 3: `fileName` / `fileSizeBytes` are no
-    /// longer stored on the record — the file URL is derived from
-    /// the record id.
-    @discardableResult
-    func insertAudioFile(
-        recordId: UUID,
-        duration: Double,
-        at point: CGPoint
-    ) -> AudioRecord? {
-        let record = try? storage.insertAudioFile(
-            to: currentPage,
-            recordId: recordId,
-            duration: duration,
-            at: point
+    /// `MediaStorage.url(for: .audio, id:)`) into the current page
+    /// as a V6 `PageElement(.audio) + AudioContent`. Used by
+    /// `AudioFilePicker` after the file is staged on disk.
+    /// Step 5 replaced the legacy `AudioRecord` insert path with
+    /// this helper that funnels through `AudioElementCommit`.
+    func insertAudioFile(recordId: UUID, duration: Double) {
+        let pageSize = currentPage.pageSize.pointSize
+        AudioElementCommit.commit(
+            contentId: recordId,
+            pageId: currentPage.id,
+            notebookId: notebook.id,
+            pageSize: pageSize,
+            durationSeconds: duration
         )
-        if record != nil {
-            refreshCurrentPageAudioAnnotations()
-            scheduleAutosave()
-        }
-        return record
-    }
-
-    // Read-only URL passthrough — overlays use this to load audio
-    // bytes without depending on StorageService directly. Image
-    // attachments resolve their URLs through
-    // `ImageContent.fileURL` (Step 4) instead.
-    func audioURL(for record: AudioRecord) -> URL {
-        storage.audioURL(for: record)
+        scheduleAutosave()
     }
 
     // MARK: - Audio recording
@@ -1927,14 +1836,19 @@ final class EditorViewModel: ObservableObject {
             }
 
             if saveAudio {
-                let pinPoint = CGPoint(x: 0.15, y: 0.15)
-                let record = try StorageService.shared.insertAudioFile(
-                    to: currentPage,
-                    recordId: id,
-                    duration: result.duration,
-                    at: pinPoint
+                // Step 5: short-note recordings commit through the
+                // shared `AudioElementCommit` helper now — same path
+                // as the lecture flow. Pin position is owned by the
+                // commit helper (top-left default); future selection
+                // chrome lets the user move it.
+                let pageSize = currentPage.pageSize.pointSize
+                AudioElementCommit.commit(
+                    contentId: id,
+                    pageId: currentPage.id,
+                    notebookId: notebook.id,
+                    pageSize: pageSize,
+                    durationSeconds: result.duration
                 )
-                refreshCurrentPageAudioAnnotations()
                 pendingRecordingURL = nil
                 pendingRecordingId  = nil
                 recordingState      = .idle
@@ -1942,34 +1856,12 @@ final class EditorViewModel: ObservableObject {
 
                 if transcribe {
                     let capturedURL = url
-                    let capturedId  = record.id
-                    #if DEBUG
-                    let fileSize = (try? FileManager.default.attributesOfItem(atPath: capturedURL.path)[.size] as? Int64) ?? 0
-                    print("[Audio] stopRecording → POST-record transcribe scheduled. file=\(capturedURL.lastPathComponent) size=\(fileSize)B annotationId=\(capturedId)")
-                    #endif
-                    Task.detached(priority: .utility) { [weak self] in
-                        await SpeechTranscriber.shared.transcribe(url: capturedURL, annotationId: capturedId)
-                        #if DEBUG
-                        print("[Audio] transcribe(url:annotationId:) completed isMain=\(Thread.isMainThread)")
-                        #endif
-                        // Defer the refresh to the NEXT runloop tick via
-                        // `Task { @MainActor in ... }` instead of an
-                        // immediate `await MainActor.run { ... }`. The
-                        // synchronous form sometimes lands inside the
-                        // SwiftData save-completion's own observer
-                        // dispatch, which produced a re-entrant
-                        // refresh → re-render → state-update cycle that
-                        // appeared as a permanent freeze. Decoupling
-                        // breaks the cycle. See post-Phase-3b freeze fix.
-                        Task { @MainActor [weak self] in
-                            #if DEBUG
-                            print("[Audio] post-transcribe refresh begin viewModelAlive=\(self != nil)")
-                            #endif
-                            self?.refreshCurrentPageAudioAnnotations()
-                            #if DEBUG
-                            print("[Audio] post-transcribe refresh end")
-                            #endif
-                        }
+                    let capturedId  = id
+                    Task.detached(priority: .utility) {
+                        await SpeechTranscriber.shared.transcribe(
+                            url: capturedURL,
+                            annotationId: capturedId
+                        )
                     }
                 }
             } else {
