@@ -9,9 +9,15 @@ import SwiftData
 ///     onto an existing page; element is movable / resizable /
 ///     rotatable like any other.
 ///
-/// V6 (Step 1): inert. The existing PDF-backing pipeline
-/// (`PDFBackingStore` + per-page `pdfPageIndex`) still serves PDF
-/// notebooks until Step 4.5 migrates onto this row.
+/// V6 (Step 4.5): live for Workflow B (PDF-as-reference inserted
+/// on an existing page). Workflow A (PDF-as-notebook import) is
+/// **not yet** refactored onto this row — the legacy
+/// `PDFBackingStore` + `PageRenderer.updatePDFBacking` path is
+/// preserved so the existing PDF-text annotation overlay
+/// (`PDFTextAnnotationStore` records drawn on top of the PDF in
+/// `PageRenderer.drawTextAnnotationOverlay`) keeps working. A
+/// follow-up step will move both the PDF render and the
+/// annotation overlay onto this element model.
 ///
 /// **Shared PDF file storage.** Multiple rows can reference the
 /// same PDF document. The PDF lives once at
@@ -62,5 +68,23 @@ final class PDFPageContent {
         self.previewImageFilename = previewImageFilename
         self.createdAt            = createdAt
         self.updatedAt            = updatedAt
+    }
+
+    // MARK: - Convenience
+
+    /// On-disk URL for the shared PDF file. Multiple PDFPageContent
+    /// rows can resolve to the same URL when they reference different
+    /// pages of the same document (the deduplication contract).
+    var pdfFileURL: URL {
+        MediaStorage.url(forPDF: pdfDocumentId)
+    }
+
+    /// On-disk URL for this row's cached preview thumbnail, if any.
+    /// Generated at import time at a small fixed width and shown
+    /// while PDFKit asynchronously loads the full page for crisp
+    /// render.
+    var previewImageURL: URL? {
+        guard let name = previewImageFilename else { return nil }
+        return MediaStorage.pdfPreviewDirectory.appendingPathComponent(name)
     }
 }

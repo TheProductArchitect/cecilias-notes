@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Floating, edge-snapping pill of tools, current colour, and width controls.
 ///
@@ -30,6 +31,14 @@ struct ToolPaletteView: View {
     /// Kept in sync via the `.imageToolVariantChanged` notification so
     /// taps on the variant picker update the toolbar glyph immediately.
     @State private var imageVariant: ImageToolVariant = ImageToolVariantStore.current
+
+    // MARK: - Step 4.5: PDF-as-reference (Workflow B)
+    /// Drives the `.fileImporter` modifier for PDF picking. Flips
+    /// true when the user taps the image tool's PDF Page menu row.
+    @State private var showPDFFilePicker = false
+    /// URL handed back from the file importer, drives the
+    /// `PDFPagePickerSheet` presentation. Cleared on dismiss.
+    @State private var pdfPickerSourceURL: URL?
     /// Which category, if any, is showing its variant picker popover.
     @State private var openVariantCategory: ToolCategory?
 
@@ -126,6 +135,51 @@ struct ToolPaletteView: View {
         } message: {
             Text("This clears all strokes on the current page. Media and text blocks are preserved. ⌘Z restores.")
         }
+        // Step 4.5: PDF-as-reference document picker. Driven by the
+        // image tool's long-press menu PDF Page row. SwiftUI's
+        // `.fileImporter` wraps UIDocumentPickerViewController and
+        // takes care of security-scoped resource handling.
+        .fileImporter(
+            isPresented: $showPDFFilePicker,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { pdfPickerSourceURL = url }
+            case .failure:
+                pdfPickerSourceURL = nil
+            }
+        }
+        // Page-picker sheet. Driven by `pdfPickerSourceURL` being
+        // non-nil after the file importer hands back a PDF.
+        .sheet(item: Binding(
+            get: { pdfPickerSourceURL.map { PDFPickerSourceWrapper(url: $0) } },
+            set: { if $0 == nil { pdfPickerSourceURL = nil } }
+        )) { wrapper in
+            PDFPagePickerSheet(
+                sourceURL: wrapper.url,
+                onConfirm: { indices in
+                    let url = wrapper.url
+                    pdfPickerSourceURL = nil
+                    Task {
+                        await PDFReferenceImporter.importPages(
+                            from: url,
+                            pageIndices: indices,
+                            into: viewModel
+                        )
+                    }
+                },
+                onCancel: { pdfPickerSourceURL = nil }
+            )
+        }
+    }
+
+    /// Wrapper so the URL can drive `.sheet(item:)`'s `Identifiable`
+    /// requirement without subclassing URL itself.
+    private struct PDFPickerSourceWrapper: Identifiable {
+        let url: URL
+        var id: String { url.path }
     }
 
     // MARK: Layout
@@ -527,12 +581,13 @@ struct ToolPaletteView: View {
 
     // MARK: Image-tool variant picker
 
-    /// Photo Library / Camera picker shown by long-pressing the image
-    /// tool button. Selecting a variant persists it via
-    /// `ImageToolVariantStore` (and updates the toolbar glyph the next
-    /// time the user taps the button) and immediately fires the
-    /// matching picker so the long-press still gives the user a one-
-    /// gesture path into the chosen source.
+    /// Photo Library / Camera / PDF Page picker shown by long-pressing
+    /// the image tool button. The first two rows pick an
+    /// `ImageToolVariant` (persisted; the next tap on the button
+    /// fires that source). The third row — PDF Page — opens the
+    /// document picker that drives Workflow B (PDF-as-reference),
+    /// independent of the persisted variant: PDF references are
+    /// always a deliberate action, never a single-tap default.
     private var imageVariantPopover: some View {
         VStack(spacing: 0) {
             ForEach(ImageToolVariant.allCases, id: \.self) { variant in
@@ -564,8 +619,36 @@ struct ToolPaletteView: View {
                 }
                 .buttonStyle(.plain)
             }
+            // Step 4.5: PDF Page (Workflow B). Sits below the
+            // variant rows separated by a subtle divider so users
+            // see it as "another source" rather than a variant
+            // toggle. Tap opens the document picker; PDF selection
+            // chains into the page-picker sheet, then the importer.
+            CeciliasNotesDivider()
+            Button {
+                showImageVariantPopover = false
+                // Defer one runloop tick so the popover dismisses
+                // cleanly before the file importer presents.
+                DispatchQueue.main.async { showPDFFilePicker = true }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(theme.foreground)
+                        .frame(width: 22)
+                    Text("PDF Page")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(theme.foreground)
+                    Spacer(minLength: 12)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
-        .frame(width: 200)
+        .frame(width: 220)
     }
 
     /// Post the centre-of-page image-import request used by both the

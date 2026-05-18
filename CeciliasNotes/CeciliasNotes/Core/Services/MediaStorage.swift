@@ -1,4 +1,6 @@
+import CryptoKit
 import Foundation
+import SwiftData
 import os
 import UIKit
 
@@ -86,12 +88,178 @@ enum MediaStorage {
     // MARK: - Directory bring-up
 
     /// Idempotent. Creates the root + every category directory if any
-    /// is missing. Safe to call repeatedly.
+    /// is missing. Safe to call repeatedly. Also brings up the
+    /// PDF directories Step 4.5 added so the dedup index has a
+    /// place to land.
     static func ensureDirectoriesExist() {
         let fm = FileManager.default
         for category in Category.allCases {
             try? fm.createDirectory(at: directory(for: category),
                                     withIntermediateDirectories: true)
+        }
+        try? fm.createDirectory(at: pdfDirectory, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: pdfPreviewDirectory, withIntermediateDirectories: true)
+    }
+
+    // MARK: - PDF storage (Step 4.5)
+    //
+    // PDFs live outside `Category` because they're not 1:1 with a
+    // SwiftData record id — the same file can be referenced from
+    // many `PDFPageContent` rows when a user pulls multiple pages
+    // out of one document. The filename is the deduplicated
+    // `pdfDocumentId`, computed via `writePDF(from:hash:)`.
+
+    /// `Documents/MediaAttachments/pdfs/`.
+    static var pdfDirectory: URL {
+        rootURL.appendingPathComponent("pdfs", isDirectory: true)
+    }
+
+    /// `Documents/MediaAttachments/pdf-previews/`.
+    static var pdfPreviewDirectory: URL {
+        rootURL.appendingPathComponent("pdf-previews", isDirectory: true)
+    }
+
+    /// `Documents/MediaAttachments/pdfs/<pdfDocumentId>.pdf`.
+    static func url(forPDF id: UUID) -> URL {
+        pdfDirectory.appendingPathComponent("\(id.uuidString).pdf")
+    }
+
+    /// SHA-256 → `pdfDocumentId` mapping. Persisted as a single
+    /// JSON file (`pdfs/_index.json`) so dedup checks survive
+    /// launches without paying SwiftData's per-row cost for a
+    /// small lookup table. Read on demand; the in-memory cache
+    /// behind `pdfDocumentId(forHash:)` keeps repeated lookups
+    /// during a single import batch cheap.
+    private static let pdfIndexFilename = "_index.json"
+    private static var pdfHashIndexCache: [String: UUID]?
+
+    private static var pdfIndexURL: URL {
+        pdfDirectory.appendingPathComponent(pdfIndexFilename)
+    }
+
+    private static func loadPDFHashIndex() -> [String: UUID] {
+        if let cached = pdfHashIndexCache { return cached }
+        guard let data = try? Data(contentsOf: pdfIndexURL),
+              let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else {
+            pdfHashIndexCache = [:]
+            return [:]
+        }
+        var map: [String: UUID] = [:]
+        for (hash, uuidString) in decoded {
+            if let uuid = UUID(uuidString: uuidString) {
+                map[hash] = uuid
+            }
+        }
+        pdfHashIndexCache = map
+        return map
+    }
+
+    private static func savePDFHashIndex(_ map: [String: UUID]) {
+        pdfHashIndexCache = map
+        let stringMap = map.mapValues { $0.uuidString }
+        guard let data = try? JSONEncoder().encode(stringMap) else { return }
+        try? data.write(to: pdfIndexURL, options: .atomic)
+    }
+
+    /// Returns the existing `pdfDocumentId` for a content hash, or
+    /// `nil` if this hash has never been imported.
+    static func pdfDocumentId(forHash hash: String) -> UUID? {
+        loadPDFHashIndex()[hash]
+    }
+
+    /// Idempotent. Writes `data` to
+    /// `pdfs/<pdfDocumentId>.pdf` if no row with this hash exists;
+    /// otherwise reuses the prior document id. Returns the id the
+    /// caller should store on its `PDFPageContent` rows.
+    @discardableResult
+    static func writePDF(from data: Data, hash: String) -> UUID {
+        ensureDirectoriesExist()
+        var index = loadPDFHashIndex()
+        if let existing = index[hash],
+           FileManager.default.fileExists(atPath: url(forPDF: existing).path) {
+            return existing
+        }
+        let newId = UUID()
+        let dest = url(forPDF: newId)
+        do {
+            try data.write(to: dest, options: .atomic)
+            index[hash] = newId
+            savePDFHashIndex(index)
+            return newId
+        } catch {
+            logger.error("writePDF failed hash=\(hash, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            return newId  // best-effort — caller stores the id even if write failed
+        }
+    }
+
+    /// SHA-256 hex digest of `data`. Used to key `pdfHashIndex`.
+    /// Computed on whatever thread the caller is on; small enough
+    /// even for large PDFs (~30ms for 50MB on a modern iPad).
+    static func sha256Hex(of data: Data) -> String {
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Write a per-`PDFPageContent` preview PNG to
+    /// `pdf-previews/<contentId>.png`. The filename returned (just
+    /// the basename) is what the row stores. Synchronous because
+    /// PNG encoding is fast and the import pipeline already runs
+    /// inside a Task.
+    @discardableResult
+    static func writePDFPreview(_ image: UIImage, contentId: UUID) -> String? {
+        ensureDirectoriesExist()
+        let name = "\(contentId.uuidString).png"
+        let dest = pdfPreviewDirectory.appendingPathComponent(name)
+        guard let pngData = image.pngData() else { return nil }
+        do {
+            try pngData.write(to: dest, options: .atomic)
+            return name
+        } catch {
+            logger.error("writePDFPreview failed contentId=\(contentId, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Background-priority garbage collection. For each PDF on
+    /// disk, query SwiftData for any active `PDFPageContent`
+    /// referencing the id; delete the file if none. Same logic
+    /// for orphaned preview thumbnails. **Not scheduled in
+    /// Step 4.5** — Step 10's sync polish wires this into a
+    /// background task. Provided as a free function callable from
+    /// debug tooling and the future scheduler.
+    static func purgeOrphanedPDFs(context: ModelContext) {
+        let fm = FileManager.default
+        let pdfFiles = (try? fm.contentsOfDirectory(at: pdfDirectory, includingPropertiesForKeys: nil)) ?? []
+        let descriptor = FetchDescriptor<PDFPageContent>()
+        let activeContents = (try? context.fetch(descriptor)) ?? []
+        let referencedIds = Set(activeContents.map(\.pdfDocumentId))
+        let referencedPreviewNames = Set(activeContents.compactMap(\.previewImageFilename))
+
+        // Index also gets reaped — drop any entry whose value isn't
+        // in `referencedIds`.
+        var index = loadPDFHashIndex()
+        var indexChanged = false
+
+        for fileURL in pdfFiles where fileURL.pathExtension.lowercased() == "pdf" {
+            let stem = fileURL.deletingPathExtension().lastPathComponent
+            guard let uuid = UUID(uuidString: stem) else { continue }
+            if !referencedIds.contains(uuid) {
+                try? fm.removeItem(at: fileURL)
+                for (hash, id) in index where id == uuid {
+                    index.removeValue(forKey: hash)
+                    indexChanged = true
+                }
+            }
+        }
+        if indexChanged { savePDFHashIndex(index) }
+
+        let previewFiles = (try? fm.contentsOfDirectory(at: pdfPreviewDirectory, includingPropertiesForKeys: nil)) ?? []
+        for fileURL in previewFiles where fileURL.pathExtension.lowercased() == "png" {
+            let name = fileURL.lastPathComponent
+            if !referencedPreviewNames.contains(name) {
+                try? fm.removeItem(at: fileURL)
+            }
         }
     }
 

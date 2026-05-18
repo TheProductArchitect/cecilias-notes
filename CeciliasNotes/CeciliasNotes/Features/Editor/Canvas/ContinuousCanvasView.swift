@@ -346,6 +346,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// SwiftUI updates and also triggers
             /// `_UIReparentingView` complaints.
             var imagesHost:    UIHostingController<ImageElementsOverlayView>
+            /// V6 PDF-page element overlay (BELOW the canvas,
+            /// ABOVE images). Step 4.5: renders Workflow B's
+            /// user-placed PDF page elements. Workflow A's full-
+            /// page PDF rendering stays in `PageRenderer` for now
+            /// (legacy path with the PDFTextAnnotationStore
+            /// overlay stacked on top).
+            var pdfPagesHost:  UIHostingController<PDFPageElementsOverlayView>
             /// Audio annotation pins overlay (ABOVE the canvas).
             var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>
             /// Lecture-block overlay (ABOVE the canvas).
@@ -555,6 +562,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 imagesHost.attachAsChild(of: renderer)
 
+                // Step 4.5: V6 PDF-page elements overlay (Workflow B).
+                // Sits ABOVE the images host so a user-placed PDF
+                // reference renders on top of a same-page image, and
+                // BELOW the audio/lecture/sticky/text overlays whose
+                // primitives demand higher z-priority. Workflow A's
+                // full-page PDF backgrounds still render in
+                // `PageRenderer` — those don't appear in this layer
+                // because they have no `PDFPageContent` rows.
+                let pdfPagesHost = UIHostingController(
+                    rootView: PDFPageElementsOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                pdfPagesHost.view.backgroundColor = .clear
+                pdfPagesHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(pdfPagesHost.view)
+                NSLayoutConstraint.activate([
+                    pdfPagesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    pdfPagesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    pdfPagesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    pdfPagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                pdfPagesHost.attachAsChild(of: renderer)
+
                 // Audio annotation overlay — per-page, scoped to
                 // this page's id. Phase 4B: replaced the pin overlay
                 // with full-width cards stacked from the top of the
@@ -678,6 +711,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer:      renderer,
                     templateHost:  templateHost,
                     imagesHost:    imagesHost,
+                    pdfPagesHost:  pdfPagesHost,
                     audioPinsHost: audioPinsHost,
                     lectureHost:   lectureHost,
                     stickyHost:    stickyHost,
@@ -716,6 +750,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // children whose `.view` no longer has a window.
                 hosts[i].templateHost.detachFromParentVC()
                 hosts[i].imagesHost.detachFromParentVC()
+                hosts[i].pdfPagesHost.detachFromParentVC()
                 hosts[i].audioPinsHost.detachFromParentVC()
                 hosts[i].lectureHost.detachFromParentVC()
                 hosts[i].stickyHost.detachFromParentVC()
@@ -1083,9 +1118,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 case tool.isCursorMode:
                     // Cursor mode: text elements first (so tap-to-
-                    // edit reaches them), then sticky/lecture/images
-                    // for selection of those primitives.
+                    // edit reaches them), then sticky/lecture/PDF/
+                    // images for selection of those primitives.
+                    // Step 4.5: PDF pages slot above images per the
+                    // host stack default — selectable in cursor mode
+                    // like every other PageElement-backed primitive.
                     renderer.bringSubviewToFront(h.imagesHost.view)
+                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
                     renderer.bringSubviewToFront(h.audioPinsHost.view)
                     renderer.bringSubviewToFront(h.lectureHost.view)
                     renderer.bringSubviewToFront(h.stickyHost.view)
@@ -1101,6 +1140,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.stickyHost.view)
                     renderer.bringSubviewToFront(h.lectureHost.view)
                     renderer.bringSubviewToFront(h.audioPinsHost.view)
+                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
                 }
             }
         }
