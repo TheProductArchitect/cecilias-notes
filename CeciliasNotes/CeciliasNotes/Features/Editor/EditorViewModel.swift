@@ -548,8 +548,14 @@ final class EditorViewModel: ObservableObject {
         } else {
             self.currentPageIndex = 0
         }
-        // Restore the pen's last-used colour/width/opacity if present.
-        self.selectedTool     = ToolSettingsStore.load().tool(for: .pen, theme: theme)
+        // Step 2 (cursor tool): the editor opens on the neutral
+        // cursor by default. The user picks an inking tool when they
+        // actually want to write; until then, finger taps select
+        // content (images, sticky notes today; text/audio/strokes as
+        // Steps 3-9 migrate them onto PageElement). Cursor carries no
+        // colour / width, so there's nothing to restore from
+        // `ToolSettingsStore`.
+        self.selectedTool     = .cursor
 
         loadPersistedState(theme: theme)
 

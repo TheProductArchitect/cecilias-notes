@@ -8,6 +8,12 @@ import UIKit
 /// User-facing tool model. Maps to a `PKTool` in `CanvasContainerView`.
 /// Associated values are the *current* settings; defaults live in `CeciliasNotesTool.defaults`.
 enum CeciliasNotesTool: Equatable {
+    /// Neutral interaction mode — selects / edits existing content
+    /// without producing strokes. Step 2 of the unified PageElement
+    /// migration: lands the cursor concept so subsequent steps can
+    /// lean on it (text editing in Step 3, image selection unified
+    /// with cursor, etc.). Carries no colour / width / opacity.
+    case cursor
     // Inking — each maps to a PKInkingTool ink type.
     case pen(colour: UIColor, width: CGFloat, opacity: CGFloat)
     case fountainPen(colour: UIColor, width: CGFloat, opacity: CGFloat)
@@ -35,11 +41,13 @@ enum CeciliasNotesTool: Equatable {
     case image
 
     enum Identity: String, CaseIterable, Codable {
+        case cursor
         case pen, fountainPen, monoline, marker, brush, crayon, pencil, highlighter
         case eraser, lasso, ruler, text, stickyNote, image
 
         var systemImage: String {
             switch self {
+            case .cursor:                   return "cursorarrow"
             case .pen:                      return "pencil.tip"
             case .fountainPen:              return "applepencil.tip"
             case .monoline:                 return "scribble"
@@ -59,6 +67,7 @@ enum CeciliasNotesTool: Equatable {
 
         var displayName: String {
             switch self {
+            case .cursor:                   return "Cursor"
             case .pen:                      return "Pen"
             case .fountainPen:              return "Fountain Pen"
             case .monoline:                 return "Monoline"
@@ -79,6 +88,7 @@ enum CeciliasNotesTool: Equatable {
 
     var identity: Identity {
         switch self {
+        case .cursor:                   return .cursor
         case .pen:                      return .pen
         case .fountainPen:              return .fountainPen
         case .monoline:                 return .monoline
@@ -126,7 +136,7 @@ enum CeciliasNotesTool: Equatable {
         case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil,
              .highlighter:
             return true
-        case .eraser, .lasso, .ruler, .text, .stickyNote, .image:
+        case .cursor, .eraser, .lasso, .ruler, .text, .stickyNote, .image:
             return false
         }
     }
@@ -141,7 +151,7 @@ enum CeciliasNotesTool: Equatable {
         // floating palette; spec retired the configurability, so
         // every eraser mode now reports `hasWidth = false`.
         case .eraser:                                  return false
-        case .lasso, .ruler, .text, .stickyNote, .image: return false
+        case .cursor, .lasso, .ruler, .text, .stickyNote, .image: return false
         }
     }
 
@@ -210,13 +220,24 @@ enum CeciliasNotesTool: Equatable {
         return false
     }
 
-    /// Tools that act on the PKCanvasView. `.text` is finger-driven
-    /// inline text; `.stickyNote` is finger-driven tap-to-place on
-    /// PDF-backed pages. Neither produces PencilKit strokes.
+    /// True when the active tool is the neutral cursor — used by
+    /// overlays that should accept finger interaction without the
+    /// tool-specific placement behaviours (no image picker on tap,
+    /// no new sticky on tap, etc.).
+    var isCursorMode: Bool {
+        if case .cursor = self { return true }
+        return false
+    }
+
+    /// Tools that act on the PKCanvasView. `.cursor` yields the
+    /// canvas to overlays — the whole point of the neutral mode.
+    /// `.text` is finger-driven inline text; `.stickyNote` is
+    /// finger-driven tap-to-place on PDF-backed pages. None of
+    /// these produce PencilKit strokes.
     var isDrawingTool: Bool {
         switch self {
-        case .text, .stickyNote, .image: return false
-        default:                         return true
+        case .cursor, .text, .stickyNote, .image: return false
+        default:                                  return true
         }
     }
 
@@ -236,6 +257,20 @@ enum CeciliasNotesTool: Equatable {
     var isStickyNoteMode: Bool {
         if case .stickyNote = self { return true }
         return false
+    }
+
+    /// Tools that let the user select & manipulate existing images
+    /// on the page (handles, drag, resize, rotate, delete). Today
+    /// `.image` (full power including new-image placement on empty
+    /// taps) and `.cursor` (Step 2's neutral interaction mode —
+    /// selects existing images but does NOT open the picker on an
+    /// empty tap). Kept separate from `isImageMode` because the
+    /// placement-on-empty-tap behaviour is `.image`-only.
+    var allowsImageSelection: Bool {
+        switch self {
+        case .cursor, .image: return true
+        default:              return false
+        }
     }
 
     /// Images are interactive (selectable/moveable) only in non-canvas modes (text).
@@ -322,11 +357,13 @@ enum CeciliasNotesTool: Equatable {
         static let text: CeciliasNotesTool  = .text
         static let stickyNote: CeciliasNotesTool = .stickyNote
         static let image: CeciliasNotesTool = .image
+        static let cursor: CeciliasNotesTool = .cursor
 
         /// Build a default for any identity. Used by the palette when the
         /// per-tool persistence has nothing stored for that identity yet.
         static func forIdentity(_ id: Identity, theme: Theme) -> CeciliasNotesTool {
             switch id {
+            case .cursor:       return cursor
             case .pen:          return pen(theme: theme)
             case .fountainPen:  return fountainPen(theme: theme)
             case .monoline:     return monoline(theme: theme)
@@ -395,11 +432,12 @@ enum CeciliasNotesTool: Equatable {
             return PKInkingTool(.pen, color: .clear, width: 1)
         case .lasso:
             return PKLassoTool()
-        case .ruler, .text, .stickyNote, .image:
-            // `.image` produces no strokes — same dummy PKTool as
-            // the other finger-driven modes. The canvas-overlay
-            // layer handles tap-to-place + selection above the
-            // PKCanvasView.
+        case .cursor, .ruler, .text, .stickyNote, .image:
+            // `.cursor` and `.image` produce no strokes — same dummy
+            // PKTool as the other finger-driven modes. The canvas-
+            // overlay layer handles tap-to-place + selection above
+            // the PKCanvasView, and `canvasIsInteractive` is false
+            // anyway so the canvas never sees finger input.
             return PKInkingTool(.pen, color: .clear, width: 1)
         }
     }

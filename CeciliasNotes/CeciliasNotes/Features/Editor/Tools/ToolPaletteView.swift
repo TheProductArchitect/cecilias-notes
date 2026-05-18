@@ -157,6 +157,14 @@ struct ToolPaletteView: View {
     private var paletteContents: some View {
         dragHandle
 
+        // Step 2: cursor is the first tool in the palette — the
+        // neutral interaction mode (no strokes, finger selects
+        // content). Sits before any drawing tool so the eye reads
+        // "default state" → "writing tools" → "modes".
+        toolButton(.cursor)
+
+        divider
+
         // Categories — each button shows its current variant's glyph.
         // Tap to activate (or open variants if already active);
         // long-press always opens the variant popover.
@@ -185,10 +193,17 @@ struct ToolPaletteView: View {
             toolButton(.stickyNote)
         }
 
-        divider
-        colourDot
-        divider
-        sizeControls
+        // Colour + size controls are hidden when cursor is active —
+        // a neutral selection tool shouldn't show colour choices or
+        // a width readout. Other non-inking tools (eraser, lasso,
+        // ruler, text, image, stickyNote) keep the dimmed-but-
+        // visible affordance pattern.
+        if !viewModel.selectedTool.isCursorMode {
+            divider
+            colourDot
+            divider
+            sizeControls
+        }
         divider
         shapeRecognitionToggle
     }

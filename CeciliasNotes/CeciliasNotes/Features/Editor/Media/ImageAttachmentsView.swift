@@ -61,7 +61,14 @@ struct ImageAttachmentsView: View {
     var body: some View {
         let _ = refreshTick
         let records = MediaAttachmentStore.records(for: pageId)
+        // `imageMode` gates *placement* (background-tap → picker).
+        // `allowsSelection` gates *selection chrome* on existing
+        // images — Step 2 expands this beyond .image to include the
+        // new .cursor neutral mode, so the user can select / move /
+        // resize existing images without leaving the cursor for the
+        // image-placement tool.
         let imageMode = viewModel.selectedTool.isImageMode
+        let allowsSelection = viewModel.selectedTool.allowsImageSelection
 
         #if DEBUG
         // Phase-5-followup diagnostic 1 (image selection chrome).
@@ -128,7 +135,7 @@ struct ImageAttachmentsView: View {
             }
 
             ForEach(records) { record in
-                attachmentContainer(for: record, imageMode: imageMode)
+                attachmentContainer(for: record, imageMode: allowsSelection)
             }
         }
         .frame(width: pageSize.width, height: pageSize.height)
@@ -138,7 +145,11 @@ struct ImageAttachmentsView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: .mediaAttachmentsChanged)
         ) { _ in refreshTick &+= 1 }
-        .onChange(of: imageMode) { _, newValue in
+        // Clear selection when switching to a tool that doesn't
+        // allow selection (e.g. cursor → pen). Switching within the
+        // allows-selection set (cursor ↔ image) keeps the current
+        // selection alive.
+        .onChange(of: allowsSelection) { _, newValue in
             if !newValue { selectedId = nil }
         }
     }
