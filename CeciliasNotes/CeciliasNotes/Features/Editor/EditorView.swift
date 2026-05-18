@@ -51,28 +51,16 @@ struct EditorView: View {
     var body: some View {
         ZStack {
             editorBody
-                .opacity(viewModel.activeLectureRecorder == nil ? 1 : 0)
-                .allowsHitTesting(viewModel.activeLectureRecorder == nil)
 
-            // Lecture mode takes over the full screen. The editor
-            // stays mounted underneath (opacity 0) so PKCanvasView /
-            // page state / unsaved strokes are preserved exactly —
-            // dismissing the lecture view restores the editor with
-            // every overlay, scroll position and pen mode intact.
-            if let recorder = viewModel.activeLectureRecorder {
-                LectureRecordingView(
-                    recorder: recorder,
-                    onStop: { record in
-                        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
-                            viewModel.endLectureMode(with: record)
-                        }
-                    }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(200)
-            }
+            // Step 6: floating recording controls overlay — always
+            // mounted, internally hides when no recording is in
+            // flight. Sits above the page content but below modal
+            // sheets (zIndex 150 < 200 reserved for legacy lecture
+            // overlay which is now gone).
+            FloatingRecordingControls()
+                .allowsHitTesting(RecordingSession.shared.state.isRecording)
+                .zIndex(150)
         }
-        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.activeLectureRecorder != nil)
     }
 
     private var editorBody: some View {
@@ -211,8 +199,8 @@ struct EditorView: View {
                             onMoreMenuPageSettings: showPageSettings,
                             onMoreMenuFullScreen: toggleFullScreen,
                             onMoreMenuInsertMedia: { viewModel.mediaInsertCoordinator.insertPhotos() },
-                            onToggleRecordingPanel: toggleRecordingPanel,
-                            onStartLecture: { Task { await viewModel.startLectureMode() } },
+                            onStartVoiceNote: { Task { await viewModel.startVoiceNoteRecording() } },
+                            onStartDictation: { Task { await viewModel.startDictationRecording() } },
                             onOpenCoverPicker: { isShowingCoverPicker = true }
                         )
                         .transition(.move(edge: .top).combined(with: .opacity))
@@ -486,12 +474,12 @@ struct EditorView: View {
                     .zIndex(99)
                 }
 
-                // Recording panel — slides up from bottom
-                if viewModel.isRecordingPanelVisible && !viewModel.isFullScreen {
-                    RecordingPanelView(viewModel: viewModel)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .zIndex(50)
-                }
+                // Step 6: V5 `RecordingPanelView` removed — Voice
+                // Note recording now renders inline on the page via
+                // `AudioElementView.recordingStrip`, and the
+                // `FloatingRecordingControls` overlay (mounted at
+                // the ZStack root above) carries the global timer +
+                // stop button.
             }
             .background(theme.surface.ignoresSafeArea())
         }
@@ -863,13 +851,6 @@ struct EditorView: View {
             .accessibilityElement()
             .accessibilityLabel("Show header")
             .accessibilityAddTraits(.isButton)
-    }
-
-    private func toggleRecordingPanel() {
-        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
-            viewModel.isRecordingPanelVisible.toggle()
-        }
-        viewModel.resetToolbarTimer()
     }
 
     private func showPageSettings() {

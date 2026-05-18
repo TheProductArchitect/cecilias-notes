@@ -98,6 +98,79 @@ enum AudioElementCommit {
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }
 
+    // MARK: - Step 6: Voice Note placeholder + finalize
+
+    /// Create an inline `PageElement(.audio)` + `AudioContent` row
+    /// with `durationSeconds = 0` — the placeholder the
+    /// `AudioElementView` renders in its recording state (pulsing
+    /// dot + live timer) while the user is still recording. The
+    /// caller (RecordingSession) calls `finalizeVoiceNote(...)` on
+    /// stop to fill in the real duration so the view flips into
+    /// its ready state.
+    ///
+    /// Returns the PageElement id so the session can track it
+    /// across the recording lifetime.
+    @discardableResult
+    static func createRecordingPlaceholder(
+        contentId: UUID,
+        pageId: UUID,
+        notebookId: UUID,
+        pageSize: CGSize
+    ) -> UUID {
+        let context = StorageService.shared.context
+        let normalizedHeight = Self.normalizedHeight(for: Double(pageSize.height))
+        let baseZIndex = nextZIndex(forPageId: pageId, context: context)
+        let elementId = UUID()
+        let element = PageElement(
+            id: elementId,
+            pageId: pageId,
+            notebookId: notebookId,
+            kind: .audio,
+            normalizedX: defaultNormalizedX,
+            normalizedY: defaultNormalizedY,
+            normalizedWidth: defaultNormalizedWidth,
+            normalizedHeight: normalizedHeight,
+            zIndex: baseZIndex
+        )
+        let content = AudioContent(
+            id: contentId,
+            filename: "\(contentId.uuidString).m4a",
+            durationSeconds: 0,
+            transcript: ""
+        )
+        element.audioContent = content
+        context.insert(element)
+        try? context.save()
+        NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+        return elementId
+    }
+
+    /// Promote a recording placeholder to its final state — writes
+    /// the captured duration onto the AudioContent so the
+    /// `AudioElementView` flips out of `recording` and into `ready`
+    /// (play/pause/progress strip).
+    static func finalizeVoiceNote(
+        elementId: UUID,
+        contentId: UUID,
+        durationSeconds: Double
+    ) {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<AudioContent>(
+            predicate: #Predicate { $0.id == contentId }
+        )
+        guard let content = try? context.fetch(descriptor).first else { return }
+        content.durationSeconds = durationSeconds
+        content.updatedAt = Date()
+        try? context.save()
+        NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+    }
+
+    /// Make publicly accessible so DictationFlowCommit can mirror
+    /// the height heuristic for the audio strip placement.
+    static func defaultStripHeight(forPagePoints pageHeightPoints: Double) -> Double {
+        normalizedHeight(for: pageHeightPoints)
+    }
+
     // MARK: - Helpers
 
     private static func nextZIndex(forPageId pageId: UUID, context: ModelContext) -> Int {

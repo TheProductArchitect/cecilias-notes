@@ -399,31 +399,10 @@ final class EditorViewModel: ObservableObject {
 
     @Published private(set) var currentPageStickyNotes: [StickyNoteRecord] = []
 
-    // MARK: Lecture mode (Pass A)
-    //
-    // When `activeLectureRecorder` is non-nil the editor view swaps
-    // its body for `LectureRecordingView`. Stop returns the saved
-    // record so the editor can drop the post-stop placeholder
-    // TextBlock on the page.
-
-    @Published var activeLectureRecorder: LectureRecorder? {
-        didSet {
-            // Phase 5E mirror: lecture mode is a state-machine mode.
-            // Existing call sites flip this directly; the mirror
-            // here keeps `stateMachine.mode` in sync without
-            // touching them. `recorder.recordId` would be ideal as
-            // the session id but it's private; use a fresh UUID
-            // per session — the id is opaque to readers, they only
-            // pattern-match on the case.
-            if activeLectureRecorder != nil, oldValue == nil {
-                stateMachine.enterMode(.lectureRecording(sessionId: UUID()))
-            } else if activeLectureRecorder == nil, oldValue != nil {
-                if case .lectureRecording = stateMachine.mode {
-                    stateMachine.exitMode()
-                }
-            }
-        }
-    }
+    // Step 6: V5 `activeLectureRecorder` removed. Dictation is
+    // owned by `RecordingSession.shared`; the editor no longer
+    // swaps its body for a full-screen lecture view. Recording
+    // happens in-place on a fresh dictation page.
     /// When non-nil, the SwiftUI popover for this sticky note is open
     /// and the body field is focused.
     @Published var editingStickyNoteId: UUID? {
@@ -455,13 +434,11 @@ final class EditorViewModel: ObservableObject {
         let trimmed = notebook.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.lowercased() == "untitled"
     }
-    @Published var isRecordingPanelVisible:     Bool      = false {
-        didSet {
-            guard oldValue != isRecordingPanelVisible else { return }
-            if isRecordingPanelVisible { beginInteraction(.recordingPanel) }
-            else                       { endInteraction(.recordingPanel) }
-        }
-    }
+    // Step 6: V5 `isRecordingPanelVisible` removed alongside
+    // `RecordingPanelView`. Voice Note recording renders as an
+    // inline pulsing strip via `AudioElementView`'s recording
+    // state; the global timer + stop live on
+    // `FloatingRecordingControls` driven by `RecordingSession`.
     @Published var recordingState:              RecordingState = .idle {
         didSet {
             // Phase 5E mirror: quick-record session is a state-
@@ -1618,88 +1595,48 @@ final class EditorViewModel: ObservableObject {
     /// `LectureRecordingView`, and kicks off recording. Failures
     /// (mic denied, engine couldn't start) clear the recorder
     /// silently — the user is back to the editor with no recording.
-    func startLectureMode() async {
-        guard activeLectureRecorder == nil else { return }
-        let recorder = LectureRecorder()
-        do {
-            try await recorder.start(
-                pageId:     currentPage.id,
-                notebookId: notebook.id
-            )
-            activeLectureRecorder = recorder
-        } catch {
-            // Microphone denied or engine failure — surface via the
-            // existing media-error banner so the user knows. Spec
-            // says "never break existing recording" so we just bail.
-            mediaError = AppError.humanize(error)
-            activeLectureRecorder = nil
-        }
+    // MARK: - Recording entry (Step 6)
+
+    /// Voice Note: start an inline pulsing audio strip on the
+    /// current page. Routes through `RecordingSession.shared`.
+    func startVoiceNoteRecording() async {
+        let pageSize = currentPage.pageSize.pointSize
+        await RecordingSession.shared.startVoiceNote(
+            on: currentPage.id,
+            notebookId: notebook.id,
+            pageSize: pageSize
+        )
     }
 
-    /// Called by `LectureRecordingView.onStop` after the user
-    /// confirms "end". Step 5 rewired this onto the V6 unified
-    /// model: the recorder hands back a `LectureRecorderResult`
-    /// carrying the file URL + transcript + duration; we move the
-    /// file from `MediaStorage.lectures/` into `MediaStorage.audio/`
-    /// (so the AudioContent.fileURL convention resolves) and create
-    /// a `PageElement(.audio) + AudioContent` via the shared
-    /// commit helper.
-    ///
-    /// The legacy `lecture:<uuid>` TextBlock placeholder is gone —
-    /// V6 renders the recording as an `AudioElementView` strip
-    /// directly; the transcript text lives on `AudioContent`. Step 6
-    /// will add a paired on-page TextContent for the transcript.
-    func endLectureMode(with result: LectureRecorderResult?) {
-        defer { activeLectureRecorder = nil }
-        guard let result else {
-            #if DEBUG
-            print("[EditorViewModel] endLectureMode called with nil result — no element inserted")
-            #endif
-            return
-        }
-
-        let contentId = result.recordId
-        let sourceURL = result.audioURL
-        let pageId = currentPage.id
+    /// Dictation: create a new page, seed an empty transcript
+    /// TextContent at its top, and start the live-transcription
+    /// recorder. `RecordingSession` owns the state; we provide the
+    /// page-creation + navigation closures because they need
+    /// view-model state (currentPage.pageNumber, currentPageIndex).
+    func startDictationRecording() async {
         let notebookId = notebook.id
         let pageSize = currentPage.pageSize.pointSize
-        let duration = result.durationSeconds
-        let transcript = result.transcript
-
-        // The lecture file landed under `MediaStorage.lectures/<id>.m4a`
-        // during recording (see `LectureRecorder.start`). Adopt it
-        // into the unified `audio/` directory so `AudioContent.fileURL`
-        // resolves; commit the element after the move succeeds.
-        Task { @MainActor in
-            let adopted = await MediaStorage.adoptAudio(at: sourceURL, id: contentId)
-            guard adopted != nil else {
-                #if DEBUG
-                print("[EditorViewModel] endLectureMode: adoptAudio failed for \(sourceURL.lastPathComponent)")
-                #endif
-                return
+        let fromPageId = currentPage.id
+        await RecordingSession.shared.startDictation(
+            notebookId: notebookId,
+            fromPageId: fromPageId,
+            pageSize: pageSize,
+            createNewPage: { [storage, notebook, currentPage] in
+                try? storage.createPage(
+                    in: notebook,
+                    after: currentPage.pageNumber,
+                    pageSize: notebook.pageSize,
+                    backgroundTemplate: notebook.defaultTemplate
+                )
+            },
+            navigateToPage: { [weak self] newPageId in
+                guard let self else { return }
+                self.refreshPages()
+                if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
+                    self.pendingScrollPageIndex = idx
+                }
             }
-            AudioElementCommit.commit(
-                contentId: contentId,
-                pageId: pageId,
-                notebookId: notebookId,
-                pageSize: pageSize,
-                durationSeconds: duration,
-                transcript: transcript
-            )
-        }
-
-        // Bump the search index so the transcript is searchable
-        // immediately. SearchIndexService reads AudioContent rows
-        // for transcript text after the Step 5 rewire.
-        SearchIndexService.shared.rebuildSynchronousMetadata(for: notebook)
-
-        // Step 5: `IntelligenceService.generateLectureSummary` was
-        // removed — it depended on the V5 `LectureRecord` entity's
-        // `summary`/`summaryBullets` fields, which `AudioContent`
-        // doesn't carry in V6. Per architecture §11, AI features
-        // (summarise / generate-from / ask) come in Step 11 against
-        // a uniform `AIProvider` protocol; this hook is intentionally
-        // dropped until then.
+        )
     }
 
     func deleteStickyNote(id: UUID) {
@@ -1831,7 +1768,6 @@ final class EditorViewModel: ObservableObject {
                 pendingRecordingURL = nil
                 pendingRecordingId  = nil
                 recordingState      = .idle
-                isRecordingPanelVisible = false
                 return
             }
 
@@ -1852,7 +1788,6 @@ final class EditorViewModel: ObservableObject {
                 pendingRecordingURL = nil
                 pendingRecordingId  = nil
                 recordingState      = .idle
-                isRecordingPanelVisible = false
 
                 if transcribe {
                     let capturedURL = url
@@ -1874,7 +1809,6 @@ final class EditorViewModel: ObservableObject {
                 pendingRecordingURL = nil
                 pendingRecordingId  = nil
                 recordingState      = .idle
-                isRecordingPanelVisible = false
 
                 Task.detached(priority: .utility) { [weak self] in
                     let result = await SpeechTranscriber.shared.transcribeFile(url: capturedURL)

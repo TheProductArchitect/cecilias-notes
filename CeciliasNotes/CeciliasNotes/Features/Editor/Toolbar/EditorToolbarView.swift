@@ -29,16 +29,22 @@ struct EditorToolbarView: View {
     let onMoreMenuPageSettings: () -> Void
     let onMoreMenuFullScreen: () -> Void
     let onMoreMenuInsertMedia: () -> Void
-    let onToggleRecordingPanel: () -> Void
-    /// Starts the long-form lecture recording mode. Picked via the
-    /// mic-button menu's "Lecture" option; the existing short-form
-    /// flow remains under "Quick note".
-    let onStartLecture: () -> Void
+    /// Step 6 — two-mode recording entry points. Both route into
+    /// `RecordingSession.shared` from `EditorView`. Replaces the
+    /// V5 "Quick note" / "Lecture" menu items.
+    let onStartVoiceNote: () -> Void
+    let onStartDictation: () -> Void
     /// Opens the cover-tone picker as a popover anchored to the more menu.
     var onOpenCoverPicker: (() -> Void)?
 
     @State private var titleBuffer: String = ""
     @FocusState private var titleFocused: Bool
+    /// Step 6: drives the two-mode recording popover anchored to
+    /// the mic button. Auto-closes on selection (popover dismisses,
+    /// chosen mode starts immediately — no confirmation prompt).
+    @State private var showRecordingPopover: Bool = false
+    /// Drives the live mic-button glyph from the singleton state.
+    @ObservedObject private var recordingSession = RecordingSession.shared
 
     private let toolbarHeight: CGFloat = 56
 
@@ -200,40 +206,34 @@ struct EditorToolbarView: View {
         HStack(spacing: 4) {
             iconButton("rectangle.bottomthird.inset.filled") { onTogglePageStrip() }
 
-            Menu {
-                // Existing short-form flow — completely unchanged.
-                Button {
-                    onToggleRecordingPanel()
-                } label: {
-                    Label("Quick note", systemImage: "mic")
-                }
-                // New long-form lecture mode. Slides the
-                // `LectureRecordingView` up over the editor.
-                Button {
-                    onStartLecture()
-                } label: {
-                    Label("Lecture", systemImage: "waveform.badge.mic")
+            // Step 6: two-mode recording entry. Tap the mic to open
+            // a popover offering Voice note + Dictation; pick one
+            // and the recording starts immediately (no confirmation
+            // — the popover IS the choice point). The mic glyph
+            // switches to `.fill` while either mode is active so
+            // the user can see at a glance that something's
+            // recording.
+            Button {
+                if recordingSession.state.isRecording {
+                    Task { await recordingSession.stop() }
+                } else {
+                    showRecordingPopover = true
                 }
             } label: {
-                Image(systemName: viewModel.isRecordingPanelVisible ? "mic.fill" : "mic")
+                Image(systemName: recordingSession.state.isRecording ? "mic.fill" : "mic")
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(
-                        viewModel.isRecordingPanelVisible
+                        recordingSession.state.isRecording
                             ? theme.accent
                             : recessive(0.4)
                     )
                     .frame(width: 32, height: 32)
             }
-            // If the menu fails to surface for any reason (rare
-            // SwiftUI bug in popover positioning, accessibility
-            // overrides), a long-press on the icon falls through to
-            // the original short-form flow so audio capture is never
-            // blocked by a UI regression.
-            .simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.6).onEnded { _ in
-                    onToggleRecordingPanel()
-                }
-            )
+            .buttonStyle(.plain)
+            .popover(isPresented: $showRecordingPopover) {
+                recordingModePopover
+                    .presentationCompactAdaptation(.popover)
+            }
 
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
             iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }
@@ -360,5 +360,68 @@ struct EditorToolbarView: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+
+    // MARK: - Recording mode popover (Step 6)
+
+    /// Two-row recording-mode picker. Subtitle text under each
+    /// option communicates the consequence so users know what
+    /// they're committing to before they tap (architecture §9: no
+    /// confirmation prompts — popover IS the choice point).
+    @ViewBuilder
+    private var recordingModePopover: some View {
+        VStack(spacing: 0) {
+            recordingModeRow(
+                title: "Voice note",
+                subtitle: "Quick voice memo. Inline pill on this page.",
+                icon: "mic"
+            ) {
+                showRecordingPopover = false
+                onStartVoiceNote()
+            }
+            CeciliasNotesDivider()
+            recordingModeRow(
+                title: "Dictation",
+                subtitle: "Long-form with live transcript. New page.",
+                icon: "text.bubble"
+            ) {
+                showRecordingPopover = false
+                onStartDictation()
+            }
+        }
+        .frame(width: 280)
+    }
+
+    private func recordingModeRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 24, height: 24, alignment: .center)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.foreground)
+                    Text(subtitle)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(theme.foregroundSubtle)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -27,6 +27,11 @@ struct AudioElementView: View {
 
     @Environment(\.theme) private var theme
     @StateObject private var player = AudioPlaybackController()
+    /// Step 6: drives recording-strip re-renders during an active
+    /// Voice Note. Cheap for non-recording elements — they re-
+    /// evaluate body on session ticks but `isRecording` short-
+    /// circuits to false and the rendered output is unchanged.
+    @ObservedObject private var recordingSession = RecordingSession.shared
 
     @State private var dragOffset: CGSize = .zero
     @State private var resizeDelta: ResizeDelta? = nil
@@ -59,24 +64,48 @@ struct AudioElementView: View {
                 .position(x: displayed.midX, y: displayed.midY)
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        if !isSelected { isSelected = true }
+                        if !isSelected && !isRecording { isSelected = true }
                     }
                 )
-                .gesture(isSelected ? bodyDragGesture : nil)
+                .gesture(isSelected && !isRecording ? bodyDragGesture : nil)
 
-            if isSelected {
+            if isSelected && !isRecording {
                 selectionChrome(rect: displayed)
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onAppear { player.load(url: content.fileURL) }
+        .onAppear {
+            if !isRecording { player.load(url: content.fileURL) }
+        }
         .onDisappear { player.pause() }
+    }
+
+    /// Step 6: a placeholder strip created at the start of a Voice
+    /// Note recording carries `durationSeconds = 0` until the
+    /// session's stop path writes the captured duration. Use that
+    /// signal — plus an active recording session targeting this
+    /// element — to render the recording UI (pulsing dot + live
+    /// elapsed timer + stop button) instead of the play/seek
+    /// surface.
+    private var isRecording: Bool {
+        guard case .voiceNote(let ctx) = RecordingSession.shared.state else {
+            return false
+        }
+        return ctx.audioElementId == element.id
     }
 
     // MARK: - Strip body
 
     @ViewBuilder
     private func strip(width: CGFloat) -> some View {
+        if isRecording {
+            recordingStrip
+        } else {
+            readyStrip
+        }
+    }
+
+    private var readyStrip: some View {
         HStack(spacing: 10) {
             playPauseButton
             timeLabel
@@ -90,6 +119,43 @@ struct AudioElementView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+                )
+        )
+    }
+
+    // MARK: - Recording strip (Step 6 Voice Note placeholder)
+
+    private var recordingStrip: some View {
+        HStack(spacing: 10) {
+            RecordingPulseDot()
+                .frame(width: 12, height: 12)
+                .padding(.leading, 4)
+            Text(format(RecordingSession.shared.elapsedSeconds))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(theme.foreground)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button {
+                Task { await RecordingSession.shared.stop() }
+                HapticManager.shared.destructiveConfirmed()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(theme.accent))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop recording")
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
                 )
         )
     }
@@ -323,4 +389,22 @@ struct AudioElementView: View {
     }
 
     private func clampNorm(_ v: Double) -> Double { max(0, min(1, v)) }
+}
+
+/// Self-contained pulsing red dot. Used by the Voice Note inline
+/// strip during recording — same metaphor as the floating
+/// controls' dot.
+struct RecordingPulseDot: View {
+    @State private var pulsing: Bool = false
+    var body: some View {
+        Circle()
+            .fill(Color.red)
+            .scaleEffect(pulsing ? 1.15 : 0.85)
+            .animation(
+                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
+                value: pulsing
+            )
+            .onAppear { pulsing = true }
+            .onDisappear { pulsing = false }
+    }
 }

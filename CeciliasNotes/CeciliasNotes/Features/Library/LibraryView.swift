@@ -62,6 +62,18 @@ struct LibraryView: View {
                 DispatchQueue.main.async { deepLink.openNotebookId = nil }
                 editingNotebook = notebook
             }
+            // Step 6: tap on the persistent RecordingPill (from
+            // anywhere in the app) routes through the deep-link
+            // router so the editor re-presents on the recording's
+            // notebook. No-op if the editor is already on screen.
+            .onReceive(
+                NotificationCenter.default.publisher(for: .recordingPillReturnTapped)
+            ) { note in
+                guard let id = note.userInfo?["notebookId"] as? UUID else { return }
+                DispatchQueue.main.async {
+                    deepLink.openNotebookId = id
+                }
+            }
             .onChange(of: deepLink.openSettings) { _, open in
                 guard open else { return }
                 DispatchQueue.main.async { deepLink.openSettings = false }

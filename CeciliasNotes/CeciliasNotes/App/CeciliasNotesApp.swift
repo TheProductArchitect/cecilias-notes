@@ -121,6 +121,17 @@ struct CeciliasNotesApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .overlay(alignment: .top) {
+                    // Step 6: persistent recording pill — visible
+                    // across the whole app while a recording is in
+                    // flight. Inside the editor, the prominent
+                    // `FloatingRecordingControls` is the primary
+                    // surface; this pill is the secondary "you're
+                    // still recording" reminder for library /
+                    // settings / modal sheets. Tap returns to the
+                    // notebook where recording is happening.
+                    RecordingPill()
+                }
                 .environmentObject(themeManager)
                 .environmentObject(storageService)
                 .environmentObject(cloudSync)

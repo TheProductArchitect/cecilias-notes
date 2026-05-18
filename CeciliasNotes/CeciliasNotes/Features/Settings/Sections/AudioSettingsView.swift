@@ -109,10 +109,10 @@ struct AudioSettingsView: View {
 
                 Toggle(isOn: $viewModel.autoTranscribe) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Generate transcripts")
+                        Text("Transcribe voice notes")
                             .font(.ceciliasNotesBody)
                             .foregroundColor(theme.foreground)
-                        Text("Convert speech to text on-device.")
+                        Text("Convert speech to text on-device. Dictation always transcribes regardless of this setting.")
                             .font(.ceciliasNotesCaption)
                             .foregroundColor(theme.foregroundSubtle)
                     }
