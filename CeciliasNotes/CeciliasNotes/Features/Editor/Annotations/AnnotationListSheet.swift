@@ -3,14 +3,14 @@
 ///
 /// Pass C of the PDF-annotation feature set: the half-height sheet
 /// the customise panel's annotation count row opens. Lists every
-/// active sticky note + PDF text annotation in the current notebook
-/// in one sorted view; row taps navigate to the page and pulse the
-/// mark; swipe-left removes (soft-delete only).
+/// active sticky note + highlight in the current notebook in one
+/// sorted view; row taps navigate to the page and pulse the mark;
+/// swipe-left removes (soft-delete only).
 ///
 /// No persisted model — `AnnotationListItem` is a pure view-model
-/// enum that wraps either a `StickyNoteRecord` or a
-/// `PDFTextAnnotationRecord` plus the resolved page number. Live
-/// refresh on `.stickyNotesChanged` + `.pdfTextAnnotationsChanged`.
+/// enum carrying snapshot fields for either a highlight or a
+/// sticky-note row (both now V6 `PageElement` rows after Step 7).
+/// Live refresh on `.stickyNotesChanged` + `.highlightElementsChanged`.
 
 import SwiftData
 import SwiftUI
@@ -35,26 +35,36 @@ enum AnnotationListItem: Identifiable, Hashable {
         pageNumber: Int,
         groupId: UUID?
     )
-    case stickyNote(StickyNoteRecord, pageNumber: Int)
+    /// Step 7: stickies are now V6 `PageElement(.stickyNote) +
+    /// StickyNoteContent`. The case carries snapshot fields
+    /// (mirrors `.textAnnotation`) so the enum stays Hashable /
+    /// Sendable without referencing the @Model row.
+    case stickyNote(
+        id: UUID,
+        body: String,
+        createdAt: Date,
+        pageId: UUID,
+        pageNumber: Int
+    )
 
     var id: UUID {
         switch self {
         case .textAnnotation(let id, _, _, _, _, _): return id
-        case .stickyNote(let r, _):                  return r.id
+        case .stickyNote(let id, _, _, _, _):        return id
         }
     }
 
     var pageNumber: Int {
         switch self {
         case .textAnnotation(_, _, _, _, let n, _): return n
-        case .stickyNote(_, let n):                 return n
+        case .stickyNote(_, _, _, _, let n):        return n
         }
     }
 
     var createdAt: Date {
         switch self {
         case .textAnnotation(_, _, let d, _, _, _): return d
-        case .stickyNote(let r, _):                 return r.createdAt
+        case .stickyNote(_, _, let d, _, _):        return d
         }
     }
 
@@ -64,7 +74,7 @@ enum AnnotationListItem: Identifiable, Hashable {
         let raw: String
         switch self {
         case .textAnnotation(_, let text, _, _, _, _): raw = text
-        case .stickyNote(let r, _):                    raw = r.body
+        case .stickyNote(_, let body, _, _, _):        raw = body
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count <= 60 { return trimmed }
@@ -238,8 +248,15 @@ struct AnnotationListSheet: View {
                     groupId: content.groupId
                 ))
             }
-            for note in StickyNoteStore.notes(for: page.id) {
-                out.append(.stickyNote(note, pageNumber: pageNumber))
+            for element in elements where element.kind == .stickyNote {
+                guard let content = element.stickyNoteContent else { continue }
+                out.append(.stickyNote(
+                    id:         element.id,
+                    body:       content.text,
+                    createdAt:  element.createdAt,
+                    pageId:     page.id,
+                    pageNumber: pageNumber
+                ))
             }
         }
         return out.sorted { lhs, rhs in
@@ -281,8 +298,8 @@ struct AnnotationListSheet: View {
                     )
                 }
             }
-        case .stickyNote(let note, _):
-            StickyNoteStore.softDelete(id: note.id, pageId: note.pageId)
+        case .stickyNote(let elementId, _, _, _, _):
+            StickyNoteCommit.softDelete(elementId: elementId)
         }
     }
 }

@@ -738,10 +738,11 @@ struct CustomisePanel: View {
 
     /// Aggregated counts for the annotations row. Walks every
     /// non-soft-deleted page of the notebook and tallies each
-    /// surface separately. Sticky notes flow through `StickyNoteStore`;
-    /// highlights are V6 `PageElement(.highlight)` rows after
-    /// Step 5.5. Multi-line highlight groups collapse to one count
-    /// (matches what the user sees in the annotation list).
+    /// surface separately. Step 7: stickies are V6
+    /// `PageElement(.stickyNote)` rows alongside highlights — both
+    /// flow through the same per-page PageElement fetch.
+    /// Multi-line highlight groups collapse to one count (matches
+    /// what the user sees in the annotation list).
     private struct AnnotationCounts {
         var highlights:     Int
         var underlines:     Int
@@ -753,7 +754,6 @@ struct CustomisePanel: View {
         var highlights = 0, underlines = 0, strikethroughs = 0, stickyNotes = 0
         let context = StorageService.shared.context
         for page in (viewModel.notebook.pages ?? []) where !page.isDeleted {
-            stickyNotes += StickyNoteStore.notes(for: page.id).count
             let pid = page.id
             let descriptor = FetchDescriptor<PageElement>(
                 predicate: #Predicate<PageElement> {
@@ -773,6 +773,10 @@ struct CustomisePanel: View {
                 case .underline:     underlines += 1
                 case .strikethrough: strikethroughs += 1
                 }
+            }
+            for element in elements where element.kind == .stickyNote {
+                stickyNotes += 1
+                _ = element  // explicitly silenced — count-only walk
             }
         }
         return AnnotationCounts(

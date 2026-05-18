@@ -192,37 +192,39 @@ final class ExportService {
         pdfPage.addAnnotation(annotation)
     }
 
-    /// Add a `PDFAnnotation.freeText` for each sticky note attached
-    /// to the page. PDF freeText annotations show as an in-document
-    /// text box at the annotation's bounds in any PDF reader —
-    /// Preview, Adobe Reader, Chrome. The 24×24pt marker the editor
-    /// uses on-screen becomes a sized text box in the PDF; readers
-    /// that surface annotations in a sidebar (Preview, Adobe) will
-    /// also list the note's body verbatim.
+    /// Add a `PDFAnnotation.freeText` for each sticky element on
+    /// the page. PDF freeText annotations show as an in-document
+    /// text box in any reader (Preview, Adobe, Chrome). Readers
+    /// that surface annotations in a sidebar also list the body
+    /// verbatim.
+    ///
+    /// Step 7: reads V6 `PageElement(.stickyNote) +
+    /// StickyNoteContent` rows. Geometry is the element's
+    /// normalised top-left rect (flipped into PDF bottom-left
+    /// coords); the card's colour variant maps to a hex through
+    /// the same palette key the editor renders with.
     private func attachStickyNotes(
         pageId: UUID,
         pageBounds: CGRect,
         to pdfPage: PDFPage
     ) {
-        let notes = StickyNoteStore.notes(for: pageId)
-        guard !notes.isEmpty else { return }
+        let elements = fetchStickyElements(forPageId: pageId)
+        guard !elements.isEmpty else { return }
 
-        let noteWidth: CGFloat  = 140
-        let noteHeight: CGFloat = 80
+        for element in elements {
+            guard let content = element.stickyNoteContent else { continue }
 
-        for note in notes {
-            // PDF coordinate space has the origin at the bottom-left.
-            // The marker's normalised y is top-anchored, so we flip
-            // it to bottom-anchored and offset so the freeText box
-            // grows downward-right from the marker tip.
-            let x = CGFloat(note.normalizedX) * pageBounds.width
-            let yTop = CGFloat(note.normalizedY) * pageBounds.height
-            let y = pageBounds.height - yTop - noteHeight
+            let width  = CGFloat(element.normalizedWidth)  * pageBounds.width
+            let height = CGFloat(element.normalizedHeight) * pageBounds.height
+            let x      = CGFloat(element.normalizedX) * pageBounds.width
+            let yTop   = CGFloat(element.normalizedY) * pageBounds.height
+            // PDF origin is bottom-left; flip the y.
+            let y = pageBounds.height - yTop - height
             let bounds = CGRect(
-                x: max(0, min(pageBounds.width  - noteWidth,  x)),
-                y: max(0, min(pageBounds.height - noteHeight, y)),
-                width:  noteWidth,
-                height: noteHeight
+                x: max(0, min(pageBounds.width  - width,  x)),
+                y: max(0, min(pageBounds.height - height, y)),
+                width:  max(40, width),
+                height: max(24, height)
             )
 
             let annotation = PDFAnnotation(
@@ -230,15 +232,39 @@ final class ExportService {
                 forType:    .freeText,
                 withProperties: nil
             )
-            annotation.contents = note.body
-            annotation.font     = UIFont(name: "Helvetica", size: 11)
+            annotation.contents  = content.text
+            annotation.font      = UIFont(name: "Helvetica", size: 11)
                 ?? .systemFont(ofSize: 11)
-            annotation.fontColor       = .black
-            annotation.color           = UIColor(
-                red: 0.99, green: 0.92, blue: 0.55, alpha: 1.0
-            )  // matches the marker fill
-            annotation.contents = note.body
+            annotation.fontColor = .black
+            annotation.color     = uiColor(forStickyVariant: content.colorVariant)
             pdfPage.addAnnotation(annotation)
+        }
+    }
+
+    /// Fetch active V6 sticky-note elements for a page. Filter
+    /// `kind == .stickyNote` in Swift (iOS 26 `#Predicate`
+    /// limitation, same as `fetchImageElements`).
+    private func fetchStickyElements(forPageId pageId: UUID) -> [PageElement] {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+        )
+        let all = (try? StorageService.shared.context.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .stickyNote }
+    }
+
+    /// Map a sticky `colorVariant` key to a PDFAnnotation fill
+    /// colour. Mirrors the bright Default-theme sticky palette so
+    /// exported PDFs read the same as the on-screen card without
+    /// having to round-trip through `Theme`.
+    private func uiColor(forStickyVariant key: String) -> UIColor {
+        switch key {
+        case "pink":   return UIColor(red: 1.00, green: 0.75, blue: 0.85, alpha: 1.0)
+        case "blue":   return UIColor(red: 0.70, green: 0.85, blue: 1.00, alpha: 1.0)
+        case "green":  return UIColor(red: 0.75, green: 0.95, blue: 0.70, alpha: 1.0)
+        default:       return UIColor(red: 1.00, green: 0.92, blue: 0.50, alpha: 1.0)  // yellow
         }
     }
 

@@ -2,14 +2,16 @@ import Foundation
 import SwiftData
 
 /// Sticky-note content for a `PageElement` of kind `.stickyNote`.
-/// V6 (Step 1): inert. The existing `StickyNoteStore` UserDefaults
-/// pipeline keeps serving the sticky overlay until Step 7 migrates
-/// onto this row.
+/// Step 7 promoted this from inert (V6 schema slot) to the
+/// single source of truth — the legacy `StickyNoteStore`
+/// UserDefaults pipeline is gone. Position / size / rotation live
+/// on the parent `PageElement` like every other primitive.
 ///
-/// `colorVariant` is a string ("yellow" | "pink" | "blue" | "green")
-/// rather than an enum so adding palette tones later is a value
-/// change, not a schema migration. The renderer maps the string to
-/// the current theme's resolved colour at draw time.
+/// `colorVariant` is a string (`"yellow"` | `"pink"` | `"blue"` |
+/// `"green"`) rather than an enum so adding palette tones later is
+/// a value change, not a schema migration. The renderer maps the
+/// key to the current theme's resolved colour at draw time via
+/// `Theme.stickyNotePalette`.
 @Model
 final class StickyNoteContent {
 

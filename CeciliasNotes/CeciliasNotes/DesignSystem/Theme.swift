@@ -146,6 +146,18 @@ public struct Theme: Identifiable, Equatable, Hashable {
     /// style fill; `.underline` and `.strikethrough` paint at full
     /// opacity.
     public let highlightPalette: [String: Color]
+
+    // MARK: Sticky-note palette (Step 7)
+
+    /// Per-theme sticky-note palette keyed by the same
+    /// `colorVariant` strings as `highlightPalette`. Sticky cards
+    /// are *opaque* (no alpha multiplier) so the values here are
+    /// slightly more saturated than the highlight equivalents —
+    /// stickies need to read as a chromatic card on the page, while
+    /// highlights are translucent overlays on top of glyphs.
+    /// Resolved by `StickyNoteElementView` via
+    /// `theme.stickyNotePalette[content.colorVariant]`.
+    public let stickyNotePalette: [String: Color]
 }
 
 // MARK: - The two shipped themes
@@ -226,6 +238,16 @@ extension Theme {
         highlightPalette: [
             "yellow": Color(red: 1.00, green: 0.95, blue: 0.40),
             "pink":   Color(red: 1.00, green: 0.70, blue: 0.85),
+            "blue":   Color(red: 0.70, green: 0.85, blue: 1.00),
+            "green":  Color(red: 0.75, green: 0.95, blue: 0.70),
+        ],
+
+        // Sticky-note palette (Step 7) — Default theme. Opaque
+        // post-it tones, slightly warmer/more saturated than the
+        // highlight palette so stickies read as physical cards.
+        stickyNotePalette: [
+            "yellow": Color(red: 1.00, green: 0.92, blue: 0.50),
+            "pink":   Color(red: 1.00, green: 0.75, blue: 0.85),
             "blue":   Color(red: 0.70, green: 0.85, blue: 1.00),
             "green":  Color(red: 0.75, green: 0.95, blue: 0.70),
         ]
@@ -325,6 +347,18 @@ extension Theme {
             "pink":   Color(red: 0.80, green: 0.50, blue: 0.65),
             "blue":   Color(red: 0.50, green: 0.65, blue: 0.85),
             "green":  Color(red: 0.55, green: 0.75, blue: 0.50),
+        ],
+
+        // Sticky-note palette (Step 7) — Midnight theme. Muted
+        // versions of the same hues so stickies don't burn against
+        // the dark paper. Starting values; on-device tuning may
+        // adjust per the Phase G Step-0.75 calibration pass —
+        // none has happened yet for sticky-specific tones.
+        stickyNotePalette: [
+            "yellow": Color(red: 0.65, green: 0.60, blue: 0.35),
+            "pink":   Color(red: 0.65, green: 0.50, blue: 0.55),
+            "blue":   Color(red: 0.45, green: 0.55, blue: 0.65),
+            "green":  Color(red: 0.50, green: 0.60, blue: 0.45),
         ]
     )
 

@@ -245,13 +245,13 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Annotation pulse signal. Set to a `PDFTextAnnotationRecord.id`
-    /// or `StickyNoteRecord.id` to make that mark pulse once on the
-    /// canvas (scale 1.0 → 1.1 → 1.0 over 0.3s). The annotation list
-    /// sheet's row tap drives this after the page-scroll settles.
-    /// `PageRenderer` (Combine-subscribed via `attachPulseSource`) and
-    /// `StickyNoteMarker` (SwiftUI `@ObservedObject`) both read this
-    /// — single source of truth for both surfaces.
+    /// Annotation pulse signal. Set to a `PageElement(.highlight).id`
+    /// or `PageElement(.stickyNote).id` to make that mark pulse once
+    /// on the canvas (scale 1.0 → 1.1 → 1.0 over 0.3s). Driven by
+    /// the annotation list sheet's row tap after page-scroll settles.
+    /// Step 7 retired the legacy `StickyNoteMarker` reader; current
+    /// consumers are pending Step 8/9 reintroduction on the V6
+    /// overlays.
     @Published var pulsingAnnotationId: UUID?
 
     /// PDF annotation writer for the current notebook session, or
@@ -389,19 +389,23 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Sticky notes
     //
-    // Side-channel storage (`StickyNoteStore`) keeps the V3 schema
-    // unchanged. The overlay reads `currentPageStickyNotes` and
-    // re-renders whenever this view-model bumps the array — which
-    // happens after every add / edit / delete via `refreshCurrentPageStickyNotes`.
-
-    @Published private(set) var currentPageStickyNotes: [StickyNoteRecord] = []
+    // Step 7 migrated sticky notes onto the unified PageElement
+    // model — `PageElement(kind: .stickyNote) + StickyNoteContent`.
+    // The per-page `StickyNoteElementsOverlayView` queries
+    // SwiftData directly, so the view-model no longer caches a
+    // `currentPageStickyNotes` array. The only sticky-related state
+    // that stays on the view-model is `editingStickyNoteId`, which
+    // mirrors into `EditorStateMachine.stickyNoteEditing(_:)` for
+    // mode tracking.
 
     // Step 6: V5 `activeLectureRecorder` removed. Dictation is
     // owned by `RecordingSession.shared`; the editor no longer
     // swaps its body for a full-screen lecture view. Recording
     // happens in-place on a fresh dictation page.
-    /// When non-nil, the SwiftUI popover for this sticky note is open
-    /// and the body field is focused.
+    /// Mirrored from the per-page sticky overlay when a sticky
+    /// enters edit mode. Drives the state machine's
+    /// `.stickyNoteEditing(noteId:)` mode so canvas Pencil input
+    /// suppresses correctly while the keyboard is up.
     @Published var editingStickyNoteId: UUID? {
         didSet {
             if let id = editingStickyNoteId, oldValue == nil {
@@ -577,7 +581,6 @@ final class EditorViewModel: ObservableObject {
 
         resetToolbarTimer()
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageStickyNotes()
 
         // App-background flush for the PDF annotation writer. We
         // bypass the 3s debounce on background to guarantee no
@@ -1381,7 +1384,6 @@ final class EditorViewModel: ObservableObject {
         // lands.
         currentPageIndex = newIndex
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageStickyNotes()
         pendingScrollPageIndex = newIndex
         return true
     }
@@ -1535,7 +1537,6 @@ final class EditorViewModel: ObservableObject {
         pages = fetched
         currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
         refreshCurrentPageTextBlocks()
-        refreshCurrentPageStickyNotes()
     }
 
     func refreshCurrentPageTextBlocks() {
@@ -1550,42 +1551,14 @@ final class EditorViewModel: ObservableObject {
     // overlay needed no longer exists.
 
     // MARK: - Sticky notes
-
-    /// Pull the latest sticky notes for the current page out of
-    /// `StickyNoteStore` and republish so the canvas overlay
-    /// re-renders.
-    func refreshCurrentPageStickyNotes() {
-        currentPageStickyNotes = StickyNoteStore.notes(for: currentPage.id)
-    }
-
-    /// Place a fresh sticky note at the given normalised position.
-    /// Immediately puts the popover into "editing" mode so the user
-    /// can type — placement and editing are a single user-perceived
-    /// gesture.
-    func addStickyNote(at normalised: CGPoint) {
-        addStickyNote(on: currentPage.id, at: normalised)
-    }
-
-    /// Per-page sticky-note placement. The Phase 3b per-page overlay
-    /// passes its `pageId` through so a placement on page N never
-    /// lands on the active page when the user has scrolled to a
-    /// different page mid-tap.
-    func addStickyNote(on pageId: UUID, at normalised: CGPoint) {
-        let record = StickyNoteStore.add(
-            pageId:      pageId,
-            normalizedX: Double(normalised.x.clamped01),
-            normalizedY: Double(normalised.y.clamped01)
-        )
-        if pageId == currentPage.id {
-            refreshCurrentPageStickyNotes()
-        }
-        editingStickyNoteId = record.id
-    }
-
-    func updateStickyNoteBody(id: UUID, body: String) {
-        StickyNoteStore.updateBody(id: id, pageId: currentPage.id, body: body)
-        refreshCurrentPageStickyNotes()
-    }
+    //
+    // Step 7: sticky-note CRUD moved off the view-model. The
+    // per-page `StickyNoteElementsOverlayView` owns creation,
+    // edit, recolour, and soft-delete via `StickyNoteCommit` +
+    // SwiftData `@Bindable` propagation. The only sticky-related
+    // state the view-model still owns is `editingStickyNoteId`
+    // (mirrored from the overlay so the state machine can enter
+    // `.stickyNoteEditing(_:)`).
 
     // MARK: - Lecture mode
 
@@ -1636,12 +1609,6 @@ final class EditorViewModel: ObservableObject {
                 }
             }
         )
-    }
-
-    func deleteStickyNote(id: UUID) {
-        StickyNoteStore.softDelete(id: id, pageId: currentPage.id)
-        if editingStickyNoteId == id { editingStickyNoteId = nil }
-        refreshCurrentPageStickyNotes()
     }
 
     // MARK: - Overlay-view StorageService wrappers

@@ -373,9 +373,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// `AudioElementsOverlayView` per the audio-migration
             /// decision.
             var audioHost:     UIHostingController<AudioElementsOverlayView>
-            /// Sticky-notes overlay (ABOVE the canvas). Phase 3b: was a
-            /// single global overlay in `overlayLayer`, now per-page.
-            var stickyHost:    UIHostingController<StickyNotesOverlayView>
+            /// Sticky-notes overlay (ABOVE the canvas). Phase 3b
+            /// moved this from a single global overlay to per-page;
+            /// Step 7 swapped the underlying view onto V6
+            /// `PageElement(.stickyNote) + StickyNoteContent` —
+            /// the legacy `StickyNoteStore` UserDefaults pipeline is
+            /// gone.
+            var stickyHost:    UIHostingController<StickyNoteElementsOverlayView>
             /// Text-block overlay (ABOVE the canvas). Phase 3b: was a
             /// single global overlay in `overlayLayer`, now per-page.
             var textBlockHost: UIHostingController<TextBlockOverlayView>
@@ -639,10 +643,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 audioHost.attachAsChild(of: renderer)
 
                 // Sticky-notes overlay — per-page mount (Phase 3b).
+                // Step 7: now a V6 PageElement-backed overlay
+                // (`StickyNoteElementsOverlayView`).
                 let stickyHost = UIHostingController(
-                    rootView: StickyNotesOverlayView(
+                    rootView: StickyNoteElementsOverlayView(
                         viewModel: viewModel,
                         pageId: page.id,
+                        notebookId: viewModel.notebook.id,
                         coordinateSpace: pageCS
                     )
                 )

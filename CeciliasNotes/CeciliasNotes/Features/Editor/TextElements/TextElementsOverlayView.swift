@@ -31,11 +31,10 @@ struct TextElementsOverlayView: View {
     /// Resolved straight from the singleton storage service rather
     /// than via `@Environment(\.modelContext)` — UIHostingController
     /// instances built inside the canvas coordinator don't inherit
-    /// the SwiftUI root environment, and existing overlays
-    /// (MediaAttachmentStore, StickyNoteStore) likewise resolve
-    /// state via shared accessors rather than environment-injected
-    /// contexts. Reads happen on the main actor; the main context
-    /// is the correct one.
+    /// the SwiftUI root environment. Every per-page overlay
+    /// (image, audio, PDF, highlight, sticky, text) resolves the
+    /// context the same way for consistency. Reads happen on the
+    /// main actor; the main context is the correct one.
     private var modelContext: ModelContext {
         StorageService.shared.container.mainContext
     }
