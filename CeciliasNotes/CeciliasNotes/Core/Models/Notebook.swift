@@ -36,26 +36,17 @@ final class Notebook {
         set { defaultTemplateRaw = newValue.jsonString }
     }
 
-    /// True when this notebook was created via "Import PDF…" and has a
-    /// source PDF on disk. The PDF lives at
-    /// `StorageService.sourcePDFURL(id)`. Used by the customise panel
-    /// (to hide the template + page-size sections — neither applies
-    /// to PDF backgrounds) and the export pipeline (to choose the
-    /// annotated-PDF export path).
-    var isPDFBacked: Bool {
-        // Both `shared` and `hasSourcePDF` are `nonisolated` on
-        // `StorageService` — see the singleton declaration. The call
-        // is a pure file-existence check; no actor state is touched.
-        StorageService.shared.hasSourcePDF(id)
-    }
-
-    /// Filesystem URL of the source PDF, if this notebook is
-    /// PDF-backed. The file is copied into the notebook's directory
-    /// during import so it's reaper-purged with the notebook.
-    var sourcePDFURL: URL? {
-        let url = StorageService.shared.sourcePDFURL(id)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
-    }
+    // Step 5.5: `isPDFBacked` + `sourcePDFURL` removed. Workflow A
+    // (PDF-as-notebook) now flows through the unified PageElement
+    // model — each Page carries one `PageElement(kind: .pdfPage)`
+    // filling it at zIndex 0, identical in shape to Workflow B's
+    // embedded references. PDF files live in
+    // `MediaStorage.pdfDirectory/<pdfDocumentId>.pdf` (shared,
+    // hash-deduped, per Step 4.5) rather than per-notebook
+    // `notebookDir/source.pdf`. Callers that want "is this PDF-
+    // derived?" now query for a full-bleed `.pdfPage` element on
+    // the first page (rare — most legacy gating was for renderer
+    // branching that's no longer needed).
 
     /// One of eight cover tones. Persisted via `CoverToneStore`
     /// (UserDefaults) rather than a SwiftData column to avoid the

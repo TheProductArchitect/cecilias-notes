@@ -17,6 +17,13 @@ enum ElementKind: String, Codable, CaseIterable {
     case stickyNote
     case pdfPage
     case shape
+    /// PDF text annotation — a coloured translucent rectangle (or
+    /// underline / strikethrough line) anchored to a region of a
+    /// PDF page. Style variant lives on `HighlightContent.style`.
+    /// Step 5.5 retired `PDFTextAnnotationStore` in favour of this
+    /// PageElement kind so lasso + AI can compose with annotations
+    /// the same way they do with text + strokes.
+    case highlight
 }
 
 /// The unified per-element row. Every visible thing on a page —
@@ -84,6 +91,8 @@ final class PageElement {
     var pdfPageContent: PDFPageContent?
     @Relationship(deleteRule: .cascade, inverse: \ShapeContent.element)
     var shapeContent: ShapeContent?
+    @Relationship(deleteRule: .cascade, inverse: \HighlightContent.element)
+    var highlightContent: HighlightContent?
 
     // MARK: Timestamps
     var createdAt: Date = Date()

@@ -1,4 +1,5 @@
 import Combine
+import SwiftData
 import SwiftUI
 
 /// Slide-down customise panel anchored to the top of the editor.
@@ -69,7 +70,13 @@ struct CustomisePanel: View {
                     // spec — `pageSizeSection` is narrower because
                     // its three text options need less horizontal
                     // run than the template carousel.
-                    if !viewModel.notebook.isPDFBacked {
+                    // Step 5.5: `isPDFBacked` retired — page-size +
+                    // template controls render unconditionally now.
+                    // For Workflow A notebooks the PDF page element
+                    // ignores the template (it fills the page at
+                    // zIndex 0); the controls are harmless when set
+                    // on a PDF page.
+                    if true {
                         HStack(alignment: .top, spacing: 16) {
                             pageSizeSection
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,9 +87,12 @@ struct CustomisePanel: View {
                         }
                     }
                     tagsSection
-                    if viewModel.notebook.isPDFBacked {
-                        annotationsSection
-                    }
+                    // Step 5.5: annotation section surfaces
+                    // whenever the notebook has any V6 highlights.
+                    // The legacy gate was `isPDFBacked` (retired);
+                    // the count below already handles the
+                    // empty-notebook case by hiding the row.
+                    annotationsSection
                     // Consolidated toggle band — single-line rows
                     // with hairline separators, then one shared
                     // recessive caption explaining both toggles.
@@ -719,7 +729,7 @@ struct CustomisePanel: View {
         // is bumped on each post; the body's `let _ = ...` read
         // above forces the section to re-render.
         .onReceive(
-            NotificationCenter.default.publisher(for: .pdfTextAnnotationsChanged)
+            NotificationCenter.default.publisher(for: .highlightElementsChanged)
         ) { _ in annotationsTick &+= 1 }
         .onReceive(
             NotificationCenter.default.publisher(for: .stickyNotesChanged)
@@ -729,8 +739,9 @@ struct CustomisePanel: View {
     /// Aggregated counts for the annotations row. Walks every
     /// non-soft-deleted page of the notebook and tallies each
     /// surface separately. Sticky notes flow through `StickyNoteStore`;
-    /// the three PDF text annotation kinds through
-    /// `PDFTextAnnotationStore`.
+    /// highlights are V6 `PageElement(.highlight)` rows after
+    /// Step 5.5. Multi-line highlight groups collapse to one count
+    /// (matches what the user sees in the annotation list).
     private struct AnnotationCounts {
         var highlights:     Int
         var underlines:     Int
@@ -740,10 +751,24 @@ struct CustomisePanel: View {
 
     private func annotationCounts() -> AnnotationCounts {
         var highlights = 0, underlines = 0, strikethroughs = 0, stickyNotes = 0
+        let context = StorageService.shared.context
         for page in (viewModel.notebook.pages ?? []) where !page.isDeleted {
             stickyNotes += StickyNoteStore.notes(for: page.id).count
-            for r in PDFTextAnnotationStore.records(for: page.id) {
-                switch r.type {
+            let pid = page.id
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                }
+            )
+            let elements = (try? context.fetch(descriptor)) ?? []
+            var seenGroups: Set<UUID> = []
+            for element in elements where element.kind == .highlight {
+                guard let content = element.highlightContent else { continue }
+                if let groupId = content.groupId {
+                    if seenGroups.contains(groupId) { continue }
+                    seenGroups.insert(groupId)
+                }
+                switch content.style {
                 case .highlight:     highlights += 1
                 case .underline:     underlines += 1
                 case .strikethrough: strikethroughs += 1

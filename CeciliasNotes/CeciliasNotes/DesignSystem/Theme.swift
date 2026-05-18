@@ -133,6 +133,19 @@ public struct Theme: Identifiable, Equatable, Hashable {
     /// only — new recordings (post-V6) don't use waveform display.
     public let waveformActive: Color
     public let waveformInactive: Color
+
+    // MARK: Highlight palette (Step 5.5)
+
+    /// Per-theme highlight palette keyed by `colorVariant` string
+    /// (`"yellow"`, `"pink"`, `"blue"`, `"green"`). Resolved by
+    /// `HighlightElementView` via
+    /// `theme.highlightPalette[content.colorVariant]`. Storing the
+    /// key on `HighlightContent` rather than a raw hex means a theme
+    /// switch re-tints existing highlights without touching rows.
+    /// The renderer multiplies by ~0.4 alpha for the `.highlight`
+    /// style fill; `.underline` and `.strikethrough` paint at full
+    /// opacity.
+    public let highlightPalette: [String: Color]
 }
 
 // MARK: - The two shipped themes
@@ -205,7 +218,17 @@ extension Theme {
 
         // Waveform
         waveformActive:   Color(hex: "#007AFF"),
-        waveformInactive: Color(hex: "#C0C0C0")
+        waveformInactive: Color(hex: "#C0C0C0"),
+
+        // Highlight palette (Step 5.5) — Default theme uses bright
+        // hues; renderer applies ~0.4 alpha for the .highlight
+        // style fill so glyphs remain legible.
+        highlightPalette: [
+            "yellow": Color(red: 1.00, green: 0.95, blue: 0.40),
+            "pink":   Color(red: 1.00, green: 0.70, blue: 0.85),
+            "blue":   Color(red: 0.70, green: 0.85, blue: 1.00),
+            "green":  Color(red: 0.75, green: 0.95, blue: 0.70),
+        ]
     )
 
     static let midnight: Theme = Theme(
@@ -291,7 +314,18 @@ extension Theme {
 
         // Waveform
         waveformActive:   Color(hex: "#0A84FF"),
-        waveformInactive: Color(hex: "#48484A")
+        waveformInactive: Color(hex: "#48484A"),
+
+        // Highlight palette (Step 5.5) — Midnight uses muted
+        // versions of the same hues so highlights stay visible on
+        // the dark paper without eye-searing brightness. The
+        // renderer applies the same ~0.4 alpha for fill style.
+        highlightPalette: [
+            "yellow": Color(red: 0.80, green: 0.72, blue: 0.30),
+            "pink":   Color(red: 0.80, green: 0.50, blue: 0.65),
+            "blue":   Color(red: 0.50, green: 0.65, blue: 0.85),
+            "green":  Color(red: 0.55, green: 0.75, blue: 0.50),
+        ]
     )
 
     /// Every theme available to the picker. Adding a theme means

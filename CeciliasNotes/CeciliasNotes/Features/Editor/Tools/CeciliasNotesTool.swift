@@ -116,12 +116,11 @@ enum CeciliasNotesTool: Equatable {
         }
     }
 
-    /// Maps the highlighter to the corresponding `PDFTextAnnotationType`
-    /// that should be recorded when text is detected under the stroke.
-    /// Returns `nil` for non-highlighter tools. Underline / strikethrough
-    /// variants were retired in the variant-collapse pass — there's only
-    /// `.highlight` left.
-    var pdfTextAnnotationType: PDFTextAnnotationType? {
+    /// Maps the highlighter tool to the corresponding V6
+    /// `HighlightStyle`. Returns `nil` for non-highlighter tools.
+    /// Only `.highlight` is mapped — underline / strikethrough
+    /// variants were retired in the variant-collapse pass.
+    var pdfHighlightStyle: HighlightStyle? {
         switch self {
         case .highlighter: return .highlight
         default:           return nil

@@ -1,56 +1,62 @@
 /// EditorViewModel+Highlighter.swift
 /// Cecilia's Notes
 ///
-/// Stroke interception for the highlighter family (highlighter,
-/// underline, strikethrough) on PDF-backed pages. When the user
-/// completes a stroke with one of those tools active AND the stroke
-/// passes over selectable PDF text, the editor:
+/// Stroke interception for the highlighter family on PDF pages.
+/// When the user completes a stroke with a highlighter-family tool
+/// active AND the stroke passes over selectable PDF text, the
+/// editor:
 ///
-///   1. Extracts the text under the stroke via `PDFPage.character(at:)`.
-///   2. Builds a `PDFTextAnnotationRecord` and saves it to
-///      `PDFTextAnnotationStore`.
-///   3. Removes the just-committed PencilKit stroke from the canvas.
-///   4. Schedules a debounced write-back to the source PDF.
+///   1. Extracts the text under the stroke via
+///      `PDFPage.character(at:)`.
+///   2. Creates one or more `PageElement(.highlight) +
+///      HighlightContent` rows via `HighlightCommit` (multi-line
+///      selections become one PageElement per line, sharing a
+///      `groupId`).
+///   3. Removes the just-committed PencilKit stroke from the
+///      canvas.
+///   4. Registers an undo step that restores the stroke and
+///      soft-deletes the highlight group.
 ///
-/// Wrapped in `undoManager.beginUndoGrouping()` /
-/// `endUndoGrouping()` so the user can ⌘Z once to restore both the
-/// visible stroke and remove the annotation as a single undo step.
+/// Step 5.5 rewired this off `PDFTextAnnotationStore` /
+/// `PDFAnnotationWriter` onto the unified V6 element model. The
+/// commit path looks up the active PDF page via the V6
+/// `PageElement(.pdfPage)` row on the current page rather than the
+/// retired `Page.pdfPageIndex` + `Notebook.sourcePDFURL`.
 ///
 /// Strokes over blank space or scanned-image PDFs (no selectable
-/// text) fall through unchanged — the marker stroke stays as the
-/// existing fallback.
+/// text) fall through unchanged.
 
 import Foundation
 import PDFKit
 import PencilKit
+import SwiftData
 import UIKit
 
 extension EditorViewModel {
 
     // MARK: - Entry point
 
-    /// Called from `handleStrokeEnded` whenever the active tool is a
-    /// highlighter-family tool. Safe to call on non-PDF notebooks —
-    /// returns immediately when there's no PDF backing.
     func attemptHighlighterTextDetection() {
-        guard let annotationType = selectedTool.pdfTextAnnotationType else { return }
+        guard let style = selectedTool.pdfHighlightStyle else { return }
         guard let canvas = canvasView else { return }
-        guard notebook.isPDFBacked else { return }
-        guard let writer = pdfAnnotationWriter else { return }
-        guard let pdfPageIndex = currentPage.pdfPageIndex else { return }
-        guard let pdfPage = writer.document.page(at: pdfPageIndex) else { return }
         guard let lastStroke = canvas.drawing.strokes.last else { return }
 
-        // Sample the stroke path in canvas space. ~10pt spacing is
-        // dense enough to land at least one sample per character on
-        // typical body text without spamming `character(at:)`.
+        // Step 5.5: look up the V6 PDF page element for the
+        // current page rather than reading the retired
+        // `Notebook.sourcePDFURL` + `Page.pdfPageIndex` pair.
+        guard let pdfBacking = currentPagePDFBacking() else { return }
+        guard let document = PDFDocument(url: pdfBacking.fileURL),
+              let pdfPage = document.page(at: pdfBacking.pageIndex)
+        else { return }
+
         let canvasSamples = sampleStrokePoints(lastStroke, spacing: 10)
         guard canvasSamples.count >= 2 else { return }
 
-        // Canvas → PDF coordinate transform. PageRenderer
-        // letterboxes the PDF inside the canvas bounds (preserving
-        // aspect ratio, centred); reproduce the same math here so
-        // hit-tests land where the user sees the text.
+        // Canvas → PDF coordinate transform. `PDFPageElementView`
+        // renders the PDF inside the element's bounds with
+        // aspect-fit, identical to the legacy
+        // `PageRenderer.drawPDFPage` math — letterboxed inside
+        // the element's normalised rect on the host page.
         let pdfRect = pdfPage.bounds(for: .mediaBox)
         let canvasSize = canvas.bounds.size
         guard canvasSize.width > 0, canvasSize.height > 0,
@@ -61,38 +67,22 @@ extension EditorViewModel {
         let offsetX = (canvasSize.width - pdfRect.width * scale) / 2
         let offsetY = (canvasSize.height - pdfRect.height * scale) / 2
 
-        // Collect character indices touched by the stroke. PDFKit's
-        // `character(at:)` takes a point in PDF page coordinates
-        // (origin bottom-left). Negative return values mean "no
-        // character at that point" (image / whitespace).
         var charIndices: [Int] = []
         for sample in canvasSamples {
             let pdfX = (sample.x - offsetX) / scale
-            // Flip y: PDFKit origin is bottom-left, canvas is top-left.
             let pdfY = pdfRect.height - (sample.y - offsetY) / scale
             let point = CGPoint(x: pdfX, y: pdfY)
             let idx = pdfPage.characterIndex(at: point)
             if idx >= 0 { charIndices.append(idx) }
         }
-
-        // Spec: at least 3 characters under the stroke to count as
-        // a text annotation. Below that we leave the marker stroke
-        // as the visible fallback — covers the "stroke drifted onto
-        // a tiny corner of text" edge case where the user clearly
-        // intended a regular highlight.
         guard charIndices.count >= 3 else { return }
 
-        // Build a selection spanning the min..max character index.
-        // PDFPage.selection(for:) over a single range returns the
-        // tightest text-bound rect set, which is what we want for
-        // the underline / strike geometry.
         let minIdx = charIndices.min() ?? 0
         let maxIdx = charIndices.max() ?? minIdx
         let length = max(1, maxIdx - minIdx + 1)
-        let selection = pdfPage.selection(
+        guard let selection = pdfPage.selection(
             for: NSRange(location: minIdx, length: length)
-        )
-        guard let selection else { return }
+        ) else { return }
 
         let selectedText = (selection.string ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -101,9 +91,6 @@ extension EditorViewModel {
         let pdfBounds = selection.bounds(for: pdfPage)
         guard pdfBounds.width > 0, pdfBounds.height > 0 else { return }
 
-        // Convert the PDF selection bounds back to normalised
-        // 0–1 top-left-origin coordinates that match the rest of
-        // the side-channel store geometry.
         let normalized = CGRect(
             x: pdfBounds.minX / pdfRect.width,
             y: 1.0 - (pdfBounds.maxY / pdfRect.height),
@@ -111,98 +98,77 @@ extension EditorViewModel {
             height: pdfBounds.height / pdfRect.height
         )
 
-        commitAnnotation(
-            type: annotationType,
+        commitHighlight(
+            style: style,
             selectedText: selectedText,
             normalizedBounds: normalized,
-            pdfPageIndex: pdfPageIndex,
+            pdfPageContentId: pdfBacking.contentId,
             removingStroke: lastStroke
         )
     }
 
-    // MARK: - Commit (record + stroke removal + undo grouping)
+    // MARK: - V6 commit
 
-    /// Atomic stroke-replace-with-annotation. Undo grouping wraps
-    /// both halves so a single ⌘Z restores the stroke and removes
-    /// the annotation in one user-visible step.
-    private func commitAnnotation(
-        type: PDFTextAnnotationType,
+    private func commitHighlight(
+        style: HighlightStyle,
         selectedText: String,
         normalizedBounds: CGRect,
-        pdfPageIndex: Int,
+        pdfPageContentId: UUID,
         removingStroke target: PKStroke
     ) {
-        guard let canvas = canvasView,
-              let writer = pdfAnnotationWriter
-        else { return }
-
-        let pageId = currentPage.id
-        let record = PDFTextAnnotationRecord(
-            id: UUID(),
-            pageId: pageId,
-            type: type,
-            selectedText: selectedText,
-            normalizedBounds: normalizedBounds,
-            pdfPageIndex: pdfPageIndex,
-            createdAt: Date(),
-            updatedAt: Date(),
-            deletedAt: nil
-        )
+        guard let canvas = canvasView else { return }
 
         let undoManager = canvas.undoManager
         undoManager?.beginUndoGrouping()
 
-        // Half 1: strip the most-recent stroke. Locate by identity
-        // (path.creationDate) rather than index because additional
-        // strokes could theoretically have landed between
-        // canvasViewDidEndUsingTool and here.
+        // Strip the just-committed stroke.
         let beforeStrokes = canvas.drawing.strokes
         let afterStrokes = beforeStrokes.filter {
             $0.path.creationDate != target.path.creationDate
         }
         guard afterStrokes.count == beforeStrokes.count - 1 else {
-            // Couldn't find the target stroke — abandon rather than
-            // mutating an unknown drawing state.
             undoManager?.endUndoGrouping()
             return
         }
         canvas.drawing = PKDrawing(strokes: afterStrokes)
 
-        // Half 2: persist the record + reflect into the in-memory
-        // PDFDocument so re-renders see it. Disk write is debounced.
-        PDFTextAnnotationStore.save(record)
-        writer.applyToInMemoryDocument(record)
-        writer.scheduleWrite()
+        // Commit the V6 highlight element(s). v1 ships single-
+        // rect selections through the highlighter detection;
+        // multi-line support is a follow-up that splits
+        // `selection.selectionsByLine()` and passes the resulting
+        // per-line rects into `HighlightCommit.createHighlights`.
+        let createdIds = HighlightCommit.createHighlights(
+            rects: [normalizedBounds],
+            pdfPageContentId: pdfPageContentId,
+            pageId: currentPage.id,
+            notebookId: notebook.id,
+            style: style,
+            colorVariant: "yellow",
+            capturedText: selectedText
+        )
 
-        // Register the inverse so undo restores the stroke + removes
-        // the record + clears the in-memory annotation. Captured by
-        // value so a later mutation of `record` (impossible — it's a
-        // struct) can't drift.
-        let recordId = record.id
         undoManager?.registerUndo(withTarget: canvas) { canvasTarget in
-            // Re-insert the original stroke and re-sort by
-            // `path.creationDate` so PKDrawing's internal stroke-order
-            // invariant is preserved. Appending unconditionally would
-            // produce the "Suspect normalizing of a drawing where
-            // stroke order is flipped" warning and corrupt undo
-            // identifiers downstream. See Reg 2 in the audit.
             var restored = canvasTarget.drawing.strokes
             restored.append(target)
             restored.sort { $0.path.creationDate < $1.path.creationDate }
             canvasTarget.drawing = PKDrawing(strokes: restored)
-            PDFTextAnnotationStore.softDelete(id: recordId, pageId: pageId)
-            // Mirror the soft-delete into the in-memory document.
-            // The writer is captured weakly to avoid retaining the
-            // editor session if undo fires after dismiss.
-            Task { @MainActor [weak writer] in
-                writer?.removeFromInMemoryDocument(
-                    recordId: recordId,
-                    pdfPageIndex: pdfPageIndex
+            // Soft-delete the highlight rows created above.
+            let context = StorageService.shared.context
+            for elementId in createdIds {
+                let descriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate { $0.id == elementId }
                 )
-                writer?.scheduleWrite()
+                if let element = try? context.fetch(descriptor).first {
+                    element.deletedAt = Date()
+                    element.updatedAt = Date()
+                }
             }
+            try? context.save()
+            NotificationCenter.default.post(
+                name: .highlightElementsChanged, object: nil
+            )
         }
-        switch type {
+        switch style {
         case .highlight:     undoManager?.setActionName("Highlight")
         case .underline:     undoManager?.setActionName("Underline")
         case .strikethrough: undoManager?.setActionName("Strikethrough")
@@ -210,18 +176,39 @@ extension EditorViewModel {
         undoManager?.endUndoGrouping()
     }
 
+    /// Look up the V6 PDF page element backing the current page.
+    /// Returns `nil` if the page has no `.pdfPage` element
+    /// (non-PDF notebook). Prefers the full-bleed Workflow A
+    /// element when several exist; Workflow B's resized
+    /// references aren't valid highlighter targets.
+    private func currentPagePDFBacking() -> (contentId: UUID, fileURL: URL, pageIndex: Int)? {
+        let pageId = currentPage.id
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { $0.pageId == pageId && $0.deletedAt == nil }
+        )
+        guard let elements = try? context.fetch(descriptor) else { return nil }
+        let candidates = elements.filter { $0.kind == .pdfPage }
+        let fullBleed = candidates.first {
+            $0.zIndex == 0 &&
+                $0.normalizedX == 0 && $0.normalizedY == 0 &&
+                $0.normalizedWidth == 1 && $0.normalizedHeight == 1
+        } ?? candidates.first
+        guard let element = fullBleed,
+              let content = element.pdfPageContent else { return nil }
+        let url = content.pdfFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return (content.id, url, content.pageIndex)
+    }
+
     // MARK: - Stroke sampling
 
-    /// Walks a `PKStroke`'s control points and returns ~one canvas
-    /// point per `spacing` pt of arc length. Used to pick character
-    /// hit-test targets along the stroke path.
     private func sampleStrokePoints(_ stroke: PKStroke, spacing: CGFloat) -> [CGPoint] {
         var out: [CGPoint] = []
         var accumulated: CGFloat = 0
         var previous: CGPoint?
 
         stroke.path.forEach { point in
-            // The stroke path is in canvas coordinates already.
             let location = point.location
             if let prev = previous {
                 let dx = location.x - prev.x
@@ -236,8 +223,6 @@ extension EditorViewModel {
             }
             previous = location
         }
-        // Always include the last point so the upper-bound character
-        // is captured even when the stroke ends mid-spacing-window.
         if let last = previous, out.last != last {
             out.append(last)
         }

@@ -19,16 +19,12 @@ final class Page {
         set { backgroundTemplateRaw = newValue.jsonString }
     }
 
-    /// When set, this page renders a page of the notebook's source
-    /// PDF as its background. The integer is the 0-based index into
-    /// the source PDF, *pinned to the page itself* — reordering the
-    /// page's `pageNumber` doesn't change which PDF page it shows.
-    /// Persisted in `PDFBackingStore` (UserDefaults) for the same
-    /// schema reasons as `coverTone` / `autoAddPagesOnScroll`.
-    var pdfPageIndex: Int? {
-        get { PDFBackingStore.pdfPageIndex(for: id) }
-        set { PDFBackingStore.setPDFPageIndex(newValue, for: id) }
-    }
+    // Step 5.5: `pdfPageIndex` removed. The "which PDF page does
+    // this canvas page render?" question is now answered by the
+    // single full-bleed `PageElement(kind: .pdfPage)` row scoped
+    // to this Page — `PDFPageContent.pageIndex` carries the
+    // index. The UserDefaults-backed `PDFBackingStore` map is gone.
+
     /// Serialised PKDrawing — written by StorageService.updatePageStrokes.
     var strokeData: Data?
     /// Byte count of strokeData; updated atomically with strokeData.

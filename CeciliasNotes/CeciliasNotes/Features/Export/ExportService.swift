@@ -74,21 +74,15 @@ final class ExportService {
 
         guard total > 0 else { throw ExportError.noPages }
 
-        // PDF-backed notebooks export through the annotated-PDF path:
-        // copy each source PDF page verbatim and add a stamp
-        // annotation containing the user's strokes, so Preview / Adobe
-        // Reader / Chrome all display the strokes as PDF annotations
-        // rather than a re-rasterised page.
-        if notebook.isPDFBacked, let sourceURL = notebook.sourcePDFURL {
-            return try await exportAnnotatedPDF(
-                notebook:   notebook,
-                pages:      exportPages,
-                sourceURL:  sourceURL,
-                options:    options,
-                progress:   progress,
-                start:      start
-            )
-        }
+        // Step 5.5: the V5 annotated-PDF export branch was retired
+        // alongside `notebook.isPDFBacked` + `sourcePDFURL`. PDF
+        // notebooks now flow through the standard render-canvas
+        // path below; the rasterised output captures strokes /
+        // text / images / audio markers but does **not** include
+        // PDF page backings or highlights as proper PDF
+        // annotations. A follow-up step (Step 10 polish) can
+        // rebuild the annotated path against the V6 `.pdfPage`
+        // + `.highlight` PageElements when it ships.
 
         let outputURL  = try makeOutputURL(for: notebook)
         let pageBounds = exportPages[0].pageSize.pointSize.asCGRect
@@ -168,110 +162,10 @@ final class ExportService {
     ///   require translating each `PKStroke`'s Bezier path geometry
     ///   into PDF ink-annotation path space — more work than this v1
     ///   warrants. Upgrade path is open if quality complaints arise.
-    private func exportAnnotatedPDF(
-        notebook:  Notebook,
-        pages:     [Page],
-        sourceURL: URL,
-        options:   ExportOptions,
-        progress:  @escaping @Sendable (Double) -> Void,
-        start:     Date
-    ) async throws -> ExportResult {
-        guard let sourceDoc = PDFDocument(url: sourceURL) else {
-            throw ExportError.pdfNotFound
-        }
-
-        let outputDoc = PDFDocument()
-        let total     = pages.count
-
-        for (idx, page) in pages.enumerated() {
-            if let pdfIndex = page.pdfPageIndex,
-               pdfIndex < sourceDoc.pageCount,
-               let sourcePage = sourceDoc.page(at: pdfIndex),
-               let pageCopy = sourcePage.copy() as? PDFPage {
-
-                let bounds = pageCopy.bounds(for: .mediaBox)
-                // Images render below strokes on the canvas, so
-                // they get attached *first* in the PDF — the stamp
-                // annotations layer in z-order they're added.
-                attachMediaImagesAnnotation(
-                    pageId:     page.id,
-                    pageBounds: bounds,
-                    to:         pageCopy
-                )
-                if let drawingData = page.strokeData,
-                   let drawing = try? PKDrawing(data: drawingData),
-                   drawing.bounds.width > 0, drawing.bounds.height > 0 {
-                    attachStrokesAnnotation(
-                        from: drawing,
-                        pageBounds: bounds,
-                        to: pageCopy
-                    )
-                }
-                attachStickyNotes(
-                    pageId:     page.id,
-                    pageBounds: bounds,
-                    to:         pageCopy
-                )
-                // Highlight / underline / strikethrough text
-                // annotations. The PDF on disk may already carry
-                // these (the editor's debounced write-back may have
-                // fired), but adding the same record twice is
-                // skipped via the `.contents` id check inside
-                // `attachTextAnnotations`.
-                attachTextAnnotations(
-                    pageId: page.id,
-                    to:     pageCopy
-                )
-                outputDoc.insert(pageCopy, at: idx)
-            } else {
-                // Non-PDF page (e.g. blank page added after import) —
-                // render via the standard fresh-page pipeline and
-                // splice it into the output document.
-                if let freshPage = makeFreshPDFPage(for: page, notebook: notebook, options: options) {
-                    attachStickyNotes(
-                        pageId:     page.id,
-                        pageBounds: freshPage.bounds(for: .mediaBox),
-                        to:         freshPage
-                    )
-                    // Same idempotent attach. Non-PDF pages carry
-                    // text annotations only if a fresh page was
-                    // somehow marked PDF-backed; usually empty.
-                    attachTextAnnotations(
-                        pageId: page.id,
-                        to:     freshPage
-                    )
-                    outputDoc.insert(freshPage, at: idx)
-                }
-            }
-            progress(Double(idx + 1) / Double(total))
-        }
-
-        let outputURL = try makeOutputURL(for: notebook)
-        guard outputDoc.write(to: outputURL) else {
-            throw ExportError.pdfWriteFailed
-        }
-
-        let attrs    = try FileManager.default.attributesOfItem(atPath: outputURL.path)
-        let fileSize = (attrs[.size] as? Int64) ?? 0
-        let duration = Date().timeIntervalSince(start)
-
-        let record = ExportRecord(
-            notebookId:    notebook.id,
-            notebookTitle: notebook.title,
-            fileURL:       outputURL,
-            fileSizeBytes: fileSize,
-            pageCount:     total,
-            exportedAt:    Date()
-        )
-        await ExportManifest.shared.append(record)
-
-        return ExportResult(
-            fileURL:       outputURL,
-            fileSizeBytes: fileSize,
-            pageCount:     total,
-            duration:      duration
-        )
-    }
+    // Step 5.5: `exportAnnotatedPDF` removed. PDF notebooks
+    // export through the standard render path; rebuilding the
+    // annotated path against V6 `.pdfPage` + `.highlight`
+    // PageElements is queued for Step 10.
 
     /// Rasterise the page's PencilKit strokes and attach them as a
     /// `.stamp` annotation sized to the PDF page's media box. The
@@ -415,36 +309,11 @@ final class ExportService {
         return all.filter { $0.kind == .image }
     }
 
-    /// Add proper `PDFAnnotation` objects (highlight / underline /
-    /// strikethrough) for every active record in
-    /// `PDFTextAnnotationStore` for this page. The editor's
-    /// debounced writer may have already stamped these into the
-    /// source PDF, in which case `pageCopy.copy()` carries them
-    /// forward; the `.contents` id check below skips duplicates so
-    /// export is idempotent regardless of writer timing.
-    ///
-    /// Geometry is delegated to `PDFAnnotationWriter.makeAnnotation`
-    /// so the editor + export paths share one transform.
-    private func attachTextAnnotations(
-        pageId: UUID,
-        to pdfPage: PDFPage
-    ) {
-        let records = PDFTextAnnotationStore.records(for: pageId)
-        guard !records.isEmpty else { return }
-
-        for record in records {
-            let key = record.id.uuidString
-            let alreadyPresent = pdfPage.annotations.contains { ann in
-                (ann.value(forAnnotationKey: .contents) as? String) == key
-            }
-            guard !alreadyPresent else { continue }
-            guard let annotation = PDFAnnotationWriter.makeAnnotation(
-                for: record,
-                on: pdfPage
-            ) else { continue }
-            pdfPage.addAnnotation(annotation)
-        }
-    }
+    // Step 5.5: `attachTextAnnotations` removed alongside
+    // `PDFTextAnnotationStore` + `PDFAnnotationWriter`. Highlights
+    // are V6 `PageElement(.highlight)` rows; an exporter that
+    // stamps them as real `PDFAnnotation` objects on the exported
+    // copy is queued for Step 10 (sync polish).
 
     /// Build a one-page PDFDocument from the standard fresh-page
     /// rendering pipeline, then extract its sole page. Used for

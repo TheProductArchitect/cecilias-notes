@@ -255,16 +255,13 @@ final class EditorViewModel: ObservableObject {
     @Published var pulsingAnnotationId: UUID?
 
     /// PDF annotation writer for the current notebook session, or
-    /// `nil` when the notebook isn't PDF-backed. Instantiated lazily
-    /// the first time it's read so non-PDF notebooks pay zero cost.
-    /// The writer mirrors the in-app `PDFTextAnnotationStore` into
-    /// the source PDF on disk via a debounced detached task.
-    lazy var pdfAnnotationWriter: PDFAnnotationWriter? = {
-        guard notebook.isPDFBacked,
-              let url = notebook.sourcePDFURL
-        else { return nil }
-        return PDFAnnotationWriter(notebookId: notebook.id, sourceURL: url)
-    }()
+    // Step 5.5: `PDFAnnotationWriter` was retired. Highlights live
+    // entirely inside the app as `PageElement(.highlight)` rows;
+    // they don't round-trip into the source PDF on disk because the
+    // PDF file is shared across notebooks via hash dedup
+    // (`MediaStorage.pdfs/<pdfDocumentId>.pdf`). Export
+    // (`ExportService`) still stamps highlights as proper
+    // `PDFAnnotation` objects on the exported copy.
 
     /// Stroke count on the active canvas — used for VoiceOver labels.
     var strokeCount: Int { canvasView?.drawing.strokes.count ?? 0 }
@@ -624,12 +621,11 @@ final class EditorViewModel: ObservableObject {
 
     /// Background-notification handler. `@objc` so it can be
     /// targeted by `NotificationCenter.addObserver(selector:)`.
-    @objc private func handleAppBackground() {
-        guard let writer = pdfAnnotationWriter else { return }
-        Task { @MainActor in
-            await writer.flushImmediately()
-        }
-    }
+    /// Step 5.5: legacy `PDFAnnotationWriter` removed — highlights
+    /// commit synchronously through `HighlightCommit` so there's
+    /// nothing to flush here. Kept as a hook for future async
+    /// background work.
+    @objc private func handleAppBackground() {}
 
     /// Image-import completion handler. Reads the picked image +
     /// extension + normalised tap location from the notification's
@@ -651,13 +647,13 @@ final class EditorViewModel: ObservableObject {
         )
     }
 
-    /// Editor view should call this on dismiss so any pending
-    /// annotation write is flushed before the writer is torn down
-    /// with the view model.
-    func flushPDFAnnotationsImmediately() async {
-        guard let writer = pdfAnnotationWriter else { return }
-        await writer.flushImmediately()
-    }
+    /// Editor view should call this on dismiss. Step 5.5 removed
+    /// the asynchronous `PDFAnnotationWriter` queue — highlight
+    /// commits are now synchronous via `HighlightCommit`, so there
+    /// is nothing to flush. The method stays as a no-op so the
+    /// editor's dismiss path doesn't have to fork on architecture
+    /// generation.
+    func flushPDFAnnotationsImmediately() async {}
 
     /// Jump to `pageNumber` (1-indexed), then briefly pulse the
     /// annotation with the given id. Used by the annotation list
@@ -1106,12 +1102,15 @@ final class EditorViewModel: ObservableObject {
 
         // Highlighter-family interception runs first. When the just-
         // committed stroke passes over selectable PDF text, the
-        // detection routine replaces the stroke with a
-        // `PDFTextAnnotationRecord` (highlight / underline /
-        // strikethrough) and returns. Non-highlighter tools and
-        // strokes over blank space fall through to the rest of this
-        // method unchanged.
-        if selectedTool.isHighlighterFamily, notebook.isPDFBacked {
+        // detection routine replaces the stroke with V6
+        // `PageElement(.highlight)` rows (highlight / underline /
+        // strikethrough variants) and returns. Non-highlighter tools
+        // and strokes over blank space (or pages with no PDF backing
+        // element) fall through to the rest of this method unchanged
+        // — `attemptHighlighterTextDetection` self-guards on the
+        // current page's `.pdfPage` element, so the legacy
+        // `notebook.isPDFBacked` gate isn't needed.
+        if selectedTool.isHighlighterFamily {
             attemptHighlighterTextDetection()
         }
 

@@ -12,6 +12,7 @@
 /// `PDFTextAnnotationRecord` plus the resolved page number. Live
 /// refresh on `.stickyNotesChanged` + `.pdfTextAnnotationsChanged`.
 
+import SwiftData
 import SwiftUI
 
 // MARK: - AnnotationListItem (view-model only)
@@ -19,27 +20,41 @@ import SwiftUI
 /// Unified row item for the list. Carries the resolved
 /// `pageNumber` so the sort + display can avoid re-looking-up the
 /// `Page` for every row redraw.
+///
+/// Step 5.5: highlights now arrive as V6
+/// `PageElement(.highlight) + HighlightContent`. Carries the
+/// snapshot data the row needs (id, captured text, createdAt,
+/// page) rather than the @Model instance so the enum stays
+/// Hashable / Sendable.
 enum AnnotationListItem: Identifiable, Hashable {
-    case textAnnotation(PDFTextAnnotationRecord, pageNumber: Int)
+    case textAnnotation(
+        id: UUID,
+        capturedText: String,
+        createdAt: Date,
+        pageId: UUID,
+        pageNumber: Int,
+        groupId: UUID?
+    )
     case stickyNote(StickyNoteRecord, pageNumber: Int)
 
     var id: UUID {
         switch self {
-        case .textAnnotation(let r, _): return r.id
-        case .stickyNote(let r, _):     return r.id
+        case .textAnnotation(let id, _, _, _, _, _): return id
+        case .stickyNote(let r, _):                  return r.id
         }
     }
 
     var pageNumber: Int {
         switch self {
-        case .textAnnotation(_, let n), .stickyNote(_, let n): return n
+        case .textAnnotation(_, _, _, _, let n, _): return n
+        case .stickyNote(_, let n):                 return n
         }
     }
 
     var createdAt: Date {
         switch self {
-        case .textAnnotation(let r, _): return r.createdAt
-        case .stickyNote(let r, _):     return r.createdAt
+        case .textAnnotation(_, _, let d, _, _, _): return d
+        case .stickyNote(let r, _):                 return r.createdAt
         }
     }
 
@@ -48,8 +63,8 @@ enum AnnotationListItem: Identifiable, Hashable {
     var snippet: String {
         let raw: String
         switch self {
-        case .textAnnotation(let r, _): raw = r.selectedText
-        case .stickyNote(let r, _):     raw = r.body
+        case .textAnnotation(_, let text, _, _, _, _): raw = text
+        case .stickyNote(let r, _):                    raw = r.body
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.count <= 60 { return trimmed }
@@ -57,16 +72,11 @@ enum AnnotationListItem: Identifiable, Hashable {
     }
 
     /// 2pt leading rule colour — the only type signal in the row.
-    /// Yellow for the three PDF text annotation kinds, muted amber
-    /// for sticky notes (the same colour the editor uses for the
-    /// in-canvas marker).
     var typeColour: Color {
         switch self {
         case .textAnnotation:
             return .yellow
         case .stickyNote:
-            // Sole chromatic exception documented in the design
-            // system. Matches the sticky-note marker on the canvas.
             return Color(red: 0.96, green: 0.78, blue: 0.34)
         }
     }
@@ -91,7 +101,7 @@ struct AnnotationListSheet: View {
         }
         .background(theme.surface)
         .onReceive(
-            NotificationCenter.default.publisher(for: .pdfTextAnnotationsChanged)
+            NotificationCenter.default.publisher(for: .highlightElementsChanged)
         ) { _ in refreshTick &+= 1 }
         .onReceive(
             NotificationCenter.default.publisher(for: .stickyNotesChanged)
@@ -189,17 +199,44 @@ struct AnnotationListSheet: View {
 
     // MARK: Data
 
-    /// Loads every active record from both stores for every page in
-    /// the notebook and returns them sorted by page number, then by
-    /// creation time. Computed on every body redraw — the row count
-    /// is bounded by what fits in UserDefaults JSON, so a full walk
-    /// is cheap enough not to need caching.
+    /// Loads every active highlight + sticky for every page in the
+    /// notebook. Step 5.5: highlights come from V6
+    /// `PageElement(.highlight) + HighlightContent` rather than
+    /// the retired `PDFTextAnnotationStore`. Multi-line groups
+    /// collapse to one row (first rect of each group) so the
+    /// list reads as one highlight per user-visible selection.
     private func items() -> [AnnotationListItem] {
         var out: [AnnotationListItem] = []
+        let context = StorageService.shared.context
+
         for page in viewModel.pages where !page.isDeleted {
             let pageNumber = page.pageNumber
-            for record in PDFTextAnnotationStore.records(for: page.id) {
-                out.append(.textAnnotation(record, pageNumber: pageNumber))
+            let pid = page.id
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                },
+                sortBy: [SortDescriptor(\.createdAt)]
+            )
+            let elements = (try? context.fetch(descriptor)) ?? []
+            // Collapse multi-line highlight groups — only emit the
+            // first element per groupId. Standalone (groupId nil)
+            // emits every time.
+            var seenGroups: Set<UUID> = []
+            for element in elements where element.kind == .highlight {
+                guard let content = element.highlightContent else { continue }
+                if let groupId = content.groupId {
+                    if seenGroups.contains(groupId) { continue }
+                    seenGroups.insert(groupId)
+                }
+                out.append(.textAnnotation(
+                    id: element.id,
+                    capturedText: content.capturedText ?? "",
+                    createdAt: element.createdAt,
+                    pageId: page.id,
+                    pageNumber: pageNumber,
+                    groupId: content.groupId
+                ))
             }
             for note in StickyNoteStore.notes(for: page.id) {
                 out.append(.stickyNote(note, pageNumber: pageNumber))
@@ -216,9 +253,6 @@ struct AnnotationListSheet: View {
     // MARK: Row actions
 
     private func handleTap(_ item: AnnotationListItem) {
-        // Capture id + pageNumber up front so the dismiss can run
-        // first and the pulse fires against the freshly-scrolled
-        // canvas. Order matters: dismiss → navigate → pulse.
         let id = item.id
         let pageNumber = item.pageNumber
         onDismiss()
@@ -227,23 +261,29 @@ struct AnnotationListSheet: View {
 
     private func softDelete(_ item: AnnotationListItem) {
         switch item {
-        case .textAnnotation(let record, _):
-            PDFTextAnnotationStore.softDelete(id: record.id, pageId: record.pageId)
-            // Also clear the in-memory PDFAnnotation so the canvas
-            // overlay reflects the removal without waiting for the
-            // debounced disk writer.
-            viewModel.pdfAnnotationWriter?.removeFromInMemoryDocument(
-                recordId: record.id,
-                pdfPageIndex: record.pdfPageIndex
-            )
-            viewModel.pdfAnnotationWriter?.scheduleWrite()
+        case .textAnnotation(let elementId, _, _, _, _, let groupId):
+            // Group → soft-delete every member at once; standalone →
+            // soft-delete only this element. Either path posts
+            // `.highlightElementsChanged` so the sheet refreshes.
+            if let groupId {
+                HighlightCommit.deleteHighlightGroup(groupId: groupId)
+            } else {
+                let context = StorageService.shared.context
+                let descriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate { $0.id == elementId }
+                )
+                if let element = try? context.fetch(descriptor).first {
+                    element.deletedAt = Date()
+                    element.updatedAt = Date()
+                    try? context.save()
+                    NotificationCenter.default.post(
+                        name: .highlightElementsChanged, object: nil
+                    )
+                }
+            }
         case .stickyNote(let note, _):
             StickyNoteStore.softDelete(id: note.id, pageId: note.pageId)
         }
-        // Both stores post their respective `.*Changed` notifications
-        // inside the mutation; the sheet refreshes via `onReceive`
-        // and the customise panel count row reads live, so no
-        // explicit refresh call is needed here.
     }
 }
 

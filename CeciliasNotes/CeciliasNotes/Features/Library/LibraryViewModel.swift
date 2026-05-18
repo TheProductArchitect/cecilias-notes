@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import PDFKit
+import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -942,13 +943,19 @@ final class LibraryViewModel: ObservableObject {
 
     /// One PDF → one notebook. Copies the PDF into the notebook's
     /// directory, creates a `Page` per PDF page, and records each
-    /// page's source-PDF index via `PDFBackingStore`. The
-    /// notebook's `pageSize` follows the user's last-used default;
-    /// PDF pages render at the source PDF's native bounds via
-    /// `PageRenderer` regardless of `pageSize`.
+    /// page's source-PDF index via a per-page
+    /// `PageElement(kind: .pdfPage)` row that fills the page at
+    /// zIndex 0. The notebook's `pageSize` follows the user's
+    /// last-used default; PDF pages render at the source PDF's
+    /// native bounds via `PDFPageElementView`, scaled to fit
+    /// inside the canvas page.
+    ///
+    /// Step 5.5: rewired off `PDFBackingStore` /
+    /// `StorageService.sourcePDFURL` onto the unified element
+    /// model. The PDF file lands in
+    /// `MediaStorage.pdfs/<pdfDocumentId>.pdf` (shared, hash-
+    /// deduped — re-importing the same PDF reuses the file).
     private func importSinglePDF(at url: URL, subjectId: UUID) async -> Notebook? {
-        // Bail on truly enormous files — anything over 500MB is more
-        // likely a user mis-pick than a real notebook.
         let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
         let fileSize = (attrs?[.size] as? Int64) ?? 0
         if fileSize > 500 * 1024 * 1024 {
@@ -961,9 +968,16 @@ final class LibraryViewModel: ObservableObject {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
-        guard let pdf = PDFDocument(url: url) else { return nil }
+        guard let pdfData = try? Data(contentsOf: url),
+              let pdf = PDFDocument(url: url) else { return nil }
         let pageCount = pdf.pageCount
         guard pageCount > 0 else { return nil }
+
+        // Hash + dedup the file into MediaStorage. Re-imports of
+        // the same PDF resolve to the same `pdfDocumentId` so
+        // every PDFPageContent created below shares one file.
+        let pdfHash = MediaStorage.sha256Hex(of: pdfData)
+        let pdfDocumentId = MediaStorage.writePDF(from: pdfData, hash: pdfHash)
 
         let rawName = url.deletingPathExtension().lastPathComponent
         let cleanTitle = rawName
@@ -980,9 +994,6 @@ final class LibraryViewModel: ObservableObject {
             return .a4
         }()
 
-        // Create the notebook first (this seeds page 1). We'll add
-        // additional pages below and re-seed `pdfPageIndex` for every
-        // page so the seeded one becomes "PDF page 0".
         guard let notebook = try? storage.createNotebook(
             title:         title,
             subjectId:     subjectId,
@@ -992,25 +1003,21 @@ final class LibraryViewModel: ObservableObject {
             template:      .blank
         ) else { return nil }
 
-        // Copy the source PDF into the notebook's directory.
-        let dest = StorageService.shared.sourcePDFURL(notebook.id)
-        do {
-            try FileManager.default.createDirectory(
-                at: dest.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+        // Seed page 1's PDFPageContent + PageElement, then create
+        // remaining pages and seed each one. The first canvas
+        // page already exists (createNotebook seeds it); the
+        // rest get created on demand below.
+        let context = StorageService.shared.context
+        if let firstPage = (notebook.pages ?? []).first,
+           let pdfPage = pdf.page(at: 0) {
+            attachPDFPageElement(
+                to: firstPage,
+                notebookId: notebook.id,
+                pdfDocumentId: pdfDocumentId,
+                pageIndex: 0,
+                pdfPage: pdfPage,
+                context: context
             )
-            if FileManager.default.fileExists(atPath: dest.path) {
-                try FileManager.default.removeItem(at: dest)
-            }
-            try FileManager.default.copyItem(at: url, to: dest)
-        } catch {
-            try? storage.deleteNotebook(notebook)
-            return nil
-        }
-
-        // Map the seeded first page to PDF page 0; add the rest.
-        if let firstPage = (notebook.pages ?? []).first {
-            firstPage.pdfPageIndex = 0
         }
         for i in 1..<pageCount {
             guard let page = try? storage.createPage(
@@ -1019,10 +1026,63 @@ final class LibraryViewModel: ObservableObject {
                 pageSize: pageSize,
                 backgroundTemplate: .blank
             ) else { continue }
-            page.pdfPageIndex = i
+            guard let pdfPage = pdf.page(at: i) else { continue }
+            attachPDFPageElement(
+                to: page,
+                notebookId: notebook.id,
+                pdfDocumentId: pdfDocumentId,
+                pageIndex: i,
+                pdfPage: pdfPage,
+                context: context
+            )
         }
+        try? context.save()
+        NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
 
         return notebook
+    }
+
+    /// Workflow A helper: create one `PageElement(.pdfPage) +
+    /// PDFPageContent` at zIndex 0 filling `page` (normalised
+    /// bounds (0, 0, 1, 1)). The PDF file is already deduped /
+    /// written; this only writes SwiftData metadata + the
+    /// preview PNG. Same shape as Workflow B's
+    /// `PDFReferenceImporter` but per-Page rather than per-
+    /// selected-page.
+    private func attachPDFPageElement(
+        to page: Page,
+        notebookId: UUID,
+        pdfDocumentId: UUID,
+        pageIndex: Int,
+        pdfPage: PDFPage,
+        context: ModelContext
+    ) {
+        let bounds = pdfPage.bounds(for: .mediaBox)
+        let preview = pdfPage.thumbnail(of: CGSize(width: 400, height: 520), for: .mediaBox)
+        let contentId = UUID()
+        let previewName = MediaStorage.writePDFPreview(preview, contentId: contentId)
+
+        let element = PageElement(
+            id: UUID(),
+            pageId: page.id,
+            notebookId: notebookId,
+            kind: .pdfPage,
+            normalizedX: 0,
+            normalizedY: 0,
+            normalizedWidth: 1,
+            normalizedHeight: 1,
+            zIndex: 0
+        )
+        let content = PDFPageContent(
+            id: contentId,
+            pdfDocumentId: pdfDocumentId,
+            pageIndex: pageIndex,
+            originalPageWidth: Double(bounds.width),
+            originalPageHeight: Double(bounds.height),
+            previewImageFilename: previewName
+        )
+        element.pdfPageContent = content
+        context.insert(element)
     }
 
     func renameNotebook(_ notebook: Notebook, newTitle: String) {

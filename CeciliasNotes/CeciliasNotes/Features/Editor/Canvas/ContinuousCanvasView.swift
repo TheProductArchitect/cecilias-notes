@@ -354,11 +354,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
             var imagesHost:    UIHostingController<ImageElementsOverlayView>
             /// V6 PDF-page element overlay (BELOW the canvas,
             /// ABOVE images). Step 4.5: renders Workflow B's
-            /// user-placed PDF page elements. Workflow A's full-
-            /// page PDF rendering stays in `PageRenderer` for now
-            /// (legacy path with the PDFTextAnnotationStore
-            /// overlay stacked on top).
+            /// user-placed PDF page elements. Step 5.5 unified
+            /// Workflow A through this same overlay — full-bleed
+            /// PageElement(.pdfPage) rows now drive every PDF
+            /// surface, retiring `PageRenderer`'s legacy CG path.
             var pdfPagesHost:  UIHostingController<PDFPageElementsOverlayView>
+            /// V6 highlight overlay (ABOVE the PDF overlay, BELOW
+            /// the canvas). Step 5.5: renders
+            /// `PageElement(kind: .highlight)` rows projected
+            /// through their parent PDFPageContent element's
+            /// bounds — replaces the legacy
+            /// `PDFTextAnnotationStore` Core Graphics overlay.
+            var highlightsHost: UIHostingController<HighlightElementsOverlayView>
             /// V6 audio-element overlay (ABOVE the canvas).
             /// Step 5: replaced both `AudioAnnotationCardsOverlayView`
             /// (short notes) and `LectureBlocksOverlayView` (long-
@@ -486,24 +493,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 let renderer = PageRenderer(pageSize: page.pageSize)
                 renderer.frame = frame
 
-                // PDF-backed pages draw the source PDF page on top of
-                // the paper; their template overlay is hidden (a PDF
-                // background and a template pattern shouldn't stack).
-                if let pdfIndex = page.pdfPageIndex,
-                   let sourceURL = viewModel.notebook.sourcePDFURL {
-                    renderer.updatePDFBacking(sourceURL: sourceURL, pageIndex: pdfIndex)
-                    // Wire the page id so the renderer can paint
-                    // `PDFTextAnnotationStore` records (highlights,
-                    // underlines, strikethroughs) on top of the PDF
-                    // background. Reactive to store changes via the
-                    // observer set up inside `attachPageId`.
-                    renderer.attachPageId(page.id)
-                    // Subscribe to the editor's pulse signal. Every
-                    // PDF-backed renderer observes the same
-                    // publisher; only the renderer whose page holds
-                    // the matching record actually animates.
-                    renderer.attachPulseSource(viewModel.$pulsingAnnotationId)
-                }
+                // Step 5.5: PageRenderer no longer draws PDFs or
+                // highlights — those flow through
+                // `PDFPageElementsOverlayView` and
+                // `HighlightElementsOverlayView` respectively. The
+                // renderer just paints paper + template now.
 
                 // Mount the SwiftUI template pattern inside the
                 // renderer so paper colour (UIKit, theme-aware) sits
@@ -513,7 +507,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 )
                 templateHost.view.backgroundColor = .clear
                 templateHost.view.isUserInteractionEnabled = false
-                templateHost.view.isHidden = page.pdfPageIndex != nil
+                templateHost.view.isHidden = false
                 templateHost.view.translatesAutoresizingMaskIntoConstraints = false
                 renderer.addSubview(templateHost.view)
                 NSLayoutConstraint.activate([
@@ -596,6 +590,29 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     pdfPagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
                 pdfPagesHost.attachAsChild(of: renderer)
+
+                // Step 5.5: V6 highlight overlay. Stacks above the
+                // PDF overlay so highlights paint on top of the
+                // PDF text they annotate, and below the audio /
+                // sticky / text-block overlays which still need
+                // higher z-priority for tap routing.
+                let highlightsHost = UIHostingController(
+                    rootView: HighlightElementsOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                highlightsHost.view.backgroundColor = .clear
+                highlightsHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(highlightsHost.view)
+                NSLayoutConstraint.activate([
+                    highlightsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    highlightsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    highlightsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    highlightsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                highlightsHost.attachAsChild(of: renderer)
 
                 // Step 5: V6 audio-element overlay — replaces both
                 // the legacy `AudioAnnotationCardsOverlayView` and
@@ -689,17 +706,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
-                    pageId:        page.id,
-                    frame:         frame,
-                    renderer:      renderer,
-                    templateHost:  templateHost,
-                    imagesHost:    imagesHost,
-                    pdfPagesHost:  pdfPagesHost,
-                    audioHost:     audioHost,
-                    stickyHost:    stickyHost,
-                    textBlockHost: textBlockHost,
+                    pageId:          page.id,
+                    frame:           frame,
+                    renderer:        renderer,
+                    templateHost:    templateHost,
+                    imagesHost:      imagesHost,
+                    pdfPagesHost:    pdfPagesHost,
+                    highlightsHost:  highlightsHost,
+                    audioHost:       audioHost,
+                    stickyHost:      stickyHost,
+                    textBlockHost:   textBlockHost,
                     textElementsHost: textElementsHost,
-                    template:      page.backgroundTemplate
+                    template:        page.backgroundTemplate
                 ))
                 y += baseSize.height + pageGap
             }
@@ -733,6 +751,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].templateHost.detachFromParentVC()
                 hosts[i].imagesHost.detachFromParentVC()
                 hosts[i].pdfPagesHost.detachFromParentVC()
+                hosts[i].highlightsHost.detachFromParentVC()
                 hosts[i].audioHost.detachFromParentVC()
                 hosts[i].stickyHost.detachFromParentVC()
                 hosts[i].textBlockHost.detachFromParentVC()
@@ -1099,26 +1118,37 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 case tool.isCursorMode:
                     // Cursor mode: text elements first (so tap-to-
-                    // edit reaches them), then sticky/audio/PDF/
-                    // images for selection. Step 5: lecture host
-                    // collapsed into the audio host — single audio
-                    // overlay covers both short notes and lectures.
+                    // edit reaches them), then sticky/audio/
+                    // highlights/PDF/images for selection. Step 5:
+                    // lecture host collapsed into the audio host —
+                    // single audio overlay covers both short notes
+                    // and lectures. Step 5.5: highlights sit just
+                    // above the PDF layer so the cursor can pick
+                    // them up before any underlying PDF reference.
                     renderer.bringSubviewToFront(h.imagesHost.view)
                     renderer.bringSubviewToFront(h.pdfPagesHost.view)
+                    renderer.bringSubviewToFront(h.highlightsHost.view)
                     renderer.bringSubviewToFront(h.audioHost.view)
                     renderer.bringSubviewToFront(h.stickyHost.view)
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 default:
-                    // Drawing tools — restore the original stacking
-                    // order (text on top, then sticky, audio,
-                    // images, template). Image / sticky / text all need
-                    // to render under the canvas anyway when a drawing
-                    // tool is active.
+                    // Drawing tools — restore the standard stacking
+                    // order. `bringSubviewToFront` moves each
+                    // subview to the absolute top in sequence, so
+                    // the last call wins. Step 5.5: highlights must
+                    // paint OVER the PDF (translucent 0.4-alpha
+                    // overlay), so the PDF goes back first, then
+                    // highlights, then the rest. Image / sticky /
+                    // text all live under the PencilKit canvas
+                    // (mounted in contentView, above this stack)
+                    // when a drawing tool is active.
+                    renderer.bringSubviewToFront(h.imagesHost.view)
+                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
+                    renderer.bringSubviewToFront(h.highlightsHost.view)
+                    renderer.bringSubviewToFront(h.audioHost.view)
+                    renderer.bringSubviewToFront(h.stickyHost.view)
                     renderer.bringSubviewToFront(h.textBlockHost.view)
                     renderer.bringSubviewToFront(h.textElementsHost.view)
-                    renderer.bringSubviewToFront(h.stickyHost.view)
-                    renderer.bringSubviewToFront(h.audioHost.view)
-                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
                 }
             }
         }

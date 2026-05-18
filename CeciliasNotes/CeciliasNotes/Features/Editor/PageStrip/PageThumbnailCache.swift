@@ -1,6 +1,7 @@
 import Foundation
 import PDFKit
 import PencilKit
+import SwiftData
 import UIKit
 
 /// Singleton cache of page thumbnails. NSCache evicts under memory
@@ -100,13 +101,11 @@ final class PageThumbnailCache {
         let pageId    = page.id
         let pageRect  = CGRect(origin: .zero, size: page.pageSize.pointSize)
         let strokeData = page.strokeData
-        let pdfBacking: (url: URL, index: Int)? = {
-            guard let index = page.pdfPageIndex else { return nil }
-            let url = StorageService.shared.sourcePDFURL(page.notebookId)
-            return FileManager.default.fileExists(atPath: url.path)
-                ? (url, index)
-                : nil
-        }()
+        // Step 5.5: PDF backing now comes from the V6 PageElement
+        // model. The first full-bleed `.pdfPage` element on the
+        // page identifies the file + page index; rasterising it
+        // off the main actor matches the legacy thumbnail path.
+        let pdfBacking: (url: URL, index: Int)? = Self.lookupPDFBacking(forPageId: pageId)
 
         // In-flight dedupe.
         inflightLock.lock()
@@ -155,11 +154,41 @@ final class PageThumbnailCache {
     /// fingerprint sample-walks the stroke bytes (~1KB of work for a
     /// 100KB drawing).
     func composeKey(for page: Page) -> Key {
-        Key(
+        let pdfIndex = Self.lookupPDFBacking(forPageId: page.id)?.index
+        return Key(
             pageId: page.id,
             strokeFingerprint: Self.fingerprint(of: page.strokeData),
-            pdfFingerprint: page.pdfPageIndex.map { UInt64($0) + 1 } ?? 0
+            pdfFingerprint: pdfIndex.map { UInt64($0) + 1 } ?? 0
         )
+    }
+
+    /// Step 5.5: replaces the legacy `Page.pdfPageIndex` /
+    /// `Notebook.sourcePDFURL` read. Returns `(file URL, page
+    /// index)` for the first full-bleed `PageElement(.pdfPage)`
+    /// scoped to `pageId`, or `nil` if no PDF element is anchored
+    /// to this page. Synchronous main-actor read — cheap, used
+    /// only when composing thumbnail cache keys.
+    @MainActor
+    static func lookupPDFBacking(forPageId pageId: UUID) -> (url: URL, index: Int)? {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { $0.pageId == pageId && $0.deletedAt == nil }
+        )
+        guard let elements = try? context.fetch(descriptor) else { return nil }
+        // Prefer a full-bleed element (zIndex 0 + bounds (0,0,1,1)) —
+        // that's the Workflow A imported page. Workflow B's
+        // embedded references would otherwise mask it.
+        let candidates = elements.filter { $0.kind == .pdfPage }
+        let fullBleed = candidates.first {
+            $0.zIndex == 0 &&
+                $0.normalizedX == 0 && $0.normalizedY == 0 &&
+                $0.normalizedWidth == 1 && $0.normalizedHeight == 1
+        } ?? candidates.first
+        guard let element = fullBleed,
+              let content = element.pdfPageContent else { return nil }
+        let url = content.pdfFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return (url, content.pageIndex)
     }
 
     /// Clear every entry. Used by the storage-reset path.

@@ -81,6 +81,7 @@ enum CeciliasNotesSchemaV6: VersionedSchema {
             StickyNoteContent.self,
             PDFPageContent.self,
             ShapeContent.self,
+            HighlightContent.self,
         ]
     }
 }

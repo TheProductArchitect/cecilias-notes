@@ -1359,13 +1359,13 @@ extension StorageService {
         // every page in the purged notebook so the dictionaries don't
         // accumulate orphaned mappings over time.
         let pageIds = (notebook.pages ?? []).map(\.id)
-        PDFBackingStore.forget(pageIds: pageIds)
+        // Step 5.5: `PDFBackingStore` + `PDFTextAnnotationStore`
+        // retired. PDF page metadata lives on V6
+        // `PageElement(.pdfPage) + PDFPageContent` rows; highlight
+        // metadata lives on `PageElement(.highlight) +
+        // HighlightContent`. Both get cascade-purged below when
+        // we drop every PageElement keyed to a dead page.
         StickyNoteStore.forget(pageIds: pageIds)
-        // PDF text annotations (highlight / underline / strikethrough)
-        // ride the same side-channel pattern — wipe them so a
-        // reaper-purged notebook doesn't leave orphaned annotation
-        // records keyed to pages that no longer exist.
-        PDFTextAnnotationStore.forget(pageIds: pageIds)
         // Image attachments — Step 4 retired `MediaAttachmentStore`.
         // V6 image elements are `PageElement(kind: .image)` rows
         // with backing files at `MediaStorage.url(for: .images, id:)`.

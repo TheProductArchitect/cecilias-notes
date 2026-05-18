@@ -240,12 +240,12 @@ struct ToolPaletteView: View {
         // other tool leaves images inert so handwriting can draw
         // over them undisturbed.
         toolButton(.image)
-        // Sticky-note tool surfaces only for PDF-backed notebooks.
-        // Non-PDF notebooks have inline text via `.text` and don't
-        // need anchored sticky comments.
-        if viewModel.notebook.isPDFBacked {
-            toolButton(.stickyNote)
-        }
+        // Step 5.5: sticky-note tool surfaces unconditionally.
+        // The V5 gate (`Notebook.isPDFBacked`) was retired with
+        // the PDF-notebook refactor; the sticky surface works on
+        // any page. Step 7 (sticky migration) can revisit
+        // visibility heuristics if needed.
+        toolButton(.stickyNote)
 
         // Colour + size controls are hidden when cursor is active —
         // a neutral selection tool shouldn't show colour choices or
