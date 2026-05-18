@@ -34,7 +34,14 @@ struct EditorView: View {
         deepLinkPageId: UUID? = nil,
         onDismiss: @escaping () -> Void
     ) {
-        _viewModel = StateObject(wrappedValue: EditorViewModel(notebook: notebook))
+        // Pass the user's current theme so the editor's default ink colour
+        // tracks Default vs Midnight. Pre-Phase-B this parameter was
+        // omitted and the editor always used `.light` regardless of the
+        // user's theme choice.
+        _viewModel = StateObject(wrappedValue: EditorViewModel(
+            notebook: notebook,
+            theme: ThemeManager.shared.current
+        ))
         self.onDismiss = onDismiss
         _pendingImportPDFURL   = State(initialValue: importPDFURL)
         _pendingDeepLinkPageId = State(initialValue: deepLinkPageId)
