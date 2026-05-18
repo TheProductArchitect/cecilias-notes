@@ -48,7 +48,7 @@ struct LectureRecordingView: View {
             VStack(spacing: 0) {
                 contentColumn
                 Rectangle()
-                    .fill(Color.inkTextPrimary)
+                    .fill(theme.foreground)
                     .frame(height: 1.5)
                 controlsRow
             }
@@ -93,7 +93,7 @@ struct LectureRecordingView: View {
         TextField("lecture title", text: $recorder.title)
             .font(.system(size: 22, weight: .heavy))
             .tracking(-0.5)
-            .foregroundStyle(Color.inkTextPrimary)
+            .foregroundStyle(theme.foreground)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .focused($titleFocused)
@@ -104,7 +104,7 @@ struct LectureRecordingView: View {
         Text(formattedElapsed)
             .font(.system(size: 48, weight: .heavy))
             .tracking(-1)
-            .foregroundStyle(Color.inkTextPrimary)
+            .foregroundStyle(theme.foreground)
             .monospacedDigit()
     }
 
@@ -143,8 +143,8 @@ struct LectureRecordingView: View {
                 ctx.fill(
                     path,
                     with: .color(recorder.isPaused
-                        ? Color.inkRecessiveTertiary
-                        : Color.brandAccent)
+                        ? theme.recessiveTertiary
+                        : theme.accent)
                 )
             }
         }
@@ -170,12 +170,12 @@ struct LectureRecordingView: View {
                     if recorder.liveTranscript.isEmpty {
                         Text("listening…")
                             .font(.system(size: 15).italic())
-                            .foregroundStyle(Color.inkRecessiveTertiary)
+                            .foregroundStyle(theme.recessiveTertiary)
                     } else {
                         Text(recorder.liveTranscript)
                             .font(.system(size: 15))
                             .lineSpacing(15 * 0.4)        // 1.4× line spacing
-                            .foregroundStyle(Color.inkTextPrimary)
+                            .foregroundStyle(theme.foreground)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .id("transcript-tail")
                     }
@@ -205,7 +205,7 @@ struct LectureRecordingView: View {
             } label: {
                 Image(systemName: recorder.isPaused ? "play.fill" : "pause.fill")
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -219,7 +219,7 @@ struct LectureRecordingView: View {
             } label: {
                 Image(systemName: "stop.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

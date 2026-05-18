@@ -10,6 +10,7 @@ struct ExportOptionsView: View {
     let pages:        [Page]
     let currentIndex: Int
     let onDismiss:    () -> Void
+    @Environment(\.theme) private var theme
 
     @State private var options          = ExportOptions()
     @State private var customRange      = ""
@@ -78,12 +79,12 @@ struct ExportOptionsView: View {
                 .padding(CeciliasNotes.Spacing.lg)
             }
             Rectangle()
-                .fill(Color.inkBorderSubtle)
+                .fill(theme.borderSubtle)
                 .frame(height: 0.5)
             exportButton
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.md)
-                .background(Color.inkBackgroundPrimary)
+                .background(theme.background)
         }
     }
 
@@ -92,7 +93,7 @@ struct ExportOptionsView: View {
     private var previewSection: some View {
         ZStack {
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
-                .fill(Color.inkBackgroundSecondary)
+                .fill(theme.surface)
                 .frame(height: 140)
 
             if let img = previewImage {
@@ -103,12 +104,12 @@ struct ExportOptionsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                            .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
                     )
                     .transition(.opacity.animation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)))
             } else {
                 ProgressView()
-                    .tint(.inkAccentPrimary)
+                    .tint(theme.accent)
             }
         }
     }
@@ -134,11 +135,11 @@ struct ExportOptionsView: View {
                         .keyboardType(.numbersAndPunctuation)
                         .submitLabel(.done)
                         .padding(CeciliasNotes.Spacing.sm)
-                        .background(Color.inkBackgroundSecondary)
+                        .background(theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                                .stroke(rangeError != nil ? Color.inkDestructive : Color.inkBorderSubtle, lineWidth: 0.5)
+                                .stroke(rangeError != nil ? theme.danger : theme.borderSubtle, lineWidth: 0.5)
                         )
                         .onChange(of: customRange) { _, v in validateCustomRange(v) }
 
@@ -166,7 +167,7 @@ struct ExportOptionsView: View {
 
             Text("Estimated size: \(estimatedSizeLabel)")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
         }
     }
 
@@ -202,25 +203,25 @@ struct ExportOptionsView: View {
 
             ZStack {
                 Circle()
-                    .stroke(Color.inkBackgroundSecondary, lineWidth: 4)
+                    .stroke(theme.surface, lineWidth: 4)
                     .frame(width: 80, height: 80)
 
                 Circle()
                     .trim(from: 0, to: exportProgress)
-                    .stroke(Color.inkAccentPrimary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                     .frame(width: 80, height: 80)
                     .rotationEffect(.degrees(-90))
                     .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: exportProgress)
 
                 Text("\(Int(exportProgress * 100))%")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                     .monospacedDigit()
             }
 
             Text(progressLabel)
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
                 .monospacedDigit()
 
             Button("Cancel") {
@@ -231,7 +232,7 @@ struct ExportOptionsView: View {
             }
             .buttonStyle(.ceciliasNotesPressable)
             .font(.ceciliasNotesSubhead)
-            .foregroundColor(.inkTextTertiary)
+            .foregroundColor(theme.foregroundSubtle)
 
             Spacer()
         }
@@ -246,17 +247,17 @@ struct ExportOptionsView: View {
 
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
-                .foregroundColor(.inkAccentPrimary)
+                .foregroundColor(theme.accent)
                 .ceciliasNotesAnimation(CeciliasNotesSpring.snappy, value: exportState == .success)
 
             if let result = exportResult {
                 VStack(spacing: 4) {
                     Text("Export complete")
                         .font(.ceciliasNotesHeadline)
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(theme.foreground)
                     Text("\(result.pageCount) pages · \(ByteCountFormatter.string(fromByteCount: result.fileSizeBytes, countStyle: .file))")
                         .font(.ceciliasNotesSubhead)
-                        .foregroundColor(.inkTextSecondary)
+                        .foregroundColor(theme.foregroundMuted)
                 }
 
                 VStack(spacing: CeciliasNotes.Spacing.sm) {
@@ -273,7 +274,7 @@ struct ExportOptionsView: View {
                     Button("Done") { onDismiss() }
                         .buttonStyle(.ceciliasNotesPressable)
                         .font(.ceciliasNotesSubhead)
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
             }
 
@@ -294,7 +295,7 @@ struct ExportOptionsView: View {
 
             Text(exportError ?? "Export failed.")
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
                 .multilineTextAlignment(.center)
 
             CeciliasNotesButton("Try Again", style: .primary) {
@@ -307,7 +308,7 @@ struct ExportOptionsView: View {
             Button("Cancel") { onDismiss() }
                 .buttonStyle(.ceciliasNotesPressable)
                 .font(.ceciliasNotesSubhead)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
 
             Spacer()
         }
@@ -319,17 +320,17 @@ struct ExportOptionsView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.ceciliasNotesSubhead)
-            .foregroundColor(.inkTextSecondary)
+            .foregroundColor(theme.foregroundMuted)
     }
 
     private func toggleRow(_ label: String, systemImage: String, value: Binding<Bool>) -> some View {
         Toggle(isOn: value) {
             Label(label, systemImage: systemImage)
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
         }
         .toggleStyle(.switch)
-        .tint(.inkAccentPrimary)
+        .tint(theme.accent)
         .padding(.horizontal, CeciliasNotes.Spacing.md)
         .padding(.vertical, CeciliasNotes.Spacing.sm)
     }

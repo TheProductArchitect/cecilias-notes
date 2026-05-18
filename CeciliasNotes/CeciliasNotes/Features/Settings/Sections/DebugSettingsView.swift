@@ -71,12 +71,12 @@ struct DebugSettingsView: View {
                         HStack {
                             Text(choice.displayName)
                                 .font(.system(size: 13))
-                                .foregroundStyle(Color.inkTextPrimary)
+                                .foregroundStyle(theme.foreground)
                             Spacer()
                             if isSelected {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.brandAccent)
+                                    .foregroundStyle(theme.accent)
                             }
                         }
                         .padding(.vertical, 12)
@@ -125,7 +125,7 @@ struct DebugSettingsView: View {
             HStack {
                 Text(label)
                     .font(.system(size: 14))
-                    .foregroundStyle(isDestructive ? Color.red : Color.inkTextPrimary)
+                    .foregroundStyle(isDestructive ? Color.red : theme.foreground)
                 Spacer()
             }
             .padding(.vertical, 12)

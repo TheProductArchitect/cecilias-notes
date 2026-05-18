@@ -208,8 +208,8 @@ struct ToolPaletteView: View {
             Image(systemName: "rectangle.dashed.badge.record")
                 .font(.system(size: 16, weight: .medium))
                 .foregroundColor(viewModel.shapeRecognitionEnabled
-                                 ? .brandAccent
-                                 : .inkRecessiveSecondary)
+                                 ? theme.accent
+                                 : theme.recessiveSecondary)
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
@@ -283,7 +283,7 @@ struct ToolPaletteView: View {
 
     private var dot: some View {
         Circle()
-            .fill(Color.inkRecessiveTertiary)
+            .fill(theme.recessiveTertiary)
             .frame(width: 2, height: 2)
     }
 
@@ -294,7 +294,7 @@ struct ToolPaletteView: View {
             .fill(theme.surfaceElevated.opacity(0.96))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.inkRecessiveQuaternary, lineWidth: 0.5)
+                    .strokeBorder(theme.recessiveQuaternary, lineWidth: 0.5)
             )
             .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 2)
     }
@@ -304,11 +304,11 @@ struct ToolPaletteView: View {
         switch edge.axis {
         case .vertical:
             Rectangle()
-                .fill(Color.inkBorderSubtle)
+                .fill(theme.borderSubtle)
                 .frame(width: paletteThickness - 16, height: 0.5)
         case .horizontal:
             Rectangle()
-                .fill(Color.inkBorderSubtle)
+                .fill(theme.borderSubtle)
                 .frame(width: 0.5, height: paletteThickness - 16)
         }
     }
@@ -335,14 +335,14 @@ struct ToolPaletteView: View {
             ZStack {
                 Image(systemName: currentVariant.systemImage)
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundColor(isActive ? .brandAccent : .inkRecessiveSecondary)
+                    .foregroundColor(isActive ? theme.accent : theme.recessiveSecondary)
 
                 // "Has variants" affordance — small dot at the bottom-trailing
                 // corner. Now appears on highlighter too (underline +
                 // strikethrough variants).
                 if category.variants.count > 1 {
                     Circle()
-                        .fill(Color.inkRecessiveTertiary)
+                        .fill(theme.recessiveTertiary)
                         .frame(width: 3, height: 3)
                         .offset(x: 11, y: 11)
                 }
@@ -399,7 +399,7 @@ struct ToolPaletteView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(category.displayName)
                 .font(.ceciliasNotesSubhead)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
                 .padding(.horizontal, CeciliasNotes.Spacing.md)
                 .padding(.top, CeciliasNotes.Spacing.md)
                 .padding(.bottom, CeciliasNotes.Spacing.sm)
@@ -428,16 +428,16 @@ struct ToolPaletteView: View {
             HStack(spacing: CeciliasNotes.Spacing.sm) {
                 Image(systemName: variant.systemImage)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(isSelected ? .inkAccentPrimary : .inkTextSecondary)
+                    .foregroundColor(isSelected ? theme.accent : theme.foregroundMuted)
                     .frame(width: 22)
                 Text(variant.displayName)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -462,7 +462,7 @@ struct ToolPaletteView: View {
             // Phase D: icon-colour-only active state (no filled pill).
             Image(systemName: glyph)
                 .font(.system(size: 17, weight: .medium))
-                .foregroundColor(isActive ? .brandAccent : .inkRecessiveSecondary)
+                .foregroundColor(isActive ? theme.accent : theme.recessiveSecondary)
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
@@ -530,16 +530,16 @@ struct ToolPaletteView: View {
                     HStack(spacing: 12) {
                         Image(systemName: variant.systemImage)
                             .font(.system(size: 16, weight: .regular))
-                            .foregroundStyle(Color.inkTextPrimary)
+                            .foregroundStyle(theme.foreground)
                             .frame(width: 22)
                         Text(variant.displayName)
                             .font(.system(size: 14, weight: .regular))
-                            .foregroundStyle(Color.inkTextPrimary)
+                            .foregroundStyle(theme.foreground)
                         Spacer(minLength: 12)
                         if variant == imageVariant {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.brandAccent)
+                                .foregroundStyle(theme.accent)
                         }
                     }
                     .padding(.horizontal, 14)
@@ -613,7 +613,7 @@ struct ToolPaletteView: View {
                 .frame(width: 24, height: 24)
                 .overlay(
                     Circle()
-                        .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
+                        .strokeBorder(theme.borderDefault, lineWidth: 0.5)
                 )
                 .opacity(viewModel.selectedTool.hasColour ? 1 : 0.3)
                 .frame(width: buttonSize, height: buttonSize)
@@ -648,7 +648,7 @@ struct ToolPaletteView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 14, weight: .regular))
-                .foregroundColor(.inkRecessiveSecondary)
+                .foregroundColor(theme.recessiveSecondary)
                 .frame(width: buttonSize, height: buttonSize / 2)
                 .contentShape(Rectangle())
         }
@@ -662,7 +662,7 @@ struct ToolPaletteView: View {
         } label: {
             Text(formatWidth(viewModel.selectedTool.currentWidth))
                 .font(.system(size: 10, weight: .regular))
-                .foregroundColor(.inkRecessiveSecondary)
+                .foregroundColor(theme.recessiveSecondary)
                 .monospacedDigit()
                 .frame(width: buttonSize, height: 24)
                 .contentShape(Rectangle())
@@ -676,7 +676,7 @@ struct ToolPaletteView: View {
         } label: {
             Image(systemName: "minus")
                 .font(.system(size: 14, weight: .regular))
-                .foregroundColor(.inkRecessiveSecondary)
+                .foregroundColor(theme.recessiveSecondary)
                 .frame(width: buttonSize, height: buttonSize / 2)
                 .contentShape(Rectangle())
         }
@@ -702,7 +702,7 @@ struct ToolPaletteView: View {
         return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
             Text("Eraser")
                 .font(.ceciliasNotesSubhead)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
 
             VStack(spacing: 0) {
                 eraserModeRow(.wholeStroke, isSelected: activeMode == .wholeStroke)
@@ -711,7 +711,7 @@ struct ToolPaletteView: View {
                 Divider()
                 erasePageRow
             }
-            .background(Color.inkBackgroundSecondary)
+            .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
 
             // Pixel-eraser size is no longer user-configurable —
@@ -735,10 +735,10 @@ struct ToolPaletteView: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                 }
             }
-            .foregroundColor(.inkTextPrimary)
+            .foregroundColor(theme.foreground)
             .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
@@ -759,7 +759,7 @@ struct ToolPaletteView: View {
                     .font(.ceciliasNotesBody)
                 Spacer()
             }
-            .foregroundColor(.inkDestructive)
+            .foregroundColor(theme.danger)
             .padding(.horizontal, CeciliasNotes.Spacing.md)
             .padding(.vertical, CeciliasNotes.Spacing.sm)
             .contentShape(Rectangle())
@@ -779,7 +779,7 @@ struct ToolPaletteView: View {
         return VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(title)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
             HStack {
                 Slider(
                     value: Binding(
@@ -789,10 +789,10 @@ struct ToolPaletteView: View {
                     in: range,
                     step: step
                 )
-                .tint(.inkAccentPrimary)
+                .tint(theme.accent)
                 Text(formatWidth(viewModel.selectedTool.currentWidth))
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .monospacedDigit()
                     .frame(width: 36, alignment: .trailing)
             }

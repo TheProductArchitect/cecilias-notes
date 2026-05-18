@@ -14,6 +14,7 @@ struct EditorView: View {
 
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var deepLink:     DeepLinkRouter
+    @Environment(\.theme) private var theme
 
     @State private var canvasFrame: CGRect = .zero
     @State private var canUndo: Bool = false
@@ -298,7 +299,7 @@ struct EditorView: View {
                             .padding(.vertical, 8)
                             .background(
                                 Capsule()
-                                    .fill(Color.inkAccentPrimary)
+                                    .fill(theme.accent)
                                     .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
                             )
                         }
@@ -326,12 +327,12 @@ struct EditorView: View {
                                     Text("Exit Focus")
                                         .font(.ceciliasNotesCaption)
                                 }
-                                .foregroundColor(.inkTextPrimary)
+                                .foregroundColor(theme.foreground)
                                 .padding(.horizontal, CeciliasNotes.Spacing.sm)
                                 .padding(.vertical, CeciliasNotes.Spacing.xs)
                                 .background(
                                     Capsule()
-                                        .fill(Color.inkBackgroundElevated.opacity(0.85))
+                                        .fill(theme.surfaceElevated.opacity(0.85))
                                 )
                             }
                             .buttonStyle(.ceciliasNotesPressable)
@@ -405,7 +406,7 @@ struct EditorView: View {
                             } label: {
                                 Image(systemName: "chevron.left")
                                     .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.inkTextPrimary)
+                                    .foregroundColor(theme.foreground)
                                     .frame(width: 36, height: 36)
                                     .background(
                                         Circle()
@@ -465,7 +466,7 @@ struct EditorView: View {
                             .foregroundColor(.white)
                     }
                     .padding(CeciliasNotes.Spacing.lg)
-                    .background(Color.inkBackgroundElevated.opacity(0.9))
+                    .background(theme.surfaceElevated.opacity(0.9))
                     .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
                 }
 
@@ -492,7 +493,7 @@ struct EditorView: View {
                         .zIndex(50)
                 }
             }
-            .background(Color.inkBackgroundSecondary.ignoresSafeArea())
+            .background(theme.surface.ignoresSafeArea())
         }
         // Suppress any inherited system navigation bar — the cover-tone
         // header is the editor's only top chrome. Without this, an

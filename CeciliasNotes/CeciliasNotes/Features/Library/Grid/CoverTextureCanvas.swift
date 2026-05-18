@@ -98,11 +98,12 @@ struct CoverTextureCanvas: View {
 struct CoverTexturePreview: View {
     let texture: CoverTexture
     let isSelected: Bool
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .fill(Color.inkAccentPrimary.opacity(0.7))
+                .fill(theme.accent.opacity(0.7))
             CoverTextureCanvas(texture: texture)
                 .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         }
@@ -110,7 +111,7 @@ struct CoverTexturePreview: View {
         .overlay(
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                 .strokeBorder(
-                    isSelected ? Color.inkAccentPrimary : Color.inkBorderDefault,
+                    isSelected ? theme.accent : theme.borderDefault,
                     lineWidth: isSelected ? 2 : 0.5
                 )
         )

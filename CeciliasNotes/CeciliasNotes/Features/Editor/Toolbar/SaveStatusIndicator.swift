@@ -7,6 +7,7 @@ import SwiftUI
 ///   .error    → exclamationmark.icloud (persists until next successful save)
 struct SaveStatusIndicator: View {
     let status: SaveStatus
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Group {
@@ -15,15 +16,15 @@ struct SaveStatusIndicator: View {
                 Color.clear.frame(width: 18, height: 18)
             case .saving:
                 Image(systemName: "icloud.and.arrow.up")
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .transition(.opacity)
             case .saved:
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.inkAccentPrimary)
+                    .foregroundColor(theme.accent)
                     .transition(.opacity)
             case .error:
                 Image(systemName: "exclamationmark.icloud.fill")
-                    .foregroundColor(.inkDestructive)
+                    .foregroundColor(theme.danger)
                     .transition(.opacity)
             }
         }

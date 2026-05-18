@@ -8,6 +8,7 @@ import SwiftUI
 struct RecordingPanelView: View {
 
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     // MARK: - State
 
@@ -60,7 +61,7 @@ struct RecordingPanelView: View {
         .frame(height: panelHeight)
         .background(
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
-                .fill(Color.inkBackgroundElevated)
+                .fill(theme.surfaceElevated)
                 .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: -2)
         )
     }
@@ -71,17 +72,17 @@ struct RecordingPanelView: View {
         VStack(spacing: CeciliasNotes.Spacing.sm) {
             Text("Record Audio")
                 .font(.ceciliasNotesHeadline)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
 
             HStack(spacing: CeciliasNotes.Spacing.lg) {
                 if transcribeEnabled {
                     Toggle(isOn: $viewModel.isTranscriptionEnabled) {
                         Text("Transcribe")
                             .font(.ceciliasNotesBody)
-                            .foregroundColor(.inkTextSecondary)
+                            .foregroundColor(theme.foregroundMuted)
                     }
                     .toggleStyle(.switch)
-                    .tint(.inkAccentPrimary)
+                    .tint(theme.accent)
                 }
 
                 Spacer()
@@ -91,7 +92,7 @@ struct RecordingPanelView: View {
                 } label: {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(.inkTextSecondary)
+                        .foregroundColor(theme.foregroundMuted)
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.ceciliasNotesPressable)
@@ -101,7 +102,7 @@ struct RecordingPanelView: View {
                     Task { await viewModel.startRecording() }
                 } label: {
                     Circle()
-                        .fill(Color.inkRecording)
+                        .fill(Color.red)
                         .frame(width: 56, height: 56)
                         .overlay(
                             Image(systemName: "mic.fill")
@@ -117,7 +118,7 @@ struct RecordingPanelView: View {
                 // rather than silently discarding the user's voice.
                 Text("Audio and transcript are both off in Settings. Recordings won't be saved.")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
             }
@@ -125,7 +126,7 @@ struct RecordingPanelView: View {
             Button { dismiss() } label: {
                 Text("Cancel")
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
             }
             .buttonStyle(.ceciliasNotesPressable)
         }
@@ -138,7 +139,7 @@ struct RecordingPanelView: View {
             HStack {
                 Text(formatElapsed(elapsedSeconds))
                     .font(.ceciliasNotesMono)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .monospacedDigit()
 
                 Spacer()
@@ -148,7 +149,7 @@ struct RecordingPanelView: View {
                     Task { await viewModel.stopRecording() }
                 } label: {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.inkRecording)
+                        .fill(Color.red)
                         .frame(width: 44, height: 44)
                         .overlay(
                             Image(systemName: "stop.fill")
@@ -172,11 +173,11 @@ struct RecordingPanelView: View {
         VStack(spacing: CeciliasNotes.Spacing.md) {
             ProgressView()
                 .progressViewStyle(.circular)
-                .tint(.inkAccentPrimary)
+                .tint(theme.accent)
 
             Text("Processing…")
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
         }
     }
 

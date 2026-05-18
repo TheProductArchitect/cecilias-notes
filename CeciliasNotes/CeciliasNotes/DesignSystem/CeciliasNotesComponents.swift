@@ -14,6 +14,7 @@ public struct CeciliasNotesButton: View {
     let style: CeciliasNotesButtonStyle
     let isLoading: Bool
     let action: () -> Void
+    @Environment(\.theme) private var theme
 
     public init(
         _ label: String,
@@ -53,13 +54,13 @@ public struct CeciliasNotesButton: View {
     @ViewBuilder private var background: some View {
         switch style {
         case .primary:
-            Color.inkAccentPrimary
+            theme.accent
         case .secondary:
             Color.clear
         case .ghost:
             Color.clear
         case .destructive:
-            Color.inkDestructive
+            theme.danger
         }
     }
 
@@ -67,7 +68,7 @@ public struct CeciliasNotesButton: View {
         switch style {
         case .secondary:
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
-                .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
+                .strokeBorder(theme.borderDefault, lineWidth: 0.5)
         default:
             EmptyView()
         }
@@ -76,8 +77,8 @@ public struct CeciliasNotesButton: View {
     private var foregroundColor: Color {
         switch style {
         case .primary:     return .white
-        case .secondary:   return .inkTextPrimary
-        case .ghost:       return .inkAccentPrimary
+        case .secondary:   return theme.foreground
+        case .ghost:       return theme.accent
         case .destructive: return .white
         }
     }
@@ -90,6 +91,7 @@ public struct CeciliasNotesTextField: View {
     @Binding var text: String
     let icon: String?
     let maxLength: Int?
+    @Environment(\.theme) private var theme
 
     @FocusState private var isFocused: Bool
 
@@ -113,27 +115,27 @@ public struct CeciliasNotesTextField: View {
                         .symbolRenderingMode(.hierarchical)
                         .imageScale(.medium)
                         .fontWeight(.medium)
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                         .frame(width: 20)
                 }
 
                 TextField(placeholder, text: $text)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .focused($isFocused)
                     .frame(minHeight: 44)
 
                 if let maxLength {
                     Text("\(text.count)/\(maxLength)")
                         .font(.ceciliasNotesCaption)
-                        .foregroundColor(text.count >= maxLength ? .inkDestructive : .inkTextTertiary)
+                        .foregroundColor(text.count >= maxLength ? theme.danger : theme.foregroundSubtle)
                         .monospacedDigit()
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.sm)
 
             Rectangle()
-                .fill(isFocused ? Color.inkAccentPrimary : Color.inkBorderDefault)
+                .fill(isFocused ? theme.accent : theme.borderDefault)
                 .frame(height: 0.5)
                 .ceciliasNotesAnimation(CeciliasNotesSpring.precise, value: isFocused)
         }
@@ -148,12 +150,13 @@ public struct CeciliasNotesTextField: View {
 // MARK: - .ceciliasNotesCard() modifier
 
 private struct CeciliasNotesCardModifier: ViewModifier {
+    @Environment(\.theme) private var theme
     func body(content: Content) -> some View {
         content
-            .background(Color.inkBackgroundElevated)
+            .background(theme.surfaceElevated)
             .overlay(
                 RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
-                    .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                    .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
             )
             .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous))
     }
@@ -176,6 +179,7 @@ public enum CeciliasNotesBadgeStyle {
 public struct CeciliasNotesBadge: View {
     let text: String
     let style: CeciliasNotesBadgeStyle
+    @Environment(\.theme) private var theme
 
     public init(_ text: String, style: CeciliasNotesBadgeStyle = .default) {
         self.text = text
@@ -195,17 +199,17 @@ public struct CeciliasNotesBadge: View {
 
     private var foregroundColor: Color {
         switch style {
-        case .default: return .inkTextSecondary
-        case .accent:  return .inkAccentPrimary
+        case .default: return theme.foregroundMuted
+        case .accent:  return theme.accent
         case .count:   return .white
         }
     }
 
     @ViewBuilder private var background: some View {
         switch style {
-        case .default: Color.inkBackgroundTertiary
-        case .accent:  Color.inkAccentSecondary
-        case .count:   Color.inkAccentPrimary
+        case .default: theme.surfaceElevated
+        case .accent:  theme.accentMuted
+        case .count:   theme.accent
         }
     }
 }
@@ -213,11 +217,12 @@ public struct CeciliasNotesBadge: View {
 // MARK: - CeciliasNotesDivider
 
 public struct CeciliasNotesDivider: View {
+    @Environment(\.theme) private var theme
     public init() {}
 
     public var body: some View {
         Rectangle()
-            .fill(Color.inkBorderSubtle)
+            .fill(theme.borderSubtle)
             .frame(maxWidth: .infinity)
             .frame(height: 0.5)
     }
@@ -230,6 +235,7 @@ public struct CeciliasNotesEmptyState: View {
     let title: String
     let subtitle: String
     let action: (label: String, handler: () -> Void)?
+    @Environment(\.theme) private var theme
 
     public init(
         icon: String,
@@ -249,17 +255,17 @@ public struct CeciliasNotesEmptyState: View {
                 .symbolRenderingMode(.hierarchical)
                 .font(.system(size: 44))
                 .fontWeight(.medium)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
 
             VStack(spacing: CeciliasNotes.Spacing.xs) {
                 Text(title)
                     .font(.ceciliasNotesTitle2)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                     .multilineTextAlignment(.center)
 
                 Text(subtitle)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .multilineTextAlignment(.center)
             }
 

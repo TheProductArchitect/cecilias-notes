@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StorageSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @Environment(\.theme) private var theme
 
     @State private var showClearExportsAlert   = false
     @State private var showClearAudioAlert     = false
@@ -20,7 +21,7 @@ struct StorageSettingsView: View {
                 if let staleness = cacheStalenessCaption {
                     Text(staleness)
                         .font(.system(size: 11).italic())
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 mediaStorageBreakdown
@@ -28,7 +29,7 @@ struct StorageSettingsView: View {
             }
             .padding(CeciliasNotes.Spacing.lg)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
+        .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Storage")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await viewModel.loadStorageMetrics() }
@@ -136,21 +137,21 @@ struct StorageSettingsView: View {
         HStack(spacing: CeciliasNotes.Spacing.sm) {
             Image(systemName: icon)
                 .font(.ceciliasNotesSectionIcon)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
                 .frame(width: 24)
             Text(label)
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
             Spacer()
             if let count, let bytes {
                 Text("\(count) · \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                     .monospacedDigit()
             } else {
                 Text("calculating…")
                     .font(.system(size: 11).italic())
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
             }
         }
         .padding(CeciliasNotes.Spacing.md)
@@ -191,7 +192,7 @@ struct StorageSettingsView: View {
         VStack(spacing: CeciliasNotes.Spacing.xs) {
             Image(systemName: icon)
                 .font(.ceciliasNotesSectionIcon)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
 
             // Cached value (if any) is restored on view-model init
             // so `bytes` is usually non-nil on entry. The
@@ -201,18 +202,18 @@ struct StorageSettingsView: View {
             if let bytes {
                 Text(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .monospacedDigit()
                     .minimumScaleFactor(0.7)
             } else {
                 Text("calculating…")
                     .font(.system(size: 11).italic())
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
             }
 
             Text(title)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
         }
         .frame(maxWidth: .infinity)
         .padding(CeciliasNotes.Spacing.md)
@@ -269,15 +270,15 @@ struct StorageSettingsView: View {
                 HStack(spacing: CeciliasNotes.Spacing.md) {
                     Image(systemName: "folder")
                         .font(.ceciliasNotesMidIcon)
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                         .frame(width: 24)
                     Text("View in Files")
                         .font(.ceciliasNotesBody)
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                     Spacer()
                     Image(systemName: "arrow.up.right")
                         .font(.ceciliasNotesTag)
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
                 .padding(.horizontal, CeciliasNotes.Spacing.md)
                 .padding(.vertical, CeciliasNotes.Spacing.sm)
@@ -301,24 +302,24 @@ struct StorageSettingsView: View {
             HStack(spacing: CeciliasNotes.Spacing.md) {
                 Image(systemName: icon)
                     .font(.ceciliasNotesMidIcon)
-                    .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
+                    .foregroundColor(disabled ? theme.foregroundSubtle : (isDestructive ? theme.danger : theme.foreground))
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: CeciliasNotes.Spacing.xs) {
                         Text(title)
                             .font(.ceciliasNotesBody)
-                            .foregroundColor(disabled ? .inkTextTertiary : (isDestructive ? .inkDestructive : .inkTextPrimary))
+                            .foregroundColor(disabled ? theme.foregroundSubtle : (isDestructive ? theme.danger : theme.foreground))
                         if let detail {
                             Text(detail)
                                 .font(.ceciliasNotesCaption)
-                                .foregroundColor(.inkTextTertiary)
+                                .foregroundColor(theme.foregroundSubtle)
                         }
                     }
                     if disabled, let sub = disabledSubLabel {
                         Text(sub)
                             .font(.ceciliasNotesCaption)
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                 }
 

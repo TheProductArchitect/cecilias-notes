@@ -8,6 +8,7 @@ import SwiftUI
 /// pattern; the `.uppercase` text-case is applied at render time.
 struct DateEyebrow: View {
     var date: Date = Date()
+    @Environment(\.theme) private var theme
 
     private var formatted: String {
         let formatter = DateFormatter()
@@ -20,7 +21,7 @@ struct DateEyebrow: View {
             .font(.system(size: 8, weight: .regular))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Color.inkRecessiveTertiary)
+            .foregroundStyle(theme.recessiveTertiary)
             .accessibilityLabel(
                 DateFormatter.localizedString(
                     from: date,

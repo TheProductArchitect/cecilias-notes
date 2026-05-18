@@ -134,7 +134,7 @@ struct NotebookGridView: View {
                 }
             }
         }
-        .foregroundStyle(Color.inkRecessiveTertiary)
+        .foregroundStyle(theme.recessiveTertiary)
         .frame(width: 20, height: 20)
         .padding(6)
         .accessibilityLabel("Drag to reorder")
@@ -149,10 +149,10 @@ struct NotebookGridView: View {
             HStack(spacing: CeciliasNotes.Spacing.sm) {
                 Image(systemName: "magnifyingglass")
                     .fontWeight(.medium)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                 TextField("Search notes…", text: $viewModel.searchText)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                 if !viewModel.searchText.isEmpty {
@@ -160,14 +160,14 @@ struct NotebookGridView: View {
                         viewModel.searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                     .buttonStyle(.ceciliasNotesPressable)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
             .frame(height: 44)
-            .background(Color.inkBackgroundSecondary)
+            .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous))
             .padding(.horizontal, 24)
             .padding(.vertical, 12)
@@ -237,12 +237,13 @@ private struct CreateFirstCTA: View {
     let title: String
     let buttonLabel: String
     let action: () -> Void
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(spacing: 20) {
             Text(title)
                 .font(.system(size: 22, weight: .semibold, design: .default))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .multilineTextAlignment(.center)
             Button(action: action) {
                 Text(buttonLabel)
@@ -251,7 +252,7 @@ private struct CreateFirstCTA: View {
                     .padding(.horizontal, 18)
                     .padding(.vertical, 10)
                     .background(
-                        Capsule().fill(Color.brandAccent)
+                        Capsule().fill(theme.accent)
                     )
                     .contentShape(Capsule())
             }
@@ -270,20 +271,21 @@ private struct CreateFirstCTA: View {
 private struct EditorialEmptyState: View {
     let primary: String
     let secondary: String
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(spacing: 10) {
             Rectangle()
-                .fill(Color.inkRecessiveQuinary)
+                .fill(theme.recessiveQuinary)
                 .frame(width: 28, height: 1)
 
             Text(primary)
                 .font(.system(size: 11.5, weight: .regular).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
 
             Text(secondary)
                 .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(Color.inkRecessiveQuinary)
+                .foregroundStyle(theme.recessiveQuinary)
         }
         .multilineTextAlignment(.center)
     }
@@ -301,6 +303,7 @@ private struct EditorialEmptyState: View {
 /// segment when the path is deep.
 private struct BreadcrumbBar: View {
     @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
 
     var body: some View {
         HStack(spacing: CeciliasNotes.Spacing.xs) {
@@ -312,7 +315,7 @@ private struct BreadcrumbBar: View {
                 Image(systemName: "chevron.left")
                     .font(.ceciliasNotesHeadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.inkAccentPrimary)
+                    .foregroundColor(theme.accent)
                     .frame(width: 32, height: 32)
             }
             .buttonStyle(.ceciliasNotesPressable)
@@ -328,7 +331,7 @@ private struct BreadcrumbBar: View {
                     } label: {
                         Text(viewModel.selectedSubjectName)
                             .font(.ceciliasNotesSubhead)
-                            .foregroundColor(.inkAccentPrimary)
+                            .foregroundColor(theme.accent)
                     }
                     .buttonStyle(.ceciliasNotesPressable)
 
@@ -336,14 +339,14 @@ private struct BreadcrumbBar: View {
                     ForEach(Array(viewModel.folderPath.enumerated()), id: \.element.id) { idx, folder in
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
 
                         if idx == viewModel.folderPath.count - 1 {
                             // Leaf — non-tappable, primary text
                             Text(folder.name)
                                 .font(.ceciliasNotesSubhead)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.inkTextPrimary)
+                                .foregroundColor(theme.foreground)
                         } else {
                             Button {
                                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
@@ -352,7 +355,7 @@ private struct BreadcrumbBar: View {
                             } label: {
                                 Text(folder.name)
                                     .font(.ceciliasNotesSubhead)
-                                    .foregroundColor(.inkAccentPrimary)
+                                    .foregroundColor(theme.accent)
                             }
                             .buttonStyle(.ceciliasNotesPressable)
                         }
@@ -375,6 +378,7 @@ private struct BreadcrumbBar: View {
 struct MoveNotebooksSheet: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -383,7 +387,7 @@ struct MoveNotebooksSheet: View {
                     viewModel.moveNotebooks(ids: viewModel.selectedNotebookIds, to: nil)
                     dismiss()
                 }
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
 
                 ForEach(viewModel.subjects) { subject in
                     Button {
@@ -391,7 +395,7 @@ struct MoveNotebooksSheet: View {
                         dismiss()
                     } label: {
                         Label {
-                            Text(subject.name).foregroundColor(.inkTextPrimary)
+                            Text(subject.name).foregroundColor(theme.foreground)
                         } icon: {
                             Circle()
                                 .fill(Color(UIColor(hex: subject.colorHex)))

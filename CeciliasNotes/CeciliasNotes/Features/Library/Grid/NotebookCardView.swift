@@ -12,6 +12,7 @@ import SwiftUI
 struct NotebookCardView: View {
     let notebook: Notebook
     @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
 
     @State private var isHovered            = false
     @State private var isShowingCoverPicker = false
@@ -140,7 +141,7 @@ struct NotebookCardView: View {
             // shift between cards — just transparent when this isn't
             // the most-recent notebook.
             Circle()
-                .fill(Color.brandAccent)
+                .fill(theme.accent)
                 .frame(width: 5, height: 5)
                 .opacity(isMostRecent ? 1 : 0)
         }
@@ -290,7 +291,7 @@ struct NotebookCardView: View {
         }
         if isSelected {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(Color.brandAccent, lineWidth: 1.5)
+                .strokeBorder(theme.accent, lineWidth: 1.5)
         }
     }
 
@@ -316,7 +317,7 @@ struct NotebookCardView: View {
                             .frame(width: 22, height: 22)
                         Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: 18, weight: .regular))
-                            .foregroundStyle(isSelected ? Color.brandAccent : Color.white)
+                            .foregroundStyle(isSelected ? theme.accent : Color.white)
                     }
                     .padding(8)
                 }

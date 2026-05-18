@@ -134,7 +134,7 @@ struct LibraryView: View {
                     ProgressView().scaleEffect(0.8)
                     Text("importing \(viewModel.importProgressCompleted) of \(viewModel.importProgressTotal) PDF\(viewModel.importProgressTotal == 1 ? "" : "s")…")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.inkRecessivePrimary)
+                        .foregroundStyle(theme.recessivePrimary)
                         .monospacedDigit()
                 }
                 .padding(.horizontal, 14)
@@ -262,7 +262,7 @@ struct LibraryView: View {
             } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -278,7 +278,7 @@ struct LibraryView: View {
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

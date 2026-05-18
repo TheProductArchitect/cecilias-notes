@@ -1,3 +1,4 @@
+import SwiftUI
 import CoreGraphics
 import CoreText
 import UIKit
@@ -57,7 +58,7 @@ enum BrandIconRenderer {
             // brandDot resolves to the existing accent — keep the call
             // site through the SwiftUI Color so the design-system
             // mapping stays single-sourced, then bridge to UIColor.
-            let dotColour    = UIColor.inkAccentPrimary
+            let dotColour    = UIColor(ThemeManager.shared.current.accent)
 
             let letterAttrs: [NSAttributedString.Key: Any] = [
                 .font:  baseFont,

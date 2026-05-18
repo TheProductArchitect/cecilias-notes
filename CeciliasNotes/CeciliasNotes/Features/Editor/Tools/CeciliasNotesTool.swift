@@ -165,7 +165,13 @@ enum CeciliasNotesTool: Equatable {
              .marker(let c, _),
              .crayon(let c, _),
              .highlighter(let c, _):                  return c
-        default:                                      return .inkTextPrimary
+        // D2 fallback: this method is called from non-SwiftUI contexts
+        // (sync, any actor) so it can't read @Environment(\.theme).
+        // UIColor.label is the UIKit-side adaptive text colour — same
+        // visual behaviour as theme.foreground would give in a SwiftUI
+        // context. Used for the eraser/lasso/ruler/text "no associated
+        // colour" tools as a placeholder; never paints a real stroke.
+        default:                                      return .label
         }
     }
 

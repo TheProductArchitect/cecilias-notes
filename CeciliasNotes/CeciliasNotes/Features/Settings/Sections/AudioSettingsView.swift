@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AudioSettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
+    @Environment(\.theme) private var theme
     @State private var isShowingLocalePicker = false
 
     /// Bind the segmented picker against `@AppStorage` directly rather
@@ -32,7 +33,7 @@ struct AudioSettingsView: View {
             }
             .padding(CeciliasNotes.Spacing.lg)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
+        .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Audio & Transcription")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $isShowingLocalePicker) {
@@ -58,21 +59,21 @@ struct AudioSettingsView: View {
                 HStack {
                     Text(selectedLocaleName)
                         .font(.ceciliasNotesBody)
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(theme.foreground)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.ceciliasNotesRowLabel)
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
                 .padding(CeciliasNotes.Spacing.sm)
-                .background(Color.inkBackgroundSecondary)
+                .background(theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
             }
             .buttonStyle(.ceciliasNotesPressable)
 
             Text("Only on-device languages are shown. The internet is never used.")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
         }
         .padding(CeciliasNotes.Spacing.md)
         .ceciliasNotesCard()
@@ -94,14 +95,14 @@ struct AudioSettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Save audio clips")
                             .font(.ceciliasNotesBody)
-                            .foregroundColor(.inkTextPrimary)
+                            .foregroundColor(theme.foreground)
                         Text("Keep the audio so you can play it back.")
                             .font(.ceciliasNotesCaption)
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                 }
                 .toggleStyle(.switch)
-                .tint(.inkAccentPrimary)
+                .tint(theme.accent)
                 .padding(.vertical, 10)
 
                 Divider()
@@ -110,21 +111,21 @@ struct AudioSettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Generate transcripts")
                             .font(.ceciliasNotesBody)
-                            .foregroundColor(.inkTextPrimary)
+                            .foregroundColor(theme.foreground)
                         Text("Convert speech to text on-device.")
                             .font(.ceciliasNotesCaption)
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                 }
                 .toggleStyle(.switch)
-                .tint(.inkAccentPrimary)
+                .tint(theme.accent)
                 .padding(.vertical, 10)
             }
 
             if !viewModel.saveAudioClips && !viewModel.autoTranscribe {
                 Text("With both off, recordings are discarded. Turn one on to keep something.")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
             }
         }
         .padding(CeciliasNotes.Spacing.md)
@@ -146,7 +147,7 @@ struct AudioSettingsView: View {
 
             Text("'Accurate' uses more battery and takes longer.")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
         }
         .padding(CeciliasNotes.Spacing.md)
         .ceciliasNotesCard()
@@ -155,7 +156,7 @@ struct AudioSettingsView: View {
     private func cardHeader(_ title: String) -> some View {
         Text(title)
             .font(.ceciliasNotesSubhead)
-            .foregroundColor(.inkTextSecondary)
+            .foregroundColor(theme.foregroundMuted)
     }
 }
 
@@ -165,6 +166,7 @@ private struct LocalePickerSheet: View {
     let selected: String
     let locales:  [Locale]
     let onSelect: (Locale?) -> Void
+    @Environment(\.theme) private var theme
 
     @State private var query = ""
 
@@ -187,12 +189,12 @@ private struct LocalePickerSheet: View {
                     HStack {
                         Text("System default")
                             .font(.ceciliasNotesBody)
-                            .foregroundColor(.inkTextPrimary)
+                            .foregroundColor(theme.foreground)
                         Spacer()
                         if selected.isEmpty {
                             Image(systemName: "checkmark")
                                 .font(.ceciliasNotesRowSelected)
-                                .foregroundColor(.inkAccentPrimary)
+                                .foregroundColor(theme.accent)
                         }
                     }
                 }
@@ -205,12 +207,12 @@ private struct LocalePickerSheet: View {
                         HStack {
                             Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
                                 .font(.ceciliasNotesBody)
-                                .foregroundColor(.inkTextPrimary)
+                                .foregroundColor(theme.foreground)
                             Spacer()
                             if selected == locale.identifier {
                                 Image(systemName: "checkmark")
                                     .font(.ceciliasNotesRowSelected)
-                                    .foregroundColor(.inkAccentPrimary)
+                                    .foregroundColor(theme.accent)
                             }
                         }
                     }

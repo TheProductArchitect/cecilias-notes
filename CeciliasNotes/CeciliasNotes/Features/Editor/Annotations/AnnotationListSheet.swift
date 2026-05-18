@@ -109,14 +109,14 @@ struct AnnotationListSheet: View {
                 Text("annotations")
                     .font(.system(size: 22, weight: .heavy))
                     .tracking(-0.5)
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 Button {
                     onDismiss()
                 } label: {
                     Text("done")
                         .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
                 .buttonStyle(.plain)
             }
@@ -124,7 +124,7 @@ struct AnnotationListSheet: View {
             .padding(.top, 24)
             .padding(.bottom, 16)
             Rectangle()
-                .fill(Color.inkTextPrimary)
+                .fill(theme.foreground)
                 .frame(height: 1.5)
         }
     }
@@ -149,7 +149,7 @@ struct AnnotationListSheet: View {
             Spacer(minLength: 60)
             Text("no annotations yet.")
                 .font(.system(size: 11).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -254,6 +254,7 @@ struct AnnotationListSheet: View {
 private struct AnnotationRow: View {
     let item: AnnotationListItem
     let onTap: () -> Void
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Button(action: onTap) {
@@ -267,13 +268,13 @@ private struct AnnotationRow: View {
                     HStack(spacing: 6) {
                         Text("page \(item.pageNumber)")
                             .font(.system(size: 11))
-                            .foregroundColor(.inkRecessiveSecondary)
+                            .foregroundColor(theme.recessiveSecondary)
                             .monospacedDigit()
                         Spacer(minLength: 0)
                     }
                     Text(item.snippet.isEmpty ? " " : item.snippet)
                         .font(.system(size: 13))
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(theme.foreground)
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
@@ -282,7 +283,7 @@ private struct AnnotationRow: View {
 
                 Text(Self.timestamp(item.createdAt))
                     .font(.system(size: 10))
-                    .foregroundColor(.inkRecessiveTertiary)
+                    .foregroundColor(theme.recessiveTertiary)
                     .monospacedDigit()
             }
             .contentShape(Rectangle())

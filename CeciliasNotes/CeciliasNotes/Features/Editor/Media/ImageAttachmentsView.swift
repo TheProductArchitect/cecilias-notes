@@ -33,6 +33,7 @@ struct ImageAttachmentsView: View {
 
     @ObservedObject var viewModel: EditorViewModel
     let pageId: UUID
+    @Environment(\.theme) private var theme
     /// Single placement primitive — base page size only, no effective
     /// height. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
     let coordinateSpace: PageCoordinateSpace
@@ -254,6 +255,7 @@ private struct ImageAttachmentSlot: View {
     let isSelected: Bool
     let imageMode:  Bool
     let pageSize:   CGSize
+    @Environment(\.theme) private var theme
     /// Diagnostic plumbing: identifies which overlay-instance this slot
     /// belongs to so the IMAGE TAP REACHED print correlates with the
     /// OVERLAY INSTANCE / BACKGROUND TAP HANDLER prints from its parent.
@@ -404,7 +406,7 @@ private struct ImageAttachmentSlot: View {
         // Dashed border outline.
         Rectangle()
             .strokeBorder(
-                Color.brandAccent,
+                theme.accent,
                 style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
             )
             .frame(width: imageRect.width, height: imageRect.height)
@@ -427,7 +429,7 @@ private struct ImageAttachmentSlot: View {
 
     private func cornerHandle(_ corner: Corner, at point: CGPoint) -> some View {
         Circle()
-            .fill(Color.brandAccent)
+            .fill(theme.accent)
             .frame(width: Self.handleSize, height: Self.handleSize)
             // Hit area larger than the visible circle so the handle
             // is comfortable to grab with a fingertip.
@@ -441,7 +443,7 @@ private struct ImageAttachmentSlot: View {
             // Drag handle — drag the toolbar to move the image.
             Image(systemName: "arrow.up.left.and.arrow.down.right")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
                 .gesture(imageDragGesture)
@@ -451,7 +453,7 @@ private struct ImageAttachmentSlot: View {
             } label: {
                 Image(systemName: "rotate.right")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -462,7 +464,7 @@ private struct ImageAttachmentSlot: View {
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -476,7 +478,7 @@ private struct ImageAttachmentSlot: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
         )
     }
 
@@ -564,6 +566,7 @@ private struct ImageAttachmentLoader: View {
     let url: URL
     let displayWidth: CGFloat
     let displayHeight: CGFloat
+    @Environment(\.theme) private var theme
 
     @State private var image: UIImage?
     @State private var loadFailed: Bool = false
@@ -576,13 +579,13 @@ private struct ImageAttachmentLoader: View {
                     .aspectRatio(contentMode: .fit)
             } else if loadFailed {
                 ZStack {
-                    Rectangle().fill(Color.inkRecessiveQuinary)
+                    Rectangle().fill(theme.recessiveQuinary)
                     Image(systemName: "photo.badge.exclamationmark")
                         .font(.system(size: 24, weight: .light))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                 }
             } else {
-                Rectangle().fill(Color.inkRecessiveQuinary)
+                Rectangle().fill(theme.recessiveQuinary)
             }
         }
         .task(id: url) { await loadIfNeeded() }

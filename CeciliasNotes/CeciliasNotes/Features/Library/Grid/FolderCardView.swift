@@ -6,6 +6,7 @@ import SwiftUI
 struct FolderCardView: View {
     let folder: Folder
     @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
 
     @State private var isHovered      = false
     @State private var isDropTarget   = false
@@ -22,11 +23,11 @@ struct FolderCardView: View {
             // and a notebook cover read as siblings at the same grid size.
             ZStack {
                 RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
-                    .fill(Color.inkBackgroundSecondary)
+                    .fill(theme.surface)
 
                 Image(systemName: itemCount == 0 ? "folder" : "folder.fill")
                     .font(.system(size: 56, weight: .regular))
-                    .foregroundStyle(Color.inkAccentPrimary.opacity(0.85))
+                    .foregroundStyle(theme.accent.opacity(0.85))
                     .accessibilityHidden(true)
 
                 // Item count badge in the corner, only when non-empty.
@@ -46,7 +47,7 @@ struct FolderCardView: View {
             if isRenaming {
                 TextField("Folder name", text: $editingName)
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .multilineTextAlignment(.center)
                     .focused($renameFocused)
                     .submitLabel(.done)
@@ -59,7 +60,7 @@ struct FolderCardView: View {
             } else {
                 Text(folder.name)
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -139,11 +140,11 @@ struct FolderCardView: View {
     @ViewBuilder
     private var background: some View {
         RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
-            .fill(isDropTarget ? Color.inkAccentSecondary : Color.clear)
+            .fill(isDropTarget ? theme.accentMuted : Color.clear)
             .overlay(
                 isDropTarget
                     ? RoundedRectangle(cornerRadius: CeciliasNotes.Radius.lg, style: .continuous)
-                        .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
+                        .strokeBorder(theme.accent, lineWidth: 1)
                     : nil
             )
     }

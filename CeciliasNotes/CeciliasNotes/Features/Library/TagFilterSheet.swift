@@ -8,6 +8,7 @@ import SwiftUI
 struct TagFilterSheet: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
 
     var body: some View {
         NavigationStack {
@@ -19,10 +20,10 @@ struct TagFilterSheet: View {
                         Spacer()
                         Text("no tags yet")
                             .font(.system(size: 13).italic())
-                            .foregroundStyle(Color.inkRecessiveTertiary)
+                            .foregroundStyle(theme.recessiveTertiary)
                         Text("add tags from a notebook's customise panel.")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.inkRecessiveTertiary)
+                            .foregroundStyle(theme.recessiveTertiary)
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,12 +46,12 @@ struct TagFilterSheet: View {
                         Button("clear") {
                             viewModel.clearTagFilters()
                         }
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("done") { dismiss() }
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
             }
         }
@@ -66,12 +67,12 @@ struct TagFilterSheet: View {
             HStack {
                 Text(tag)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if isOn {
                     Image(systemName: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .padding(.horizontal, 20)

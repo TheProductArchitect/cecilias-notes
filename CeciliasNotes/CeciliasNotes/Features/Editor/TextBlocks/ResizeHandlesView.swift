@@ -11,6 +11,7 @@ struct ResizeHandlesView: View {
     let pointRect: CGRect                             // current block rect in page points
     let onResize: (ResizeHandle, CGPoint) -> Void     // (handle, translation in page points)
     let onResizeEnded: () -> Void
+    @Environment(\.theme) private var theme
 
     private let handleSize: CGFloat = 10
     private let hitPad:     CGFloat = 12
@@ -19,7 +20,7 @@ struct ResizeHandlesView: View {
         ZStack {
             // Selection border (1pt accent)
             Rectangle()
-                .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
+                .strokeBorder(theme.accent, lineWidth: 1)
                 .frame(width: pointRect.width, height: pointRect.height)
                 .position(x: pointRect.midX, y: pointRect.midY)
 
@@ -35,8 +36,8 @@ struct ResizeHandlesView: View {
         let pos = handlePosition(for: handle)
 
         Circle()
-            .fill(Color.inkBackgroundElevated)
-            .overlay(Circle().strokeBorder(Color.inkAccentPrimary, lineWidth: 1.5))
+            .fill(theme.surfaceElevated)
+            .overlay(Circle().strokeBorder(theme.accent, lineWidth: 1.5))
             .frame(width: handleSize, height: handleSize)
             .position(pos)
             .contentShape(Circle().size(width: hitPad * 2, height: hitPad * 2))

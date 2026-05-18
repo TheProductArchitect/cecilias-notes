@@ -359,7 +359,7 @@ extension TextBlockView {
             guard let scheme = url.scheme?.lowercased(),
                   scheme == "http" || scheme == "https" else { return }
             let safari = SFSafariViewController(url: url)
-            safari.preferredControlTintColor = UIColor.inkAccentPrimary
+            safari.preferredControlTintColor = UIColor(ThemeManager.shared.current.accent)
 
             guard let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene }).first,

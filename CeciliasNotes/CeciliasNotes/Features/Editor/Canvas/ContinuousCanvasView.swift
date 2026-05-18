@@ -98,6 +98,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
     @ObservedObject var viewModel: EditorViewModel
     @AppStorage("ink.canvas.fingerDrawingEnabled") private var fingerDrawingEnabled: Bool = false
+    @Environment(\.theme) private var theme
 
     private let pageGap: CGFloat              = 24
     private let warmBandPaddingFactor: CGFloat = 1.0
@@ -113,7 +114,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let host = CanvasHostView()
-        host.backgroundColor = .inkCanvasBackground
+        host.backgroundColor = UIColor(theme.pageBackground)
         host.isUserInteractionEnabled = true
         // Re-centre the page horizontally whenever the host's bounds
         // change. `rebuildPageHosts` only fires once in a deferred

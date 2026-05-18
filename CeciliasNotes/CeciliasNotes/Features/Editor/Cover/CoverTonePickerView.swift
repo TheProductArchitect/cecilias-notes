@@ -42,7 +42,7 @@ struct CoverTonePickerView: View {
                 .font(.system(size: 7.5, weight: .regular))
                 .tracking(0.08)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.inkRecessiveQuaternary)
+                .foregroundStyle(theme.recessiveQuaternary)
 
             LazyVGrid(columns: Self.columns, spacing: 14) {
                 ForEach(Self.tones, id: \.self) { tone in
@@ -52,7 +52,7 @@ struct CoverTonePickerView: View {
 
             Text("tap to change · app assigns by default")
                 .font(.system(size: 9, weight: .regular).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
         }
         .padding(20)
         .background(theme.surfaceElevated)
@@ -84,7 +84,7 @@ struct CoverTonePickerView: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .strokeBorder(
                         isSelected
-                            ? Color.brandAccent
+                            ? theme.accent
                             : (tone.requiresBorder ? Color(hex: "#ebebeb") : Color.clear),
                         lineWidth: isSelected ? 1.5 : 0.5
                     )
@@ -92,7 +92,7 @@ struct CoverTonePickerView: View {
 
             Text(displayName(for: tone))
                 .font(.system(size: 8, weight: .regular))
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
                 .multilineTextAlignment(.center)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)

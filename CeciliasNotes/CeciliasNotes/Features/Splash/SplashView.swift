@@ -166,7 +166,7 @@ struct SplashView: View {
                 Text(NameFormatter.mastheadPossessive(for: userName))
                     .foregroundStyle(theme.foreground)
                 Text(".")
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             .font(.system(size: wordmarkSize, weight: .heavy))
             .tracking(-0.05 * wordmarkSize)
@@ -184,7 +184,7 @@ struct SplashView: View {
             if hasSignoff && mode == .full {
                 Text("yours, Cecilia")
                     .font(.system(size: 13, weight: .regular).italic())
-                    .foregroundStyle(Color.inkRecessiveSecondary)
+                    .foregroundStyle(theme.recessiveSecondary)
                     .opacity(isSignoffVisible ? 1 : 0)
                     .offset(y: isSignoffVisible ? 0 : 6)
             }

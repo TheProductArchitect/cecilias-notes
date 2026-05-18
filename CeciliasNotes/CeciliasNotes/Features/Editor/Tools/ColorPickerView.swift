@@ -5,6 +5,7 @@ import UIKit
 struct ColorPickerView: View {
     @ObservedObject var viewModel: EditorViewModel
     let onClose: () -> Void
+    @Environment(\.theme) private var theme
 
     @State private var showCustomColorPicker = false
 
@@ -50,10 +51,10 @@ struct ColorPickerView: View {
             } label: {
                 HStack {
                     Image(systemName: "eyedropper")
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                     Text("Custom Colour…")
                         .font(.ceciliasNotesBody)
-                        .foregroundColor(.inkAccentPrimary)
+                        .foregroundColor(theme.accent)
                     Spacer()
                 }
                 .contentShape(Rectangle())
@@ -68,7 +69,7 @@ struct ColorPickerView: View {
         }
         .padding(CeciliasNotes.Spacing.md)
         .frame(width: 280)
-        .background(Color.inkBackgroundElevated)
+        .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
         .sheet(isPresented: $showCustomColorPicker) {
             CustomColorPickerSheet(initial: viewModel.selectedTool.currentColour) { picked in
@@ -89,7 +90,7 @@ struct ColorPickerView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
             content()
         }
     }
@@ -108,11 +109,11 @@ struct ColorPickerView: View {
                     .fill(Color(colour))
                     .frame(width: size, height: size)
                     .overlay(
-                        Circle().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                        Circle().strokeBorder(theme.borderSubtle, lineWidth: 0.5)
                     )
                 if isSelected {
                     Circle()
-                        .strokeBorder(Color.inkAccentPrimary, lineWidth: 2)
+                        .strokeBorder(theme.accent, lineWidth: 2)
                         .frame(width: size + 4, height: size + 4)
                 }
             }
@@ -127,11 +128,11 @@ struct ColorPickerView: View {
             HStack {
                 Text("Opacity")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                 Spacer()
                 Text("\(Int(viewModel.selectedTool.currentOpacity * 100))%")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                     .monospacedDigit()
             }
             Slider(
@@ -141,7 +142,7 @@ struct ColorPickerView: View {
                 ),
                 in: 0.10...1.0
             )
-            .tint(.inkAccentPrimary)
+            .tint(theme.accent)
         }
     }
 }

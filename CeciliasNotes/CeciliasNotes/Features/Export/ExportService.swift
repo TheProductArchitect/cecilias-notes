@@ -1,3 +1,4 @@
+import SwiftUI
 import PDFKit
 import PencilKit
 import UIKit
@@ -530,7 +531,7 @@ final class ExportService {
         ctx.setFillColor(UIColor(hex: "#FAFAF8").cgColor)
         ctx.fill(bounds)
 
-        let lineColor = UIColor.inkTextTertiary.withAlphaComponent(0.25).cgColor
+        let lineColor = UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.25).cgColor
         ctx.setStrokeColor(lineColor)
         ctx.setLineWidth(0.5)
 
@@ -563,7 +564,7 @@ final class ExportService {
             ctx.strokePath()
         }
         let drawDotGrid: (CGFloat) -> Void = { spacing in
-            ctx.setFillColor(UIColor.inkTextTertiary.withAlphaComponent(0.30).cgColor)
+            ctx.setFillColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.30).cgColor)
             let r: CGFloat = 1.5
             var y = spacing
             while y < bounds.height {
@@ -616,7 +617,7 @@ final class ExportService {
         case .squareGrid10:    drawSquareGrid(mm(10))
         case .engineeringGrid:
             // 1mm sub-grid (lighter), then 5mm main grid.
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.10).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.10).cgColor)
             ctx.setLineWidth(0.2)
             drawSquareGrid(mm(1))
             ctx.setStrokeColor(lineColor)
@@ -650,7 +651,7 @@ final class ExportService {
             // Isometric dot grid — alternating rows offset by half a
             // step, row height = spacing × sin(60°) so the dots form
             // equilateral triangles.
-            ctx.setFillColor(UIColor.inkTextTertiary.withAlphaComponent(0.30).cgColor)
+            ctx.setFillColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.30).cgColor)
             let isoSpacing = mm(7)
             let rowHeight  = isoSpacing * 0.866
             let r: CGFloat = 1.5
@@ -701,10 +702,10 @@ final class ExportService {
                 x: centerX - radius, y: centerY - radius,
                 width: radius * 2,   height: radius * 2
             )
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.40).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.40).cgColor)
             ctx.strokeEllipse(in: circleRect)
 
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.20).cgColor)
             ctx.setLineWidth(0.3)
             let radial = max(bounds.width, bounds.height)
             for i in 0..<6 {
@@ -736,7 +737,7 @@ final class ExportService {
             ctx.strokePath()
 
             // Vertical column dividers.
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.20).cgColor)
             ctx.setLineWidth(0.3)
             for i in 0...cols {
                 let x = timeColW + CGFloat(i) * colWidth
@@ -746,7 +747,7 @@ final class ExportService {
             ctx.strokePath()
 
             // Hourly row dividers (lighter still).
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.15).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.15).cgColor)
             ctx.setLineWidth(0.2)
             for i in 1..<rows {
                 let y = headerH + CGFloat(i) * rowHeightCal
@@ -767,7 +768,7 @@ final class ExportService {
             ctx.addLine(to: CGPoint(x: timeColW, y: bounds.height))
             ctx.strokePath()
 
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.20).cgColor)
             ctx.setLineWidth(0.3)
             for i in 1..<rowsDP {
                 let y = CGFloat(i) * rowHeightDP
@@ -795,7 +796,7 @@ final class ExportService {
                 ctx.addPath(path)
                 ctx.strokePath()
 
-                ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor)
+                ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.20).cgColor)
                 ctx.setLineWidth(0.3)
                 ctx.move(to:    CGPoint(x: leftPad + checkSize + 4, y: ty + checkSize / 2))
                 ctx.addLine(to: CGPoint(x: bounds.width - leftPad,  y: ty + checkSize / 2))
@@ -817,7 +818,7 @@ final class ExportService {
             ctx.addLine(to: CGPoint(x: leftColW, y: bounds.height))
             ctx.strokePath()
 
-            ctx.setStrokeColor(UIColor.inkTextTertiary.withAlphaComponent(0.20).cgColor)
+            ctx.setStrokeColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.20).cgColor)
             ctx.setLineWidth(0.2)
             for row in 0..<rowsHT {
                 let y = CGFloat(row) * cellSize
@@ -936,7 +937,7 @@ final class ExportService {
             // Microphone symbol (filled circle + mic icon rendered as UIImage)
             let config = UIImage.SymbolConfiguration(pointSize: pinSize, weight: .medium)
             if let mic = UIImage(systemName: "waveform", withConfiguration: config)?
-                .withTintColor(.inkAccentPrimary, renderingMode: .alwaysOriginal) {
+                .withTintColor(UIColor(ThemeManager.shared.current.accent), renderingMode: .alwaysOriginal) {
                 mic.draw(at: CGPoint(x: pinX - pinSize / 2, y: pinY - pinSize / 2))
             }
 
@@ -946,12 +947,12 @@ final class ExportService {
 
             let footnoteY = pinY + pinSize + 4
             let ruleRect  = CGRect(x: 0, y: footnoteY, width: bounds.width, height: 0.5)
-            ctx.setFillColor(UIColor.inkTextTertiary.withAlphaComponent(0.3).cgColor)
+            ctx.setFillColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.3).cgColor)
             ctx.fill(ruleRect)
 
             let attrs: [NSAttributedString.Key: Any] = [
                 .font:            UIFont.ceciliasNotesCaption,
-                .foregroundColor: UIColor.inkTextSecondary,
+                .foregroundColor: UIColor(ThemeManager.shared.current.foregroundMuted),
             ]
             let textRect = CGRect(x: 8, y: footnoteY + 4, width: bounds.width - 16, height: 60)
             (transcript as NSString).draw(in: textRect, withAttributes: attrs)
@@ -963,7 +964,7 @@ final class ExportService {
     private func drawPageNumber(_ label: String, ctx: CGContext, bounds: CGRect) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font:            UIFont.ceciliasNotesCaption,
-            .foregroundColor: UIColor.inkTextSecondary,
+            .foregroundColor: UIColor(ThemeManager.shared.current.foregroundMuted),
         ]
         let size   = (label as NSString).size(withAttributes: attrs)
         let x      = (bounds.width - size.width) / 2

@@ -134,7 +134,7 @@ struct CustomisePanel: View {
         HStack {
             Text(viewModel.notebook.title.lowercased())
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .lineLimit(1)
             Spacer()
             Button {
@@ -152,7 +152,7 @@ struct CustomisePanel: View {
             } label: {
                 Text("done")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
@@ -171,7 +171,7 @@ struct CustomisePanel: View {
             sectionLabel("name")
             TextField("notebook name", text: $titleBuffer)
                 .font(.system(size: 15))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .focused($nameFieldFocused)
                 .submitLabel(.done)
                 .onSubmit { commitTitle() }
@@ -197,7 +197,7 @@ struct CustomisePanel: View {
                                 to: nil, from: nil, for: nil
                             )
                         }
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                     }
                 }
 
@@ -221,10 +221,10 @@ struct CustomisePanel: View {
                 HStack(spacing: 6) {
                     Text("→")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                     Text(suggestion)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.inkTextPrimary)
+                        .foregroundStyle(theme.foreground)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -258,7 +258,7 @@ struct CustomisePanel: View {
                         ForEach(viewModel.suggestedTags, id: \.self) { tag in
                             Text(tag)
                                 .font(.system(size: 11))
-                                .foregroundStyle(Color.inkTextPrimary)
+                                .foregroundStyle(theme.foreground)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(
@@ -276,14 +276,14 @@ struct CustomisePanel: View {
                     Button { viewModel.applyAllSuggestedTags() } label: {
                         Text("add all")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.brandAccent)
+                            .foregroundStyle(theme.accent)
                     }
                     .buttonStyle(.plain)
 
                     Button { viewModel.dismissSuggestedTags() } label: {
                         Text("dismiss")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.inkRecessiveTertiary)
+                            .foregroundStyle(theme.recessiveTertiary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -314,7 +314,7 @@ struct CustomisePanel: View {
                     if viewModel.notebook.tags.isEmpty && !isAddingTag {
                         Text("add tags")
                             .font(.system(size: 12).italic())
-                            .foregroundStyle(Color.inkRecessiveTertiary)
+                            .foregroundStyle(theme.recessiveTertiary)
                     }
 
                     ForEach(viewModel.notebook.tags, id: \.self) { tag in
@@ -353,12 +353,12 @@ struct CustomisePanel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Remove tag \(tag)")
         }
-        .foregroundStyle(Color(light: .white, dark: Color.inkNearBlack))
+        .foregroundStyle(Color(light: .white, dark: Color.coverTextBlack))
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
             Capsule().fill(
-                Color(light: Color.inkNearBlack, dark: Color(hex: "#f5f5f5"))
+                Color(light: Color.coverTextBlack, dark: Color(hex: "#f5f5f5"))
             )
         )
     }
@@ -372,7 +372,7 @@ struct CustomisePanel: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.inkRecessivePrimary)
+                .foregroundStyle(theme.recessivePrimary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .overlay(
@@ -408,11 +408,11 @@ struct CustomisePanel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Cancel tag entry")
         }
-        .foregroundStyle(Color.inkTextPrimary)
+        .foregroundStyle(theme.foreground)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            Capsule().strokeBorder(Color.brandAccent, lineWidth: 0.8)
+            Capsule().strokeBorder(theme.accent, lineWidth: 0.8)
         )
     }
 
@@ -509,7 +509,7 @@ struct CustomisePanel: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .strokeBorder(
                         isSelected
-                            ? Color.brandAccent
+                            ? theme.accent
                             : (tone.requiresBorder ? theme.hairline : Color.clear),
                         lineWidth: isSelected ? 1.5 : 0.5
                     )
@@ -549,7 +549,7 @@ struct CustomisePanel: View {
                             .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                             .foregroundStyle(
                                 isSelected
-                                    ? Color.inkTextPrimary
+                                    ? theme.foreground
                                     : Color(light: Color(hex: "#aaaaaa"),
                                             dark:  Color(hex: "#5e5e5c"))
                             )
@@ -633,7 +633,7 @@ struct CustomisePanel: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .strokeBorder(
-                                isSelected ? Color.brandAccent : theme.hairline,
+                                isSelected ? theme.accent : theme.hairline,
                                 lineWidth: isSelected ? 1.5 : 0.5
                             )
                     )
@@ -674,7 +674,7 @@ struct CustomisePanel: View {
             HStack(alignment: .center, spacing: 0) {
                 Text(annotationsSummary(counts))
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer(minLength: 8)
                 // Chevron — only when there's something to drill in
                 // to. Recessive-tertiary at 12pt, matching the
@@ -682,7 +682,7 @@ struct CustomisePanel: View {
                 if isTappable {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                 }
             }
             .padding(.vertical, 12)
@@ -810,11 +810,11 @@ struct CustomisePanel: View {
         HStack(spacing: 12) {
             Text(label)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
             Spacer(minLength: 0)
             Toggle("", isOn: binding)
                 .labelsHidden()
-                .tint(.brandAccent)
+                .tint(theme.accent)
         }
         .frame(height: 44)
         .overlay(alignment: .bottom) {
@@ -828,7 +828,7 @@ struct CustomisePanel: View {
     private var togglesCaption: some View {
         Text("auto-add: new page when scrolling near bottom · auto-hide: hides toolbar while writing")
             .font(.system(size: 10))
-            .foregroundStyle(Color.inkRecessiveTertiary)
+            .foregroundStyle(theme.recessiveTertiary)
             .padding(.top, 6)
     }
 

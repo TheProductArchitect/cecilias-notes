@@ -69,14 +69,14 @@ struct SettingsView: View {
             Text("settings")
                 .font(.system(size: 22, weight: .heavy))
                 .tracking(-0.5)
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
             Spacer()
             Button {
                 onDismiss()
             } label: {
                 Text("done")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             .buttonStyle(.plain)
         }
@@ -85,7 +85,7 @@ struct SettingsView: View {
         .padding(.bottom, 16)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.inkTextPrimary)
+                .fill(theme.foreground)
                 .frame(height: 1.5)
         }
     }
@@ -125,7 +125,7 @@ struct SettingsView: View {
             Text(section.rawValue.lowercased())
                 .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(
-                    isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary
+                    isSelected ? theme.foreground : theme.recessivePrimary
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 18)
@@ -133,7 +133,7 @@ struct SettingsView: View {
                 .overlay(alignment: .leading) {
                     if isSelected {
                         Rectangle()
-                            .fill(Color.inkTextPrimary)
+                            .fill(theme.foreground)
                             .frame(width: 2)
                     }
                 }

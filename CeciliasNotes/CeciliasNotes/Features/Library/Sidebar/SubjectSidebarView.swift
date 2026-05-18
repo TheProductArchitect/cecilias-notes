@@ -60,7 +60,7 @@ struct SubjectSidebarView: View {
         .background(theme.surface)
         .overlay(alignment: .trailing) {
             Rectangle()
-                .fill(Color.inkRecessiveQuinary)
+                .fill(theme.recessiveQuinary)
                 .frame(width: 0.5)
                 .ignoresSafeArea()
         }
@@ -89,7 +89,7 @@ struct SubjectSidebarView: View {
             // an empty-pinned sidebar shows no extra rule.
             if !pinned.isEmpty && !unpinned.isEmpty {
                 Rectangle()
-                    .fill(Color.inkRecessiveQuinary)
+                    .fill(theme.recessiveQuinary)
                     .frame(height: 0.5)
                     .padding(.horizontal, Self.horizontalInset)
                     .padding(.vertical, 6)
@@ -109,7 +109,7 @@ struct SubjectSidebarView: View {
                 .font(.system(size: 7.5, weight: .regular))
                 .tracking(0.08)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.inkRecessiveQuaternary)
+                .foregroundStyle(theme.recessiveQuaternary)
             Spacer(minLength: 0)
             if !viewModel.subjects.isEmpty {
                 Button {
@@ -119,7 +119,7 @@ struct SubjectSidebarView: View {
                 } label: {
                     Text(isEditingSubjects ? "done" : "edit")
                         .font(.system(size: 9, weight: .regular))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                         .padding(.vertical, 2)
                         .padding(.horizontal, 2)
                         .contentShape(Rectangle())
@@ -163,7 +163,7 @@ struct SubjectSidebarView: View {
             HStack(spacing: 0) {
                 Text("recent")
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                    .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
                 Spacer(minLength: 0)
             }
         }
@@ -197,7 +197,7 @@ struct SubjectSidebarView: View {
                 } label: {
                     Text("+ new notebook")
                         .font(.system(size: 10.5, weight: .regular))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, Self.horizontalInset)
                         .padding(.vertical, 8)
@@ -213,7 +213,7 @@ struct SubjectSidebarView: View {
             } label: {
                 Text("+ new subject")
                     .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Self.horizontalInset)
                     .padding(.vertical, 8)
@@ -235,7 +235,7 @@ struct SubjectSidebarView: View {
 
     private var sidebarDivider: some View {
         Rectangle()
-            .fill(Color.inkRecessiveQuinary)
+            .fill(theme.recessiveQuinary)
             .frame(height: 0.5)
             .opacity(0.4)
             .padding(.horizontal, Self.horizontalInset)
@@ -256,7 +256,7 @@ struct SubjectSidebarView: View {
             .font(.system(size: 7.5, weight: .regular))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Color.inkRecessiveQuaternary)
+            .foregroundStyle(theme.recessiveQuaternary)
             .padding(.horizontal, Self.horizontalInset)
             .padding(.bottom, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,7 +264,7 @@ struct SubjectSidebarView: View {
 
     private var sectionDivider: some View {
         Rectangle()
-            .fill(Color.inkRecessiveQuinary)
+            .fill(theme.recessiveQuinary)
             .frame(height: 0.5)
             .opacity(0.4)
             .padding(.horizontal, Self.horizontalInset)
@@ -284,6 +284,7 @@ private struct SidebarRow<Content: View>: View {
     let isSelected: Bool
     let onTap: () -> Void
     @ViewBuilder var content: () -> Content
+    @Environment(\.theme) private var theme
 
     var body: some View {
         content()
@@ -293,7 +294,7 @@ private struct SidebarRow<Content: View>: View {
             .overlay(alignment: .leading) {
                 if isSelected {
                     Rectangle()
-                        .fill(Color.inkTextPrimary)
+                        .fill(theme.foreground)
                         .frame(width: 2)
                 }
             }
@@ -311,6 +312,7 @@ private struct SidebarRow<Content: View>: View {
 private struct AllNotesListRow: View {
     @ObservedObject var viewModel: LibraryViewModel
     let countColor: Color
+    @Environment(\.theme) private var theme
 
     @Query(filter: #Predicate<Notebook> { $0.isDeleted == false })
     private var notebooks: [Notebook]
@@ -325,7 +327,7 @@ private struct AllNotesListRow: View {
             HStack(spacing: 0) {
                 Text("all notes")
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular).italic())
-                    .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
                 Spacer(minLength: 0)
                 Text("\(notebooks.count)")
                     .font(.system(size: 9, weight: .regular))
@@ -417,7 +419,7 @@ private struct SubjectListRow: View {
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 14, weight: .regular))
-                            .foregroundStyle(Color.inkDestructive)
+                            .foregroundStyle(theme.danger)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Delete \(subject.name)")
@@ -430,7 +432,7 @@ private struct SubjectListRow: View {
                 if subject.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
                 // Inline rename when `viewModel.renamingSubjectId` matches.
                 // Driven by the context-menu "Rename" action and the
@@ -452,7 +454,7 @@ private struct SubjectListRow: View {
                 } else {
                     Text(subject.name.lowercased())
                         .font(.system(size: 11, weight: isSelected ? .bold : .regular))
-                        .foregroundStyle(isSelected ? Color.inkTextPrimary : Color.inkRecessivePrimary)
+                        .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -517,8 +519,8 @@ private struct SubjectListRow: View {
     private var subjectDragHandle: some View {
         let dotSize: CGFloat = isEditing ? 2.5 : 2.0
         let dotColor: Color  = isEditing
-            ? Color.inkRecessiveSecondary
-            : Color.inkRecessiveQuinary
+            ? theme.recessiveSecondary
+            : theme.recessiveQuinary
         return VStack(spacing: 2) {
             ForEach(0..<3, id: \.self) { _ in
                 HStack(spacing: 2) {
@@ -535,7 +537,7 @@ private struct SubjectListRow: View {
             // Drag preview — minimal pill showing the subject name.
             Text(subject.name.lowercased())
                 .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
@@ -552,6 +554,7 @@ private struct SubjectListRow: View {
 
 struct iCloudStatusView: View {
     let syncStatus: CloudSyncManager.SyncStatus
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Image(systemName: symbolName)
@@ -579,9 +582,9 @@ struct iCloudStatusView: View {
     private var symbolColor: Color {
         switch syncStatus {
         case .disabled, .waitingForNetwork:
-            return Color.inkRecessiveTertiary
+            return theme.recessiveTertiary
         case .checking, .syncing:
-            return Color.brandAccent
+            return theme.accent
         case .upToDate:
             return Color(light: Color(hex: "#34c759"),
                          dark:  Color(hex: "#30d158"))
@@ -615,6 +618,7 @@ private struct SubjectInlineRename: View {
     let initialName: String
     let onCommit: (String) -> Void
     let onCancel: () -> Void
+    @Environment(\.theme) private var theme
 
     @State private var draft: String
     @FocusState private var focused: Bool
@@ -633,7 +637,7 @@ private struct SubjectInlineRename: View {
     var body: some View {
         TextField("subject name", text: $draft)
             .font(.system(size: 11, weight: .regular))
-            .foregroundStyle(Color.inkTextPrimary)
+            .foregroundStyle(theme.foreground)
             .focused($focused)
             .submitLabel(.done)
             .onSubmit {

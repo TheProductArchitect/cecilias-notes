@@ -38,7 +38,7 @@ struct AboutSettingsView: View {
                     .foregroundStyle(theme.foreground)
                 Text("·")
                     .font(.system(size: 17, weight: .heavy))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             Text(viewModel.appVersion.lowercased())
                 .font(.system(size: 9))
@@ -84,7 +84,7 @@ struct AboutSettingsView: View {
             HStack {
                 Text(title)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                 Spacer()
             }
             .padding(.vertical, 12)
@@ -102,7 +102,7 @@ struct AboutSettingsView: View {
             HStack {
                 Text("keyboard shortcuts")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                 Spacer()
             }
             .padding(.vertical, 12)
@@ -139,6 +139,7 @@ struct AboutSettingsView: View {
 /// styling matches the redesigned settings surface (flat white, no
 /// grouped table chrome).
 struct KeyboardShortcutsView: View {
+    @Environment(\.theme) private var theme
     var body: some View {
         List {
             Section("Library") {
@@ -178,14 +179,14 @@ struct KeyboardShortcutsView: View {
         HStack {
             Text(name)
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
             Spacer()
             Text(keys)
                 .font(.ceciliasNotesMono)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
                 .padding(.horizontal, CeciliasNotes.Spacing.xs)
                 .padding(.vertical, CeciliasNotes.Spacing.micro)
-                .background(Color.inkBackgroundSecondary)
+                .background(theme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         }
     }

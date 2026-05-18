@@ -5,6 +5,7 @@ import UIKit
 /// Listens to `ceciliasNotesCanvasViewportDidChange` notifications throttled to ~15fps.
 struct MinimapView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     @State private var thumbnail: UIImage?
     @State private var viewport: CGRect = .zero      // viewport rect in *thumbnail* coords
@@ -25,7 +26,7 @@ struct MinimapView: View {
         ZStack {
             // Page paper background
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .fill(Color.inkBackgroundElevated)
+                .fill(theme.surfaceElevated)
 
             if let thumbnail {
                 Image(uiImage: thumbnail)
@@ -36,10 +37,10 @@ struct MinimapView: View {
             // Viewport rectangle
             GeometryReader { proxy in
                 Rectangle()
-                    .fill(Color.inkAccentPrimary.opacity(0.18))
+                    .fill(theme.accent.opacity(0.18))
                     .overlay(
                         Rectangle()
-                            .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
+                            .strokeBorder(theme.accent, lineWidth: 1)
                     )
                     .frame(width: viewport.width, height: viewport.height)
                     .offset(x: viewport.origin.x, y: viewport.origin.y)
@@ -53,7 +54,7 @@ struct MinimapView: View {
         .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
         )
         .onAppear { loadThumbnail() }
         .onChange(of: viewModel.currentPage.id) { _, _ in loadThumbnail() }

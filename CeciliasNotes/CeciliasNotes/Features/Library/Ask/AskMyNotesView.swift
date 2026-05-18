@@ -50,7 +50,7 @@ struct AskMyNotesView: View {
                 Spacer(minLength: 0)
                 Text("available on iOS 26 with Apple Intelligence")
                     .font(.system(size: 13).italic())
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
                     .padding(.horizontal, 24)
                 Spacer(minLength: 0)
             }
@@ -80,11 +80,11 @@ struct AskMyNotesView: View {
                 Text("ask your notes")
                     .font(.system(size: 22, weight: .heavy))
                     .tracking(-0.5)
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 Button("done") { dismiss() }
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             // Honest disclosure of what the index covers. Sits
             // directly under the heading, always visible, so the
@@ -93,7 +93,7 @@ struct AskMyNotesView: View {
             // reading).
             Text("searches typed notes, transcripts, and recognised handwriting")
                 .font(.system(size: 11).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
@@ -115,7 +115,7 @@ struct AskMyNotesView: View {
                     // in-memory dict.
                     Text("still indexing your notes, try again in a moment")
                         .font(.system(size: 13).italic())
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                 } else if !hasSubmitted {
                     emptyState
                 } else if noMatches {
@@ -127,13 +127,13 @@ struct AskMyNotesView: View {
                         // path missed because they were spread thin).
                         Text("I couldn't find anything across all your notes. Want me to search a specific notebook?")
                             .font(.system(size: 15))
-                            .foregroundStyle(Color.inkRecessivePrimary)
+                            .foregroundStyle(theme.recessivePrimary)
                         notebookPicker
                     } else {
                         // Scoped retry also empty — game over.
                         Text("I couldn't find anything in that notebook either.")
                             .font(.system(size: 15))
-                            .foregroundStyle(Color.inkRecessivePrimary)
+                            .foregroundStyle(theme.recessivePrimary)
                     }
                 } else {
                     // Scope indicator + "search all notebooks" reset.
@@ -149,7 +149,7 @@ struct AskMyNotesView: View {
                     // tone of the rest of the chrome.
                     Text(answer)
                         .font(.system(size: 15))
-                        .foregroundStyle(Color.inkTextPrimary)
+                        .foregroundStyle(theme.foreground)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
 
@@ -186,7 +186,7 @@ struct AskMyNotesView: View {
                 .font(.system(size: 8))
                 .tracking(0.08)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -196,7 +196,7 @@ struct AskMyNotesView: View {
                         } label: {
                             Text(nb.title)
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color.inkRecessivePrimary)
+                                .foregroundStyle(theme.recessivePrimary)
                                 .lineLimit(1)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)
@@ -238,10 +238,10 @@ struct AskMyNotesView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("ask anything you've written down.")
                 .font(.system(size: 13).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Text("answers cite the notebooks and pages they came from.")
                 .font(.system(size: 11).italic())
-                .foregroundStyle(Color.inkRecessiveQuaternary)
+                .foregroundStyle(theme.recessiveQuaternary)
         }
         .padding(.top, 12)
     }
@@ -254,7 +254,7 @@ struct AskMyNotesView: View {
                 .font(.system(size: 8))
                 .tracking(0.08)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
 
             FlowLayout(spacing: 6) {
                 ForEach(citations) { citation in
@@ -263,7 +263,7 @@ struct AskMyNotesView: View {
                     } label: {
                         Text("\(citation.notebookTitle), p.\(citation.pageNumber)")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.inkRecessivePrimary)
+                            .foregroundStyle(theme.recessivePrimary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(
@@ -292,7 +292,7 @@ struct AskMyNotesView: View {
                 Button { streamTask?.cancel(); isStreaming = false } label: {
                     Text("stop")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                 }
                 .buttonStyle(.plain)
             } else {
@@ -301,8 +301,8 @@ struct AskMyNotesView: View {
                         .font(.system(size: 22))
                         .foregroundStyle(
                             (query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !indexLoaded)
-                                ? Color.inkRecessiveQuaternary
-                                : Color.brandAccent
+                                ? theme.recessiveQuaternary
+                                : theme.accent
                         )
                 }
                 .buttonStyle(.plain)
@@ -422,10 +422,10 @@ struct AskMyNotesView: View {
         HStack(spacing: 8) {
             Image(systemName: "books.vertical.fill")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Text("scoped to \(title)")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
             Button {
@@ -433,7 +433,7 @@ struct AskMyNotesView: View {
             } label: {
                 Text("search all notebooks")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
             }
             .buttonStyle(.plain)
         }
@@ -456,7 +456,7 @@ struct AskMyNotesView: View {
                 .font(.system(size: 8))
                 .tracking(0.08)
                 .textCase(.uppercase)
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -466,7 +466,7 @@ struct AskMyNotesView: View {
                         } label: {
                             Text(nb.title)
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color.inkRecessivePrimary)
+                                .foregroundStyle(theme.recessivePrimary)
                                 .lineLimit(1)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 6)

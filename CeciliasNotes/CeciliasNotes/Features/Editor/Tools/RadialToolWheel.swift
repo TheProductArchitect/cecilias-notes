@@ -18,6 +18,7 @@ struct RadialToolWheel: View {
     let onDismiss: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
 
     @State private var visible = false
 
@@ -56,11 +57,11 @@ struct RadialToolWheel: View {
                 Circle()
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        Circle().strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                        Circle().strokeBorder(theme.borderSubtle, lineWidth: 0.5)
                     )
                 Image(systemName: item.systemImage)
                     .font(.system(size: 22, weight: .medium))
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
             }
             .frame(width: segmentSize, height: segmentSize)
         }

@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 // MARK: - RichTextToolbarDelegate
@@ -59,11 +60,11 @@ final class RichTextToolbar: UIView {
     required init?(coder: NSCoder) { nil }
 
     private func setup() {
-        backgroundColor = UIColor.inkBackgroundElevated
+        backgroundColor = UIColor(ThemeManager.shared.current.surfaceElevated)
         autoresizingMask = .flexibleWidth
 
         let topBorder = UIView()
-        topBorder.backgroundColor = UIColor.inkBorderSubtle
+        topBorder.backgroundColor = UIColor(ThemeManager.shared.current.borderSubtle)
         topBorder.translatesAutoresizingMaskIntoConstraints = false
         addSubview(topBorder)
         NSLayoutConstraint.activate([
@@ -124,7 +125,7 @@ final class RichTextToolbar: UIView {
         let btn = UIButton(type: .system)
         let config = UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         btn.setImage(UIImage(systemName: systemImage, withConfiguration: config), for: .normal)
-        btn.tintColor = UIColor.inkTextSecondary
+        btn.tintColor = UIColor(ThemeManager.shared.current.foregroundMuted)
         btn.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.widthAnchor.constraint(equalToConstant: 44).isActive  = true
@@ -137,8 +138,8 @@ final class RichTextToolbar: UIView {
         let btn = UIButton(type: .system)
         btn.setTitle(title, for: .normal)
         btn.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
-        btn.tintColor = UIColor.inkTextSecondary
-        btn.setTitleColor(UIColor.inkTextSecondary, for: .normal)
+        btn.tintColor = UIColor(ThemeManager.shared.current.foregroundMuted)
+        btn.setTitleColor(UIColor(ThemeManager.shared.current.foregroundMuted), for: .normal)
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.widthAnchor.constraint(equalToConstant: 44).isActive  = true
         btn.heightAnchor.constraint(equalToConstant: 44).isActive = true
@@ -148,7 +149,7 @@ final class RichTextToolbar: UIView {
 
     private func separator() -> UIView {
         let v = UIView()
-        v.backgroundColor = UIColor.inkBorderSubtle
+        v.backgroundColor = UIColor(ThemeManager.shared.current.borderSubtle)
         v.translatesAutoresizingMaskIntoConstraints = false
         v.widthAnchor.constraint(equalToConstant: 0.5).isActive  = true
         v.heightAnchor.constraint(equalToConstant: 22).isActive  = true
@@ -156,11 +157,11 @@ final class RichTextToolbar: UIView {
     }
 
     private func updateButton(_ button: UIButton, active: Bool) {
-        button.tintColor = active ? UIColor.inkAccentPrimary : UIColor.inkTextSecondary
+        button.tintColor = active ? UIColor(ThemeManager.shared.current.accent) : UIColor(ThemeManager.shared.current.foregroundMuted)
         if let label = button.titleLabel {
-            label.textColor = active ? UIColor.inkAccentPrimary : UIColor.inkTextSecondary
+            label.textColor = active ? UIColor(ThemeManager.shared.current.accent) : UIColor(ThemeManager.shared.current.foregroundMuted)
         }
-        button.setTitleColor(active ? UIColor.inkAccentPrimary : UIColor.inkTextSecondary, for: .normal)
+        button.setTitleColor(active ? UIColor(ThemeManager.shared.current.accent) : UIColor(ThemeManager.shared.current.foregroundMuted), for: .normal)
     }
 
     // MARK: Actions

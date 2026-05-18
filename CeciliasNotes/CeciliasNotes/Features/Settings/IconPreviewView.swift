@@ -9,6 +9,7 @@ import SwiftUI
 /// the bundled PNGs via `Scripts/GenerateBrandIcons.swift`.
 struct IconPreviewView: View {
 
+    @Environment(\.theme) private var theme
     private let sizes:    [CGFloat] = [60, 76, 120, 152, 1024]
     private let letters:  [Character] = ["a", "i", "n", "s", "z"]
 
@@ -22,7 +23,7 @@ struct IconPreviewView: View {
             Text("Renders via BrandIconRenderer.render(letter:size:). "
                + "Generation script: Scripts/GenerateBrandIcons.swift.")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
     }
@@ -40,7 +41,7 @@ struct IconPreviewView: View {
 
                     Text("\(Int(px))")
                         .font(.ceciliasNotesCaption)
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
             }
             Spacer()
@@ -50,7 +51,7 @@ struct IconPreviewView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.ceciliasNotesHeadline)
-            .foregroundColor(.inkTextPrimary)
+            .foregroundColor(theme.foreground)
     }
 }
 

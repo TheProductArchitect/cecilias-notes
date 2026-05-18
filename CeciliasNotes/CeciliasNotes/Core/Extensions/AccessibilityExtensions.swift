@@ -105,10 +105,14 @@ extension View {
         UIAccessibility.isDarkerSystemColorsEnabled ? base * 2 : base
     }
 
-    /// Returns `text.primary` in high-contrast mode, the supplied secondary otherwise.
-    func inkSecondaryText() -> Color {
-        UIAccessibility.isDarkerSystemColorsEnabled ? .inkTextPrimary : .inkTextSecondary
-    }
+    // `inkSecondaryText()` helper was removed in D2 — never called from
+    // anywhere in the codebase (dead code) and the body referenced
+    // `theme.foreground` / `theme.foregroundMuted` which need either a
+    // SwiftUI @Environment lookup (not possible inside this View
+    // extension's helper-method context) or a theme parameter. If the
+    // accessibility behaviour is needed in future, add it as a View
+    // modifier that captures @Environment(\.theme) and writes the
+    // selected color via `.foregroundStyle(_:)`.
 }
 
 // MARK: - Reduce-motion helpers

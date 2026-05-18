@@ -9,6 +9,8 @@ import SwiftUI
 /// Playhead: vertical accent line; bars left = accent, bars right = tertiary.
 struct WaveformView: View {
 
+    @Environment(\.theme) private var theme
+
     enum Mode {
         case live(levels: [Float])
         case `static`(amplitudes: [Float], playhead: Double)   // playhead: 0…1
@@ -68,9 +70,9 @@ struct WaveformView: View {
             )
             let color: Color
             if let px = playheadX {
-                color = x <= px ? .inkAccentPrimary : .inkTextTertiary
+                color = x <= px ? theme.accent : theme.foregroundSubtle
             } else {
-                color = .inkAccentPrimary
+                color = theme.accent
             }
             ctx.fill(
                 Path(roundedRect: rect, cornerRadius: barWidth / 2),
@@ -84,7 +86,7 @@ struct WaveformView: View {
                 p.move(to:    CGPoint(x: px, y: 0))
                 p.addLine(to: CGPoint(x: px, y: size.height))
             }
-            ctx.stroke(path, with: .color(.inkAccentPrimary), lineWidth: 1.5)
+            ctx.stroke(path, with: .color(theme.accent), lineWidth: 1.5)
         }
     }
 

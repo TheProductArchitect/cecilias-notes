@@ -70,7 +70,7 @@ struct LibraryHeaderView: View {
         .background(theme.background)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.inkTextPrimary)
+                .fill(theme.foreground)
                 .frame(height: 1.5)
                 .frame(maxWidth: .infinity)
         }
@@ -119,13 +119,13 @@ struct LibraryHeaderView: View {
     private var greetingCard: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Rectangle()
-                .fill(Color.inkRecessiveQuinary)
+                .fill(theme.recessiveQuinary)
                 .frame(height: 0.5)
                 .frame(maxWidth: 80)
 
             Text(greeting)
                 .font(.system(size: 10, weight: .regular).italic())
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
                 .multilineTextAlignment(.trailing)
                 // Up to 4 lines (~56pt at 14pt line height) so longer
                 // greetings wrap into the empty vertical space below
@@ -165,7 +165,7 @@ struct LibraryHeaderView: View {
             } label: {
                 Image(systemName: viewModel.isSearchActive ? "xmark" : "magnifyingglass")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveQuaternary)
+                    .foregroundStyle(theme.recessiveQuaternary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -186,8 +186,8 @@ struct LibraryHeaderView: View {
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(
                         viewModel.sortOrder == .manual
-                            ? Color.brandAccent
-                            : Color.inkRecessiveQuaternary
+                            ? theme.accent
+                            : theme.recessiveQuaternary
                     )
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -204,7 +204,7 @@ struct LibraryHeaderView: View {
                 } label: {
                     Image(systemName: "bubble.left.and.text.bubble.right")
                         .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(Color.inkRecessiveQuaternary)
+                        .foregroundStyle(theme.recessiveQuaternary)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -223,8 +223,8 @@ struct LibraryHeaderView: View {
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(
                         viewModel.isTagFilterActive
-                            ? Color.brandAccent
-                            : Color.inkRecessiveQuaternary
+                            ? theme.accent
+                            : theme.recessiveQuaternary
                     )
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
@@ -247,7 +247,7 @@ struct LibraryHeaderView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveQuaternary)
+                    .foregroundStyle(theme.recessiveQuaternary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -288,7 +288,7 @@ struct LibraryHeaderView: View {
             } label: {
                 Image(systemName: "doc.badge.arrow.up")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveQuaternary)
+                    .foregroundStyle(theme.recessiveQuaternary)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -312,8 +312,8 @@ struct LibraryHeaderView: View {
                       : "checkmark.circle")
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(viewModel.isSelecting
-                                     ? Color.brandAccent
-                                     : Color.inkRecessiveQuaternary)
+                                     ? theme.accent
+                                     : theme.recessiveQuaternary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(width: 44, height: 44)
@@ -336,7 +336,7 @@ struct LibraryHeaderView: View {
         return HStack(spacing: 8) {
             Text("\(viewModel.selectedNotebookIds.count) selected")
                 .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(Color.inkRecessivePrimary)
+                .foregroundStyle(theme.recessivePrimary)
 
             Button(allVisibleSelected ? "deselect all" : "select all") {
                 if allVisibleSelected {
@@ -346,14 +346,14 @@ struct LibraryHeaderView: View {
                 }
             }
             .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(Color.brandAccent)
+            .foregroundStyle(theme.accent)
             .disabled(visibleIds.isEmpty)
 
             Spacer(minLength: 8)
 
             Button("move to…") { showMoveSheet = true }
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(Color.brandAccent)
+                .foregroundStyle(theme.accent)
                 .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("delete") {
@@ -362,7 +362,7 @@ struct LibraryHeaderView: View {
                 }
             }
             .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(Color.inkDestructive)
+            .foregroundStyle(theme.danger)
             .disabled(viewModel.selectedNotebookIds.isEmpty)
 
             Button("done") {
@@ -372,7 +372,7 @@ struct LibraryHeaderView: View {
                 }
             }
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Color.brandAccent)
+            .foregroundStyle(theme.accent)
         }
         .frame(height: 44)
     }

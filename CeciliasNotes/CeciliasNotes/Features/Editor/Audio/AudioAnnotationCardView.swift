@@ -81,6 +81,7 @@ struct AudioAnnotationCardView: View {
     /// transcript is populated.
     @Bindable var annotation: AudioRecord
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     @StateObject private var audio = AudioCardController()
     @State private var transcriptExpanded: Bool = false
@@ -100,7 +101,7 @@ struct AudioAnnotationCardView: View {
         #endif
         return HStack(alignment: .top, spacing: 0) {
             Rectangle()
-                .fill(Color.brandAccent)
+                .fill(theme.accent)
                 .frame(width: 3)
                 .padding(.trailing, 12)
 
@@ -143,10 +144,10 @@ struct AudioAnnotationCardView: View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: "mic.fill")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
             Text(formatDuration(annotation.durationSeconds))
                 .font(.system(size: 12))
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
                 .monospacedDigit()
             Spacer(minLength: 8)
             Button {
@@ -154,7 +155,7 @@ struct AudioAnnotationCardView: View {
             } label: {
                 Image(systemName: audio.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
             }
@@ -196,10 +197,10 @@ struct AudioAnnotationCardView: View {
         HStack(spacing: 4) {
             Text("transcript")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Image(systemName: transcriptExpanded ? "chevron.up" : "chevron.down")
                 .font(.system(size: 9, weight: .regular))
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Spacer(minLength: 0)
         }
         .frame(height: 14)
@@ -215,7 +216,7 @@ struct AudioAnnotationCardView: View {
             : annotation.transcript
         Text(text)
             .font(.system(size: 13))
-            .foregroundStyle(Color.inkTextPrimary)
+            .foregroundStyle(theme.foreground)
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,6 +248,7 @@ struct AudioAnnotationCardView: View {
 private struct WaveformBars: View {
     let amplitudes: [Float]
     let progress: Double
+    @Environment(\.theme) private var theme
 
     private let barWidth:  CGFloat = 2
     private let barGap:    CGFloat = 1
@@ -261,8 +263,8 @@ private struct WaveformBars: View {
                     let h = max(2, CGFloat(bars[i]) * proxy.size.height)
                     Capsule()
                         .fill(i <= playheadIndex
-                              ? Color.brandAccent
-                              : Color.inkRecessiveQuinary)
+                              ? theme.accent
+                              : theme.recessiveQuinary)
                         .frame(width: barWidth, height: h)
                 }
             }

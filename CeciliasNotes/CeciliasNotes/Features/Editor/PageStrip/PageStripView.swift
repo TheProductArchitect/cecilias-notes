@@ -8,6 +8,7 @@ import UIKit
 ///   • Trailing + button: add page at end
 struct PageStripView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     private let thumbWidth:  CGFloat = 80
     private let thumbHeight: CGFloat = 104
@@ -24,10 +25,10 @@ struct PageStripView: View {
 
     private var background: some View {
         Rectangle()
-            .fill(Color.inkBackgroundElevated.opacity(0.94))
+            .fill(theme.surfaceElevated.opacity(0.94))
             .overlay(alignment: .top) {
                 Rectangle()
-                    .fill(Color.inkBorderSubtle)
+                    .fill(theme.borderSubtle)
                     .frame(height: 0.5)
             }
             .ignoresSafeArea(edges: .bottom)
@@ -64,12 +65,12 @@ struct PageStripView: View {
                         VStack(spacing: 4) {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.inkAccentPrimary)
+                                .foregroundColor(theme.accent)
                                 .frame(width: thumbWidth, height: thumbHeight)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                                         .strokeBorder(
-                                            Color.inkAccentPrimary,
+                                            theme.accent,
                                             style: StrokeStyle(lineWidth: 0.5, dash: [4, 4])
                                         )
                                 )
@@ -93,6 +94,7 @@ struct PageStripView: View {
 // MARK: - Single thumbnail row
 
 private struct PageStripThumbnail: View {
+    @Environment(\.theme) private var theme
     let page: Page
     let pageNumber: Int
     let size: CGSize
@@ -124,14 +126,14 @@ private struct PageStripThumbnail: View {
             .overlay(
                 RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                     .strokeBorder(
-                        isCurrent ? Color.inkAccentPrimary : Color.inkBorderSubtle,
+                        isCurrent ? theme.accent : theme.borderSubtle,
                         lineWidth: isCurrent ? 2 : 0.5
                     )
             )
 
             Text("\(pageNumber)")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(isCurrent ? .inkAccentPrimary : .inkTextTertiary)
+                .foregroundColor(isCurrent ? theme.accent : theme.foregroundSubtle)
                 .monospacedDigit()
         }
         .contentShape(Rectangle())

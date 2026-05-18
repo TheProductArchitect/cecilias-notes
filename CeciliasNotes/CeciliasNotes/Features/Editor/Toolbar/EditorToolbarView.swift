@@ -13,6 +13,7 @@ import UIKit
 /// `HeaderVisibility`).
 struct EditorToolbarView: View {
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
 
     let onBack: () -> Void
     let onUndo: () -> Void
@@ -218,7 +219,7 @@ struct EditorToolbarView: View {
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(
                         viewModel.isRecordingPanelVisible
-                            ? Color.brandAccent
+                            ? theme.accent
                             : recessive(0.4)
                     )
                     .frame(width: 32, height: 32)

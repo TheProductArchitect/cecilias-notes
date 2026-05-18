@@ -27,6 +27,7 @@ struct LectureBlockView: View {
 
     let recordId: UUID
     let pageId: UUID
+    @Environment(\.theme) private var theme
 
     /// Current snapshot of the underlying `LectureRecord`. Re-fetched
     /// in `onAppear` and whenever `.lectureRecordUpdated` fires for
@@ -68,7 +69,7 @@ struct LectureBlockView: View {
             // 3pt left rule — the only structural chrome on the
             // block. No card, no border, no fill.
             Rectangle()
-                .fill(Color.inkRecessiveQuinary)
+                .fill(theme.recessiveQuinary)
                 .frame(width: 3)
                 .padding(.trailing, 12)
 
@@ -79,7 +80,7 @@ struct LectureBlockView: View {
                     #endif
                     header(for: record)
                     Rectangle()
-                        .fill(Color.inkRecessiveQuinary)
+                        .fill(theme.recessiveQuinary)
                         .frame(height: 0.5)
                         .padding(.top, 10)
                         .padding(.bottom, 12)
@@ -98,7 +99,7 @@ struct LectureBlockView: View {
                     // unobtrusive.
                     Text("lecture missing")
                         .font(.system(size: 13).italic())
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                         .padding(.vertical, 8)
                 }
             }
@@ -125,22 +126,22 @@ struct LectureBlockView: View {
         HStack(alignment: .center, spacing: 8) {
             Image(systemName: "waveform")
                 .font(.system(size: 14))
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
             Text(record.title.isEmpty ? "untitled lecture" : record.title)
                 .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .lineLimit(1)
             Spacer(minLength: 12)
             Text(Self.formatDuration(record.durationSeconds))
                 .font(.system(size: 11))
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
                 .monospacedDigit()
             Button {
                 audio.toggle(relativePath: record.audioRelativePath)
             } label: {
                 Image(systemName: audio.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 22))
-                    .foregroundStyle(Color.inkRecessiveSecondary)
+                    .foregroundStyle(theme.recessiveSecondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(audio.isPlaying ? "Pause lecture" : "Play lecture")
@@ -156,7 +157,7 @@ struct LectureBlockView: View {
                 if let summary = record.summary {
                     Text(summary)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkTextPrimary)
+                        .foregroundStyle(theme.foreground)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -164,12 +165,12 @@ struct LectureBlockView: View {
                     ForEach(record.summaryBullets, id: \.self) { bullet in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Circle()
-                                .fill(Color.inkRecessiveSecondary)
+                                .fill(theme.recessiveSecondary)
                                 .frame(width: 4, height: 4)
                                 .padding(.top, 5)
                             Text(bullet)
                                 .font(.system(size: 13))
-                                .foregroundStyle(Color.inkTextPrimary)
+                                .foregroundStyle(theme.foreground)
                                 .lineSpacing(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -187,7 +188,7 @@ struct LectureBlockView: View {
             // this session show no summary section at all.
             Text("summarising…")
                 .font(.system(size: 11).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
                 .padding(.bottom, 12)
         }
         // else: no summary, not in flight → omit the section
@@ -206,10 +207,10 @@ struct LectureBlockView: View {
             HStack(spacing: 6) {
                 Text("transcript")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.inkRecessiveSecondary)
+                    .foregroundStyle(theme.recessiveSecondary)
                 Image(systemName: transcriptExpanded ? "chevron.up" : "chevron.down")
                     .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(Color.inkRecessiveTertiary)
+                    .foregroundStyle(theme.recessiveTertiary)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -223,7 +224,7 @@ struct LectureBlockView: View {
             // owns scrolling — no internal scroll view here.
             Text(record.transcript.isEmpty ? "no transcript captured." : record.transcript)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.inkRecessiveSecondary)
+                .foregroundStyle(theme.recessiveSecondary)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)

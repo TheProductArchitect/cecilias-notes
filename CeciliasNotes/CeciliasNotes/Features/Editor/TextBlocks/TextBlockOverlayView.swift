@@ -22,6 +22,7 @@ import UIKit
 struct TextBlockOverlayView: View {
 
     @ObservedObject var viewModel: EditorViewModel
+    @Environment(\.theme) private var theme
     /// Page this overlay is mounted on. Per-page mount per Phase 3b —
     /// renders only blocks whose `pageId` matches.
     let pageId: UUID
@@ -95,7 +96,7 @@ struct TextBlockOverlayView: View {
                 let rect = previewRect(start: start, current: current)
                 Rectangle()
                     .strokeBorder(
-                        Color.brandAccent,
+                        theme.accent,
                         style: StrokeStyle(lineWidth: 1, dash: [4, 4])
                     )
                     .frame(width: rect.width, height: rect.height)
@@ -200,9 +201,9 @@ struct TextBlockOverlayView: View {
     @ViewBuilder
     private func blockBackground(state: TextBlockInteractionState) -> some View {
         if state == .editing {
-            Color.inkBackgroundElevated.opacity(0.92)
+            theme.surfaceElevated.opacity(0.92)
         } else if state == .selected {
-            Color.inkAccentPrimary.opacity(0.04)
+            theme.accent.opacity(0.04)
         } else {
             Color.clear
         }
@@ -212,10 +213,10 @@ struct TextBlockOverlayView: View {
     private func blockBorder(state: TextBlockInteractionState) -> some View {
         if state == .editing {
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .strokeBorder(Color.inkAccentPrimary, lineWidth: 1)
+                .strokeBorder(theme.accent, lineWidth: 1)
         } else if state == .selected {
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .strokeBorder(Color.inkAccentPrimary.opacity(0.5), lineWidth: 1)
+                .strokeBorder(theme.accent.opacity(0.5), lineWidth: 1)
         } else {
             EmptyView()
         }

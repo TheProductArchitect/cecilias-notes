@@ -3,6 +3,7 @@ import SwiftUI
 #if DEBUG
 struct StyleGuideView: View {
     @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.theme) private var theme
     @State private var sampleText = ""
     @State private var isButtonLoading = false
 
@@ -32,7 +33,7 @@ struct StyleGuideView: View {
                 }
                 .padding(.vertical, CeciliasNotes.Spacing.lg)
             }
-            .background(Color.inkBackgroundPrimary)
+            .background(theme.background)
             .navigationTitle("Style Guide")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -50,31 +51,31 @@ struct StyleGuideView: View {
             sectionHeader("Colour Tokens")
 
             colorGroup("Background", swatches: [
-                ("background.primary",   .inkBackgroundPrimary),
-                ("background.secondary", .inkBackgroundSecondary),
-                ("background.tertiary",  .inkBackgroundTertiary),
-                ("background.elevated",  .inkBackgroundElevated),
+                ("background.primary",   theme.background),
+                ("background.secondary", theme.surface),
+                ("background.tertiary",  theme.surfaceElevated),
+                ("background.elevated",  theme.surfaceElevated),
             ])
 
             colorGroup("Text", swatches: [
-                ("text.primary",   .inkTextPrimary),
-                ("text.secondary", .inkTextSecondary),
-                ("text.tertiary",  .inkTextTertiary),
+                ("text.primary",   theme.foreground),
+                ("text.secondary", theme.foregroundMuted),
+                ("text.tertiary",  theme.foregroundSubtle),
             ])
 
             colorGroup("Accent", swatches: [
-                ("accent.primary",   .inkAccentPrimary),
-                ("accent.secondary", .inkAccentSecondary),
+                ("accent.primary",   theme.accent),
+                ("accent.secondary", theme.accentMuted),
             ])
 
             colorGroup("Border", swatches: [
-                ("border.subtle",   .inkBorderSubtle),
-                ("border.default",  .inkBorderDefault),
-                ("border.emphasis", .inkBorderEmphasis),
+                ("border.subtle",   theme.borderSubtle),
+                ("border.default",  theme.borderDefault),
+                ("border.emphasis", theme.borderEmphasis),
             ])
 
             colorGroup("Semantic", swatches: [
-                ("destructive", .inkDestructive),
+                ("destructive", theme.danger),
             ])
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -117,22 +118,22 @@ struct StyleGuideView: View {
                     HStack(spacing: CeciliasNotes.Spacing.sm) {
                         Text(".\(name)")
                             .font(.ceciliasNotesMono)
-                            .foregroundColor(.inkTextSecondary)
+                            .foregroundColor(theme.foregroundMuted)
                             .frame(width: 80, alignment: .leading)
                         Rectangle()
-                            .fill(Color.inkAccentPrimary)
+                            .fill(theme.accent)
                             .frame(width: value, height: 16)
                             .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
                         Text("\(Int(value))pt")
                             .font(.ceciliasNotesCaption)
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                 }
             }
 
             Text("Radius tokens")
                 .font(.ceciliasNotesFootnote)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
                 .padding(.top, CeciliasNotes.Spacing.sm)
 
             HStack(spacing: CeciliasNotes.Spacing.md) {
@@ -144,15 +145,15 @@ struct StyleGuideView: View {
                 ], id: \.0) { name, value in
                     VStack(spacing: CeciliasNotes.Spacing.xs) {
                         RoundedRectangle(cornerRadius: value, style: .continuous)
-                            .fill(Color.inkBackgroundSecondary)
+                            .fill(theme.surface)
                             .overlay(
                                 RoundedRectangle(cornerRadius: value, style: .continuous)
-                                    .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
+                                    .strokeBorder(theme.borderDefault, lineWidth: 0.5)
                             )
                             .frame(width: 56, height: 56)
                         Text(".\(name)")
                             .font(.ceciliasNotesCaption)
-                            .foregroundColor(.inkTextTertiary)
+                            .foregroundColor(theme.foregroundSubtle)
                     }
                 }
             }
@@ -251,7 +252,7 @@ struct StyleGuideView: View {
             sectionHeader("Animation Presets")
             Text("Reduce Motion: \(UIAccessibility.isReduceMotionEnabled ? "ON — springs replaced with crossfade" : "OFF — springs active")")
                 .font(.ceciliasNotesFootnote)
-                .foregroundColor(UIAccessibility.isReduceMotionEnabled ? .inkDestructive : .inkTextSecondary)
+                .foregroundColor(UIAccessibility.isReduceMotionEnabled ? theme.danger : theme.foregroundMuted)
 
             ForEach([
                 ("snappy",  CeciliasNotesSpring.snappy,  "response 0.28 / damping 0.82"),
@@ -270,14 +271,14 @@ struct StyleGuideView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.ceciliasNotesHeadline)
-            .foregroundColor(.inkTextPrimary)
+            .foregroundColor(theme.foreground)
     }
 
     private func colorGroup(_ groupName: String, swatches: [(String, Color)]) -> some View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xs) {
             Text(groupName)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: CeciliasNotes.Spacing.sm) {
@@ -295,13 +296,13 @@ struct StyleGuideView: View {
                 .fill(color)
                 .overlay(
                     RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                        .strokeBorder(Color.inkBorderDefault, lineWidth: 0.5)
+                        .strokeBorder(theme.borderDefault, lineWidth: 0.5)
                 )
                 .frame(width: 64, height: 40)
 
             Text(name)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
                 .lineLimit(2)
                 .frame(width: 64, alignment: .leading)
         }
@@ -311,11 +312,11 @@ struct StyleGuideView: View {
         HStack(alignment: .firstTextBaseline, spacing: CeciliasNotes.Spacing.md) {
             Text(token)
                 .font(.ceciliasNotesMono)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
                 .frame(width: 120, alignment: .leading)
             Text(sample)
                 .font(font)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
         }
     }
 
@@ -350,14 +351,14 @@ struct StyleGuideView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
                             .strokeBorder(
-                                isSelected ? Color.inkAccentPrimary : Color.inkBorderDefault,
+                                isSelected ? theme.accent : theme.borderDefault,
                                 lineWidth: isSelected ? 2 : 0.5
                             )
                     )
 
                 Text(theme.displayName)
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(isSelected ? .inkTextPrimary : .inkTextSecondary)
+                    .foregroundColor(isSelected ? theme.foreground : theme.foregroundMuted)
             }
         }
         .buttonStyle(.ceciliasNotesPressable)
@@ -370,6 +371,7 @@ private struct AnimationRow: View {
     let name: String
     let animation: Animation
     let description: String
+    @Environment(\.theme) private var theme
 
     @State private var isAnimating = false
 
@@ -378,17 +380,17 @@ private struct AnimationRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(".\(name)")
                     .font(.ceciliasNotesMono)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                 Text(description)
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
             }
             .frame(width: 180, alignment: .leading)
 
             Spacer()
 
             RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                .fill(Color.inkAccentPrimary)
+                .fill(theme.accent)
                 .frame(width: 32, height: 32)
                 .offset(x: isAnimating ? 24 : -24)
                 .ceciliasNotesAnimation(animation, value: isAnimating)
@@ -400,7 +402,7 @@ private struct AnimationRow: View {
             } label: {
                 Image(systemName: "arrow.left.arrow.right")
                     .fontWeight(.medium)
-                    .foregroundColor(.inkAccentPrimary)
+                    .foregroundColor(theme.accent)
                     .frame(width: 44, height: 44)
             }
         }

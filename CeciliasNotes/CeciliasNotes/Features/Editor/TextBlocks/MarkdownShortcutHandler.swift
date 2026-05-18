@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 // MARK: - MarkdownShortcutHandler
@@ -121,7 +122,7 @@ final class MarkdownShortcutHandler {
         attrString.deleteCharacters(in: removeRange)
         let insertion = NSAttributedString(
             string: "❝ ",
-            attributes: [.foregroundColor: UIColor.inkTextSecondary,
+            attributes: [.foregroundColor: UIColor(ThemeManager.shared.current.foregroundMuted),
                          .font: UIFont.preferredFont(forTextStyle: .body)]
         )
         attrString.insert(insertion, at: lineRange.location)

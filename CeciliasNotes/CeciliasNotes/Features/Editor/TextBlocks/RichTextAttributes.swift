@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 // MARK: - RichTextAttributes
@@ -69,7 +70,7 @@ enum RichTextAttributes {
             ? UIFont.preferredFont(forTextStyle: .body)
             : UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize, weight: .regular)
         attrString.addAttribute(.font, value: font, range: range)
-        let bg: UIColor = isCode ? .clear : UIColor.inkBackgroundSecondary
+        let bg: UIColor = isCode ? .clear : UIColor(ThemeManager.shared.current.surface)
         attrString.addAttribute(.backgroundColor, value: bg, range: range)
     }
 
@@ -77,7 +78,7 @@ enum RichTextAttributes {
 
     static func applyLink(_ url: URL, to attrString: NSMutableAttributedString, range: NSRange) {
         attrString.addAttribute(.link, value: url, range: range)
-        attrString.addAttribute(.foregroundColor, value: UIColor.inkAccentPrimary, range: range)
+        attrString.addAttribute(.foregroundColor, value: UIColor(ThemeManager.shared.current.accent), range: range)
         attrString.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
     }
 
@@ -99,7 +100,7 @@ enum RichTextAttributes {
             attrString.replaceCharacters(in: lineRange, with: NSAttributedString(string: stripped))
         } else {
             let result = NSMutableAttributedString(string: "❝ " + lineString)
-            result.addAttribute(.foregroundColor, value: UIColor.inkTextSecondary,
+            result.addAttribute(.foregroundColor, value: UIColor(ThemeManager.shared.current.foregroundMuted),
                                 range: NSRange(location: 0, length: result.length))
             attrString.replaceCharacters(in: lineRange, with: result)
         }
@@ -136,7 +137,7 @@ enum RichTextAttributes {
     static var defaultAttributes: [NSAttributedString.Key: Any] {
         [
             .font: UIFont.preferredFont(forTextStyle: .body),
-            .foregroundColor: UIColor.inkTextPrimary,
+            .foregroundColor: UIColor(ThemeManager.shared.current.foreground),
         ]
     }
 

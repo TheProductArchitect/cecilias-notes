@@ -8,6 +8,7 @@ struct RecentExportsView: View {
 
     /// Called when the user wants to re-export a notebook by id.
     let onReExport: (UUID) -> Void
+    @Environment(\.theme) private var theme
 
     @State private var records:           [ExportRecord] = []
     @State private var isLoading:         Bool           = true
@@ -50,10 +51,10 @@ struct RecentExportsView: View {
         VStack(spacing: CeciliasNotes.Spacing.md) {
             Image(systemName: "doc.richtext")
                 .font(.system(size: 40, weight: .light))
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
             Text("No exports yet")
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -89,13 +90,13 @@ struct RecentExportsView: View {
             HStack(spacing: CeciliasNotes.Spacing.md) {
                 Image(systemName: record.fileExists ? "doc.richtext" : "doc.richtext.fill")
                     .font(.system(size: 24, weight: .light))
-                    .foregroundColor(record.fileExists ? .inkAccentPrimary : .inkTextTertiary)
+                    .foregroundColor(record.fileExists ? theme.accent : theme.foregroundSubtle)
                     .frame(width: 32)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(record.notebookTitle)
                         .font(.ceciliasNotesBody)
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(theme.foreground)
                         .lineLimit(1)
 
                     HStack(spacing: CeciliasNotes.Spacing.xs) {
@@ -106,7 +107,7 @@ struct RecentExportsView: View {
                         Text("\(record.pageCount) pages")
                     }
                     .font(.ceciliasNotesFootnote)
-                    .foregroundColor(.inkTextSecondary)
+                    .foregroundColor(theme.foregroundMuted)
                 }
 
                 Spacer()
@@ -114,7 +115,7 @@ struct RecentExportsView: View {
                 if record.fileExists {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
             }
             .padding(.vertical, 4)

@@ -23,6 +23,7 @@ struct OnboardingView: View {
 
     let onComplete: () -> Void
 
+    @Environment(\.theme) private var theme
     @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
     @State private var inputText:  String = ""
     @State private var validationError: Bool = false
@@ -51,7 +52,7 @@ struct OnboardingView: View {
 
     var body: some View {
         ZStack {
-            Color.inkBackgroundPrimary.ignoresSafeArea()
+            theme.background.ignoresSafeArea()
 
             if isPersonalising {
                 PersonalisingTransition(letter: personalisingLetter)
@@ -79,11 +80,11 @@ struct OnboardingView: View {
             VStack(spacing: CeciliasNotes.Spacing.md) {
                 Text("What should we call this?")
                     .font(.ceciliasNotesHeadline)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
 
                 TextField("Your name", text: $inputText)
                     .font(.ceciliasNotesTitle2)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .multilineTextAlignment(.center)
                     .focused($fieldFocused)
                     .submitLabel(.done)
@@ -93,7 +94,7 @@ struct OnboardingView: View {
                     .padding(.vertical, 12)
                     .overlay(alignment: .bottom) {
                         Rectangle()
-                            .fill(Color.inkBorderSubtle)
+                            .fill(theme.borderSubtle)
                             .frame(height: 1)
                     }
                     .onChange(of: inputText) { _, _ in
@@ -108,7 +109,7 @@ struct OnboardingView: View {
                 // the layout doesn't jump when the message appears.
                 Text(validationError ? "Letters only, please." : " ")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(validationError ? .inkDestructive : .clear)
+                    .foregroundColor(validationError ? theme.danger : .clear)
                     .frame(height: 18)
             }
 
@@ -199,6 +200,7 @@ private struct PersonalisingTransition: View {
     let letter: Character
     @State private var pulse: CGFloat = 1.0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
 
     var body: some View {
         VStack(spacing: CeciliasNotes.Spacing.xl) {
@@ -207,7 +209,7 @@ private struct PersonalisingTransition: View {
                 .scaleEffect(pulse, anchor: .bottomTrailing)
             Text("Personalising your app…")
                 .font(.ceciliasNotesHeadline)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -231,6 +233,7 @@ struct YourNameCard: View {
     @State private var buffer:           String = ""
     @State private var validationError: Bool   = false
     @FocusState private var focused:    Bool
+    @Environment(\.theme) private var theme
 
     private var previewLetter: Character {
         let firstChar = buffer
@@ -249,10 +252,10 @@ struct YourNameCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Your Name")
                         .font(.ceciliasNotesBody)
-                        .foregroundColor(.inkTextPrimary)
+                        .foregroundColor(theme.foreground)
                     TextField("Add your name", text: $buffer)
                         .font(.ceciliasNotesSubhead)
-                        .foregroundColor(.inkTextSecondary)
+                        .foregroundColor(theme.foregroundMuted)
                         .focused($focused)
                         .submitLabel(.done)
                         .autocorrectionDisabled()
@@ -275,10 +278,10 @@ struct YourNameCard: View {
             Group {
                 if validationError {
                     Text("Letters only, please.")
-                        .foregroundColor(.inkDestructive)
+                        .foregroundColor(theme.danger)
                 } else {
                     Text("Personalises your app icon and home screen.")
-                        .foregroundColor(.inkTextTertiary)
+                        .foregroundColor(theme.foregroundSubtle)
                 }
             }
             .font(.ceciliasNotesCaption)

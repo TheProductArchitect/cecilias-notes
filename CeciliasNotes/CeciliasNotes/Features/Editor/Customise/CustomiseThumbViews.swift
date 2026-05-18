@@ -9,6 +9,7 @@ import UIKit
 struct CoverThumbView: View {
     let cover: NotebookCover
     let size: CGSize
+    @Environment(\.theme) private var theme
 
     var body: some View {
         ZStack {
@@ -20,7 +21,7 @@ struct CoverThumbView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
         )
     }
 }

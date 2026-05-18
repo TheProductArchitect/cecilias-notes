@@ -74,7 +74,7 @@ struct CloudSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("iCloud sync")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkTextPrimary)
+                        .foregroundStyle(theme.foreground)
                     Text("notebooks sync across your devices via iCloud drive.")
                         .font(.system(size: 11))
                         .foregroundStyle(theme.foregroundSubtle)
@@ -87,7 +87,7 @@ struct CloudSettingsView: View {
                     }
                 ))
                 .labelsHidden()
-                .tint(.brandAccent)
+                .tint(theme.accent)
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
@@ -121,7 +121,7 @@ struct CloudSettingsView: View {
             } label: {
                 Text("sync now")
                     .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(Color.brandAccent)
+                    .foregroundStyle(theme.accent)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -184,14 +184,14 @@ struct CloudSettingsView: View {
             HStack {
                 Text("used in iCloud")
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if isLoadingUsage {
                     ProgressView().scaleEffect(0.6)
                 } else {
                     Text(ByteCountFormatter.string(fromByteCount: iCloudUsedBytes, countStyle: .file))
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkRecessivePrimary)
+                        .foregroundStyle(theme.recessivePrimary)
                         .monospacedDigit()
                 }
             }

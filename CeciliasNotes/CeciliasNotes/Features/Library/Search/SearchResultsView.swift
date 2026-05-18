@@ -8,6 +8,7 @@ struct SearchResultsView: View {
     let results: GroupedSearchResults
     let query: String
     @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
 
     var body: some View {
         Group {
@@ -51,7 +52,7 @@ struct SearchResultsView: View {
             Spacer(minLength: 80)
             Text("nothing found")
                 .font(.system(size: 13).italic())
-                .foregroundStyle(Color.inkRecessiveTertiary)
+                .foregroundStyle(theme.recessiveTertiary)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -78,11 +79,11 @@ struct SearchResultsView: View {
         } header: {
             Text(title)
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.inkBackgroundPrimary)
+                .background(theme.background)
         }
     }
 }
@@ -93,6 +94,7 @@ private struct SearchResultRow: View {
     let result: SearchResult
     let query: String
     let showHandwritingBadge: Bool
+    @Environment(\.theme) private var theme
     @ObservedObject var viewModel: LibraryViewModel
 
     private var notebook: Notebook? { viewModel.notebook(id: result.notebookId) }
@@ -115,7 +117,7 @@ private struct SearchResultRow: View {
                 // notebooks rather than a flat list.
                 Rectangle()
                     .fill(notebook.flatMap { Color(UIColor(hex: $0.coverColorHex)) }
-                          ?? Color.inkTextTertiary)
+                          ?? theme.foregroundSubtle)
                     .frame(width: 2)
                     .padding(.trailing, CeciliasNotes.Spacing.md)
 
@@ -123,13 +125,13 @@ private struct SearchResultRow: View {
                     HStack(spacing: 6) {
                         Text(notebook?.title ?? "Unknown")
                             .font(.ceciliasNotesSubhead)
-                            .foregroundColor(.inkTextPrimary)
+                            .foregroundColor(theme.foreground)
                             .lineLimit(1)
 
                         if let pageNumber = result.pageNumber {
                             Text("page \(pageNumber)")
                                 .font(.system(size: 11))
-                                .foregroundColor(.inkTextTertiary)
+                                .foregroundColor(theme.foregroundSubtle)
                                 .monospacedDigit()
                         }
 
@@ -145,7 +147,7 @@ private struct SearchResultRow: View {
                         // information throughout the app.
                         Text(snippetWithOCRSuffix())
                             .font(.ceciliasNotesFootnote)
-                            .foregroundColor(.inkTextSecondary)
+                            .foregroundColor(theme.foregroundMuted)
                             .lineLimit(2)
                     }
                 }
@@ -153,7 +155,7 @@ private struct SearchResultRow: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12))
                     .fontWeight(.medium)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .padding(.leading, CeciliasNotes.Spacing.sm)
             }
             .padding(.horizontal, CeciliasNotes.Spacing.lg)
@@ -175,7 +177,7 @@ private struct SearchResultRow: View {
         if showHandwritingBadge {
             var suffix = AttributedString("  — handwriting")
             suffix.font = .system(size: 11).italic()
-            suffix.foregroundColor = UIColor.inkTextTertiary
+            suffix.foregroundColor = UIColor(ThemeManager.shared.current.foregroundSubtle)
             attributed.append(suffix)
         }
         return attributed
@@ -195,7 +197,7 @@ private struct SearchResultRow: View {
             if let start = AttributedString.Index(r.lowerBound, within: attributed),
                let end   = AttributedString.Index(r.upperBound, within: attributed) {
                 attributed[start..<end].font = .ceciliasNotesFootnote.bold()
-                attributed[start..<end].foregroundColor = UIColor.inkAccentPrimary
+                attributed[start..<end].foregroundColor = UIColor(ThemeManager.shared.current.accent)
             }
             searchStart = r.upperBound
         }

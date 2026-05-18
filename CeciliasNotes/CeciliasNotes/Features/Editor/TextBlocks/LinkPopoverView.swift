@@ -9,6 +9,7 @@ struct LinkPopoverView: View {
     let existingURL: URL?
     let onApply: (URL) -> Void
     let onRemove: () -> Void
+    @Environment(\.theme) private var theme
 
     @State private var urlText: String = ""
     @FocusState private var isFocused: Bool
@@ -17,16 +18,16 @@ struct LinkPopoverView: View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
             Text(existingURL == nil ? "Add Link" : "Edit Link")
                 .font(.ceciliasNotesSubhead)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
 
             HStack(spacing: CeciliasNotes.Spacing.xs) {
                 Image(systemName: "link")
                     .font(.system(size: 14))
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
 
                 TextField("https://", text: $urlText)
                     .font(.ceciliasNotesBody)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .keyboardType(.URL)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
@@ -35,7 +36,7 @@ struct LinkPopoverView: View {
                     .onSubmit { tryApply() }
             }
             .padding(CeciliasNotes.Spacing.sm)
-            .background(Color.inkBackgroundSecondary)
+            .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
 
             HStack(spacing: CeciliasNotes.Spacing.sm) {
@@ -53,13 +54,13 @@ struct LinkPopoverView: View {
                     isPresented = false
                 }
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextSecondary)
+                .foregroundColor(theme.foregroundMuted)
 
                 Button("Apply") {
                     tryApply()
                 }
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkAccentPrimary)
+                .foregroundColor(theme.accent)
                 .disabled(!isValidURL)
             }
         }

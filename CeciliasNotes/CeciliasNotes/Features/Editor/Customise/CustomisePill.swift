@@ -17,6 +17,7 @@ struct CustomisePill: View {
     let onDismiss: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
     @State private var pulseScale: CGFloat = 1.0
     @State private var dismissTask: Task<Void, Never>?
 
@@ -26,11 +27,11 @@ struct CustomisePill: View {
             // for a touch of colour without taking space.
             ZStack {
                 Circle()
-                    .fill(Color.inkAccentPrimary.opacity(0.18))
+                    .fill(theme.accent.opacity(0.18))
                     .frame(width: 22, height: 22)
                 Image(systemName: "sparkles")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.inkAccentPrimary)
+                    .foregroundColor(theme.accent)
             }
 
             Button {
@@ -38,7 +39,7 @@ struct CustomisePill: View {
             } label: {
                 Text("Customise")
                     .font(.ceciliasNotesSubhead)
-                    .foregroundColor(.inkTextPrimary)
+                    .foregroundColor(theme.foreground)
                     .lineLimit(1)
             }
             .buttonStyle(.ceciliasNotesPressable)
@@ -48,7 +49,7 @@ struct CustomisePill: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.ceciliasNotesPressable)
@@ -62,7 +63,7 @@ struct CustomisePill: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.inkBorderSubtle, lineWidth: 0.5)
+                        .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
                 )
         )
         .scaleEffect(pulseScale)

@@ -35,7 +35,7 @@ struct PencilSettingsView: View {
             }
             .padding(CeciliasNotes.Spacing.lg)
         }
-        .background(Color.inkBackgroundSecondary.ignoresSafeArea())
+        .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Apple Pencil")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -56,7 +56,7 @@ struct PencilSettingsView: View {
 
                     if action != DoubleTapAction.allCases.last {
                         Divider()
-                            .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                            .background(theme.recessiveQuaternary.opacity(0.3))
                             .padding(.leading, CeciliasNotes.Spacing.md)
                     }
                 }
@@ -65,7 +65,7 @@ struct PencilSettingsView: View {
 
             Text("Overrides your system Pencil settings when using Cecilia's Notes.")
                 .font(.ceciliasNotesCaption)
-                .foregroundColor(.inkTextTertiary)
+                .foregroundColor(theme.foregroundSubtle)
         }
         .padding(CeciliasNotes.Spacing.md)
         .ceciliasNotesCard()
@@ -79,12 +79,12 @@ struct PencilSettingsView: View {
             HStack {
                 Text(action.displayName)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -107,7 +107,7 @@ struct PencilSettingsView: View {
                 )
                 Text("Allow drawing with your finger. When off, finger gestures scroll and zoom the canvas.")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
                     .padding(.bottom, CeciliasNotes.Spacing.sm)
             }
@@ -122,7 +122,7 @@ struct PencilSettingsView: View {
                 )
                 Text("Subtle vibration as you draw.")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
                     .padding(.bottom, CeciliasNotes.Spacing.sm)
             }
@@ -154,7 +154,7 @@ struct PencilSettingsView: View {
                         squeezeActionRow(action)
                         if action != SqueezeAction.allCases.last {
                             Divider()
-                                .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                                .background(theme.recessiveQuaternary.opacity(0.3))
                                 .padding(.leading, CeciliasNotes.Spacing.md)
                         }
                     }
@@ -163,7 +163,7 @@ struct PencilSettingsView: View {
 
                 Text("Squeeze your Apple Pencil Pro to trigger this action.")
                     .font(.ceciliasNotesCaption)
-                    .foregroundColor(.inkTextTertiary)
+                    .foregroundColor(theme.foregroundSubtle)
             }
             .padding(CeciliasNotes.Spacing.md)
             .ceciliasNotesCard()
@@ -182,12 +182,12 @@ struct PencilSettingsView: View {
             HStack {
                 Text(action.displayName)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -208,7 +208,7 @@ struct PencilSettingsView: View {
                     squeezeToolRow(choice)
                     if choice != SqueezeToolChoice.allCases.last {
                         Divider()
-                            .background(Color.inkRecessiveQuaternary.opacity(0.3))
+                            .background(theme.recessiveQuaternary.opacity(0.3))
                             .padding(.leading, CeciliasNotes.Spacing.md)
                     }
                 }
@@ -227,12 +227,12 @@ struct PencilSettingsView: View {
             HStack {
                 Text(choice.displayName)
                     .font(.system(size: 14))
-                    .foregroundStyle(Color.inkTextPrimary)
+                    .foregroundStyle(theme.foreground)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.brandAccent)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -247,10 +247,10 @@ struct PencilSettingsView: View {
         Toggle(isOn: value) {
             Label(label, systemImage: systemImage)
                 .font(.ceciliasNotesBody)
-                .foregroundColor(.inkTextPrimary)
+                .foregroundColor(theme.foreground)
         }
         .toggleStyle(.switch)
-        .tint(.inkAccentPrimary)
+        .tint(theme.accent)
         .padding(.horizontal, CeciliasNotes.Spacing.md)
         .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
@@ -258,6 +258,6 @@ struct PencilSettingsView: View {
     private func cardHeader(_ title: String) -> some View {
         Text(title)
             .font(.ceciliasNotesSubhead)
-            .foregroundColor(.inkTextSecondary)
+            .foregroundColor(theme.foregroundMuted)
     }
 }

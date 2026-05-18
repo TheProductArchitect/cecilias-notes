@@ -167,14 +167,14 @@ private struct StickyNotePopoverEditor: View {
 
             TextEditor(text: $draft)
                 .font(.system(size: 11))
-                .foregroundStyle(Color.inkTextPrimary)
+                .foregroundStyle(theme.foreground)
                 .scrollContentBackground(.hidden)
                 .background(Color.clear)
                 .focused($focused)
                 .frame(minWidth: 220, minHeight: 100)
                 .overlay(
                     Rectangle()
-                        .stroke(Color.inkRecessiveQuinary, lineWidth: 0.5)
+                        .stroke(theme.recessiveQuinary, lineWidth: 0.5)
                 )
 
             HStack {
@@ -184,7 +184,7 @@ private struct StickyNotePopoverEditor: View {
                 } label: {
                     Text("remove")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.inkRecessiveTertiary)
+                        .foregroundStyle(theme.recessiveTertiary)
                 }
                 .buttonStyle(.plain)
             }
@@ -207,7 +207,7 @@ private struct StickyNotePopoverEditor: View {
             .font(.system(size: 8))
             .tracking(0.08)
             .textCase(.uppercase)
-            .foregroundStyle(Color.inkRecessiveQuaternary)
+            .foregroundStyle(theme.recessiveQuaternary)
     }
 }
 

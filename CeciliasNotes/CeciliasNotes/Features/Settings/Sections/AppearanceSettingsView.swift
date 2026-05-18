@@ -55,7 +55,7 @@ struct AppearanceSettingsView: View {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .strokeBorder(
                             isSelected
-                                ? Color.brandAccent
+                                ? theme.accent
                                 : theme.hairline,
                             lineWidth: isSelected ? 1.5 : 0.5
                         )
@@ -79,15 +79,15 @@ struct AppearanceSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("resume where you left off")
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.inkTextPrimary)
+                        .foregroundStyle(theme.foreground)
                     Text("reopen the last notebook at the page you were viewing.")
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.inkRecessivePrimary)
+                        .foregroundStyle(theme.recessivePrimary)
                 }
                 Spacer()
                 Toggle("", isOn: $viewModel.resumeEnabled)
                     .labelsHidden()
-                    .tint(.brandAccent)
+                    .tint(theme.accent)
             }
             .padding(.vertical, 12)
             .overlay(alignment: .bottom) {
