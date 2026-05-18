@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Side-channel pattern, matching `PDFBackingStore` /
 /// `NotebookPreferencesStore`. The codebase's V3 SwiftData schema
-/// can't take new entity types in place (see `InkSchemas.swift`), so
+/// can't take new entity types in place (see `CeciliasNotesSchemas.swift`), so
 /// new annotation kinds live in UserDefaults JSON. Functionally
 /// equivalent to a `@Model` class — same soft-delete semantics, same
 /// per-page lookup — but no schema bump.

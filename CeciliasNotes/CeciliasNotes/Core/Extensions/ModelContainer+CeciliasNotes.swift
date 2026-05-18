@@ -30,14 +30,14 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // V5 = the active schema. Phase 5A+5C Step 2 bumped from V4
-        // to add `LectureRecord` as a first-class SwiftData entity.
-        // No migration plan — see `InkSchemas.swift` for the
+        // V5 stays the active schema during Phase B of Step 1 —
+        // V6 is declared in `CeciliasNotesSchemas.swift` but inert
+        // until Phase C swaps the container over and wipes the V5
+        // store. See `CeciliasNotesSchemas.swift` for the
         // duplicate-checksum trap that forces single-version
         // operation, and the wipe-and-retry fallback below for the
-        // schema-mismatch recovery path that handles V4-store →
-        // V5-schema transitions.
-        let schema = Schema(versionedSchema: InkSchemaV5.self)
+        // schema-mismatch recovery path.
+        let schema = Schema(versionedSchema: CeciliasNotesSchemaV5.self)
 
         // First attempt: CloudKit private database. The container
         // identifier matches the iCloud capability provisioned in
@@ -125,17 +125,10 @@ extension ModelContainer {
     }
 
     /// In-memory container for unit tests — no disk I/O, no CloudKit.
+    /// Tracks whichever schema version the production container is
+    /// on so test fixtures stay in sync.
     static func ceciliasNotesTestContainer() throws -> ModelContainer {
-        let schema = Schema([
-            Subject.self,
-            Folder.self,
-            Notebook.self,
-            Page.self,
-            TextBlock.self,
-            AudioRecord.self,
-            LectureRecord.self,
-            ImageRecord.self,
-        ])
+        let schema = Schema(versionedSchema: CeciliasNotesSchemaV5.self)
         let config = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: true,

@@ -59,7 +59,7 @@ final class Notebook {
 
     /// One of eight cover tones. Persisted via `CoverToneStore`
     /// (UserDefaults) rather than a SwiftData column to avoid the
-    /// schema-checksum crash documented in `InkSchemas.swift`. Reads
+    /// schema-checksum crash documented in `CeciliasNotesSchemas.swift`. Reads
     /// resolve to `.parchment` for notebooks that have never had a
     /// tone explicitly set, so existing libraries need no migration.
     var coverTone: NotebookCoverTone {

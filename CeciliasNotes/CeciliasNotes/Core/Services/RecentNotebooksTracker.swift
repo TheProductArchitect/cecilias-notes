@@ -12,7 +12,7 @@ import Foundation
 /// Why not a SwiftData column on `Notebook`? — adding a property to a
 /// pinned schema version trips SwiftData's "Cannot use staged migration
 /// with an unknown model version" check. The codebase comment in
-/// `InkSchemas.swift` documents the failure mode in detail. Until a
+/// `CeciliasNotesSchemas.swift` documents the failure mode in detail. Until a
 /// future schema bump introduces enum-scoped model types, side-channel
 /// per-notebook metadata lives here.
 enum RecentNotebooksTracker {

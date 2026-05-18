@@ -596,7 +596,7 @@ extension StorageService {
     /// access. Backed by `RecentNotebooksTracker` (UserDefaults) so we
     /// don't need a SwiftData schema change — adding a column to
     /// `Notebook` collides with the staged-migration version checksum
-    /// (see the comment in `InkSchemas.swift`). The tracker survives
+    /// (see the comment in `CeciliasNotesSchemas.swift`). The tracker survives
     /// the app, but a deleted notebook drops out of the list because
     /// the SwiftData fetch ignores its id.
     func fetchRecentNotebooks(limit: Int) -> [Notebook] {

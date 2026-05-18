@@ -10,7 +10,7 @@
 /// Why a side-channel rather than a SwiftData model: same rationale
 /// as the rest of the v4 schema — adding a new entity type forces a
 /// version bump with structurally-distinct Swift types. See
-/// `InkSchemas.swift` and `ARCHITECTURE.md`.
+/// `CeciliasNotesSchemas.swift` and `ARCHITECTURE.md`.
 
 import Foundation
 

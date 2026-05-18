@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Why a side-channel rather than SwiftData columns:
 ///   This codebase's V3 schema crashes on column adds in place
-///   (see `InkSchemas.swift`). The pattern for new per-notebook /
+///   (see `CeciliasNotesSchemas.swift`). The pattern for new per-notebook /
 ///   per-page state in this app is a UserDefaults-backed store —
 ///   `CoverToneStore`, `NotebookPreferencesStore`,
 ///   `RecentNotebooksTracker` — and this store follows that pattern.
