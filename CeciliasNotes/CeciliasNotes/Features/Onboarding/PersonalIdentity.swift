@@ -9,6 +9,14 @@ enum PersonalIdentity {
     static let nameKey               = "app.user.name"
     static let onboardingCompletedKey = "app.onboarding.completed"
 
+    /// One-shot UserDefaults key holding the user's name when an icon
+    /// update is queued from a UI state that can't safely host the
+    /// system icon-change alert (e.g. mid-onboarding-dismiss transition).
+    /// Picked up by `applyPendingIconUpdateIfNeeded()` from a settled
+    /// view's `onAppear` — see the Step 0.75 Phase G iOS 26 timing fix
+    /// in `updateAppIcon(for:)`.
+    static let pendingIconUpdateKey = "personalIdentity.pendingIconUpdate"
+
     /// App Group key the widget extension reads to render the
     /// possessive in the brand wordmark. Must be kept in sync with
     /// `nameKey` — every commit path that touches `nameKey` should
@@ -148,26 +156,50 @@ func libraryGreeting(forName name: String) -> String {
 
 // MARK: - Icon switching
 
-/// Switch to the alternate icon keyed by the user's name's first letter,
-/// or revert to the default if the name is empty / has no Latin letter.
+/// Queue a switch to the alternate icon keyed by the user's name's first
+/// letter. The actual `setAlternateIconName(_:)` call is deferred to the
+/// first settled view (`LibraryView.onAppear` → `applyPendingIconUpdateIfNeeded()`)
+/// rather than firing from the onboarding completion handler directly.
 ///
-/// `setAlternateIconName` triggers a system alert that Apple does not
-/// allow apps to suppress or restyle. The onboarding flow frames that
-/// alert with a "Personalising your app…" transition so the user's own
-/// wordmark anchors the moment.
+/// **Why deferred:** on iOS 26 the system's `LSIconAlertManager` (which
+/// presents the mandatory "You have changed the icon for…" alert that
+/// Apple does not allow apps to suppress) fails to acquire its
+/// presentation token while the onboarding window is still mid-dismiss,
+/// returning `NSPOSIXErrorDomain Code 35 ("Resource temporarily
+/// unavailable")`. The call silently does nothing. Pre-iOS-26 the
+/// transition timing was looser and the call landed during the transition.
+/// Routing through `pendingIconUpdateKey` + `LibraryView.onAppear` gives
+/// the alert manager a settled scene to work with.
 @MainActor
 func updateAppIcon(for name: String) {
     let app = UIApplication.shared
     // Diagnostic logging (Step 0.75 Phase G regression diagnosis). Unconditional
     // so the iPad device console surfaces it without a debug build attach.
-    // Remove once the icon-switch regression root cause is identified.
-    print("[BrandIcon][diag] updateAppIcon(for: \"\(name)\") called")
+    // Remove once on-device verification confirms the deferred call lands.
+    print("[BrandIcon][diag] updateAppIcon(for: \"\(name)\") called — queuing pending update")
     print("[BrandIcon][diag] supportsAlternateIcons = \(app.supportsAlternateIcons)")
     guard app.supportsAlternateIcons else { return }
     let key = BrandIcon.variantKey(forName: name)
     print("[BrandIcon][diag] resolved key = \(key ?? "nil"), currentAlternate = \(app.alternateIconName ?? "nil")")
-    // setAlternateIconName(nil) reverts to the default icon. Calling it
-    // when already at the default is harmless (no alert).
+    UserDefaults.standard.set(name, forKey: PersonalIdentity.pendingIconUpdateKey)
+    print("[BrandIcon][diag] wrote pendingIconUpdate = \"\(name)\" — will fire from LibraryView.onAppear")
+}
+
+/// Apply any icon update queued by `updateAppIcon(for:)`. Safe to call
+/// from any settled view's `onAppear` — no-ops if no update is pending.
+/// Clears the pending flag UNCONDITIONALLY (success OR failure) so a
+/// presentation failure doesn't trigger a retry on every subsequent
+/// library appearance.
+@MainActor
+func applyPendingIconUpdateIfNeeded() {
+    let defaults = UserDefaults.standard
+    guard let pendingName = defaults.string(forKey: PersonalIdentity.pendingIconUpdateKey) else { return }
+    defaults.removeObject(forKey: PersonalIdentity.pendingIconUpdateKey)
+    print("[BrandIcon][diag] applyPendingIconUpdateIfNeeded — pendingName = \"\(pendingName)\"")
+    let app = UIApplication.shared
+    guard app.supportsAlternateIcons else { return }
+    let key = BrandIcon.variantKey(forName: pendingName)
+    print("[BrandIcon][diag] resolved key = \(key ?? "nil"), currentAlternate = \(app.alternateIconName ?? "nil")")
     if app.alternateIconName == key {
         print("[BrandIcon][diag] no-op: already at \(key ?? "nil")")
         return

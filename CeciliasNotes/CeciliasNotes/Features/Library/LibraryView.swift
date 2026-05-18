@@ -42,6 +42,11 @@ struct LibraryView: View {
                 #if DEBUG
                 print("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
                 #endif
+                // Drain any icon update queued during onboarding completion.
+                // No-op outside the post-onboarding window — see
+                // `applyPendingIconUpdateIfNeeded()` for the iOS 26
+                // `LSIconAlertManager` timing rationale.
+                applyPendingIconUpdateIfNeeded()
             }
             .onChange(of: viewModel.pendingExportNotebookId) { _, id in
                 guard let id, let notebook = viewModel.notebook(id: id) else { return }
