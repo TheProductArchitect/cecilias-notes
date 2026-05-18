@@ -97,15 +97,35 @@ private final class CanvasHostView: UIView {
 struct ContinuousCanvasView: UIViewRepresentable {
 
     @ObservedObject var viewModel: EditorViewModel
-    @AppStorage("ink.canvas.fingerDrawingEnabled") private var fingerDrawingEnabled: Bool = false
+    /// User's resolution policy. Step 3 replaced the binary
+    /// `fingerDrawingEnabled` toggle with a three-mode picker
+    /// (`.auto` / `.always` / `.never`). The resolved bool used by
+    /// PKCanvasView's drawing policy is computed from this mode +
+    /// `InputCapabilityDetector.shared.hasPencil` in
+    /// `resolvedFingerDrawingEnabled`.
+    @AppStorage("ink.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
+    /// Bumped on `.inputCapabilityChanged` so view-tree updates
+    /// re-evaluate the resolved bool after the first pencil touch
+    /// flips `hasPencil`. AppStorage already drives updates for
+    /// the mode side.
+    @State private var capabilityTick: Int = 0
     @Environment(\.theme) private var theme
+
+    /// Resolved finger-drawing bool that the canvas plumbing
+    /// expects. Reads the mode + detector each evaluation; cheap.
+    private var resolvedFingerDrawingEnabled: Bool {
+        let _ = capabilityTick
+        return fingerDrawingMode.fingerDrawingEnabled(
+            hasPencil: InputCapabilityDetector.shared.hasPencil
+        )
+    }
 
     private let pageGap: CGFloat              = 24
     private let warmBandPaddingFactor: CGFloat = 1.0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(viewModel: viewModel,
-                    fingerDrawingEnabled: fingerDrawingEnabled,
+                    fingerDrawingEnabled: resolvedFingerDrawingEnabled,
                     pageGap: pageGap,
                     warmBandPaddingFactor: warmBandPaddingFactor)
     }
@@ -146,7 +166,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         scrollView.panGestureRecognizer.allowedTouchTypes = [
             NSNumber(value: UITouch.TouchType.direct.rawValue)
         ]
-        scrollView.panGestureRecognizer.minimumNumberOfTouches = fingerDrawingEnabled ? 2 : 1
+        scrollView.panGestureRecognizer.minimumNumberOfTouches = resolvedFingerDrawingEnabled ? 2 : 1
         host.addSubview(scrollView)
 
         // Single content view holds every page-host stacked vertically.
@@ -231,17 +251,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
         let coord = context.coordinator
         guard let scrollView = coord.scrollView else { return }
 
-        coord.fingerDrawingEnabled = fingerDrawingEnabled
+        let fingerDraws = resolvedFingerDrawingEnabled
+        coord.fingerDrawingEnabled = fingerDraws
 
         // Pan gesture touch count tracks finger-drawing setting.
-        let desiredTouches = fingerDrawingEnabled ? 2 : 1
+        let desiredTouches = fingerDraws ? 2 : 1
         if scrollView.panGestureRecognizer.minimumNumberOfTouches != desiredTouches {
             scrollView.panGestureRecognizer.minimumNumberOfTouches = desiredTouches
         }
 
         // Drawing policy + tool propagate to every mounted canvas. Cheap
         // — typically 3–5 canvases live at once.
-        coord.applyDrawingPolicyToAll(fingerDraws: fingerDrawingEnabled)
+        coord.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
         coord.applyToolToAll(viewModel.selectedTool)
         // Non-drawing tools (text / image / sticky-note) need finger
         // taps to reach the SwiftUI overlays underneath the canvas.
@@ -332,6 +353,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// Text-block overlay (ABOVE the canvas). Phase 3b: was a
             /// single global overlay in `overlayLayer`, now per-page.
             var textBlockHost: UIHostingController<TextBlockOverlayView>
+            /// V6 text-element overlay (ABOVE the legacy TextBlock
+            /// layer). Renders `PageElement`s of kind `.text` via
+            /// `TextElementView`. Step 3 — first PageElement-backed
+            /// overlay; pattern reused by Steps 4-7.
+            var textElementsHost: UIHostingController<TextElementsOverlayView>
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
@@ -350,6 +376,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// spawn multiple pages back-to-back.
         private var lastAutoAddDate: Date = .distantPast
 
+        /// Token for the `.inputCapabilityChanged` observer set up
+        /// in `init`. Released in `deinit`. Step 3: re-applies the
+        /// canvas drawing policy the moment the first pencil touch
+        /// flips `InputCapabilityDetector.hasPencil`, so `.auto`
+        /// mode users transitioning from finger-only to pencil
+        /// don't have to wait for the next SwiftUI tick to lock the
+        /// canvas down to pencilOnly.
+        private var capabilityObserver: NSObjectProtocol?
+
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
              pageGap: CGFloat,
@@ -358,9 +393,31 @@ struct ContinuousCanvasView: UIViewRepresentable {
             self.fingerDrawingEnabled = fingerDrawingEnabled
             self.pageGap = pageGap
             self.warmBandPaddingFactor = warmBandPaddingFactor
+            super.init()
+            self.capabilityObserver = NotificationCenter.default.addObserver(
+                forName: .inputCapabilityChanged,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                // Re-read the mode from AppStorage at notification
+                // time. The resolved bool may flip from anyInput to
+                // pencilOnly (or vice versa) when hasPencil changes
+                // under `.auto` mode.
+                let raw = UserDefaults.standard.string(forKey: "ink.canvas.fingerDrawingMode")
+                let mode = raw.flatMap(FingerDrawingMode.init(rawValue:)) ?? .auto
+                let fingerDraws = mode.fingerDrawingEnabled(
+                    hasPencil: InputCapabilityDetector.shared.hasPencil
+                )
+                self.fingerDrawingEnabled = fingerDraws
+                self.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
+            }
         }
 
         deinit {
+            if let token = capabilityObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
             // Detach the sticky-notes hosting controller from its
             // parent VC so it doesn't outlive the editor screen as a
             // dangling child VC. Per-page hosting controllers are
@@ -577,6 +634,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 textBlockHost.attachAsChild(of: renderer)
 
+                // V6 text-element overlay — first PageElement-backed
+                // surface (Step 3). Sits above the legacy TextBlock
+                // layer so taps in cursor/text mode reach the new
+                // primitive first. Inject the SwiftData container so
+                // the overlay's `@Environment(\.modelContext)`
+                // resolves — UIHostingController doesn't inherit the
+                // SwiftUI root environment automatically.
+                let textElementsHost = UIHostingController(
+                    rootView: TextElementsOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        notebookId: viewModel.notebook.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                textElementsHost.view.backgroundColor = .clear
+                textElementsHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(textElementsHost.view)
+                NSLayoutConstraint.activate([
+                    textElementsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    textElementsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    textElementsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    textElementsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                textElementsHost.attachAsChild(of: renderer)
+
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
                     pageId:        page.id,
@@ -588,6 +671,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     lectureHost:   lectureHost,
                     stickyHost:    stickyHost,
                     textBlockHost: textBlockHost,
+                    textElementsHost: textElementsHost,
                     template:      page.backgroundTemplate
                 ))
                 y += baseSize.height + pageGap
@@ -625,6 +709,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].lectureHost.detachFromParentVC()
                 hosts[i].stickyHost.detachFromParentVC()
                 hosts[i].textBlockHost.detachFromParentVC()
+                hosts[i].textElementsHost.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
@@ -980,7 +1065,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 case tool.isStickyNoteMode:
                     renderer.bringSubviewToFront(h.stickyHost.view)
                 case tool.isTextMode:
+                    // V6 text-elements layer wins tap routing over
+                    // the legacy TextBlock layer in text mode so
+                    // tap-to-create lands on the new primitive.
                     renderer.bringSubviewToFront(h.textBlockHost.view)
+                    renderer.bringSubviewToFront(h.textElementsHost.view)
+                case tool.isCursorMode:
+                    // Cursor mode: text elements first (so tap-to-
+                    // edit reaches them), then sticky/lecture/images
+                    // for selection of those primitives.
+                    renderer.bringSubviewToFront(h.imagesHost.view)
+                    renderer.bringSubviewToFront(h.audioPinsHost.view)
+                    renderer.bringSubviewToFront(h.lectureHost.view)
+                    renderer.bringSubviewToFront(h.stickyHost.view)
+                    renderer.bringSubviewToFront(h.textElementsHost.view)
                 default:
                     // Drawing tools — restore the original stacking
                     // order (text on top, then sticky, lecture, audio,
@@ -988,6 +1086,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     // to render under the canvas anyway when a drawing
                     // tool is active.
                     renderer.bringSubviewToFront(h.textBlockHost.view)
+                    renderer.bringSubviewToFront(h.textElementsHost.view)
                     renderer.bringSubviewToFront(h.stickyHost.view)
                     renderer.bringSubviewToFront(h.lectureHost.view)
                     renderer.bringSubviewToFront(h.audioPinsHost.view)

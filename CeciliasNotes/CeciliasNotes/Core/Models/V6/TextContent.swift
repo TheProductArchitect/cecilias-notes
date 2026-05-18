@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 
 /// Where this text came from. Used by analytics and AI features
 /// that want to bias prompts based on provenance ("summarise the
@@ -12,12 +13,55 @@ enum TextSource: String, Codable, CaseIterable {
     case pasted
 }
 
+/// Display size variant for a `TextContent`. Three coarse tiers —
+/// the architecture explicitly defers rich text (bold / italic /
+/// lists / alignment) to post-1.0. Size is the one styling axis
+/// users get in V1.
+enum TextSize: String, Codable, CaseIterable {
+    case small
+    case body
+    case heading
+
+    var pointSize: CGFloat {
+        switch self {
+        case .small:    return 14
+        case .body:     return 17
+        case .heading:  return 24
+        }
+    }
+
+    var fontWeight: UIFont.Weight {
+        switch self {
+        case .small, .body:  return .regular
+        case .heading:       return .semibold
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .small:    return "Small"
+        case .body:     return "Body"
+        case .heading:  return "Heading"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .small:    return "textformat.size.smaller"
+        case .body:     return "textformat"
+        case .heading:  return "textformat.size.larger"
+        }
+    }
+}
+
 /// Plain-text content for a `PageElement` of kind `.text`. V1 is
-/// plain `String`; rich text (AttributedString, lists, headings) is
-/// post-1.0.
+/// plain `String` plus a coarse `TextSize`; rich text
+/// (AttributedString, lists, alignment, custom fonts) is post-1.0.
 ///
-/// V6 (Step 1): inert. The legacy `TextBlock` entity still serves
-/// the editor's text overlays until Step 3 migrates onto this row.
+/// V6 (Step 3): live. `TextElementsOverlayView` renders one of
+/// these per `PageElement` with `kind == .text`, with tap-to-edit
+/// driven by the cursor tool. The legacy `TextBlock` entity stays
+/// alongside until Step 5 migrates the dictation flow off it.
 ///
 /// **Dictation pairing model** (architecture doc §9):
 ///   • When a recording starts, an `AudioContent` is created with
@@ -40,6 +84,12 @@ final class TextContent {
 
     var source: TextSource = TextSource.typed
 
+    /// Display size — `.body` for new typed text and dictation,
+    /// `.small` for captions, `.heading` for section headers. Added
+    /// in Step 3; default ensures existing V6 rows (none today, but
+    /// CloudKit-fetched rows tomorrow) decode cleanly.
+    var size: TextSize = TextSize.body
+
     /// Continuation pointer for multi-page recordings: non-nil on
     /// secondary text spans whose audio anchor lives on the FIRST
     /// span's page. Lookup by UUID rather than relationship because
@@ -60,6 +110,7 @@ final class TextContent {
         id: UUID = UUID(),
         text: String = "",
         source: TextSource = .typed,
+        size: TextSize = .body,
         anchorAudioId: UUID? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -67,6 +118,7 @@ final class TextContent {
         self.id            = id
         self.text          = text
         self.source        = source
+        self.size          = size
         self.anchorAudioId = anchorAudioId
         self.createdAt     = createdAt
         self.updatedAt     = updatedAt

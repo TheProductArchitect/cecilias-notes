@@ -19,6 +19,13 @@ struct PencilSettingsView: View {
     /// a proper `DynamicProperty` reader and the segments update.
     @AppStorage("ink.pencil.doubletap") private var doubleTapAction: DoubleTapAction = .switchTool
 
+    /// View-level mirror of the AppStorage key so the Picker
+    /// re-renders on selection. Same `DynamicProperty` rationale as
+    /// `doubleTapAction` above — `SettingsViewModel`'s
+    /// `@AppStorage` properties write through but don't fire
+    /// `objectWillChange`.
+    @AppStorage("ink.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
+
     var body: some View {
         ScrollView {
             VStack(spacing: CeciliasNotes.Spacing.lg) {
@@ -100,12 +107,8 @@ struct PencilSettingsView: View {
     private var togglesCard: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                toggleRow(
-                    "Finger Drawing",
-                    systemImage: "hand.draw",
-                    value: $viewModel.fingerDrawingEnabled
-                )
-                Text("Allow drawing with your finger. When off, finger gestures scroll and zoom the canvas.")
+                fingerDrawingRow
+                Text(fingerDrawingMode.detailDescription)
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundSubtle)
                     .padding(.horizontal, CeciliasNotes.Spacing.md)
@@ -137,6 +140,35 @@ struct PencilSettingsView: View {
             }
         }
         .ceciliasNotesCard()
+    }
+
+    /// Step 3: replaces the previous Bool toggle with a three-mode
+    /// picker. `.auto` follows pencil-detection; `.always` and
+    /// `.never` force the policy regardless of detection. The
+    /// resolved bool is computed at the canvas mount site against
+    /// `InputCapabilityDetector.shared.hasPencil`.
+    private var fingerDrawingRow: some View {
+        HStack(spacing: CeciliasNotes.Spacing.sm) {
+            Image(systemName: "hand.draw")
+                .frame(width: 22)
+                .foregroundColor(theme.foregroundMuted)
+            Text("Finger Drawing")
+                .font(.ceciliasNotesBody)
+                .foregroundColor(theme.foreground)
+            Spacer()
+            Picker("Finger Drawing", selection: $fingerDrawingMode) {
+                ForEach(FingerDrawingMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(theme.accent)
+            .labelsHidden()
+        }
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Squeeze (Apple Pencil Pro)

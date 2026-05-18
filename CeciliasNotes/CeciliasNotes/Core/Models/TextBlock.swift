@@ -1,6 +1,12 @@
 import Foundation
 import SwiftData
 
+// LEGACY: Step 5 migrates this entity to `TextContent` + `PageElement`.
+// Kept alongside V6's `TextContent` because the existing dictation flow
+// (lecture transcripts written via `lecture:<uuid>`-prefixed blocks)
+// still relies on the `TextBlockOverlayView` render path. Step 3 adds
+// V6 text elements on a new overlay layer next to this one; the two
+// coexist until the audio migration retires TextBlock.
 @Model
 final class TextBlock {
     // MARK: Identity

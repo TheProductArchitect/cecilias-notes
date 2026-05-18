@@ -38,4 +38,14 @@ final class CeciliasNotesPKCanvasView: PKCanvasView {
         }
         super.addGestureRecognizer(gestureRecognizer)
     }
+
+    /// Step 3: route every incoming touch through
+    /// `InputCapabilityDetector` so the first pencil touch on any
+    /// canvas flips `hasPencil` to true. The detector itself
+    /// no-ops after the first hit, so the per-touch cost is one
+    /// `UserDefaults.bool(forKey:)` read on the hot drawing path.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        InputCapabilityDetector.shared.recordTouches(touches)
+        super.touchesBegan(touches, with: event)
+    }
 }

@@ -102,8 +102,18 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("ink.pencil.pressure")    var pressureSetting:  PressureSetting  = .medium
     @AppStorage("ink.pencil.smoothing")   private var _strokeSmoothing: Double   = 50
 
-    /// Default OFF — Pencil draws, finger scrolls/zooms. When ON, finger can also draw.
+    /// Default OFF — kept as a legacy backing store so existing
+    /// installs' user choice survives the Step 3 mode rollout. New
+    /// reads should go through `fingerDrawingMode` and resolve via
+    /// `InputCapabilityDetector`.
     @AppStorage("ink.canvas.fingerDrawingEnabled") var fingerDrawingEnabled: Bool = false
+
+    /// Step 3: user's resolution policy for finger drawing on the
+    /// canvas. Defaults to `.auto` — finger-only iPads get finger
+    /// drawing; iPads with a Pencil get pencilOnly. Resolved by
+    /// callers via `mode.fingerDrawingEnabled(hasPencil:)` against
+    /// `InputCapabilityDetector.shared.hasPencil`.
+    @AppStorage("ink.canvas.fingerDrawingMode") var fingerDrawingMode: FingerDrawingMode = .auto
 
     // Pixel-eraser size setting removed — PencilKit's default
     // eraser behaviour now governs. The legacy
