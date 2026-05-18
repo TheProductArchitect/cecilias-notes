@@ -30,14 +30,17 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // V5 stays the active schema during Phase B of Step 1 —
-        // V6 is declared in `CeciliasNotesSchemas.swift` but inert
-        // until Phase C swaps the container over and wipes the V5
-        // store. See `CeciliasNotesSchemas.swift` for the
-        // duplicate-checksum trap that forces single-version
-        // operation, and the wipe-and-retry fallback below for the
-        // schema-mismatch recovery path.
-        let schema = Schema(versionedSchema: CeciliasNotesSchemaV5.self)
+        // V6 = the active schema. Step 1 of the unified PageElement
+        // migration: adds `PageElement` and 7 polymorphic content
+        // entities alongside the existing V5 entities. The V5
+        // entities stay in the V6 model list so the existing
+        // rendering paths keep working through Steps 2-9. The V5
+        // SwiftData store is wiped on first launch under V6 by the
+        // `runV6WipeIfNeeded` gate in `CeciliasNotesAppDelegate` —
+        // no migration plan, single-tester start-clean. See
+        // `CeciliasNotesSchemas.swift` for the duplicate-checksum
+        // trap that forces single-version operation.
+        let schema = Schema(versionedSchema: CeciliasNotesSchemaV6.self)
 
         // First attempt: CloudKit private database. The container
         // identifier matches the iCloud capability provisioned in
@@ -128,7 +131,7 @@ extension ModelContainer {
     /// Tracks whichever schema version the production container is
     /// on so test fixtures stay in sync.
     static func ceciliasNotesTestContainer() throws -> ModelContainer {
-        let schema = Schema(versionedSchema: CeciliasNotesSchemaV5.self)
+        let schema = Schema(versionedSchema: CeciliasNotesSchemaV6.self)
         let config = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: true,

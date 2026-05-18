@@ -277,6 +277,15 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
     /// existing UserDefaults JSON records are discarded outright per
     /// the start-clean spec.
     private static let v5WipeKey = "schema.v5.wiped"
+    /// Step 1 of the unified PageElement migration: one-shot wipe
+    /// gate for the V5 → V6 schema bump. When this is absent from
+    /// `UserDefaults` on launch, the V5 SwiftData store + the
+    /// `Documents/MediaAttachments/` tree are deleted so the V6
+    /// container opens onto a pristine library. Single-tester
+    /// start-clean — no migration plan, agreed in the V6 scoping
+    /// decision. The gate is set after the wipe so subsequent
+    /// launches no-op.
+    private static let v6WipeKey = "schema.v6.wiped"
 
     func application(
         _ application: UIApplication,
@@ -300,6 +309,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
             #endif
         }
         Self.runV5WipeIfNeeded(defaults: defaults)
+        Self.runV6WipeIfNeeded(defaults: defaults)
         return true
     }
 
@@ -342,6 +352,68 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         defaults.set(true, forKey: v5WipeKey)
         #if DEBUG
         print("[Launch] V5 wipe applied — UserDefaults media stores + V4 SwiftData store cleared")
+        #endif
+    }
+
+    /// One-shot wipe on the first V6 launch. Three parts:
+    ///
+    ///   1. Delete the V5 SwiftData store + WAL/SHM sidecars. The
+    ///      V6 schema adds `PageElement` and 7 content entities;
+    ///      single-tester start-clean rather than writing a
+    ///      migration plan.
+    ///   2. Wipe `Documents/MediaAttachments/` (images, audio,
+    ///      lectures, pdfs, pdf-previews). The V5 media files
+    ///      reference rows that no longer exist; they orphan
+    ///      otherwise and bloat iCloud Drive.
+    ///   3. Drop the V5 resume pointers so the editor doesn't try
+    ///      to restore into a notebook that no longer exists.
+    ///
+    /// Preserved: theme prefs (App Group UserDefaults), app
+    /// settings, onboarding flags, per-notebook UUID-keyed stores
+    /// (CoverToneStore, NotebookPreferencesStore, PDFBackingStore,
+    /// etc.). Those last entries orphan harmlessly — their keys
+    /// reference UUIDs that no longer exist in SwiftData, so
+    /// nothing reads them. A future garbage-collection pass can
+    /// sweep them when convenient.
+    ///
+    /// The CloudKit server-side copy stays intact; on first launch
+    /// with the V6 container, CloudKit will start syncing the V6
+    /// schema's empty model set up to the server, which (because
+    /// V6 keeps all V5 entity types in its model list) drops no
+    /// existing CloudKit records — they just won't be visible
+    /// locally until the user re-adds them.
+    ///
+    /// Files on disk are best-effort — FileManager errors are
+    /// non-fatal because the ModelContainer's own mismatch fallback
+    /// will recover the SwiftData side regardless.
+    private static func runV6WipeIfNeeded(defaults: UserDefaults) {
+        guard defaults.object(forKey: v6WipeKey) == nil else { return }
+
+        // 1. SwiftData store + sidecars.
+        let storeURL = StorageService.ceciliasNotesDirectoryURL
+            .appendingPathComponent("ink.sqlite")
+        try? FileManager.default.removeItem(at: storeURL)
+        for suffix in ["-shm", "-wal", "-journal"] {
+            try? FileManager.default.removeItem(
+                at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+            )
+        }
+
+        // 2. MediaAttachments tree (images, audio, lectures, pdfs).
+        if let docs = FileManager.default.urls(
+            for: .documentDirectory, in: .userDomainMask
+        ).first {
+            let mediaRoot = docs.appendingPathComponent("MediaAttachments")
+            try? FileManager.default.removeItem(at: mediaRoot)
+        }
+
+        // 3. Resume pointers referencing now-deleted notebooks.
+        defaults.removeObject(forKey: "ink.resume.lastNotebookId")
+        defaults.removeObject(forKey: "ink.resume.lastPageIndex")
+
+        defaults.set(true, forKey: v6WipeKey)
+        #if DEBUG
+        print("[Launch] V6 wipe applied — V5 SwiftData store + Documents/MediaAttachments/ cleared")
         #endif
     }
 
