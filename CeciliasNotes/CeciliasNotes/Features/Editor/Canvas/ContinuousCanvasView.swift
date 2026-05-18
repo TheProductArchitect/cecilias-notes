@@ -338,11 +338,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// a strong ref alongside the renderer so the controller
             /// outlives `mountCanvas` / `unmountCanvas` cycles.
             var templateHost: UIHostingController<TemplatePatternView>
-            /// Image attachments overlay (BELOW the canvas). Stored so
-            /// the hosting controller outlives the page's lifetime — a
-            /// dangling HC stops driving SwiftUI updates and also
-            /// triggers `_UIReparentingView` complaints.
-            var imagesHost:    UIHostingController<ImageAttachmentsView>
+            /// V6 image-element overlay (BELOW the canvas). Step 4
+            /// replaced the legacy `ImageAttachmentsView` /
+            /// `ImageRecord` flow with the unified PageElement
+            /// model. Stored so the hosting controller outlives
+            /// the page's lifetime — a dangling HC stops driving
+            /// SwiftUI updates and also triggers
+            /// `_UIReparentingView` complaints.
+            var imagesHost:    UIHostingController<ImageElementsOverlayView>
             /// Audio annotation pins overlay (ABOVE the canvas).
             var audioPinsHost: UIHostingController<AudioAnnotationCardsOverlayView>
             /// Lecture-block overlay (ABOVE the canvas).
@@ -526,10 +529,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
                 let pageCS = PageCoordinateSpace(baseSize: baseSize)
 
+                // Step 4: replaced legacy `ImageAttachmentsView`
+                // (backed by `ImageRecord`) with the unified
+                // `ImageElementsOverlayView` (backed by
+                // `PageElement(kind: .image) + ImageContent`).
+                // Visual + interaction parity preserved; the
+                // selection chrome (dashed border, corner handles,
+                // floating toolbar) lives on the new view.
                 let imagesHost = UIHostingController(
-                    rootView: ImageAttachmentsView(
+                    rootView: ImageElementsOverlayView(
                         viewModel: viewModel,
                         pageId: page.id,
+                        notebookId: viewModel.notebook.id,
                         coordinateSpace: pageCS
                     )
                 )

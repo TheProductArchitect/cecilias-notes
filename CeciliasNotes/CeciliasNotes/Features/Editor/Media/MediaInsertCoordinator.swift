@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import PhotosUI
+import SwiftData
 import UIKit
 import VisionKit
 import UniformTypeIdentifiers
@@ -290,22 +291,15 @@ final class MediaInsertCoordinator: ObservableObject {
         )
     }
 
-    /// Persist a `ProcessedImage` as an `ImageRecord` via
-    /// `MediaAttachmentStore`. The image bytes are already on disk;
-    /// this only writes the SwiftData metadata. Posts
-    /// `.mediaAttachmentsChanged` (via the store), which
-    /// `ImageAttachmentsView` listens to for a live re-render.
+    /// Persist a `ProcessedImage` as a V6 `PageElement(kind: .image)`
+    /// + `ImageContent`. The image bytes were already written by
+    /// `ImageProcessingService.processImage(_:mediaDir:)` into
+    /// `MediaStorage.directory(for: .images)/<id>.jpg`, which
+    /// matches `ImageContent.fileURL` exactly — no extra file
+    /// write needed here, only the SwiftData insert.
     ///
-    /// Phase 5A+5C Step 4: the legacy `relativeFilePath` is gone —
-    /// `MediaAttachmentStore.absoluteURL(for:)` resolves via
-    /// `MediaStorage.url(for: .images, id:)`. The Files / Camera /
-    /// Scan / PDF paths write image bytes through
-    /// `ImageProcessingService.processImage(_:mediaDir:)` into the
-    /// per-notebook `media/` directory — those files are now
-    /// orphans the moment this lands, since the store only knows
-    /// about `MediaStorage.images/`. Migrating those paths to write
-    /// into `MediaStorage` directly is a follow-up; for now the
-    /// canvas-tap import path (the dominant one) works correctly.
+    /// Step 4 rewired this off the legacy `ImageRecord` /
+    /// `MediaAttachmentStore` flow.
     private func saveImageRecord(
         _ processed: ProcessedImage,
         on page: Page,
@@ -313,19 +307,33 @@ final class MediaInsertCoordinator: ObservableObject {
         rect: CGRect,
         pageSize: CGSize
     ) {
-        let record = ImageRecord(
-            id: processed.id,
+        let context = StorageService.shared.context
+        let element = PageElement(
+            id: UUID(),
             pageId: page.id,
             notebookId: notebookId,
+            kind: .image,
             normalizedX:      rect.origin.x / pageSize.width,
             normalizedY:      rect.origin.y / pageSize.height,
             normalizedWidth:  rect.width    / pageSize.width,
-            normalizedHeight: rect.height   / pageSize.height,
-            rotation:         0,
-            zOrder:           0,
-            originalWidth:    Double(processed.originalSize.width),
-            originalHeight:   Double(processed.originalSize.height)
+            normalizedHeight: rect.height   / pageSize.height
         )
-        MediaAttachmentStore.save(record)
+        let content = ImageContent(
+            id: processed.id,
+            filename: processed.fileName,
+            fileFormat: "jpg",  // ImageProcessingService writes JPG only
+            originalPixelWidth: Int(processed.originalSize.width),
+            originalPixelHeight: Int(processed.originalSize.height)
+        )
+        element.imageContent = content
+        context.insert(element)
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            print("[Image] save failed in MediaInsertCoordinator: \(error)")
+            #endif
+        }
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 }

@@ -34,6 +34,12 @@ import SwiftData
 enum CeciliasNotesSchemaV5: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     static var models: [any PersistentModel.Type] {
+        // Historical V5 reference. `ImageRecord` was a V5 entity
+        // but was deleted from the codebase in Step 4 once the V6
+        // image migration shipped; the list below drops it because
+        // the type no longer compiles. Anyone needing the original
+        // V5 shape can recover it from git history at the commit
+        // tagged for Step 4.
         [
             Subject.self,
             Folder.self,
@@ -42,7 +48,6 @@ enum CeciliasNotesSchemaV5: VersionedSchema {
             TextBlock.self,
             AudioRecord.self,
             LectureRecord.self,
-            ImageRecord.self,
         ]
     }
 }
@@ -52,7 +57,10 @@ enum CeciliasNotesSchemaV6: VersionedSchema {
     static var models: [any PersistentModel.Type] {
         [
             // V5 entities kept so existing rendering keeps working
-            // through Steps 2-9 of the migration.
+            // through Steps 2-9 of the migration. `ImageRecord` was
+            // removed in Step 4 (image migration); its rendering
+            // and persistence layers are fully replaced by
+            // `PageElement(kind: .image) + ImageContent`.
             Subject.self,
             Folder.self,
             Notebook.self,
@@ -60,10 +68,11 @@ enum CeciliasNotesSchemaV6: VersionedSchema {
             TextBlock.self,
             AudioRecord.self,
             LectureRecord.self,
-            ImageRecord.self,
-            // V6 unified element model — inert in Step 1. No view
-            // code reads or writes these yet; Steps 2-9 migrate the
-            // per-primitive stores onto `PageElement` one at a time.
+            // V6 unified element model — `PageElement` plus seven
+            // polymorphic content entities. Live for `.text`
+            // (Step 3) and `.image` (Step 4); the remaining kinds
+            // are inert until Steps 5-9 migrate their respective
+            // surfaces onto `PageElement`.
             PageElement.self,
             StrokeContent.self,
             ImageContent.self,

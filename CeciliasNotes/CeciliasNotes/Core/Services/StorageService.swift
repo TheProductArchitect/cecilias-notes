@@ -757,13 +757,12 @@ extension StorageService {
                 newPage.textBlocks = (newPage.textBlocks ?? []) + [newBlock]
             }
 
-            // Image attachments live in the `MediaAttachmentStore`
-            // side-channel (UserDefaults JSON for metadata + file
-            // bytes under `Documents/MediaAttachments/images/`),
-            // not on the SwiftData `Page`. Duplication of those
-            // records belongs in that store's own flow — punted
-            // until the side-channel itself migrates to SwiftData
-            // (5A+5C Step 2).
+            // Image attachments are V6 `PageElement(kind: .image)`
+            // rows (Step 4). Duplicating image elements on
+            // page-copy is unwired — fetching by pageId, cloning
+            // each element + ImageContent with fresh UUIDs, and
+            // copying the underlying file bytes is a follow-up.
+            // No callers rely on it today.
             // Audio records are denormalised by pageId — fetch them
             // for the source page, clone each one with new ids
             // pointing at the new page + notebook, and copy the audio
@@ -1475,16 +1474,13 @@ extension StorageService {
         // reaper-purged notebook doesn't leave orphaned annotation
         // records keyed to pages that no longer exist.
         PDFTextAnnotationStore.forget(pageIds: pageIds)
-        // Image attachments — the store also removes the on-disk
-        // image files under `Documents/media/<notebookId>/` so the
-        // reaper-purge sweep doesn't leave orphaned pixels behind.
-        MediaAttachmentStore.forget(pageIds: pageIds)
-        // Belt-and-braces: drop the per-notebook media directory
-        // wholesale in case any files lingered (e.g. records that
-        // failed to persist). Safe to remove a non-existent path.
-        try? FileManager.default.removeItem(
-            at: MediaAttachmentStore.mediaDirectory(for: notebook.id)
-        )
+        // Image attachments — Step 4 retired `MediaAttachmentStore`.
+        // V6 image elements are `PageElement(kind: .image)` rows
+        // with backing files at `MediaStorage.url(for: .images, id:)`.
+        // Fetch each element for the dead pages, remove the file
+        // by `ImageContent.id` (which matches the filename UUID),
+        // then drop the row.
+        purgeImageElements(forPageIds: pageIds)
         // Lecture records live in UserDefaults; their audio files
         // sit under `notebookDir/audio/` and are already swept by
         // the `removeItem(at: dir)` above. `forget(pageIds:)` is
@@ -1505,6 +1501,29 @@ extension StorageService {
         NotebookPreferencesStore.forget(notebook.id)
         RecentNotebooksTracker.forget(notebook.id)
         SearchIndexService.shared.removeNotebook(id: notebook.id)
+    }
+
+    /// Step 4: hard-delete every V6 image element for the given
+    /// pages AND remove the underlying image files from disk.
+    /// Called from `purgeNotebookFiles` on reaper purge. Files are
+    /// removed before the rows are deleted so we can still resolve
+    /// `ImageContent.fileURL`. SwiftData cascade-deletes
+    /// `ImageContent` when the parent `PageElement` is removed.
+    private func purgeImageElements(forPageIds pageIds: [UUID]) {
+        guard !pageIds.isEmpty else { return }
+        let pageIdSet = Set(pageIds)
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { pageIdSet.contains($0.pageId) }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        let fm = FileManager.default
+        for element in elements where element.kind == .image {
+            if let content = element.imageContent {
+                try? fm.removeItem(at: content.fileURL)
+            }
+            context.delete(element)
+        }
+        try? context.save()
     }
 }
 

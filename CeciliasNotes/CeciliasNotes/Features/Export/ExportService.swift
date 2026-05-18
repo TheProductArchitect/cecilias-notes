@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import PencilKit
+import SwiftData
 import UIKit
 
 // MARK: - Export types
@@ -357,8 +358,12 @@ final class ExportService {
         pageBounds: CGRect,
         to pdfPage: PDFPage
     ) {
-        let records = MediaAttachmentStore.records(for: pageId)
-        guard !records.isEmpty else { return }
+        // Step 4: read V6 `PageElement(kind: .image)` + `ImageContent`
+        // rows in place of the retired `MediaAttachmentStore`. Geometry
+        // is identical; `element.rotation` is radians (vs the legacy
+        // `record.rotation` degrees), so the multiplier drops.
+        let elements = fetchImageElements(forPageId: pageId)
+        guard !elements.isEmpty else { return }
 
         let scale: CGFloat = 2.0
         let pixelSize = CGSize(
@@ -370,18 +375,18 @@ final class ExportService {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         ctx.scaleBy(x: scale, y: scale)
 
-        for record in records {
-            let url = MediaAttachmentStore.absoluteURL(for: record)
-            guard let image = UIImage(contentsOfFile: url.path) else { continue }
+        for element in elements {
+            guard let content = element.imageContent,
+                  let image = UIImage(contentsOfFile: content.fileURL.path) else { continue }
             let rect = CGRect(
-                x:      record.normalizedX      * pageBounds.width,
-                y:      record.normalizedY      * pageBounds.height,
-                width:  record.normalizedWidth  * pageBounds.width,
-                height: record.normalizedHeight * pageBounds.height
+                x:      element.normalizedX      * pageBounds.width,
+                y:      element.normalizedY      * pageBounds.height,
+                width:  element.normalizedWidth  * pageBounds.width,
+                height: element.normalizedHeight * pageBounds.height
             )
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.rotate(by: -CGFloat(record.rotation) * .pi / 180)
+            ctx.rotate(by: -CGFloat(element.rotation))
             ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
             image.draw(in: CGRect(origin: .zero, size: rect.size))
             ctx.restoreGState()
@@ -392,6 +397,22 @@ final class ExportService {
             image:  composite
         )
         pdfPage.addAnnotation(annotation)
+    }
+
+    /// Step 4 helper: fetch V6 image elements for a page, sorted by
+    /// `zIndex` then `createdAt` so the export render order matches
+    /// the editor's stacking. `kind == .image` is filtered in Swift
+    /// because the `#Predicate` macro rejects enum-case equality
+    /// inside key-path comparisons on iOS 26.
+    private func fetchImageElements(forPageId pageId: UUID) -> [PageElement] {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+        )
+        let all = (try? StorageService.shared.context.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .image }
     }
 
     /// Add proper `PDFAnnotation` objects (highlight / underline /
@@ -839,27 +860,26 @@ final class ExportService {
     // MARK: - Media attachments
 
     private func drawMediaAttachments(_ page: Page, ctx: CGContext, bounds: CGRect, notebook: Notebook) {
-        // Phase 5A+5C Step 1: the legacy SwiftData `MediaAttachment`
-        // entity is gone; image attachments live exclusively in
-        // `MediaAttachmentStore`. Geometry is normalised against
-        // `bounds`; rotation is applied around the rect's centre.
-        let records = MediaAttachmentStore.records(for: page.id)
-        for record in records {
-            let url = MediaAttachmentStore.absoluteURL(for: record)
-            guard let image = UIImage(contentsOfFile: url.path) else { continue }
+        // Step 4: read V6 `PageElement(kind: .image)` rows in place
+        // of the retired `MediaAttachmentStore`. Geometry is the
+        // same; rotation is already in radians on `PageElement`
+        // (vs the legacy degrees), so the `* .pi / 180` factor is
+        // dropped. `rotate(by:)` is counter-clockwise in PDF
+        // context, so negate to match the on-screen direction.
+        let elements = fetchImageElements(forPageId: page.id)
+        for element in elements {
+            guard let content = element.imageContent,
+                  let image = UIImage(contentsOfFile: content.fileURL.path) else { continue }
 
             let rect = CGRect(
-                x:      record.normalizedX      * bounds.width,
-                y:      record.normalizedY      * bounds.height,
-                width:  record.normalizedWidth  * bounds.width,
-                height: record.normalizedHeight * bounds.height
+                x:      element.normalizedX      * bounds.width,
+                y:      element.normalizedY      * bounds.height,
+                width:  element.normalizedWidth  * bounds.width,
+                height: element.normalizedHeight * bounds.height
             )
             ctx.saveGState()
             ctx.translateBy(x: rect.midX, y: rect.midY)
-            // Convert 90° steps to radians. `rotate(by:)` is
-            // counter-clockwise in PDF context, so negate to match
-            // the on-screen rotation direction.
-            ctx.rotate(by: -CGFloat(record.rotation) * .pi / 180)
+            ctx.rotate(by: -CGFloat(element.rotation))
             ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
             image.draw(in: CGRect(origin: .zero, size: rect.size))
             ctx.restoreGState()

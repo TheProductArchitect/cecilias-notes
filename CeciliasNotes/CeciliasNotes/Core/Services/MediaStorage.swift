@@ -21,10 +21,10 @@ import UIKit
 /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.B.
 ///
 /// **Contract**:
-/// - All metadata records (`ImageRecord`, `AudioRecord`,
-///   `LectureRecord` — all SwiftData @Model entities since Phase 5
-///   Steps 2-5) keep their persisted metadata in SwiftData. Only the
-///   file *bytes* live here.
+/// - All metadata records (`PageElement(kind: .image)` +
+///   `ImageContent` since Step 4; `AudioRecord`, `LectureRecord`
+///   pending Step 5) keep their persisted metadata in SwiftData.
+///   Only the file *bytes* live here.
 /// - All writes go through `writeImage(_:id:format:)` etc, which run
 ///   their disk I/O off the main actor.
 /// - `migrateExistingFilesIfNeeded()` runs idempotently at app launch

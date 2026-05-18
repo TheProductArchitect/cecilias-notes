@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import PencilKit
+import SwiftData
 import SwiftUI
 import UIKit
 
@@ -167,12 +168,18 @@ final class EditorViewModel: ObservableObject {
         )
     }
 
-    /// Commit a picked image to disk + the side-channel store. The
-    /// file is written under `Documents/media/<notebookId>/`; the
-    /// record is sized to ~60% of page width preserving aspect
-    /// ratio, positioned so its centre lands on
-    /// `(normalizedX, normalizedY)`. Runs the disk write on a
-    /// detached task — the architecture rule for file I/O.
+    /// Commit a picked image as a V6 `PageElement(kind: .image)` +
+    /// `ImageContent`. The file is written under
+    /// `Documents/MediaAttachments/images/<id>.<ext>` (shared
+    /// iCloud Drive layout via `MediaStorage`); the element is
+    /// sized to ~60% of page width preserving aspect ratio,
+    /// positioned so its centre lands on `(normalizedX, normalizedY)`.
+    ///
+    /// Step 4 rewired this method onto the unified model — the
+    /// legacy `ImageRecord` + `MediaAttachmentStore.save` flow was
+    /// removed in the same commit. The element renders
+    /// immediately via `ImageElementsOverlayView` once the
+    /// `mediaAttachmentsChanged` notification fires below.
     func commitImportedImage(
         _ image: UIImage,
         fileExtension ext: String,
@@ -180,10 +187,6 @@ final class EditorViewModel: ObservableObject {
     ) {
         let attachmentId = UUID()
         let safeExt = ext.isEmpty ? "jpg" : ext.lowercased()
-        // `relativeFilePath` is no longer stored on the record —
-        // `MediaAttachmentStore.absoluteURL(for:)` derives the path
-        // from the id. We still resolve the format here so the write
-        // path knows which extension to use.
 
         // Aspect-preserving fit to ~60% of page width.
         let pixelWidth  = max(1, image.size.width)
@@ -192,33 +195,53 @@ final class EditorViewModel: ObservableObject {
         let targetW: Double = 0.6
         let targetH: Double = Double(aspect) * targetW
 
-        let record = ImageRecord(
-            id: attachmentId,
-            pageId: currentPage.id,
-            notebookId: notebook.id,
-            normalizedX: max(0, min(1 - targetW, request.normalizedX - targetW / 2)),
-            normalizedY: max(0, min(1 - targetH, request.normalizedY - targetH / 2)),
-            normalizedWidth:  targetW,
-            normalizedHeight: targetH,
-            rotation: 0,
-            zOrder: 0,
-            originalWidth: Double(pixelWidth),
-            originalHeight: Double(pixelHeight)
-        )
+        let normalizedX = max(0, min(1 - targetW, request.normalizedX - targetW / 2))
+        let normalizedY = max(0, min(1 - targetH, request.normalizedY - targetH / 2))
 
-        // Write the bytes BEFORE publishing the record. The render
-        // path (`ImageAttachmentLoader`) decodes from disk on the
-        // first refresh; if the record lands in the store before
-        // the file does, the loader resolves a missing file and
-        // shows a permanent grey placeholder (`.task(id: url)` only
-        // re-runs when the URL changes, not when the file appears).
-        // Awaiting the write keeps the two in lock-step.
+        // The disk write is awaited before the element/content are
+        // inserted into SwiftData. The render path's `ImageDataView`
+        // decodes on first paint via `.task(id:)`; if the row lands
+        // before the file does, the loader resolves a missing file
+        // and the placeholder sticks until a tool change forces a
+        // re-render. Sequencing the writes keeps the two in step.
         let format: MediaStorage.ImageFormat =
             safeExt == "png" ? .png : .jpeg(quality: 0.85)
+        let pageId = currentPage.id
+        let notebookId = notebook.id
         Task { @MainActor in
             let writtenPath = await MediaStorage.writeImage(image, id: attachmentId, format: format)
             guard writtenPath != nil else { return }
-            MediaAttachmentStore.save(record)
+
+            let context = StorageService.shared.context
+            let element = PageElement(
+                id: UUID(),
+                pageId: pageId,
+                notebookId: notebookId,
+                kind: .image,
+                normalizedX: normalizedX,
+                normalizedY: normalizedY,
+                normalizedWidth: targetW,
+                normalizedHeight: targetH
+            )
+            let content = ImageContent(
+                id: attachmentId,
+                filename: "\(attachmentId.uuidString).\(safeExt)",
+                fileFormat: safeExt,
+                originalPixelWidth: Int(pixelWidth),
+                originalPixelHeight: Int(pixelHeight)
+            )
+            element.imageContent = content
+            context.insert(element)
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                print("[Image] save failed on commitImportedImage: \(error)")
+                #endif
+            }
+            NotificationCenter.default.post(
+                name: .mediaAttachmentsChanged, object: nil
+            )
         }
     }
 
@@ -1832,7 +1855,7 @@ final class EditorViewModel: ObservableObject {
     // Read-only URL passthrough — overlays use this to load audio
     // bytes without depending on StorageService directly. Image
     // attachments resolve their URLs through
-    // `MediaAttachmentStore.absoluteURL(for:)` instead.
+    // `ImageContent.fileURL` (Step 4) instead.
     func audioURL(for record: AudioRecord) -> URL {
         storage.audioURL(for: record)
     }
