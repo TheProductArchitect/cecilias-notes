@@ -225,10 +225,16 @@ extension Theme {
         foregroundMuted:   Color(hex: "#8E8E8A"),
         foregroundSubtle:  Color(hex: "#555552"),
 
-        // Recessive — from inkRecessive{Primary..Quinary} dark
+        // Recessive — from inkRecessive{Primary..Quinary} dark.
+        // recessiveTertiary bumped #3F3F3D → #5E5E5C in Phase G after
+        // on-device verification: the MONDAY eyebrow rendered at the
+        // old value was unreadable against the Midnight library
+        // background (#1A1A1A — only ~12pt luminance difference). The
+        // new value gives a ~26pt difference, matching the Default
+        // theme's #CCCCCC eyebrow against #FAFAF8.
         recessivePrimary:    Color(hex: "#A4A4A2"),
         recessiveSecondary:  Color(hex: "#4D4D4B"),
-        recessiveTertiary:   Color(hex: "#3F3F3D"),
+        recessiveTertiary:   Color(hex: "#5E5E5C"),
         recessiveQuaternary: Color(hex: "#6A6A67"),
         recessiveQuinary:    Color(hex: "#2A2A28"),
 

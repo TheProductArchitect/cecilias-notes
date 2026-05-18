@@ -155,96 +155,81 @@ func libraryGreeting(forName name: String) -> String {
 }
 
 // MARK: - Icon switching
+//
+// Known issue (Step 0.75 Phase G, deferred to post-Step-0.75):
+// On iOS 26, `UIApplication.setAlternateIconName(_:)` invoked anywhere
+// near onboarding completion returns `NSPOSIXErrorDomain` code 35
+// (EAGAIN, "Resource temporarily unavailable") from the system's
+// internal `LSIconAlertManager`. The icon silently doesn't change.
+// Pre-iOS-26 builds (verified against the byte-identical pre-rename-v5
+// code path) worked reliably; iOS 26 tightened the presentation-context
+// requirements for the mandatory "You have changed the icon for…"
+// alert that Apple does not allow apps to suppress.
+//
+// We tried three mitigations in commits 3a7ba5a / a7b6140 / 16aeb92:
+//   1. Bug-fixed ThemeManager passing the wrong icon key (real bug, kept).
+//   2. Deferred the call from onboarding completion to LibraryView.onAppear
+//      so the scene would be "settled." Didn't help — keyboard teardown
+//      from onboarding is still in flight when LibraryView appears, and
+//      LSIconAlertManager still rejects the presentation context.
+//   3. EAGAIN-aware retry loop (5 attempts, 0–4s backoff). Didn't help
+//      either — every retry hit the same condition. Reverted in Phase G;
+//      no point keeping noise without payoff.
+//
+// An A/B test on a throwaway branch isolated the trigger but not a
+// usable fix: removing the `.environment(\.theme, ...)` and
+// `.preferredColorScheme(_:)` modifiers from `CeciliasNotesApp`'s
+// WindowGroup (added in Phase B `27d057b`) likely lets the call land,
+// but those modifiers are load-bearing for the entire theme system and
+// cannot be removed without rewriting Phase B.
+//
+// Practical impact in 1.0: muted. The primary AppIcon now ships as the
+// "C." letterform (commit 16aeb92), so users whose name starts with C
+// see the correct icon by accident even when the swap silently fails.
+// Other users see a "C." icon when they'd see their initial. The
+// in-app wordmark personalisation (BrandWordmark) is unaffected — it
+// reads the user's name directly and renders the correct letter.
+//
+// Post-1.0 paths to explore (in priority order):
+//   • Move icon swap out of the onboarding flow entirely — surface it
+//     as a "Personalise app icon" row in Settings, where the user
+//     explicitly taps to change. Settings is a fully-settled scene
+//     where LSIconAlertManager works reliably.
+//   • Replace `.preferredColorScheme` with a less-aggressive trait
+//     propagation mechanism that doesn't keep the scene in a
+//     SwiftUI-managed trait-transitioning state.
+//   • File feedback with Apple. EAGAIN with no retry-success-window is
+//     a regression from documented behavior.
 
 /// Queue a switch to the alternate icon keyed by the user's name's first
-/// letter. The actual `setAlternateIconName(_:)` call is deferred to the
-/// first settled view (`LibraryView.onAppear` → `applyPendingIconUpdateIfNeeded()`)
-/// rather than firing from the onboarding completion handler directly.
-///
-/// **Why deferred:** on iOS 26 the system's `LSIconAlertManager` (which
-/// presents the mandatory "You have changed the icon for…" alert that
-/// Apple does not allow apps to suppress) fails to acquire its
-/// presentation token while the onboarding window is still mid-dismiss,
-/// returning `NSPOSIXErrorDomain Code 35 ("Resource temporarily
-/// unavailable")`. The call silently does nothing. Pre-iOS-26 the
-/// transition timing was looser and the call landed during the transition.
-/// Routing through `pendingIconUpdateKey` + `LibraryView.onAppear` gives
-/// the alert manager a settled scene to work with.
+/// letter. Writes the user's name to `pendingIconUpdateKey`; the actual
+/// `setAlternateIconName(_:)` call happens from
+/// `applyPendingIconUpdateIfNeeded()` invoked from `LibraryView.onAppear`.
+/// See the file header above for the iOS 26 LSIconAlertManager known issue.
 @MainActor
 func updateAppIcon(for name: String) {
-    let app = UIApplication.shared
-    // Diagnostic logging (Step 0.75 Phase G regression diagnosis). Unconditional
-    // so the iPad device console surfaces it without a debug build attach.
-    // Remove once on-device verification confirms the deferred call lands.
-    print("[BrandIcon][diag] updateAppIcon(for: \"\(name)\") called — queuing pending update")
-    print("[BrandIcon][diag] supportsAlternateIcons = \(app.supportsAlternateIcons)")
-    guard app.supportsAlternateIcons else { return }
-    let key = BrandIcon.variantKey(forName: name)
-    print("[BrandIcon][diag] resolved key = \(key ?? "nil"), currentAlternate = \(app.alternateIconName ?? "nil")")
+    guard UIApplication.shared.supportsAlternateIcons else { return }
     UserDefaults.standard.set(name, forKey: PersonalIdentity.pendingIconUpdateKey)
-    print("[BrandIcon][diag] wrote pendingIconUpdate = \"\(name)\" — will fire from LibraryView.onAppear")
 }
 
 /// Apply any icon update queued by `updateAppIcon(for:)`. Safe to call
 /// from any settled view's `onAppear` — no-ops if no update is pending.
-/// Clears the pending flag UNCONDITIONALLY (so the retry loop owns the
-/// outcome end-to-end; we never re-trigger on every subsequent library
-/// appearance even if every retry fails).
-///
-/// **Retries:** iOS 26's `LSIconAlertManager` returns POSIX EAGAIN
-/// ("Resource temporarily unavailable", code 35) when it can't acquire
-/// its presentation token — usually because keyboard/sheet teardown is
-/// still in flight or LaunchServices hasn't finished indexing alternate
-/// icons on a fresh install. EAGAIN is documented as "retry later," so
-/// we do exactly that: 5 attempts at 0s/0.5s/1s/2s/4s, bailing the
-/// instant one succeeds. Max wall-clock budget 7.5s. Caller doesn't
-/// block — the retry loop runs in a detached Task.
+/// Clears the pending flag unconditionally so a silent EAGAIN failure
+/// doesn't trigger a retry on every subsequent library appearance.
 @MainActor
 func applyPendingIconUpdateIfNeeded() {
     let defaults = UserDefaults.standard
     guard let pendingName = defaults.string(forKey: PersonalIdentity.pendingIconUpdateKey) else { return }
     defaults.removeObject(forKey: PersonalIdentity.pendingIconUpdateKey)
-    print("[BrandIcon][diag] applyPendingIconUpdateIfNeeded — pendingName = \"\(pendingName)\"")
     let app = UIApplication.shared
     guard app.supportsAlternateIcons else { return }
     let key = BrandIcon.variantKey(forName: pendingName)
-    print("[BrandIcon][diag] resolved key = \(key ?? "nil"), currentAlternate = \(app.alternateIconName ?? "nil")")
-    if app.alternateIconName == key {
-        print("[BrandIcon][diag] no-op: already at \(key ?? "nil")")
-        return
-    }
-    Task { @MainActor in
-        await setAlternateIconWithBackoff(key)
-    }
-}
-
-/// EAGAIN-aware retry loop around `setAlternateIconName(_:)`. Returns
-/// on first success or after exhausting the schedule. See
-/// `applyPendingIconUpdateIfNeeded()` for the rationale.
-@MainActor
-private func setAlternateIconWithBackoff(_ key: String?) async {
-    // Delays in milliseconds before each attempt. First attempt is
-    // immediate; subsequent waits give iOS time to drain whatever
-    // resource was unavailable.
-    let delaysMs: [UInt64] = [0, 500, 1_000, 2_000, 4_000]
-    for (index, delayMs) in delaysMs.enumerated() {
-        let attempt = index + 1
-        if delayMs > 0 {
-            try? await Task.sleep(nanoseconds: delayMs * 1_000_000)
+    if app.alternateIconName == key { return }
+    app.setAlternateIconName(key) { error in
+        if let error = error {
+            #if DEBUG
+            print("[BrandIcon] setAlternateIconName(\(key ?? "nil")) failed: \(error)")
+            #endif
         }
-        print("[BrandIcon][diag] attempt \(attempt)/\(delaysMs.count): setAlternateIconName(\(key ?? "nil"))")
-        let succeeded: Bool = await withCheckedContinuation { cont in
-            UIApplication.shared.setAlternateIconName(key) { error in
-                if let error = error {
-                    print("[BrandIcon][diag] attempt \(attempt) FAILED: \(error)")
-                    cont.resume(returning: false)
-                } else {
-                    print("[BrandIcon][diag] attempt \(attempt) SUCCESS")
-                    cont.resume(returning: true)
-                }
-            }
-        }
-        if succeeded { return }
     }
-    print("[BrandIcon][diag] gave up after \(delaysMs.count) attempts — icon unchanged")
 }
