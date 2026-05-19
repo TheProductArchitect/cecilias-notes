@@ -109,6 +109,13 @@ struct AudioElementView: View {
             }
         }
         .onDisappear { player.pause() }
+        .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
+            guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
+                  let time = note.userInfo?[AudioSeekKey.time] as? Double,
+                  id == content.id
+            else { return }
+            player.seek(to: time)
+        }
     }
 
     /// Step 6: a placeholder strip created at the start of a Voice

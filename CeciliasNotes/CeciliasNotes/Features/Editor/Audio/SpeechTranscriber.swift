@@ -165,22 +165,41 @@ actor SpeechTranscriber {
         request.requiresOnDeviceRecognition = true      // CRITICAL: no network
         request.taskHint                    = Self.currentTaskHint()
 
-        let transcriptionResult: String? = await withCheckedContinuation { cont in
+        typealias RecogResult = (text: String, timingMap: TimingMap?)
+        let recognitionResult: RecogResult? = await withCheckedContinuation { cont in
             recognizer.recognitionTask(with: request) { result, error in
                 if error != nil {
                     cont.resume(returning: nil)
                     return
                 }
                 guard let result, result.isFinal else { return }
-                cont.resume(returning: result.bestTranscription.formattedString)
+                let text = result.bestTranscription.formattedString
+                let segs = result.bestTranscription.segments
+                let words: [TimingMap.Word] = segs.map { seg in
+                    TimingMap.Word(
+                        text:      seg.substring,
+                        startTime: seg.timestamp,
+                        endTime:   seg.timestamp + seg.duration,
+                        charStart: seg.substringRange.location,
+                        charLength: seg.substringRange.length
+                    )
+                }
+                let totalDuration = segs.last.map { $0.timestamp + $0.duration } ?? 0
+                let timing = words.isEmpty ? nil : TimingMap(
+                    words: words,
+                    totalDuration: totalDuration,
+                    version: 1
+                )
+                cont.resume(returning: (text: text, timingMap: timing))
             }
         }
-        guard let text = transcriptionResult, !text.isEmpty else { return }
+        guard let r = recognitionResult, !r.text.isEmpty else { return }
 
         await MainActor.run {
             AudioElementCommit.updateTranscript(
                 contentId: annotationId,
-                transcript: text
+                transcript: r.text,
+                timingMap: r.timingMap
             )
         }
     }

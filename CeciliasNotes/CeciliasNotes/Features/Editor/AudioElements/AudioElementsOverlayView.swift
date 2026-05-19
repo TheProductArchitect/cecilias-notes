@@ -127,7 +127,7 @@ struct AudioElementsOverlayView: View {
     }
 }
 
-// MARK: - Notification name
+// MARK: - Notification names
 
 extension Notification.Name {
     /// Posted by the recording commit paths (short-note + lecture
@@ -136,4 +136,16 @@ extension Notification.Name {
     /// overlay refetches; the notification is a "now would be a
     /// good time to refetch" hint, not a payload carrier.
     static let audioElementsChanged = Notification.Name("audioElementsChanged")
+
+    /// Posted by the text element overlay when the user taps a word
+    /// in a dictated transcript. The receiver (`AudioElementView`)
+    /// matches `userInfo[AudioSeekKey.contentId]` against its own
+    /// `content.id` and calls `player.seek(to:)` on a match.
+    static let audioSeekRequested = Notification.Name("audioSeekRequested")
+}
+
+/// userInfo keys for `.audioSeekRequested`.
+enum AudioSeekKey {
+    static let contentId = "contentId"   // UUID
+    static let time      = "time"        // Double (seconds)
 }

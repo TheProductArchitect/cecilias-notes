@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// Per-page render layer for V6 `PageElement`s of kind `.text`.
 /// First user-facing surface for the unified PageElement model —
@@ -158,6 +159,36 @@ struct TextElementsOverlayView: View {
                     }
             }
 
+            // Word-tap overlay for dictated transcripts that have
+            // timing data. Sits on top of the plain tap catcher so
+            // it captures the tap, performs seek, then also runs
+            // handleElementTap to keep normal selection behaviour.
+            // No-ops gracefully when timing data doesn't exist yet
+            // (old recordings) or for non-dictated elements.
+            if !isEditing,
+               content.source == .dictated,
+               let audioContent = content.audioRecordings?.first,
+               audioContent.timingMapData != nil {
+                let elemW = element.normalizedWidth  * pageSize.width
+                let elemH = element.normalizedHeight * pageSize.height
+                Color.clear
+                    .contentShape(Rectangle())
+                    .frame(width: elemW, height: elemH)
+                    .position(
+                        x: (element.normalizedX + element.normalizedWidth  / 2) * pageSize.width,
+                        y: (element.normalizedY + element.normalizedHeight / 2) * pageSize.height
+                    )
+                    .onTapGesture(coordinateSpace: .local) { location in
+                        handleWordTap(
+                            at: location,
+                            element: element,
+                            content: content,
+                            audioContent: audioContent,
+                            elementWidth: elemW
+                        )
+                    }
+            }
+
             // Size picker sits just above the element when selected
             // (cursor mode, not editing). Skipped when the element
             // is near the top of the page so it doesn't render off-
@@ -250,6 +281,61 @@ struct TextElementsOverlayView: View {
     private func exitEditAndDeselect() {
         editingId  = nil
         selectedId = nil
+    }
+
+    // MARK: - Word tap (dictated transcript seek)
+
+    private func handleWordTap(
+        at location: CGPoint,
+        element: PageElement,
+        content: TextContent,
+        audioContent: AudioContent,
+        elementWidth: CGFloat
+    ) {
+        // Keep normal element-selection behaviour.
+        handleElementTap(element: element)
+
+        guard let timingMap = audioContent.timingMap else { return }
+        let charIndex = characterIndex(at: location, text: content.text,
+                                       size: content.size, width: elementWidth)
+        guard let word = timingMap.wordContaining(charIndex: charIndex) else { return }
+        NotificationCenter.default.post(
+            name: .audioSeekRequested,
+            object: nil,
+            userInfo: [
+                AudioSeekKey.contentId: audioContent.id,
+                AudioSeekKey.time:      word.startTime
+            ]
+        )
+    }
+
+    /// Map a point (in element-local coordinates) to the nearest
+    /// character index in `text`, using the same font and container
+    /// width the live UITextView uses so the mapping is accurate.
+    private func characterIndex(
+        at point: CGPoint,
+        text: String,
+        size: TextSize,
+        width: CGFloat
+    ) -> Int {
+        guard !text.isEmpty, width > 1 else { return 0 }
+        let font = UIFont.systemFont(ofSize: size.pointSize, weight: size.fontWeight)
+        let storage = NSTextStorage(
+            attributedString: NSAttributedString(string: text, attributes: [.font: font])
+        )
+        let layout    = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(
+            size: CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        container.lineFragmentPadding = 0
+        layout.addTextContainer(container)
+        layout.ensureLayout(for: container)
+        return layout.characterIndex(
+            for: point,
+            in: container,
+            fractionOfDistanceBetweenInsertionPoints: nil
+        )
     }
 
     // MARK: - Create

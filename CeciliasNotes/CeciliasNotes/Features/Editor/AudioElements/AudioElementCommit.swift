@@ -82,17 +82,22 @@ enum AudioElementCommit {
         return element
     }
 
-    /// Update the transcript on an existing AudioContent — used by
-    /// the post-recording transcription pass (SpeechTranscriber
-    /// processes the M4A asynchronously after the row already
-    /// exists on the page).
-    static func updateTranscript(contentId: UUID, transcript: String) {
+    /// Update the transcript (and optionally word-level timing data)
+    /// on an existing AudioContent — used by the post-recording
+    /// transcription pass (SpeechTranscriber processes the M4A
+    /// asynchronously after the row already exists on the page).
+    static func updateTranscript(
+        contentId: UUID,
+        transcript: String,
+        timingMap: TimingMap? = nil
+    ) {
         let context = StorageService.shared.context
         let descriptor = FetchDescriptor<AudioContent>(
             predicate: #Predicate { $0.id == contentId }
         )
         guard let content = try? context.fetch(descriptor).first else { return }
         content.transcript = transcript
+        if let timingMap { content.timingMap = timingMap }
         content.updatedAt = Date()
         try? context.save()
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
