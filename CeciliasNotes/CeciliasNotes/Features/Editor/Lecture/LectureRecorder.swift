@@ -302,6 +302,15 @@ final class LectureRecorder: ObservableObject {
         // boundary because AVAudioEngine reuses the tap buffer after
         // the callback returns.
         let captureActor = self.capture
+        #if DEBUG
+        // Tap-fire counter mirroring AudioRecorder's diagnostic.
+        // First call + every 50th thereafter print so we can
+        // confirm the engine is actually delivering buffers to
+        // the recogniser. The #1 print is the critical signal:
+        // if it never appears, the tap is silent and SFSpeech
+        // will eventually error with 1101 (no audio received).
+        nonisolated(unsafe) var tapFireCount = 0
+        #endif
         // Capture `self` weakly directly in the closure's capture
         // list — the previous `weak var weakSelf = self` form
         // tripped Swift 6's "never mutated" warning, and `weak let`
@@ -312,6 +321,13 @@ final class LectureRecorder: ObservableObject {
             bufferSize: Self.tapBufferSize,
             format:     format
         ) { [weak self] buffer, _ in
+            #if DEBUG
+            tapFireCount += 1
+            if tapFireCount == 1 || tapFireCount % 50 == 0 {
+                let frames = buffer.frameLength
+                print("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
+            }
+            #endif
             // The tap closure captures `self` weakly so the engine
             // doesn't retain the recorder. Inside, work that hops
             // to the main actor goes through its own `[weak self]`
@@ -329,7 +345,21 @@ final class LectureRecorder: ObservableObject {
             Task { await captureActor.handle(wrapped.buffer) }
         }
 
+        // `prepare()` pre-allocates the engine's internal buffers
+        // before `start()` — mirrors the AudioRecorder fix that
+        // resolved the "engine.start() succeeds but no buffers
+        // flow" symptom. Cheap; safe to call on a freshly-allocated
+        // engine.
+        eng.prepare()
         try eng.start()
+        #if DEBUG
+        print("[Lecture] engine.start() OK, isRunning=\(eng.isRunning)")
+        Task { [weak eng] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let eng else { return }
+            print("[Lecture] engine.isRunning after 500ms = \(eng.isRunning)")
+        }
+        #endif
         engine = eng
     }
 
