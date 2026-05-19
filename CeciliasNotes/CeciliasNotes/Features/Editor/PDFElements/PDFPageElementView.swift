@@ -104,7 +104,8 @@ struct PDFPageElementView: View {
         let scaleH = proposedH / base.height
         let scale  = max(scaleW, scaleH)
         let w = base.width  * scale
-        let h = base.height * scale
+        // `h` was computed for symmetry but never used — same
+        // shape as `ImageElementView.resizedRect`.
         let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
         let finalW = max(minW, w)
         let finalH = base.height * (finalW / base.width)

@@ -22,11 +22,12 @@ struct CeciliasNotesApp: App {
     @StateObject private var cloudSync      = CloudSyncManager()
     @StateObject private var deepLink       = DeepLinkRouter()
 
-    // Auto-open-last-notebook was removed: navigation state is
-    // never persisted across cold launches per the architecture
-    // rule. The legacy `ink.resume.enabled` /
-    // `ink.resume.lastNotebookId` keys may still exist in
-    // existing installs but are no longer read or written.
+    /// One-shot gate so the launch-time notebook resume hook in
+    /// `.onAppear` fires once per process. SwiftUI may evaluate
+    /// `WindowGroup` content's `.onAppear` multiple times across
+    /// rebuilds; re-firing the resume route on every appearance
+    /// would re-open the editor cover the user just dismissed.
+    @State private var didAttemptLaunchResume: Bool = false
 
     init() {
         // Crash-recovery gate is established by `CeciliasNotesAppDelegate`
@@ -211,16 +212,42 @@ struct CeciliasNotesApp: App {
                         }
                     }
 
-                    // No navigation state restoration on cold launch
-                    // — the app always lands in the library. The
-                    // previous auto-open-last-notebook behaviour
-                    // violated the "navigation state is never
-                    // persisted across cold launches" rule and
-                    // surprised users who closed the app from
-                    // inside a notebook expecting to land home.
-                    // Recents are still surfaced in the library
-                    // grid via `RecentNotebooksTracker` — display
-                    // only, no navigation side effect.
+                    // Launch-time notebook resume. The previous rule
+                    // — "never restore nav state across cold launches"
+                    // — was revised after device testing: users who
+                    // background a notebook and have iOS suspend +
+                    // terminate the app expect to land back in that
+                    // notebook on next open, not be silently bounced
+                    // to library home. The standard iOS pattern that
+                    // distinguishes "the system killed me" from
+                    // "the user explicitly force-quit" is the
+                    // clean-shutdown gate already in place via
+                    // `LaunchRecovery` — background fires
+                    // `applicationDidEnterBackground` (marker → true);
+                    // force-quit / crash skip it (marker stays
+                    // false). On launch, if the gate is clean AND
+                    // a `ink.resume.lastNotebookId` survives in
+                    // defaults (cleared on explicit Back via
+                    // `EditorViewModel.prepareForDismissal`), route
+                    // through the deep-link router so the library
+                    // pops the editor cover for that notebook.
+                    if !didAttemptLaunchResume {
+                        didAttemptLaunchResume = true
+                        if LaunchRecovery.previousShutdownWasClean,
+                           let raw = UserDefaults.standard.string(forKey: "ink.resume.lastNotebookId"),
+                           let lastId = UUID(uuidString: raw) {
+                            #if DEBUG
+                            print("[Launch] clean shutdown + lastNotebookId=\(lastId) — routing to editor")
+                            #endif
+                            // Defer one runloop tick so the library
+                            // has a chance to mount its `.onChange`
+                            // observer before the deep-link value
+                            // flips.
+                            DispatchQueue.main.async {
+                                deepLink.openNotebookId = lastId
+                            }
+                        }
+                    }
                 }
                 // Spotlight launch
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in

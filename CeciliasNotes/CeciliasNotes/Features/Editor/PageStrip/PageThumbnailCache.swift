@@ -1,4 +1,5 @@
 import Foundation
+import os.lock
 import PDFKit
 import PencilKit
 import SwiftData
@@ -65,13 +66,23 @@ final class PageThumbnailCache {
 
     // MARK: - Storage
 
-    private let cache = NSCache<NSString, UIImage>()
-    /// In-flight render coalescer. Keyed by the composite `Key`. When
-    /// a second `generate` lands while the first is still running it
-    /// awaits the same task instead of starting a new one.
-    private var inflight: [Key: Task<UIImage?, Never>] = [:]
-    /// Lock guarding `inflight`. NSCache itself is thread-safe.
-    private let inflightLock = NSLock()
+    /// `NSCache` is documented thread-safe; `nonisolated(unsafe)`
+    /// vouches for that across the Sendable boundary so the
+    /// detached render Task can write into it without Swift 6
+    /// complaining about "non-Sendable type ... cannot exit
+    /// main actor-isolated context."
+    private nonisolated(unsafe) let cache = NSCache<NSString, UIImage>()
+
+    /// In-flight render coalescer. Keyed by the composite `Key`.
+    /// When a second `generate` lands while the first is still
+    /// running it awaits the same task instead of starting a new
+    /// one. Guarded by an `OSAllocatedUnfairLock` — async-safe in
+    /// a way `NSLock` is not (NSLock requires unlock on the same
+    /// thread that locked, which Swift concurrency can't
+    /// guarantee across `await` suspensions).
+    private let inflight = OSAllocatedUnfairLock<[Key: Task<UIImage?, Never>]>(
+        initialState: [:]
+    )
 
     // MARK: Public API
 
@@ -109,15 +120,22 @@ final class PageThumbnailCache {
         // off the main actor matches the legacy thumbnail path.
         let pdfBacking: (url: URL, index: Int)? = Self.lookupPDFBacking(forPageId: pageId)
 
-        // In-flight dedupe.
-        inflightLock.lock()
-        if let existing = inflight[key] {
-            inflightLock.unlock()
+        // In-flight dedupe. `withLock` holds the unfair lock for
+        // the duration of the closure, then releases — never
+        // across an `await`. Two cases:
+        //   • An existing task is in-flight → return its value
+        //     (no await held under lock).
+        //   • No task in-flight → create one + register it under
+        //     lock so a second `generate` call sees the same task.
+        if let existing = inflight.withLock({ state -> Task<UIImage?, Never>? in
+            state[key]
+        }) {
             #if DEBUG
             print("[Thumb] await in-flight pageId=\(pageId) fp=\(key.strokeFingerprint)")
             #endif
             return await existing.value
         }
+
         let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
             #if DEBUG
             print("[Thumb] render begin pageId=\(pageId) fp=\(key.strokeFingerprint) strokes=\(strokeData?.count ?? 0)")
@@ -140,14 +158,11 @@ final class PageThumbnailCache {
             #endif
             return image
         }
-        inflight[key] = task
-        inflightLock.unlock()
+        inflight.withLock { state in state[key] = task }
 
         let result = await task.value
 
-        inflightLock.lock()
-        inflight[key] = nil
-        inflightLock.unlock()
+        inflight.withLock { state in state[key] = nil }
 
         return result
     }
@@ -197,10 +212,10 @@ final class PageThumbnailCache {
     /// Clear every entry. Used by the storage-reset path.
     func invalidateAll() {
         cache.removeAllObjects()
-        inflightLock.lock()
-        for (_, task) in inflight { task.cancel() }
-        inflight.removeAll()
-        inflightLock.unlock()
+        inflight.withLock { state in
+            for (_, task) in state { task.cancel() }
+            state.removeAll()
+        }
     }
 
     // MARK: - Internals

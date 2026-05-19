@@ -118,7 +118,10 @@ struct ImageElementView: View {
         let scaleH = proposedH / base.height
         let scale  = max(scaleW, scaleH)
         let w = base.width  * scale
-        let h = base.height * scale
+        // `h` was computed for symmetry but never used — the aspect-
+        // locked path derives the final height from the final width
+        // below. Drop the binding to silence the unused-variable
+        // warning.
         let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
         let finalW = max(minW, w)
         let finalH = base.height * (finalW / base.width)

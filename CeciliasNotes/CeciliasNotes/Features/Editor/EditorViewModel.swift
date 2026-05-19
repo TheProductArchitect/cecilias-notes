@@ -2157,6 +2157,15 @@ final class EditorViewModel: ObservableObject {
         // Focus Mode is editor-scoped — exit on the way back to Library so
         // the next notebook opens with normal chrome.
         isFocusMode = false
+        // Clear the launch-time resume pointer. Background while
+        // inside the editor (the user-facing "resume me here"
+        // case) leaves the key in place; pressing Back is the
+        // user explicitly saying "I'm done with this notebook,"
+        // so the next cold launch should land on library home
+        // even though `LaunchRecovery.previousShutdownWasClean`
+        // says the prior shutdown was orderly.
+        userDefaults.removeObject(forKey: "ink.resume.lastNotebookId")
+        userDefaults.removeObject(forKey: "ink.resume.lastPageIndex")
     }
 }
 

@@ -97,7 +97,10 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         stopTimer()
         // 10Hz — smooth enough for a thin progress bar, cheap.
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            // Explicit `[weak self]` on the inner Task too —
+            // without it, Swift 6 flags the implicit capture of a
+            // mutable `self` value crossing the Sendable boundary.
+            Task { @MainActor [weak self] in
                 guard let self, let player = self.player else { return }
                 self.currentTime = player.currentTime
             }

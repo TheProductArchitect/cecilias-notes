@@ -55,8 +55,10 @@ final class StrokeCache {
             queue: .main
         ) { [weak self] _ in
             // Hop back to MainActor since the observer block doesn't
-            // inherit it automatically.
-            Task { @MainActor in self?.evictHalf() }
+            // inherit it automatically. Explicit `[weak self]` on
+            // the Task too — Swift 6 flags the implicit capture of
+            // a mutable `self` value crossing the Sendable boundary.
+            Task { @MainActor [weak self] in self?.evictHalf() }
         }
     }
 

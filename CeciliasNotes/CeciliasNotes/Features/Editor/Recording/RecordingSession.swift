@@ -432,7 +432,7 @@ final class RecordingSession: ObservableObject {
         stopElapsedTimer()
         let start = state.startTime ?? Date()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.elapsedSeconds = Date().timeIntervalSince(start)
             }
         }

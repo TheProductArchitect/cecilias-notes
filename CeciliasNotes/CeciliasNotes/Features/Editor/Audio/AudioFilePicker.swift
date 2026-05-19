@@ -79,7 +79,10 @@ struct AudioFilePicker: UIViewControllerRepresentable {
                 }
 
                 let duration = try await audioDuration(at: destURL)
-                let pinPoint = CGPoint(x: 0.1, y: 0.1)
+                // `pinPoint` was a placeholder for the centre coords
+                // of a future "drop the file here" gesture; never
+                // wired up. Silence the unused-variable warning.
+                _ = CGPoint(x: 0.1, y: 0.1)
 
                 // Insert on the main actor and surface only the
                 // record id (Sendable UUID) — `AudioRecord` is a

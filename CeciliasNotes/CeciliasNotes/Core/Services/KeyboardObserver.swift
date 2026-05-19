@@ -53,9 +53,19 @@ final class KeyboardObserver: ObservableObject {
     }
 
     @objc private func keyboardWillHide(_ note: Notification) {
-        isKeyboardVisible  = false
-        isFloatingKeyboard = false
-        keyboardHeight     = 0
+        // Defer the @Published writes to the next runloop tick.
+        // `UIResponder.keyboardWill{Show,Hide,ChangeFrame}` fire
+        // synchronously inside the same runloop tick as the
+        // SwiftUI view update that caused the first-responder
+        // change — publishing here triggers the "Publishing
+        // changes from within view updates" warning and, under
+        // sustained churn, can cascade into a render loop.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.isKeyboardVisible  = false
+            self.isFloatingKeyboard = false
+            self.keyboardHeight     = 0
+        }
     }
 
     private func updateState(from note: Notification, visible: Bool) {
@@ -70,9 +80,16 @@ final class KeyboardObserver: ObservableObject {
         // constant that Apple may tune in future iPadOS releases.
         let screenWidth  = UIScreen.main.bounds.width
         let widthRatio   = screenWidth > 0 ? frameEnd.width / screenWidth : 1
-        isFloatingKeyboard = widthRatio < 0.9
+        let floating     = widthRatio < 0.9
+        let height       = floating ? 0 : frameEnd.height
 
-        isKeyboardVisible = visible
-        keyboardHeight    = isFloatingKeyboard ? 0 : frameEnd.height
+        // Defer the @Published writes — see `keyboardWillHide`
+        // header comment for the SwiftUI view-update race.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.isFloatingKeyboard = floating
+            self.isKeyboardVisible  = visible
+            self.keyboardHeight     = height
+        }
     }
 }
