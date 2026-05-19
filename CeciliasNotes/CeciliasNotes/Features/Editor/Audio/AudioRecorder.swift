@@ -63,7 +63,20 @@ actor AudioRecorder {
         print("[AudioLife] start() entry on actor AudioRecorder, recorder=\(ObjectIdentifier(self))")
         #endif
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        // Mode is `.voiceChat`, NOT `.default`. Empirically on
+        // current iPadOS, `.playAndRecord, .default,
+        // [.defaultToSpeaker, .allowBluetoothHFP]` produces an
+        // engine that "starts" (isRunning=true) but never
+        // delivers a single buffer to the input tap — the engine
+        // then idles itself out after ~500ms. The Dictation
+        // flow's `LectureRecorder` uses `.voiceChat` mode with
+        // the same category + options and captures audio
+        // reliably, so matching that config is the minimum
+        // viable fix. `.voiceChat` adds Apple's voice-processing
+        // (AGC + noise cancellation + echo cancellation) which
+        // is a reasonable default for voice-note recording
+        // anyway — most voice-memo apps use the same mode.
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
         #if DEBUG
         print("[Audio] 2. AVAudioSession active, category=\(session.category.rawValue) sampleRate=\(session.sampleRate)")
