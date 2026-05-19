@@ -357,16 +357,27 @@ final class LectureRecorder: ObservableObject {
         request.taskHint                    = .dictation
         await capture.setRequest(request)
 
+        #if DEBUG
+        print("[Dictation] startSpeechRecognition — installing recognitionTask")
+        #endif
         currentTask = recogniser.recognitionTask(with: request) { [weak self] result, error in
             // Hop back to MainActor — SFSpeechRecognitionTask
             // callbacks land on an arbitrary serial queue.
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 if let result {
                     let partial = result.bestTranscription.formattedString
                     self.liveTranscript =
                         (self.committedTranscript + " " + partial)
                             .trimmingCharacters(in: .whitespacesAndNewlines)
+                    #if DEBUG
+                    print("[Dictation] partial result, len=\(partial.count), isFinal=\(result.isFinal), preview=\(String(partial.prefix(40)))")
+                    #endif
+                }
+                if let error {
+                    #if DEBUG
+                    print("[Dictation] recogniser error: \(error)")
+                    #endif
                 }
                 let didFinish = result?.isFinal == true || error != nil
                 if didFinish {

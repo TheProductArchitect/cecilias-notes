@@ -301,10 +301,23 @@ final class RecordingSession: ObservableObject {
     /// current TextContent, remainder seeds a new TextContent on
     /// a new page.
     private func handleLiveTranscript(_ transcript: String) {
-        guard case .dictation(var ctx) = state else { return }
-        guard let currentTextId = ctx.textElementIds.last else { return }
+        guard case .dictation(var ctx) = state else {
+            #if DEBUG
+            print("[Dictation] handleLiveTranscript dropped — state not dictation (\(state))")
+            #endif
+            return
+        }
+        guard let currentTextId = ctx.textElementIds.last else {
+            #if DEBUG
+            print("[Dictation] handleLiveTranscript dropped — no current text element id")
+            #endif
+            return
+        }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        print("[Dictation] handleLiveTranscript routing \(trimmed.count) chars → textElement=\(currentTextId)")
+        #endif
         DictationFlowCommit.updateText(elementId: currentTextId, text: trimmed)
 
         // Approximate overflow: bytes-per-page heuristic at body

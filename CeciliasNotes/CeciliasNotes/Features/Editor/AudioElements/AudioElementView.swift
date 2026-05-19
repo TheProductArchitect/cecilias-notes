@@ -183,6 +183,9 @@ struct AudioElementView: View {
 
     private var playPauseButton: some View {
         Button {
+            #if DEBUG
+            print("[AudioPlayback] play button tapped — elementId=\(element.id) isPlaying=\(player.isPlaying)")
+            #endif
             player.togglePlayPause()
         } label: {
             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
@@ -193,6 +196,20 @@ struct AudioElementView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Long-press → debug bypass that constructs a fresh
+        // AVAudioPlayer for this file and calls play() with the
+        // minimum possible session setup. If this works but the
+        // normal tap doesn't, the regression is in the controller
+        // flow rather than the file/session layer.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6)
+                .onEnded { _ in
+                    #if DEBUG
+                    print("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(element.id)")
+                    #endif
+                    player.debugPlayDirectly(url: content.fileURL)
+                }
+        )
         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
     }
 

@@ -1617,7 +1617,15 @@ final class EditorViewModel: ObservableObject {
                 guard let self else { return }
                 self.refreshPages()
                 if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
+                    self.currentPageIndex = idx
                     self.pendingScrollPageIndex = idx
+                    #if DEBUG
+                    print("[Dictation] navigateToPage — newPageId=\(newPageId) idx=\(idx) currentPage.id now=\(self.currentPage.id)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
+                    #endif
                 }
             }
         )

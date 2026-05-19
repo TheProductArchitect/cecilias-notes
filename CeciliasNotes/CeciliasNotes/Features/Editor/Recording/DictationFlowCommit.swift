@@ -94,12 +94,27 @@ enum DictationFlowCommit {
             predicate: #Predicate { $0.id == elementId }
         )
         guard let element = try? context.fetch(descriptor).first,
-              let content = element.textContent else { return }
+              let content = element.textContent
+        else {
+            #if DEBUG
+            print("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
+            #endif
+            return
+        }
         if content.text != text {
             content.text = text
             content.updatedAt = Date()
             element.updatedAt = Date()
-            try? context.save()
+            do {
+                try context.save()
+                #if DEBUG
+                print("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("[Dictation] updateText SAVE FAILED: \(error)")
+                #endif
+            }
         }
     }
 

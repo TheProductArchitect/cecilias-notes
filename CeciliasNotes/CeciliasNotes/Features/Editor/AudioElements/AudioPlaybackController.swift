@@ -73,25 +73,85 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     }
 
     func togglePlayPause() {
-        guard let player else { return }
+        #if DEBUG
+        print("[AudioPlayback] togglePlayPause called, hasPlayer=\(player != nil), isPlaying=\(player?.isPlaying ?? false)")
+        #endif
+        guard let player else {
+            #if DEBUG
+            print("[AudioPlayback] togglePlayPause DROP — no player loaded")
+            #endif
+            return
+        }
         if player.isPlaying {
             player.pause()
             stopTimer()
             isPlaying = false
+            #if DEBUG
+            print("[AudioPlayback] paused")
+            #endif
         } else {
             // Configure the session BEFORE play() so the recorder's
             // `.playAndRecord` residue can't outrace us. The Task is
             // MainActor-isolated so `self.player.play()` runs on the
             // same actor that owns `isPlaying` + the progress timer.
             Task { @MainActor [weak self] in
+                #if DEBUG
+                print("[AudioPlayback] play Task started")
+                #endif
                 guard let self else { return }
                 await Self.configureAudioSession()
-                guard let player = self.player else { return }
-                player.play()
+                guard let player = self.player else {
+                    #if DEBUG
+                    print("[AudioPlayback] play Task DROP — player gone after session config")
+                    #endif
+                    return
+                }
+                let didPlay = player.play()
+                #if DEBUG
+                let cat = AVAudioSession.sharedInstance().category.rawValue
+                let active = "(setActive query unavailable, see system logs)"
+                print("[AudioPlayback] player.play() returned \(didPlay), isPlaying=\(player.isPlaying), category=\(cat) \(active)")
+                #endif
                 self.startTimer()
                 self.isPlaying = true
             }
         }
+    }
+
+    // MARK: - DEBUG direct play
+
+    /// Bypass every layer of the normal flow and play the file
+    /// directly with the minimum possible session setup. Wired to
+    /// a long-press on the play button (`AudioElementView`) so the
+    /// user can compare: if normal tap doesn't work but long-press
+    /// does, the regression is in the controller flow rather than
+    /// the file / session / hardware layer.
+    func debugPlayDirectly(url: URL) {
+        #if DEBUG
+        print("[AudioPlayback] debugPlayDirectly entered, url=\(url.lastPathComponent)")
+        let exists = FileManager.default.fileExists(atPath: url.path)
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+        print("[AudioPlayback] debugPlayDirectly file exists=\(exists), size=\(size)")
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
+            try AVAudioSession.sharedInstance().setActive(true)
+            print("[AudioPlayback] debugPlayDirectly session configured")
+            let p = try AVAudioPlayer(contentsOf: url)
+            p.delegate = self
+            p.prepareToPlay()
+            let didPlay = p.play()
+            print("[AudioPlayback] debugPlayDirectly player.play() = \(didPlay), duration=\(p.duration)")
+            // Hold a strong reference so the AVAudioPlayer survives.
+            self.player = p
+            self.loadedURL = url
+            self.duration = p.duration
+            self.currentTime = 0
+            self.isPlaying = didPlay
+            if didPlay { startTimer() }
+        } catch {
+            print("[AudioPlayback] debugPlayDirectly threw: \(error)")
+        }
+        #endif
     }
 
     func seek(to seconds: Double) {
@@ -154,9 +214,15 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     /// had just torn it down.
     private static func configureAudioSession() async {
         let session = AVAudioSession.sharedInstance()
+        #if DEBUG
+        print("[AudioPlayback] configureAudioSession entered, current category=\(session.category.rawValue)")
+        #endif
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
+            #if DEBUG
+            print("[AudioPlayback] configureAudioSession SUCCESS on first attempt, category=\(session.category.rawValue)")
+            #endif
             return
         } catch {
             #if DEBUG
@@ -170,6 +236,9 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true)
+            #if DEBUG
+            print("[AudioPlayback] configureAudioSession SUCCESS after retry, category=\(session.category.rawValue)")
+            #endif
         } catch {
             #if DEBUG
             print("[AudioPlayback] failed to configure AVAudioSession after retry: \(error)")
