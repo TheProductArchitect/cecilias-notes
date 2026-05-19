@@ -220,7 +220,16 @@ actor AudioRecorder {
         startTime  = nil
         outputURL  = nil
 
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            #if DEBUG
+            print("[Audio] session deactivated on stop")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[Audio] failed to deactivate session on stop: \(error)")
+            #endif
+        }
         return (duration: duration, fileSizeBytes: fileSize)
     }
 

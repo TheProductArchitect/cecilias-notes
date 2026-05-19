@@ -202,18 +202,52 @@ final class RecordingSession: ObservableObject {
         createNewPage: () -> Page?,
         navigateToPage: (UUID) -> Void
     ) async {
-        guard case .idle = state else { return }
+        #if DEBUG
+        print("[Dictation] RecordingSession.startDictation entered, state=\(state)")
+        #endif
+        if case .idle = state {
+            // Normal path — proceed.
+        } else {
+            // Defensive recovery: if a prior recording left the
+            // state machine non-idle (a stop path failed half-way,
+            // an interruption never re-armed the state, etc.),
+            // hard-reset and retry once. Better than silently
+            // refusing every subsequent dictation attempt for the
+            // rest of the session.
+            #if DEBUG
+            print("[Dictation] state not idle (\(state)) — forcing resetSession() before retry")
+            #endif
+            resetSession()
+            guard case .idle = state else {
+                #if DEBUG
+                print("[Dictation] ABORT — resetSession() did not land in .idle (state=\(state))")
+                #endif
+                return
+            }
+        }
         interruptionMessage = nil
 
         guard let newPage = createNewPage() else {
+            #if DEBUG
+            print("[Dictation] ABORT — createNewPage returned nil")
+            #endif
             interruptionMessage = "Couldn't create a new page for dictation."
             return
         }
+        #if DEBUG
+        print("[Dictation] new page created id=\(newPage.id) number=\(newPage.pageNumber)")
+        #endif
 
         let recorder = LectureRecorder()
         do {
             try await recorder.start(pageId: newPage.id, notebookId: notebookId)
+            #if DEBUG
+            print("[Dictation] LectureRecorder.start succeeded")
+            #endif
         } catch {
+            #if DEBUG
+            print("[Dictation] ABORT — LectureRecorder.start threw: \(error)")
+            #endif
             interruptionMessage = "Couldn't start dictation."
             return
         }
@@ -227,6 +261,9 @@ final class RecordingSession: ObservableObject {
             notebookId: notebookId,
             pageSize: pageSize
         )
+        #if DEBUG
+        print("[Dictation] initial text element id=\(firstTextId)")
+        #endif
 
         let contentId = UUID()
         dictationRecorder = recorder
@@ -242,6 +279,9 @@ final class RecordingSession: ObservableObject {
         navigateToPage(newPage.id)
         startElapsedTimer()
         subscribeLiveTranscript(recorder)
+        #if DEBUG
+        print("[Dictation] startDictation completed successfully, state=\(state)")
+        #endif
     }
 
     private func subscribeLiveTranscript(_ recorder: LectureRecorder) {

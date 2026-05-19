@@ -40,7 +40,15 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         // reset playback position.
         if loadedURL == url, player != nil { return }
 
-        Task { @MainActor in await Self.configureAudioSession() }
+        // Step note: session configuration was previously
+        // fire-and-forget here. That race let `togglePlayPause`
+        // run `player.play()` before `setCategory(.playback)`
+        // completed, which silently failed under the
+        // `!pri` / `priorityDenied` device-state inherited from a
+        // prior recording. Configuration is now driven from
+        // `togglePlayPause` (await-then-play) so the session is
+        // guaranteed hot before playback begins. `load` only
+        // prepares the file + decoder.
 
         guard FileManager.default.fileExists(atPath: url.path) else {
             #if DEBUG
@@ -71,9 +79,18 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             stopTimer()
             isPlaying = false
         } else {
-            player.play()
-            startTimer()
-            isPlaying = true
+            // Configure the session BEFORE play() so the recorder's
+            // `.playAndRecord` residue can't outrace us. The Task is
+            // MainActor-isolated so `self.player.play()` runs on the
+            // same actor that owns `isPlaying` + the progress timer.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await Self.configureAudioSession()
+                guard let player = self.player else { return }
+                player.play()
+                self.startTimer()
+                self.isPlaying = true
+            }
         }
     }
 

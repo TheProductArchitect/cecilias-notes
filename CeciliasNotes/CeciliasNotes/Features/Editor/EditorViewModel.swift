@@ -1598,6 +1598,9 @@ final class EditorViewModel: ObservableObject {
         let notebookId = notebook.id
         let pageSize = currentPage.pageSize.pointSize
         let fromPageId = currentPage.id
+        #if DEBUG
+        print("[Dictation] startDictationRecording — notebookId=\(notebookId) fromPageId=\(fromPageId) pageSize=\(pageSize)")
+        #endif
         await RecordingSession.shared.startDictation(
             notebookId: notebookId,
             fromPageId: fromPageId,
