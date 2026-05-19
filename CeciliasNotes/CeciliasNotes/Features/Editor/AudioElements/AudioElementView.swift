@@ -58,16 +58,25 @@ struct AudioElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
+            // Gestures BEFORE `.position(...)` per the Step 7.2
+            // canonical pattern. Audio strip didn't have an
+            // explicit `.contentShape` previously — the strip()
+            // view's interior controls (play/pause/seek) own the
+            // foreground hit-tests; we add an explicit shape so
+            // the outer body tap-to-select fires reliably across
+            // the strip's full rect (not only where the play
+            // button happens to sit).
             strip(width: displayed.width)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
-                .position(x: displayed.midX, y: displayed.midY)
+                .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         if !isSelected && !isRecording { isSelected = true }
                     }
                 )
                 .gesture(isSelected && !isRecording ? bodyDragGesture : nil)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected && !isRecording {
                 selectionChrome(rect: displayed)

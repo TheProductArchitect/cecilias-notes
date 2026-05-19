@@ -60,11 +60,21 @@ struct ImageElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
+            // Order is load-bearing — gestures MUST sit before
+            // `.position(...)`. After Step 7.2's sticky-gesture
+            // post-mortem: `.position` wraps the modified view in
+            // a parent-sized container; any gesture attached
+            // after `.position` ends up bound to that container
+            // instead of the framed contentShape, which on iPad
+            // OS 26 causes the gesture to never fire even when
+            // the hit area is correct. Apply the canonical
+            // template established by `StickyNoteElementView`:
+            //   frame → overlays/effects → contentShape →
+            //   gestures → position.
             ImageDataView(content: content)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
                 .contentShape(Rectangle())
-                .position(x: displayed.midX, y: displayed.midY)
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         if !isSelected { isSelected = true }
@@ -72,6 +82,7 @@ struct ImageElementView: View {
                 )
                 .gesture(isSelected ? imageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected {
                 selectionChrome(imageRect: displayed)

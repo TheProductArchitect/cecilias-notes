@@ -50,11 +50,14 @@ struct PDFPageElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
+            // Gestures BEFORE `.position(...)` per the Step 7.2
+            // canonical pattern — see `ImageElementView.body` for
+            // the post-mortem on why post-position gestures fail
+            // to fire on iPad OS 26.
             PDFPageDataView(content: content)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
                 .contentShape(Rectangle())
-                .position(x: displayed.midX, y: displayed.midY)
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         if !isSelected { isSelected = true }
@@ -62,6 +65,7 @@ struct PDFPageElementView: View {
                 )
                 .gesture(isSelected ? pageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected {
                 selectionChrome(rect: displayed)

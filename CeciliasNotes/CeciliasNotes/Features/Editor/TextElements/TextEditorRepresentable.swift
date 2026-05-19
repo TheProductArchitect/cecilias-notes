@@ -51,6 +51,25 @@ struct TextEditorRepresentable: UIViewRepresentable {
         }
         applyStyle(to: tv)
 
+        // Force the text container to wrap at the view's actual
+        // width. `isScrollEnabled = false` is supposed to let
+        // UITextView wrap based on the SwiftUI-imposed frame, but
+        // the dictation transcript flow (and the V6 SwiftData
+        // bridging) consistently surfaced a horizontal-overflow
+        // bug where each new transcript chunk extended the text
+        // view's intrinsic width instead of wrapping. Explicitly
+        // setting `textContainer.size.width` to the view's bounds
+        // clamps the layout manager's wrap width every update; the
+        // height stays unconstrained so the element auto-grows
+        // downward as text streams in.
+        let containerWidth = tv.bounds.width
+        if containerWidth > 0 {
+            let newSize = CGSize(width: containerWidth, height: .greatestFiniteMagnitude)
+            if tv.textContainer.size != newSize {
+                tv.textContainer.size = newSize
+            }
+        }
+
         // Drive first-responder from the editing flag — flipping
         // `isEditing = true` in the parent (e.g. cursor tap) makes
         // the keyboard appear; flipping false dismisses it.

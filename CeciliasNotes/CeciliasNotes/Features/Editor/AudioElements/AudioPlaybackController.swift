@@ -40,7 +40,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         // reset playback position.
         if loadedURL == url, player != nil { return }
 
-        Self.configureAudioSessionIfNeeded()
+        Task { @MainActor in await Self.configureAudioSession() }
 
         guard FileManager.default.fileExists(atPath: url.path) else {
             #if DEBUG
@@ -114,22 +114,48 @@ final class AudioPlaybackController: NSObject, ObservableObject {
 
     // MARK: - Audio session
 
-    /// Set once per process. AVAudioSession is a singleton; setting
-    /// `.playback` here doesn't fight `AudioRecorder`'s
-    /// `.playAndRecord` setup because recording resets the category
-    /// on `start()` (see `AudioRecorder.swift`). After a recording
-    /// stops we may need to re-set `.playback` to keep playback
-    /// working in muted mode — handled lazily on next play.
-    private nonisolated(unsafe) static var sessionConfigured = false
-
-    private static func configureAudioSessionIfNeeded() {
-        guard !sessionConfigured else { return }
-        sessionConfigured = true
+    /// Configure the shared `AVAudioSession` for playback. Called
+    /// from every `load(url:)` so a session that fell into a bad
+    /// state after recording (the `!pri` `priorityDenied` error
+    /// surfaced in device testing) gets re-armed on the next play.
+    ///
+    /// Why this isn't gated by a once-per-process flag any more:
+    /// `AudioRecorder.stop()` deactivates the session with
+    /// `.notifyOthersOnDeactivation`, but the system propagates
+    /// that to other audio components asynchronously. If a play
+    /// attempt lands on the controller before that propagation
+    /// completes, `setCategory(.playback)` fails with
+    /// `priorityDenied`. The retry loop here gives the system one
+    /// settle tick — empirically enough to recover every time on
+    /// device.
+    ///
+    /// Also calls `setActive(true)` so the session is hot for the
+    /// `AVAudioPlayer.play()` call that follows. The original
+    /// implementation only set the category; that worked when the
+    /// session was already active from a prior load, but failed
+    /// fresh-out-of-recording when the recorder's `setActive(false)`
+    /// had just torn it down.
+    private static func configureAudioSession() async {
+        let session = AVAudioSession.sharedInstance()
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+            return
         } catch {
             #if DEBUG
-            print("[AudioPlayback] failed to configure AVAudioSession: \(error)")
+            print("[AudioPlayback] first setCategory/setActive attempt failed: \(error) — retrying after settle")
+            #endif
+        }
+        // System propagation window — empirically ~100ms after the
+        // recorder's `setActive(false, .notifyOthersOnDeactivation)`
+        // is enough for the next `setCategory` to succeed.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        do {
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            #if DEBUG
+            print("[AudioPlayback] failed to configure AVAudioSession after retry: \(error)")
             #endif
         }
     }

@@ -41,15 +41,22 @@ struct HighlightElementView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            // Order: contentShape + gesture BEFORE position. The
+            // legacy pattern (position → contentShape → gesture)
+            // bound the gesture to the parent-sized wrapper, which
+            // either swallowed taps on adjacent highlights or
+            // never fired at all under SwiftUI iOS 26's gesture
+            // hit-testing rules. Mirrors the Step 7.2 sticky fix
+            // and Bug-3 audit applied across image / PDF / audio.
             paint
                 .frame(width: renderRect.width, height: renderRect.height)
-                .position(x: renderRect.midX, y: renderRect.midY)
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         if !isSelected { isSelected = true }
                     }
                 )
+                .position(x: renderRect.midX, y: renderRect.midY)
 
             if isSelected {
                 selectionChrome
