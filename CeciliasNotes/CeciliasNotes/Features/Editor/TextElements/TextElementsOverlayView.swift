@@ -116,6 +116,12 @@ struct TextElementsOverlayView: View {
                 exitEditAndDeselect()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .textElementsChanged)) { _ in
+            // A text element was created outside the overlay's own
+            // interactive path (currently the AI Summarize result
+            // sheet). Re-fetch so it appears immediately.
+            refreshTick &+= 1
+        }
     }
 
     // MARK: - Per-element container

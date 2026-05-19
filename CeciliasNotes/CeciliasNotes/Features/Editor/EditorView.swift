@@ -227,6 +227,7 @@ struct EditorView: View {
                             onMoreMenuPrint: printNotebook,
                             onMoreMenuDuplicatePage: duplicateCurrentPage,
                             onMoreMenuDeletePage: deleteCurrentPage,
+                            onMoreMenuSummarizePage: summarizeCurrentPage,
                             onMoreMenuPageSettings: showPageSettings,
                             onMoreMenuFullScreen: toggleFullScreen,
                             onMoreMenuInsertMedia: { viewModel.mediaInsertCoordinator.insertPhotos() },
@@ -855,6 +856,23 @@ struct EditorView: View {
 
     private func deleteCurrentPage() {
         viewModel.deletePage(viewModel.currentPage)
+    }
+
+    /// Present the AI "Summarize this page" sheet for the current
+    /// page. Routed through `ModalPresenter` like the export sheet —
+    /// the editor is itself a full-screen cover, so an inline
+    /// `.sheet` from here would silently fail to present.
+    private func summarizeCurrentPage() {
+        let page = viewModel.currentPage
+        let notebook = viewModel.notebook
+        ModalPresenter.shared.present(.sheet(id: "editor.summarizePage") {
+            SummarizePageView(
+                page: page,
+                notebookTitle: notebook.title,
+                notebookId: notebook.id,
+                onDismiss: { ModalPresenter.shared.dismiss() }
+            )
+        })
     }
 
     // MARK: Top-edge gesture overlay (header reveal)

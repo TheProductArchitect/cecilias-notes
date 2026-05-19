@@ -26,6 +26,10 @@ struct EditorToolbarView: View {
     let onMoreMenuPrint:     () -> Void
     let onMoreMenuDuplicatePage: () -> Void
     let onMoreMenuDeletePage: () -> Void
+    /// Opens the AI "Summarize this page" result sheet. Only invoked
+    /// when `AIService.shared.canRun` — the menu item is absent
+    /// otherwise (graceful-absence rule for AI surfaces).
+    let onMoreMenuSummarizePage: () -> Void
     let onMoreMenuPageSettings: () -> Void
     let onMoreMenuFullScreen: () -> Void
     let onMoreMenuInsertMedia: () -> Void
@@ -278,6 +282,16 @@ struct EditorToolbarView: View {
         } label: { Label("Insert Media", systemImage: "photo.badge.plus") }
 
         Divider()
+
+        // AI capability — absent entirely when AI can't run (no
+        // disabled state), per the graceful-absence rule for AI
+        // surfaces documented on `IntelligenceService`.
+        if AIService.shared.canRun {
+            Button { onMoreMenuSummarizePage() }
+                label: { Label("Summarize Page", systemImage: "sparkles") }
+
+            Divider()
+        }
 
         Button { onMoreMenuExportPDF() }
             label: { Label("Export as PDF…", systemImage: "doc.richtext") }
