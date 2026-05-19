@@ -303,7 +303,11 @@ final class SearchIndexService {
     // MARK: - Handwriting OCR (debounced + incremental)
 
     private func shouldOCR(page: Page, notebookId: UUID) -> Bool {
-        guard page.strokeData != nil, page.strokeDataSize > 0 else { return false }
+        // Step 8: stroke storage moved to V6 `PageElement(.stroke) +
+        // StrokeContent`. Read via the storage helper; OCR is
+        // worthwhile only when there's an actual stroke blob.
+        guard let data = StorageService.shared.strokeData(for: page),
+              !data.isEmpty else { return false }
         guard let entry = index[notebookId]?.pages[page.id.uuidString] else { return true }
         guard let lastOCR = entry.ocrUpdatedAt else { return true }
         return page.updatedAt > lastOCR
@@ -336,7 +340,8 @@ final class SearchIndexService {
         // Re-fetch fresh — the page may have been deleted / its
         // notebook moved between scheduling and firing.
         guard let page = storage.fetchPage(id: pageId), !page.isDeleted else { return }
-        guard let strokeData = page.strokeData,
+        // Step 8: read via the V6 stroke singleton.
+        guard let strokeData = storage.strokeData(for: page),
               let drawing = try? PKDrawing(data: strokeData)
         else { return }
 

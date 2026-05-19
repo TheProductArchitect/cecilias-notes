@@ -585,12 +585,16 @@ struct CustomisePanel: View {
     // MARK: Template
 
     /// Template is a creation-time decision: once any page has strokes
-    /// the selector becomes read-only. We use the cheap
-    /// `strokeDataSize` byte counter — non-zero means the page has
-    /// committed strokes — to avoid decoding `PKDrawing` for every
-    /// page on every render of the panel.
+    /// the selector becomes read-only. Step 8: the byte-counter
+    /// short-cut (`page.strokeDataSize`) is gone with the
+    /// `Page.strokeData` field. Read each page's stroke blob via
+    /// the V6 storage helper — still cheap (no PKDrawing decode,
+    /// just a SwiftData fetch + byte-emptiness check per page).
     private var canChangeTemplate: Bool {
-        (viewModel.notebook.pages ?? []).allSatisfy { $0.strokeDataSize == 0 }
+        let pages = viewModel.notebook.pages ?? []
+        return pages.allSatisfy {
+            (StorageService.shared.strokeData(for: $0)?.isEmpty ?? true)
+        }
     }
 
     private var templateSection: some View {

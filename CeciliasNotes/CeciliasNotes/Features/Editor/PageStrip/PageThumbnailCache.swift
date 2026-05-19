@@ -96,11 +96,13 @@ final class PageThumbnailCache {
         }
 
         // Snapshot the data we need off the main actor before
-        // detaching. Reading `page.strokeData` and `page.pdfPageIndex`
-        // here keeps the detached task off SwiftData.
+        // detaching. Step 8: stroke bytes read via the V6
+        // singleton through the storage helper instead of the
+        // retired `Page.strokeData` field; PDF backing still
+        // resolves via the V6 PageElement lookup (Step 5.5).
         let pageId    = page.id
         let pageRect  = CGRect(origin: .zero, size: page.pageSize.pointSize)
-        let strokeData = page.strokeData
+        let strokeData = StorageService.shared.strokeData(for: page)
         // Step 5.5: PDF backing now comes from the V6 PageElement
         // model. The first full-bleed `.pdfPage` element on the
         // page identifies the file + page index; rasterising it
@@ -152,12 +154,13 @@ final class PageThumbnailCache {
 
     /// Compose a `Key` from a page on the main actor. Cheap — the
     /// fingerprint sample-walks the stroke bytes (~1KB of work for a
-    /// 100KB drawing).
+    /// 100KB drawing). Step 8 reads through the V6 storage helper.
     func composeKey(for page: Page) -> Key {
         let pdfIndex = Self.lookupPDFBacking(forPageId: page.id)?.index
+        let strokeData = StorageService.shared.strokeData(for: page)
         return Key(
             pageId: page.id,
-            strokeFingerprint: Self.fingerprint(of: page.strokeData),
+            strokeFingerprint: Self.fingerprint(of: strokeData),
             pdfFingerprint: pdfIndex.map { UInt64($0) + 1 } ?? 0
         )
     }

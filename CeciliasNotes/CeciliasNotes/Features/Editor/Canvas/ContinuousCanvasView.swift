@@ -388,6 +388,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// `TextElementView`. Step 3 — first PageElement-backed
             /// overlay; pattern reused by Steps 4-7.
             var textElementsHost: UIHostingController<TextElementsOverlayView>
+            /// V6 stroke overlay (Step 8). **Visually transparent.**
+            /// The actual stroke render stays on `PKCanvasView` —
+            /// this hosting controller exists so the stroke
+            /// primitive participates in the per-page overlay
+            /// pattern (seeds the `PageElement(.stroke)` singleton
+            /// on first appear; Step 9 lasso binding point).
+            var strokesHost: UIHostingController<StrokeElementsOverlayView>
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
@@ -711,6 +718,33 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 textElementsHost.attachAsChild(of: renderer)
 
+                // Step 8: stroke overlay — transparent host, exists
+                // so the V6 stroke singleton seeds on first appear
+                // and to give Step 9 a binding mount point. The
+                // actual stroke render stays on PKCanvasView
+                // (mounted in `mountCanvas` directly under
+                // contentView, not inside the renderer). Mount
+                // order at the end of the renderer stack so the
+                // overlay's no-op layer doesn't shadow anything.
+                let strokesHost = UIHostingController(
+                    rootView: StrokeElementsOverlayView(
+                        pageId: page.id,
+                        notebookId: viewModel.notebook.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                strokesHost.view.backgroundColor = .clear
+                strokesHost.view.isUserInteractionEnabled = false
+                strokesHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(strokesHost.view)
+                NSLayoutConstraint.activate([
+                    strokesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    strokesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    strokesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    strokesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                strokesHost.attachAsChild(of: renderer)
+
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
                     pageId:          page.id,
@@ -724,6 +758,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     stickyHost:      stickyHost,
                     textBlockHost:   textBlockHost,
                     textElementsHost: textElementsHost,
+                    strokesHost:     strokesHost,
                     template:        page.backgroundTemplate
                 ))
                 y += baseSize.height + pageGap
@@ -763,6 +798,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].stickyHost.detachFromParentVC()
                 hosts[i].textBlockHost.detachFromParentVC()
                 hosts[i].textElementsHost.detachFromParentVC()
+                hosts[i].strokesHost.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
@@ -932,8 +968,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // behind the canvas keeps its own trait-aware paper colour.
             canvas.overrideUserInterfaceStyle = .light
 
-            if let data = page.strokeData, let drawing = try? PKDrawing(data: data) {
+            // Step 8: read via the in-memory cache first; fall
+            // back to the V6 stroke singleton on miss and warm the
+            // cache with the decoded drawing for next time.
+            if let cached = StrokeCache.shared.drawing(forPage: page.id) {
+                canvas.drawing = cached
+            } else if let data = StorageService.shared.strokeData(for: page),
+                      let drawing = try? PKDrawing(data: data) {
                 canvas.drawing = drawing
+                StrokeCache.shared.cache(drawing, forPage: page.id)
             }
             applyTool(viewModel.selectedTool, to: canvas)
             // Honour current text-mode state at mount time. Without

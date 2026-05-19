@@ -582,6 +582,14 @@ final class EditorViewModel: ObservableObject {
         resetToolbarTimer()
         refreshCurrentPageTextBlocks()
 
+        // Step 8: pre-warm the in-memory stroke cache with the
+        // first few pages of this notebook. Decoding PKDrawing
+        // from Data costs ~5–20ms per page; doing it once at
+        // open-time keeps page-strip / first-swipe transitions
+        // off the SwiftData decode path. Detached background
+        // task — does not block init.
+        StrokeCache.shared.prewarmNotebook(notebook.id)
+
         // App-background flush for the PDF annotation writer. We
         // bypass the 3s debounce on background to guarantee no
         // in-flight annotations are lost if the user backgrounds
@@ -1515,9 +1523,10 @@ final class EditorViewModel: ObservableObject {
         if wasCurrent {
             let safeIndex = max(0, min(currentPageIndex, pages.count - 1))
             currentPageIndex = safeIndex
-            // Force a drawing reload
+            // Force a drawing reload (Step 8: read via the V6
+            // stroke singleton through the storage helper).
             if let canvasView,
-               let data    = pages[safeIndex].strokeData,
+               let data    = storage.strokeData(for: pages[safeIndex]),
                let drawing = try? PKDrawing(data: data) {
                 canvasView.drawing = drawing
             } else {
@@ -1980,8 +1989,10 @@ final class EditorViewModel: ObservableObject {
             )
             // Apply to the first page only when empty — preserves drawings
             // on existing notebooks where the user re-enters the panel.
+            // Step 8: "empty" now means no V6 stroke singleton or an
+            // empty one.
             if let first = (notebook.pages ?? []).first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
-               first.strokeData == nil || first.strokeDataSize == 0 {
+               (storage.strokeData(for: first)?.isEmpty ?? true) {
                 first.pageSize  = size
                 first.updatedAt = Date()
             }
@@ -2007,7 +2018,7 @@ final class EditorViewModel: ObservableObject {
                 defaultTemplate: template
             )
             if let first = (notebook.pages ?? []).first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
-               first.strokeData == nil || first.strokeDataSize == 0 {
+               (storage.strokeData(for: first)?.isEmpty ?? true) {
                 first.backgroundTemplate = template
                 first.updatedAt          = Date()
             }

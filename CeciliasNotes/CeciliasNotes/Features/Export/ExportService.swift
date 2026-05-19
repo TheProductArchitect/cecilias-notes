@@ -784,7 +784,9 @@ final class ExportService {
     // MARK: - PencilKit strokes (rasterised)
 
     private func drawStrokes(_ page: Page, ctx: CGContext, bounds: CGRect, quality: ExportQuality) {
-        guard let data    = page.strokeData,
+        // Step 8: read via the V6 stroke singleton instead of the
+        // retired `Page.strokeData` field.
+        guard let data    = StorageService.shared.strokeData(for: page),
               let drawing = try? PKDrawing(data: data)
         else { return }
 

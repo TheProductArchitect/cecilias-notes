@@ -737,11 +737,12 @@ extension StorageService {
                 pageSize: page.pageSize,
                 backgroundTemplate: page.backgroundTemplate
             )
-            newPage.strokeData     = page.strokeData
-            newPage.strokeDataSize = page.strokeDataSize
-            newPage.notebook       = copy
+            newPage.notebook = copy
             context.insert(newPage)
             copy.pages = (copy.pages ?? []) + [newPage]
+            // Step 8: clone the stroke singleton instead of copying
+            // the retired `Page.strokeData` field.
+            cloneStrokeContent(fromPageId: page.id, toPage: newPage)
 
             for block in (page.textBlocks ?? []) where !block.isDeleted {
                 let newBlock = TextBlock(
@@ -865,23 +866,96 @@ extension StorageService {
     }
 
     func updatePageStrokes(_ page: Page, drawing: PKDrawing) throws {
-        let data            = drawing.dataRepresentation()
-        page.strokeData     = data
-        page.strokeDataSize = data.count
-        page.updatedAt      = Date()
+        // Step 8: writes flow through V6
+        // `PageElement(.stroke) + StrokeContent`. The Page-level
+        // `strokeData` / `strokeDataSize` fields are gone; this
+        // helper preserves its API so every caller
+        // (`EditorViewModel.savePage`, `performSave`, page-unmount
+        // flush) keeps working unchanged.
+        guard let pair = StrokeCommit.ensureStrokeElement(
+            forPageId:  page.id,
+            notebookId: page.notebookId,
+            context:    context
+        ) else {
+            throw CeciliasNotesStorageError.fileWriteFailed(
+                NSError(
+                    domain: "CeciliasNotes",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "stroke element seed failed"]
+                )
+            )
+        }
+        let data = drawing.dataRepresentation()
+        pair.content.strokeData = data
+        pair.content.updatedAt  = Date()
+        pair.element.updatedAt  = Date()
+        page.updatedAt = Date()
         // Bump the parent notebook's updatedAt so the Library + widget reflect activity.
         if let nb = notebookById(page.notebookId) {
             nb.updatedAt = Date()
             scheduleSpotlightReindex(for: nb)
         }
         try context.save()
+        // Write-through to the in-memory cache so the next canvas
+        // mount on this page hits without re-decoding from SwiftData.
+        StrokeCache.shared.cache(drawing, forPage: page.id)
         scheduleWidgetSnapshot()
+    }
+
+    /// Copy the source page's stroke singleton into a freshly-
+    /// created destination page. Used by `duplicatePage` /
+    /// `duplicateNotebook` after Step 8 retired the
+    /// `Page.strokeData` field that those code paths used to
+    /// shallow-copy. No-op if the source page has no strokes.
+    func cloneStrokeContent(fromPageId source: UUID, toPage destination: Page) {
+        guard let sourceElement = StrokeCommit.strokeElement(
+            forPageId: source,
+            context:   context
+        ),
+        let sourceContent = sourceElement.strokeContent,
+        !sourceContent.strokeData.isEmpty
+        else { return }
+
+        guard let pair = StrokeCommit.ensureStrokeElement(
+            forPageId:  destination.id,
+            notebookId: destination.notebookId,
+            context:    context
+        ) else { return }
+        pair.content.strokeData = sourceContent.strokeData
+        pair.content.toolKind   = sourceContent.toolKind
+        pair.content.updatedAt  = Date()
+        pair.element.updatedAt  = Date()
+    }
+
+    /// Read the active stroke blob for a page, or `nil` if the
+    /// page has no strokes yet (no `PageElement(.stroke)` exists,
+    /// or it exists with an empty `StrokeContent.strokeData`).
+    /// Step 8 read-side abstraction over the migrated storage —
+    /// every consumer (SearchIndexService OCR, ExportService PDF
+    /// render, PageThumbnailCache fingerprint, ContinuousCanvasView
+    /// mount) calls this instead of the retired `page.strokeData`.
+    /// Cheap synchronous fetch; can be called on the main actor
+    /// without blocking.
+    func strokeData(for page: Page) -> Data? {
+        guard let element = StrokeCommit.strokeElement(
+            forPageId: page.id,
+            context:   context
+        ),
+        let content = element.strokeContent
+        else { return nil }
+        let data = content.strokeData
+        return data.isEmpty ? nil : data
     }
 
     /// Soft-deletes the page and renumbers all subsequent pages in the notebook.
     func deletePage(_ page: Page) throws {
         let notebookId  = page.notebookId
         let deletedNum  = page.pageNumber
+
+        // Step 8: drop the page's stroke cache entry so a
+        // subsequent re-create-at-same-id (or stale fetch) doesn't
+        // resurrect the deleted drawing.
+        StrokeCache.shared.invalidate(pageId: page.id)
 
         page.isDeleted  = true
         page.deletedAt  = Date()
@@ -928,11 +1002,13 @@ extension StorageService {
             pageSize: page.pageSize,
             backgroundTemplate: page.backgroundTemplate
         )
-        newPage.strokeData     = page.strokeData
-        newPage.strokeDataSize = page.strokeDataSize
-        newPage.notebook       = notebook
+        newPage.notebook = notebook
         context.insert(newPage)
         notebook.pages = (notebook.pages ?? []) + [newPage]
+        // Step 8: clone the stroke singleton from the source page
+        // into the duplicate, replacing the retired `Page.strokeData`
+        // direct copy.
+        cloneStrokeContent(fromPageId: page.id, toPage: newPage)
 
         for block in (page.textBlocks ?? []) where !block.isDeleted {
             let nb = TextBlock(

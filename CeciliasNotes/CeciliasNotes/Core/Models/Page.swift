@@ -25,10 +25,13 @@ final class Page {
     // to this Page — `PDFPageContent.pageIndex` carries the
     // index. The UserDefaults-backed `PDFBackingStore` map is gone.
 
-    /// Serialised PKDrawing — written by StorageService.updatePageStrokes.
-    var strokeData: Data?
-    /// Byte count of strokeData; updated atomically with strokeData.
-    var strokeDataSize: Int = 0
+    // Step 8: `strokeData` / `strokeDataSize` removed. Strokes are
+    // now the singleton `PageElement(kind: .stroke) + StrokeContent`
+    // scoped to this Page — `StrokeContent.strokeData` carries the
+    // serialised PKDrawing. Reads/writes flow through
+    // `StorageService.strokeData(for:)` /
+    // `StorageService.updatePageStrokes(_:drawing:)` which transparently
+    // resolve the singleton.
 
     // MARK: Timestamps
     var createdAt: Date = Date()
@@ -64,8 +67,6 @@ final class Page {
         self.pageNumber         = pageNumber
         self.pageSize              = pageSize
         self.backgroundTemplateRaw = backgroundTemplate.jsonString
-        self.strokeData         = nil
-        self.strokeDataSize     = 0
         self.createdAt          = Date()
         self.updatedAt          = Date()
         self.isDeleted          = false
