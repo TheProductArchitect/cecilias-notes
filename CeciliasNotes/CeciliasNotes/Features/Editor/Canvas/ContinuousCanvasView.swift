@@ -1174,9 +1174,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 if canvas.isUserInteractionEnabled != desired {
                     canvas.isUserInteractionEnabled = desired
                 }
-                #if DEBUG
-                print("[ImageInteract] canvas isUserInteractionEnabled=\(canvas.isUserInteractionEnabled), tool=\(viewModel.selectedTool)")
-                #endif
             }
         }
 
