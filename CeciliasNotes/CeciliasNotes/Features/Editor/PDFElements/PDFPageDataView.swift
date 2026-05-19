@@ -22,6 +22,7 @@ struct PDFPageDataView: View {
     @State private var renderedImage: UIImage?
     @State private var previewImage: UIImage?
     @State private var failed: Bool = false
+    @State private var isDownloadingFromCloud: Bool = false
 
     var body: some View {
         Group {
@@ -37,6 +38,8 @@ struct PDFPageDataView: View {
                     // PDFKit render the moment the preview lands so
                     // the swap-in happens without an extra tick.
                     .task(id: content.id) { await renderHighRes() }
+            } else if isDownloadingFromCloud {
+                downloadPlaceholder
             } else if failed {
                 placeholder
             } else {
@@ -52,6 +55,20 @@ struct PDFPageDataView: View {
             Image(systemName: "doc.text")
                 .font(.system(size: 32, weight: .light))
                 .foregroundStyle(theme.recessiveTertiary)
+        }
+    }
+
+    private var downloadPlaceholder: some View {
+        ZStack {
+            Rectangle().fill(theme.recessiveQuinary)
+            VStack(spacing: 10) {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .tint(theme.recessiveTertiary)
+                Text("Downloading PDF from iCloud…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.recessiveTertiary)
+            }
         }
     }
 
@@ -79,6 +96,28 @@ struct PDFPageDataView: View {
         guard renderedImage == nil else { return }
         let url = content.pdfFileURL
         let pageIndex = content.pageIndex
+
+        // Step 10: surface iCloud download state before attempting
+        // the render. PDF files are the largest media artefact and
+        // most likely to lag behind their SwiftData record on a
+        // freshly-restored device.
+        switch UbiquitousFileStatus.currentState(at: url) {
+        case .local:
+            break
+        case .downloading:
+            await MainActor.run { self.isDownloadingFromCloud = true }
+            _ = UbiquitousFileStatus.requestDownload(at: url)
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                if case .local = UbiquitousFileStatus.currentState(at: url) { break }
+            }
+            await MainActor.run { self.isDownloadingFromCloud = false }
+        case .notUbiquitous:
+            // No file, no stub — fall through; the render will
+            // fail and `failed = true` will surface the placeholder.
+            break
+        }
 
         let rendered: UIImage? = await Task.detached(priority: .userInitiated) {
             guard let document = PDFDocument(url: url),

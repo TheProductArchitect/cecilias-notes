@@ -195,6 +195,22 @@ struct CeciliasNotesApp: App {
                         }
                     }
 
+                    // Step 10: orphan-cleanup sweep. Background-
+                    // priority — each per-category pass walks the
+                    // on-disk file list once + queries SwiftData for
+                    // active references. Files past the 30-day
+                    // grace window AND unreferenced get hard-deleted.
+                    // Idempotent and safe to repeat (the grace gate
+                    // skips fresh files; the reference check skips
+                    // currently-used ones).
+                    Task.detached(priority: .background) {
+                        await MainActor.run {
+                            MediaStorage.purgeAllOrphans(
+                                context: StorageService.shared.context
+                            )
+                        }
+                    }
+
                     // No navigation state restoration on cold launch
                     // — the app always lands in the library. The
                     // previous auto-open-last-notebook behaviour

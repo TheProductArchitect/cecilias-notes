@@ -156,6 +156,13 @@ struct LibraryHeaderView: View {
 
     private var normalStrip: some View {
         HStack(spacing: 4) {
+            // Step 10: sync state badge — leftmost in the strip so
+            // it sits at the natural reading-order start without
+            // displacing the existing actions. Read-only surface
+            // backed by `CloudSyncManager`; tap opens a small menu
+            // (last-synced timestamp / retry on error / etc.).
+            SyncStatusIndicator()
+
             // Search
             Button {
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {

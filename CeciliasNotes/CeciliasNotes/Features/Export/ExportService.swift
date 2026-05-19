@@ -74,17 +74,44 @@ final class ExportService {
 
         guard total > 0 else { throw ExportError.noPages }
 
-        // Step 5.5: the V5 annotated-PDF export branch was retired
-        // alongside `notebook.isPDFBacked` + `sourcePDFURL`. PDF
-        // notebooks now flow through the standard render-canvas
-        // path below; the rasterised output captures strokes /
-        // text / images / audio markers but does **not** include
-        // PDF page backings or highlights as proper PDF
-        // annotations. A follow-up step (Step 10 polish) can
-        // rebuild the annotated path against the V6 `.pdfPage`
-        // + `.highlight` PageElements when it ships.
-
         let outputURL  = try makeOutputURL(for: notebook)
+
+        // Step 10: PDF export quality recovery. If this notebook
+        // was derived from an imported PDF (first page carries a
+        // full-bleed `PageElement(.pdfPage)`), route through the
+        // PDFKit-based path that copies source PDF pages directly
+        // and composites annotations on top. Preserves text
+        // selectability, embedded fonts, and hyperlinks — the
+        // regression from Step 5.5 that this step recovers.
+        // Non-PDF-derived notebooks fall through to the
+        // rasterise pipeline below, unchanged.
+        if PDFDerivedExport.derivationSource(for: notebook) != nil {
+            let count = try PDFDerivedExport.export(
+                notebook:  notebook,
+                pages:     exportPages,
+                outputURL: outputURL,
+                progress:  progress
+            )
+            let attrs    = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+            let fileSize = (attrs[.size] as? Int64) ?? 0
+            let duration = Date().timeIntervalSince(start)
+            let record = ExportRecord(
+                notebookId:    notebook.id,
+                notebookTitle: notebook.title,
+                fileURL:       outputURL,
+                fileSizeBytes: fileSize,
+                pageCount:     count,
+                exportedAt:    Date()
+            )
+            await ExportManifest.shared.append(record)
+            return ExportResult(
+                fileURL:       outputURL,
+                fileSizeBytes: fileSize,
+                pageCount:     count,
+                duration:      duration
+            )
+        }
+
         let pageBounds = exportPages[0].pageSize.pointSize.asCGRect
         let pdfInfo    = makePDFInfo(notebook: notebook)
 

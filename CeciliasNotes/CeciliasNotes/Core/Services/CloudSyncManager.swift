@@ -159,6 +159,14 @@ final class CloudSyncManager: ObservableObject {
 
     // MARK: - iCloud Drive sync helpers
 
+    /// Public retry hook — called by `SyncStatusIndicator`'s "Try
+    /// again" menu item when the user wants to recover from an
+    /// error state. Re-runs availability check + restarts the
+    /// NSMetadataQuery. Idempotent.
+    func reconcileAfterLaunchForExternalRetry() async {
+        await reconcileAfterLaunch()
+    }
+
     private func reconcileAfterLaunch() async {
         await MainActor.run { syncStatus = .checking }
 

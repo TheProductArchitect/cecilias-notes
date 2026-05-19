@@ -221,13 +221,22 @@ enum MediaStorage {
         }
     }
 
+    /// Hard-delete threshold for the orphan sweeps. A file is
+    /// only deleted if it both (a) has no active SwiftData row
+    /// pointing at it AND (b) was modified more than this far in
+    /// the past. The grace window protects against race
+    /// conditions — a freshly-written file that the row commit
+    /// hasn't reached yet, an in-flight CloudKit reconcile, etc.
+    /// 30 days matches the architecture spec's conservative
+    /// default.
+    private static let orphanGracePeriod: TimeInterval = 30 * 24 * 60 * 60
+
     /// Background-priority garbage collection. For each PDF on
     /// disk, query SwiftData for any active `PDFPageContent`
-    /// referencing the id; delete the file if none. Same logic
-    /// for orphaned preview thumbnails. **Not scheduled in
-    /// Step 4.5** — Step 10's sync polish wires this into a
-    /// background task. Provided as a free function callable from
-    /// debug tooling and the future scheduler.
+    /// referencing the id; delete the file if none AND the file
+    /// is older than `orphanGracePeriod`. Same logic for orphaned
+    /// preview thumbnails. Step 10 wires this into the app-launch
+    /// background task; also callable from debug tooling.
     static func purgeOrphanedPDFs(context: ModelContext) {
         let fm = FileManager.default
         let pdfFiles = (try? fm.contentsOfDirectory(at: pdfDirectory, includingPropertiesForKeys: nil)) ?? []
@@ -244,7 +253,7 @@ enum MediaStorage {
         for fileURL in pdfFiles where fileURL.pathExtension.lowercased() == "pdf" {
             let stem = fileURL.deletingPathExtension().lastPathComponent
             guard let uuid = UUID(uuidString: stem) else { continue }
-            if !referencedIds.contains(uuid) {
+            if !referencedIds.contains(uuid), isPastGracePeriod(fileURL) {
                 try? fm.removeItem(at: fileURL)
                 for (hash, id) in index where id == uuid {
                     index.removeValue(forKey: hash)
@@ -257,10 +266,72 @@ enum MediaStorage {
         let previewFiles = (try? fm.contentsOfDirectory(at: pdfPreviewDirectory, includingPropertiesForKeys: nil)) ?? []
         for fileURL in previewFiles where fileURL.pathExtension.lowercased() == "png" {
             let name = fileURL.lastPathComponent
-            if !referencedPreviewNames.contains(name) {
+            if !referencedPreviewNames.contains(name), isPastGracePeriod(fileURL) {
                 try? fm.removeItem(at: fileURL)
             }
         }
+    }
+
+    /// Step 10 — orphan sweep for `Documents/MediaAttachments/images/`.
+    /// For each on-disk image file, look up an active
+    /// `ImageContent` by id (the filename stem is the UUID); if
+    /// none AND the file is older than `orphanGracePeriod`, delete.
+    static func purgeOrphanedImages(context: ModelContext) {
+        let fm = FileManager.default
+        let dir = directory(for: .images)
+        let imageFiles = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        let descriptor = FetchDescriptor<ImageContent>()
+        let active = (try? context.fetch(descriptor)) ?? []
+        let referencedIds = Set(active.map(\.id))
+        for fileURL in imageFiles {
+            let stem = fileURL.deletingPathExtension().lastPathComponent
+            guard let uuid = UUID(uuidString: stem) else { continue }
+            if !referencedIds.contains(uuid), isPastGracePeriod(fileURL) {
+                try? fm.removeItem(at: fileURL)
+            }
+        }
+    }
+
+    /// Step 10 — orphan sweep for `Documents/MediaAttachments/audio/`
+    /// and `lectures/`. Same shape as `purgeOrphanedImages`; both
+    /// audio categories key off `AudioContent.id` since Step 5
+    /// consolidated short notes + lectures into a single content
+    /// entity.
+    static func purgeOrphanedAudio(context: ModelContext) {
+        let fm = FileManager.default
+        let descriptor = FetchDescriptor<AudioContent>()
+        let active = (try? context.fetch(descriptor)) ?? []
+        let referencedIds = Set(active.map(\.id))
+        for category in [Category.audio, Category.lectures] {
+            let dir = directory(for: category)
+            let files = (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+            for fileURL in files {
+                let stem = fileURL.deletingPathExtension().lastPathComponent
+                guard let uuid = UUID(uuidString: stem) else { continue }
+                if !referencedIds.contains(uuid), isPastGracePeriod(fileURL) {
+                    try? fm.removeItem(at: fileURL)
+                }
+            }
+        }
+    }
+
+    /// Umbrella that runs every orphan sweep in sequence. Cheap to
+    /// call repeatedly — the grace period gate makes the sweep a
+    /// no-op for any file that isn't yet eligible.
+    static func purgeAllOrphans(context: ModelContext) {
+        purgeOrphanedImages(context: context)
+        purgeOrphanedAudio(context: context)
+        purgeOrphanedPDFs(context: context)
+    }
+
+    /// `true` when the file at `url` was last modified more than
+    /// `orphanGracePeriod` ago. Missing modification date errs on
+    /// the safe side and returns `false` (don't delete unknown).
+    private static func isPastGracePeriod(_ url: URL) -> Bool {
+        guard let values = try? url.resourceValues(forKeys: [.contentModificationDateKey]),
+              let modified = values.contentModificationDate
+        else { return false }
+        return Date().timeIntervalSince(modified) > orphanGracePeriod
     }
 
     // MARK: - Writes

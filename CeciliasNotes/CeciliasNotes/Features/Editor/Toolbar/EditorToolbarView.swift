@@ -85,6 +85,10 @@ struct EditorToolbarView: View {
             metaCluster
             SaveStatusIndicator(status: viewModel.saveStatus)
                 .padding(.leading, CeciliasNotes.Spacing.sm)
+            // Step 10: sync state badge — sits beside the
+            // local-save indicator since both communicate
+            // "is my data safe" state. Read-only, tap-opens-menu.
+            SyncStatusIndicator()
         }
         .padding(.horizontal, CeciliasNotes.Spacing.md)
         .frame(height: toolbarHeight)

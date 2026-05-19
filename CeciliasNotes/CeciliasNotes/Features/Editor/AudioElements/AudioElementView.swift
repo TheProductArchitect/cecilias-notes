@@ -75,7 +75,19 @@ struct AudioElementView: View {
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onAppear {
-            if !isRecording { player.load(url: content.fileURL) }
+            if !isRecording {
+                // Step 10: if the audio file is an iCloud stub
+                // (the SwiftData record arrived ahead of the bytes
+                // on a freshly-restored device), nudge the
+                // download. `player.load(url:)` will no-op on a
+                // missing file; the user sees the inert strip and
+                // can tap play once iCloud lands the file.
+                let url = content.fileURL
+                if case .downloading = UbiquitousFileStatus.currentState(at: url) {
+                    _ = UbiquitousFileStatus.requestDownload(at: url)
+                }
+                player.load(url: url)
+            }
         }
         .onDisappear { player.pause() }
     }
