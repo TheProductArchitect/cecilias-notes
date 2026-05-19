@@ -33,6 +33,7 @@
 import ObjectiveC.runtime
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
 
 enum MediaPickerPresenter {
 
@@ -66,17 +67,7 @@ enum MediaPickerPresenter {
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
 
-        guard let topVC = Self.topmostViewController() else {
-            #if DEBUG
-            print("[ImageInsert] presenter: no topmost VC reachable — cancelling")
-            #endif
-            onCancel()
-            return
-        }
-        #if DEBUG
-        print("[ImageInsert] presenter: presenting PHPickerViewController on \(type(of: topVC))")
-        #endif
-        topVC.present(picker, animated: true)
+        Self.presentOnTopmost(picker, debugTag: "PHPickerViewController", onUnavailable: onCancel)
     }
 
     /// Present the system camera (`UIImagePickerController` with
@@ -116,27 +107,89 @@ enum MediaPickerPresenter {
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
 
-        guard let topVC = Self.topmostViewController() else {
-            #if DEBUG
-            print("[ImageInsert] camera presenter: no topmost VC reachable — cancelling")
-            #endif
-            onCancel()
-            return
-        }
-        #if DEBUG
-        print("[ImageInsert] camera presenter: presenting UIImagePickerController on \(type(of: topVC))")
-        #endif
-        topVC.present(picker, animated: true)
+        Self.presentOnTopmost(picker, debugTag: "UIImagePickerController(.camera)", onUnavailable: onCancel)
+    }
+
+    /// Present a `UIDocumentPickerViewController` scoped to PDF
+    /// content. Same UIKit-direct + hardened topmost-VC walk as
+    /// the photo / camera entry points — bypasses SwiftUI's
+    /// `.fileImporter`, which Step 7.2 device-test surfaced as
+    /// flaky when the editor cover's hosting controller is
+    /// mid-transition.
+    static func presentPDFDocumentPicker(
+        completion: @escaping (URL) -> Void,
+        onCancel:   @escaping () -> Void
+    ) {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.pdf],
+            asCopy: true
+        )
+        picker.allowsMultipleSelection = false
+        let delegate = DocumentPickerDelegate(
+            completion: completion,
+            onCancel:   onCancel
+        )
+        picker.delegate = delegate
+        objc_setAssociatedObject(
+            picker,
+            &Self.documentDelegateAssociationKey,
+            delegate,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        Self.presentOnTopmost(picker, debugTag: "UIDocumentPickerViewController(.pdf)", onUnavailable: onCancel)
     }
 
     // MARK: - Internals
 
     private static var delegateAssociationKey: UInt8 = 0
     private static var cameraDelegateAssociationKey: UInt8 = 0
+    private static var documentDelegateAssociationKey: UInt8 = 0
+
+    /// Defers the actual `present(_:animated:)` by one runloop tick
+    /// so SwiftUI's hosting-controller graph has settled before
+    /// UIKit checks "is the presenting VC's view in the window
+    /// hierarchy?". Step 7.2 device-test surfaced a reproducible
+    /// failure where the topmost VC at notification-handler time
+    /// was a stale `PresentationHostingController` mid-transition;
+    /// without the defer + window check, iOS rejected the present
+    /// and PHPicker fired `didFinishPicking` with empty results,
+    /// which the cancel path then surfaced as "user dismissed."
+    ///
+    /// Also re-validates the topmost VC at present-time (not at
+    /// notification-handler time) and walks the chain filtering
+    /// out detached VCs (`view.window == nil`).
+    private static func presentOnTopmost(
+        _ picker: UIViewController,
+        debugTag: String,
+        onUnavailable: @escaping () -> Void
+    ) {
+        DispatchQueue.main.async {
+            guard let topVC = Self.topmostViewController() else {
+                #if DEBUG
+                print("[ImageInsert] presenter: no topmost VC reachable for \(debugTag) — cancelling")
+                #endif
+                onUnavailable()
+                return
+            }
+            #if DEBUG
+            print("[ImageInsert] presenter: presenting \(debugTag) on \(type(of: topVC))")
+            #endif
+            topVC.present(picker, animated: true)
+        }
+    }
 
     /// Walks the application's window scene + presented-VC chain to
     /// find the deepest currently-visible view controller. Picker
     /// `present` is called on this.
+    ///
+    /// Step 7.2 hardening: each step in the walk must be attached
+    /// to a window. A SwiftUI `PresentationHostingController`
+    /// mid-dismiss-transition keeps a non-nil `presentedViewController`
+    /// pointer for one runloop tick even though its `view.window`
+    /// has already gone nil — calling `present(_:)` on that stale
+    /// VC produced the "whose view is not in the window hierarchy"
+    /// error users saw. Skip detached VCs and use the last attached
+    /// ancestor instead.
     private static func topmostViewController() -> UIViewController? {
         guard let scene = UIApplication.shared
             .connectedScenes
@@ -151,9 +204,14 @@ enum MediaPickerPresenter {
                     ?? scene.windows.first?.rootViewController
         else { return nil }
         var top = root
-        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+        while let presented = top.presentedViewController,
+              !presented.isBeingDismissed,
+              presented.view.window != nil {
             top = presented
         }
+        // Defence-in-depth: if `top` itself ended up detached
+        // (root retained a stale presentation), fall back to root.
+        if top.view.window == nil { return root }
         return top
     }
 }
@@ -271,5 +329,46 @@ private final class CameraPickerDelegate: NSObject,
         guard !hasFired else { return }
         hasFired = true
         picker.dismiss(animated: true) { [onCancel] in onCancel() }
+    }
+}
+
+// MARK: - DocumentPickerDelegate
+
+/// Adapts `UIDocumentPickerDelegate` to plain closures for the PDF
+/// document-picker path. Single-shot — fires exactly once on pick
+/// or cancel and dismisses itself.
+private final class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
+    let completion: (URL) -> Void
+    let onCancel:   () -> Void
+    private var hasFired = false
+
+    init(
+        completion: @escaping (URL) -> Void,
+        onCancel:   @escaping () -> Void
+    ) {
+        self.completion = completion
+        self.onCancel   = onCancel
+    }
+
+    func documentPicker(
+        _ controller: UIDocumentPickerViewController,
+        didPickDocumentsAt urls: [URL]
+    ) {
+        guard !hasFired else { return }
+        hasFired = true
+        let url = urls.first
+        controller.dismiss(animated: true) { [completion, onCancel] in
+            if let url {
+                completion(url)
+            } else {
+                onCancel()
+            }
+        }
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        guard !hasFired else { return }
+        hasFired = true
+        controller.dismiss(animated: true) { [onCancel] in onCancel() }
     }
 }

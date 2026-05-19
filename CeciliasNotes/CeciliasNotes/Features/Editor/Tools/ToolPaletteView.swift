@@ -33,11 +33,11 @@ struct ToolPaletteView: View {
     @State private var imageVariant: ImageToolVariant = ImageToolVariantStore.current
 
     // MARK: - Step 4.5: PDF-as-reference (Workflow B)
-    /// Drives the `.fileImporter` modifier for PDF picking. Flips
-    /// true when the user taps the image tool's PDF Page menu row.
-    @State private var showPDFFilePicker = false
-    /// URL handed back from the file importer, drives the
+    /// URL handed back from the document picker, drives the
     /// `PDFPagePickerSheet` presentation. Cleared on dismiss.
+    /// Step 7.2 retired the SwiftUI `.fileImporter` flag — the
+    /// document picker now goes through `MediaPickerPresenter`
+    /// (UIKit-direct) so it survives editor-cover transitions.
     @State private var pdfPickerSourceURL: URL?
     /// Which category, if any, is showing its variant picker popover.
     @State private var openVariantCategory: ToolCategory?
@@ -134,22 +134,6 @@ struct ToolPaletteView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This clears all strokes on the current page. Media and text blocks are preserved. ⌘Z restores.")
-        }
-        // Step 4.5: PDF-as-reference document picker. Driven by the
-        // image tool's long-press menu PDF Page row. SwiftUI's
-        // `.fileImporter` wraps UIDocumentPickerViewController and
-        // takes care of security-scoped resource handling.
-        .fileImporter(
-            isPresented: $showPDFFilePicker,
-            allowedContentTypes: [.pdf],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { pdfPickerSourceURL = url }
-            case .failure:
-                pdfPickerSourceURL = nil
-            }
         }
         // Page-picker sheet. Driven by `pdfPickerSourceURL` being
         // non-nil after the file importer hands back a PDF.
@@ -627,9 +611,20 @@ struct ToolPaletteView: View {
             CeciliasNotesDivider()
             Button {
                 showImageVariantPopover = false
-                // Defer one runloop tick so the popover dismisses
-                // cleanly before the file importer presents.
-                DispatchQueue.main.async { showPDFFilePicker = true }
+                // Step 7.2: UIKit-direct UIDocumentPickerViewController
+                // via `MediaPickerPresenter`. Replaces the SwiftUI
+                // `.fileImporter` that flaked when the editor cover's
+                // hosting controller was mid-transition. Picker
+                // presents on the next runloop tick (built into the
+                // presenter) so the popover finishes dismissing first.
+                MediaPickerPresenter.presentPDFDocumentPicker(
+                    completion: { url in
+                        pdfPickerSourceURL = url
+                    },
+                    onCancel: {
+                        pdfPickerSourceURL = nil
+                    }
+                )
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "doc.text")

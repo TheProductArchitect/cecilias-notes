@@ -134,6 +134,13 @@ struct StickyNoteElementsOverlayView: View {
     private func exitEditAndDeselect() {
         editingId  = nil
         selectedId = nil
+        // Mirror upward so the state machine exits
+        // `.stickyNoteEditing(_:)`. Without this, a sticky that
+        // exited edit via background-tap left the view-model's
+        // `editingStickyNoteId` set, jamming the state machine.
+        if viewModel.editingStickyNoteId != nil {
+            viewModel.editingStickyNoteId = nil
+        }
     }
 
     // MARK: - Selection bindings

@@ -70,12 +70,19 @@ struct StickyNoteElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
+            // Order is load-bearing — `.contentShape(Rectangle())`
+            // MUST sit BEFORE `.position(...)` so the hit shape is
+            // the card's actual rect, not the parent-filling rect
+            // SwiftUI gives a positioned view. Step 7.1 had these
+            // swapped; the result was every sticky absorbing every
+            // tap on its page (because the contentShape became
+            // page-sized) and the overlay's background-tap handler
+            // never fired. Mirrors `ImageElementView.body`.
             card
                 .frame(width: displayed.width, height: displayed.height)
                 .overlay(textLayer)
                 .overlay(borderOverlay)
                 .overlay(deleteBadge, alignment: .bottomTrailing)
-                .position(x: displayed.midX, y: displayed.midY)
                 .rotationEffect(.radians(element.rotation))
                 .contentShape(Rectangle())
                 .simultaneousGesture(
@@ -88,6 +95,7 @@ struct StickyNoteElementView: View {
                 .gesture(
                     (isSelected && !isEditing) ? bodyDragGesture : nil
                 )
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected && !isEditing {
                 colorPickerStrip(displayed: displayed)

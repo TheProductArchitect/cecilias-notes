@@ -73,10 +73,11 @@ struct EditorView: View {
                     .accessibilityLabel(A11y.canvasLabel(strokeCount: viewModel.strokeCount))
                     .accessibilityHint(A11y.canvasHint)
 
-                // Tap-outside-to-dismiss while the title is being renamed.
-                // Active ONLY while editing — does not steal canvas touches
-                // at any other time. Resigning first responder fires the
-                // toolbar's onChange(of: titleFocused) which auto-saves.
+                // Tap-outside-to-dismiss while the title is being
+                // renamed. Active ONLY while editing — does not steal
+                // canvas touches at any other time. Resigning first
+                // responder fires the toolbar's
+                // onChange(of: titleFocused) which auto-saves.
                 if viewModel.isEditingTitle {
                     Color.clear
                         .contentShape(Rectangle())
@@ -88,6 +89,36 @@ struct EditorView: View {
                             )
                         }
                         .zIndex(50)
+                }
+
+                // Step 7.2: keyboard-up tap-to-dismiss for text /
+                // sticky editing. Gated on the existing
+                // `keyboardVisibleHeight` signal so the layer
+                // exists ONLY while the keyboard is on screen —
+                // doesn't steal canvas/overlay taps at any other
+                // time. Sits at zIndex 49 (just under the title-
+                // edit layer so they coexist cleanly).
+                //
+                // In-page taps land here AND on the per-overlay
+                // background-tap handler (text + sticky overlays
+                // already dismiss on outside-tap); this layer's
+                // job is the chrome / toolbar / strip / header
+                // area, which the per-overlay handlers can't see.
+                // `resignFirstResponder` propagates through
+                // `TextEditorRepresentable.updateUIView` /
+                // `StickyTextEditor.updateUIView` and the parent
+                // overlays' bindings clear their editing state.
+                else if viewModel.keyboardVisibleHeight > 0 {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
+                            )
+                        }
+                        .zIndex(49)
                 }
 
                 // 2. Floating tool palette — dims in Focus Mode but stays
