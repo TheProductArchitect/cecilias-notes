@@ -51,25 +51,6 @@ struct TextEditorRepresentable: UIViewRepresentable {
         }
         applyStyle(to: tv)
 
-        // Force the text container to wrap at the view's actual
-        // width. `isScrollEnabled = false` is supposed to let
-        // UITextView wrap based on the SwiftUI-imposed frame, but
-        // the dictation transcript flow (and the V6 SwiftData
-        // bridging) consistently surfaced a horizontal-overflow
-        // bug where each new transcript chunk extended the text
-        // view's intrinsic width instead of wrapping. Explicitly
-        // setting `textContainer.size.width` to the view's bounds
-        // clamps the layout manager's wrap width every update; the
-        // height stays unconstrained so the element auto-grows
-        // downward as text streams in.
-        let containerWidth = tv.bounds.width
-        if containerWidth > 0 {
-            let newSize = CGSize(width: containerWidth, height: .greatestFiniteMagnitude)
-            if tv.textContainer.size != newSize {
-                tv.textContainer.size = newSize
-            }
-        }
-
         // Drive first-responder from the editing flag — flipping
         // `isEditing = true` in the parent (e.g. cursor tap) makes
         // the keyboard appear; flipping false dismisses it.
@@ -78,6 +59,42 @@ struct TextEditorRepresentable: UIViewRepresentable {
         } else if !isEditing && tv.isFirstResponder {
             DispatchQueue.main.async { tv.resignFirstResponder() }
         }
+    }
+
+    /// Force SwiftUI to lay out the wrapped UITextView at the
+    /// width the parent proposes (which is the `.frame(width:)`
+    /// the element view sets to `element.normalizedWidth *
+    /// pageSize.width`). Without this, SwiftUI defaults to the
+    /// UITextView's `intrinsicContentSize` — which, with
+    /// `isScrollEnabled = false`, grows horizontally to fit the
+    /// longest unwrapped line. That's the "transcript goes off
+    /// the page in one line" bug.
+    ///
+    /// Implementation: clamp the text container's wrap width to
+    /// the proposed width, ask the layout manager for the
+    /// resulting glyph rect (which gives us the wrapped height),
+    /// and return `(proposedWidth, wrappedHeight)`. SwiftUI then
+    /// places the view at that size and the text wraps inside.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView tv: UITextView, context: Context) -> CGSize? {
+        guard let proposedWidth = proposal.width, proposedWidth > 0 else {
+            return nil
+        }
+        let newSize = CGSize(width: proposedWidth, height: .greatestFiniteMagnitude)
+        if tv.textContainer.size != newSize {
+            tv.textContainer.size = newSize
+        }
+        // Force layout so usedRect reflects the new wrap width.
+        tv.layoutManager.ensureLayout(for: tv.textContainer)
+        let used = tv.layoutManager.usedRect(for: tv.textContainer)
+        // Height: at least the parent's proposal (so an empty
+        // transcript element keeps its initial frame), otherwise
+        // the wrapped layout height plus a 1-line breathing
+        // buffer so the caret doesn't sit flush against the
+        // bottom edge.
+        let proposedHeight = proposal.height ?? 0
+        let lineBuffer: CGFloat = tv.font.map { $0.lineHeight } ?? 18
+        let neededHeight = max(proposedHeight, ceil(used.height) + lineBuffer)
+        return CGSize(width: proposedWidth, height: neededHeight)
     }
 
     private func applyStyle(to tv: UITextView) {

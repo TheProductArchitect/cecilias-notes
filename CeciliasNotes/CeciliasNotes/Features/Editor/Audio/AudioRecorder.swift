@@ -138,10 +138,18 @@ actor AudioRecorder {
         print("[Audio] 4a. inputNode numberOfInputs=\(inputNode.numberOfInputs) outputFormat(bus0)=\(inputNode.outputFormat(forBus: 0))")
         #endif
 
-        // `reset()` clears any stale node state from a previous
-        // session (e.g. cached buffers, half-initialised connections)
-        // so the imminent `start()` runs against a clean engine.
-        eng.reset()
+        // NOTE: `eng.reset()` is intentionally NOT called here.
+        // The original code reset the engine AFTER installing the
+        // tap to clear "stale node state" — but `reset()`
+        // invalidates the tap-on-input-node connection that
+        // `installTap(onBus:)` just established, which surfaces as
+        // the device-test bug "engine.isRunning=true at start,
+        // false 500ms later, no tap fires, file is silent." A
+        // freshly-allocated AVAudioEngine instance has no stale
+        // state to clear (line 72 created it). `LectureRecorder`
+        // doesn't call reset() either and works correctly for
+        // live dictation — pattern confirmed.
+
         // Explicit do/catch — the previous `try?` swallowed the
         // error and left the recorder in a half-started state
         // (file open, tap installed, engine NOT running), which
