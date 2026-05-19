@@ -31,6 +31,7 @@ struct LassoOverlayView: View {
     let pageId: UUID
     let coordinateSpace: PageCoordinateSpace
     @ObservedObject private var selection = LassoSelectionState.shared
+    @ObservedObject private var modifierKeys = ModifierKeyObserver.shared
     @Environment(\.theme) private var theme
 
     private var modelContext: ModelContext {
@@ -44,9 +45,11 @@ struct LassoOverlayView: View {
     // Manipulation transient state — drives chrome preview during
     // a gesture so the user sees the bbox move/scale/rotate
     // before the model writes happen on `.onEnded`.
-    @State private var dragOffset:   CGSize = .zero
-    @State private var resizeScale:  CGFloat = 1
-    @State private var rotateAngle:  CGFloat = 0
+    @State private var dragOffset:    CGSize = .zero
+    @State private var resizeScale:   CGFloat = 1
+    @State private var resizeScaleX:  CGFloat = 1
+    @State private var resizeScaleY:  CGFloat = 1
+    @State private var rotateAngle:   CGFloat = 0
     @State private var activeManipulation: Manipulation = .none
 
     private enum Manipulation { case none, drag, resize, rotate }
@@ -287,9 +290,14 @@ struct LassoOverlayView: View {
         case .drag:
             return base.offsetBy(dx: dragOffset.width, dy: dragOffset.height)
         case .resize:
-            let s = resizeScale
             let cx = base.midX
             let cy = base.midY
+            if modifierKeys.isShiftHeld {
+                let w = base.width  * resizeScaleX
+                let h = base.height * resizeScaleY
+                return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+            }
+            let s = resizeScale
             let w = base.width  * s
             let h = base.height * s
             return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
@@ -339,24 +347,41 @@ struct LassoOverlayView: View {
     }
 
     private func resizeGesture(at handle: CGPoint) -> some Gesture {
-        // Scale factor derived from the distance from the bbox
-        // centre to the dragged corner, divided by the original
-        // distance to that same corner. Aspect-locked.
+        // Aspect-locked (Shift not held): scale factor from the
+        // distance ratio between dragged and original corner
+        // position relative to the bbox centre.
+        //
+        // Free-axis (Shift held): scale X and Y independently
+        // from the per-axis distance ratio.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 activeManipulation = .resize
                 selection.isManipulating = true
                 resizeScale = computeScale(handle: handle, drag: value.translation)
+                let (sx, sy) = computeScaleXY(handle: handle, drag: value.translation)
+                resizeScaleX = sx
+                resizeScaleY = sy
             }
             .onEnded { _ in
-                let s = resizeScale
-                LassoGroupOps.scale(
-                    selection: selection,
-                    scale: s,
-                    pageSize: pageSize,
-                    context: modelContext
-                )
-                resizeScale = 1
+                if modifierKeys.isShiftHeld {
+                    LassoGroupOps.scaleXY(
+                        selection: selection,
+                        scaleX: resizeScaleX,
+                        scaleY: resizeScaleY,
+                        pageSize: pageSize,
+                        context: modelContext
+                    )
+                } else {
+                    LassoGroupOps.scale(
+                        selection: selection,
+                        scale: resizeScale,
+                        pageSize: pageSize,
+                        context: modelContext
+                    )
+                }
+                resizeScale  = 1
+                resizeScaleX = 1
+                resizeScaleY = 1
                 activeManipulation = .none
                 selection.isManipulating = false
             }
@@ -372,8 +397,19 @@ struct LassoOverlayView: View {
         let newX = (handle.x + drag.width)  - centre.x
         let newY = (handle.y + drag.height) - centre.y
         let newDist = (newX * newX + newY * newY).squareRoot()
-        let raw = newDist / originalDist
-        return max(0.2, min(5.0, raw))
+        return max(0.2, min(5.0, newDist / originalDist))
+    }
+
+    private func computeScaleXY(handle: CGPoint, drag: CGSize) -> (CGFloat, CGFloat) {
+        let bbox   = selection.selectionBounds
+        let centre = CGPoint(x: bbox.midX, y: bbox.midY)
+        let origDx = handle.x - centre.x
+        let origDy = handle.y - centre.y
+        let newDx  = origDx + drag.width
+        let newDy  = origDy + drag.height
+        let sx = abs(origDx) > 1 ? max(0.2, min(5.0, newDx / origDx)) : 1
+        let sy = abs(origDy) > 1 ? max(0.2, min(5.0, newDy / origDy)) : 1
+        return (sx, sy)
     }
 
     // MARK: - Rotation handle

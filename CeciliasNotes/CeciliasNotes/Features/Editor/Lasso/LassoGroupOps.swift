@@ -126,6 +126,54 @@ enum LassoGroupOps {
         selection.updateBounds(newBounds)
     }
 
+    /// Free-axis scale: width scales by `scaleX`, height by `scaleY`,
+    /// each around the selection bounding box's centre. Called when
+    /// Shift is held during a corner-resize drag.
+    static func scaleXY(
+        selection: LassoSelectionState,
+        scaleX sx: CGFloat,
+        scaleY sy: CGFloat,
+        pageSize: CGSize,
+        context: ModelContext = StorageService.shared.context
+    ) {
+        guard pageSize.width > 0, pageSize.height > 0 else { return }
+        guard sx > 0, sy > 0, !(sx == 1 && sy == 1) else { return }
+        let anchor = CGPoint(x: selection.selectionBounds.midX,
+                             y: selection.selectionBounds.midY)
+        let strokeTransform = LassoMath.scale(sx: sx, sy: sy, around: anchor)
+
+        for elementId in selection.selectedElementIds {
+            guard let element = fetch(elementId, context: context) else { continue }
+            switch element.kind {
+            case .stroke:
+                applyTransformToStroke(
+                    element: element, indices: nil,
+                    transform: strokeTransform, context: context
+                )
+            default:
+                scaleXYNonStrokeElement(element, anchor: anchor,
+                                        scaleX: sx, scaleY: sy, pageSize: pageSize)
+            }
+        }
+        for (elementId, indices) in selection.partialStrokeSelections {
+            guard let element = fetch(elementId, context: context) else { continue }
+            applyTransformToStroke(
+                element: element, indices: indices,
+                transform: strokeTransform, context: context
+            )
+        }
+        try? context.save()
+
+        let oldBounds = selection.selectionBounds
+        let newBounds = CGRect(
+            x: anchor.x - oldBounds.width  * sx / 2,
+            y: anchor.y - oldBounds.height * sy / 2,
+            width:  oldBounds.width  * sx,
+            height: oldBounds.height * sy
+        )
+        selection.updateBounds(newBounds)
+    }
+
     // MARK: - Rotate
 
     /// Rotate every selected element by `angle` (radians) around
@@ -264,6 +312,30 @@ enum LassoGroupOps {
         // when the group scale would push a corner outside.
         let clampedX = max(0, min(1 - newWidth,  newCentreXNorm - newWidth  / 2))
         let clampedY = max(0, min(1 - newHeight, newCentreYNorm - newHeight / 2))
+        element.normalizedX      = clampedX
+        element.normalizedY      = clampedY
+        element.normalizedWidth  = max(0.01, min(1, newWidth))
+        element.normalizedHeight = max(0.01, min(1, newHeight))
+        element.updatedAt        = Date()
+    }
+
+    private static func scaleXYNonStrokeElement(
+        _ element: PageElement,
+        anchor: CGPoint,
+        scaleX sx: CGFloat,
+        scaleY sy: CGFloat,
+        pageSize: CGSize
+    ) {
+        let currentCX = (element.normalizedX + element.normalizedWidth  / 2) * pageSize.width
+        let currentCY = (element.normalizedY + element.normalizedHeight / 2) * pageSize.height
+        let newCX = anchor.x + (currentCX - anchor.x) * sx
+        let newCY = anchor.y + (currentCY - anchor.y) * sy
+        let newWidth  = element.normalizedWidth  * Double(sx)
+        let newHeight = element.normalizedHeight * Double(sy)
+        let newCXNorm = Double(newCX) / Double(pageSize.width)
+        let newCYNorm = Double(newCY) / Double(pageSize.height)
+        let clampedX = max(0, min(1 - newWidth,  newCXNorm - newWidth  / 2))
+        let clampedY = max(0, min(1 - newHeight, newCYNorm - newHeight / 2))
         element.normalizedX      = clampedX
         element.normalizedY      = clampedY
         element.normalizedWidth  = max(0.01, min(1, newWidth))

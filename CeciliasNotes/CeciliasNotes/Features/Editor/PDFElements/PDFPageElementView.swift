@@ -25,6 +25,7 @@ struct PDFPageElementView: View {
     let onDelete: () -> Void
 
     @Environment(\.theme) private var theme
+    @ObservedObject private var modifierKeys = ModifierKeyObserver.shared
 
     @State private var dragOffset: CGSize = .zero
     @State private var pinchScale: CGFloat = 1.0
@@ -78,7 +79,8 @@ struct PDFPageElementView: View {
 
     private func displayedRect(base: CGRect) -> CGRect {
         if let r = resizeDelta {
-            return resizedRect(base: base, corner: r.corner, translation: r.translation)
+            return resizedRect(base: base, corner: r.corner, translation: r.translation,
+                               freeAxis: modifierKeys.isShiftHeld)
         }
         let scale = pinchScale
         let w = base.width  * scale
@@ -91,7 +93,8 @@ struct PDFPageElementView: View {
     private func resizedRect(
         base: CGRect,
         corner: Corner,
-        translation: CGSize
+        translation: CGSize,
+        freeAxis: Bool = false
     ) -> CGRect {
         let anchor: CGPoint
         let signX: CGFloat
@@ -102,16 +105,18 @@ struct PDFPageElementView: View {
         case .bottomLeft:  anchor = CGPoint(x: base.maxX, y: base.minY); signX = -1; signY =  1
         case .bottomRight: anchor = CGPoint(x: base.minX, y: base.minY); signX =  1; signY =  1
         }
+        let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
+        if freeAxis {
+            let finalW = max(minW, base.width  + signX * translation.width)
+            let finalH = max(minW, base.height + signY * translation.height)
+            let x = anchor.x - (signX > 0 ? 0 : finalW)
+            let y = anchor.y - (signY > 0 ? 0 : finalH)
+            return CGRect(x: x, y: y, width: finalW, height: finalH)
+        }
         let proposedW = max(1, base.width  + signX * translation.width)
         let proposedH = max(1, base.height + signY * translation.height)
-        let scaleW = proposedW / base.width
-        let scaleH = proposedH / base.height
-        let scale  = max(scaleW, scaleH)
-        let w = base.width  * scale
-        // `h` was computed for symmetry but never used — same
-        // shape as `ImageElementView.resizedRect`.
-        let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
-        let finalW = max(minW, w)
+        let scale  = max(proposedW / base.width, proposedH / base.height)
+        let finalW = max(minW, base.width * scale)
         let finalH = base.height * (finalW / base.width)
         let x = anchor.x - (signX > 0 ? 0 : finalW)
         let y = anchor.y - (signY > 0 ? 0 : finalH)
@@ -240,7 +245,8 @@ struct PDFPageElementView: View {
                     width: element.normalizedWidth * pageSize.width,
                     height: element.normalizedHeight * pageSize.height
                 )
-                let new = resizedRect(base: base, corner: corner, translation: value.translation)
+                let new = resizedRect(base: base, corner: corner, translation: value.translation,
+                                      freeAxis: modifierKeys.isShiftHeld)
                 element.normalizedX      = clampNorm(Double(new.minX) / Double(pageSize.width))
                 element.normalizedY      = clampNorm(Double(new.minY) / Double(pageSize.height))
                 element.normalizedWidth  = min(1, Double(new.width)  / Double(pageSize.width))

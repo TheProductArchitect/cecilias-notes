@@ -32,6 +32,7 @@ struct ImageElementView: View {
     let onDelete: () -> Void
 
     @Environment(\.theme) private var theme
+    @ObservedObject private var modifierKeys = ModifierKeyObserver.shared
 
     // Transient gesture deltas — kept local so a drag/resize tick
     // doesn't write to SwiftData every frame; commits land on
@@ -106,7 +107,8 @@ struct ImageElementView: View {
 
     private func displayedRect(base: CGRect) -> CGRect {
         if let r = resizeDelta {
-            return resizedRect(base: base, corner: r.corner, translation: r.translation)
+            return resizedRect(base: base, corner: r.corner, translation: r.translation,
+                               freeAxis: modifierKeys.isShiftHeld)
         }
         let scale = pinchScale
         let w = base.width  * scale
@@ -116,14 +118,18 @@ struct ImageElementView: View {
         return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
     }
 
-    /// Aspect-locked corner resize. The opposite corner stays
-    /// pinned in space; the dragged corner moves by the drag
-    /// translation; size scales uniformly along the controlling
-    /// diagonal.
+    /// Corner resize. The opposite corner stays pinned; the dragged
+    /// corner moves by the drag translation.
+    ///
+    /// - `freeAxis` false (default): aspect-locked — size scales
+    ///   uniformly along the controlling diagonal (Shift NOT held).
+    /// - `freeAxis` true: width and height scale independently
+    ///   (Shift held on a hardware keyboard).
     private func resizedRect(
         base: CGRect,
         corner: Corner,
-        translation: CGSize
+        translation: CGSize,
+        freeAxis: Bool = false
     ) -> CGRect {
         let anchor: CGPoint
         let signX: CGFloat
@@ -134,18 +140,18 @@ struct ImageElementView: View {
         case .bottomLeft:  anchor = CGPoint(x: base.maxX, y: base.minY); signX = -1; signY =  1
         case .bottomRight: anchor = CGPoint(x: base.minX, y: base.minY); signX =  1; signY =  1
         }
+        let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
+        if freeAxis {
+            let finalW = max(minW, base.width  + signX * translation.width)
+            let finalH = max(minW, base.height + signY * translation.height)
+            let x = anchor.x - (signX > 0 ? 0 : finalW)
+            let y = anchor.y - (signY > 0 ? 0 : finalH)
+            return CGRect(x: x, y: y, width: finalW, height: finalH)
+        }
         let proposedW = max(1, base.width  + signX * translation.width)
         let proposedH = max(1, base.height + signY * translation.height)
-        let scaleW = proposedW / base.width
-        let scaleH = proposedH / base.height
-        let scale  = max(scaleW, scaleH)
-        let w = base.width  * scale
-        // `h` was computed for symmetry but never used — the aspect-
-        // locked path derives the final height from the final width
-        // below. Drop the binding to silence the unused-variable
-        // warning.
-        let minW = CGFloat(Self.minNormalizedWidth) * pageSize.width
-        let finalW = max(minW, w)
+        let scale  = max(proposedW / base.width, proposedH / base.height)
+        let finalW = max(minW, base.width * scale)
         let finalH = base.height * (finalW / base.width)
         let x = anchor.x - (signX > 0 ? 0 : finalW)
         let y = anchor.y - (signY > 0 ? 0 : finalH)
@@ -283,7 +289,8 @@ struct ImageElementView: View {
                     width: element.normalizedWidth * pageSize.width,
                     height: element.normalizedHeight * pageSize.height
                 )
-                let new = resizedRect(base: base, corner: corner, translation: value.translation)
+                let new = resizedRect(base: base, corner: corner, translation: value.translation,
+                                      freeAxis: modifierKeys.isShiftHeld)
                 element.normalizedX      = clampNorm(Double(new.minX) / Double(pageSize.width))
                 element.normalizedY      = clampNorm(Double(new.minY) / Double(pageSize.height))
                 element.normalizedWidth  = min(1, Double(new.width)  / Double(pageSize.width))
