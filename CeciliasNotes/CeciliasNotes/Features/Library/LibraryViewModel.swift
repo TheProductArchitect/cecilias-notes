@@ -78,7 +78,28 @@ final class LibraryViewModel: ObservableObject {
     /// Which subset of notebooks the home grid is rendering. Drives
     /// the sidebar's active-row indicator and the grid's content set.
     /// Persisted across launches so a user returns to the same view.
-    @Published var selectedContext: LibraryContext = .recent
+    @Published var selectedContext: LibraryContext = .recent {
+        didSet {
+            // Any context switch leaves the Trash surface. The
+            // sidebar's other rows assign to `selectedContext`, so
+            // this didSet is the single chokepoint for that exit.
+            if isShowingTrash { isShowingTrash = false }
+        }
+    }
+
+    /// True when the library is showing the Trash surface instead
+    /// of the notebook grid. Toggled by the sidebar's "trash" row.
+    /// Not persisted — relaunching always lands on the notebook grid.
+    @Published var isShowingTrash: Bool = false
+
+    /// Live count of soft-deleted records across every entity type.
+    /// Drives the sidebar's "trash (N)" badge. Refreshed by
+    /// `refresh()` and by `TrashView` after every mutation.
+    @Published private(set) var trashCount: Int = 0
+
+    func refreshTrashCount() {
+        trashCount = TrashService.shared.itemCount()
+    }
 
     /// Convenience surface for call-sites that historically read or
     /// wrote `selectedSubjectId`. Reads return the id when in subject
@@ -492,6 +513,7 @@ final class LibraryViewModel: ObservableObject {
         }
         pinnedNotebooks = storage.fetchPinnedNotebooks()
         recentNotebooks = storage.fetchRecentNotebooks(limit: 6)
+        refreshTrashCount()
     }
 
     /// Apply the active tag filter to a notebook pool. Returns

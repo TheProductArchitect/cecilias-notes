@@ -1428,6 +1428,26 @@ extension StorageService {
         try context.save()
     }
 
+    /// Public wrapper around `purgeNotebookFiles` for callers that
+    /// permanently delete a notebook through their own SwiftData
+    /// path (Trash UI). Removes the per-notebook asset directory
+    /// and every side-channel store that holds notebook-scoped
+    /// data; the caller is responsible for the actual `context.delete`.
+    func purgeFiles(for notebook: Notebook) {
+        purgeNotebookFiles(notebook)
+    }
+
+    /// Public wrapper around `purgeImageElements` + `purgeAudioElements`
+    /// for the Trash UI's per-page permanent delete. Removes any
+    /// image / audio backing files for elements scoped to the given
+    /// pages and drops those element rows; the caller is responsible
+    /// for deleting the parent `Page` row itself.
+    func purgeFiles(forPageIds pageIds: [UUID]) {
+        guard !pageIds.isEmpty else { return }
+        purgeImageElements(forPageIds: pageIds)
+        purgeAudioElements(forPageIds: pageIds)
+    }
+
     private func purgeNotebookFiles(_ notebook: Notebook) {
         let dir = notebookDir(notebook.id)
         try? FileManager.default.removeItem(at: dir)

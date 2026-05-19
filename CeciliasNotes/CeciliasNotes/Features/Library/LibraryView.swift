@@ -123,8 +123,13 @@ struct LibraryView: View {
                         .background(theme.surface)
                         .transition(.move(edge: .leading))
                 }
-                NotebookGridView(viewModel: viewModel)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if viewModel.isShowingTrash {
+                    TrashView(viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    NotebookGridView(viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .background(

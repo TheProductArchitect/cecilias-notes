@@ -37,6 +37,7 @@ struct SubjectSidebarView: View {
                     subjectsSection
                     sectionDivider
                     recentContextRow
+                    trashContextRow
                 }
                 .padding(.top, 24)
                 .padding(.bottom, 16)
@@ -165,6 +166,32 @@ struct SubjectSidebarView: View {
                     .font(.system(size: 11, weight: isSelected ? .bold : .regular))
                     .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
                 Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// Permanent sidebar entry point to the Trash UI. Italic
+    /// "trash" label paired with a live count badge from
+    /// `LibraryViewModel.trashCount`. Selecting it sets
+    /// `isShowingTrash`, which `LibraryView` reads to swap the
+    /// notebook grid for `TrashView`. Mirrors the recessive style
+    /// of `recentContextRow`.
+    private var trashContextRow: some View {
+        let isSelected = viewModel.isShowingTrash
+        return SidebarRow(
+            isSelected: isSelected,
+            onTap: { viewModel.isShowingTrash = true }
+        ) {
+            HStack(spacing: 0) {
+                Text("trash")
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular).italic())
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
+                Spacer(minLength: 0)
+                if viewModel.trashCount > 0 {
+                    Text("\(viewModel.trashCount)")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundStyle(theme.foregroundSubtle)
+                }
             }
         }
     }
