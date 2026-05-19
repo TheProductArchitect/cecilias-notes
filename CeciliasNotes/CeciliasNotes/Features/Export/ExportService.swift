@@ -1003,18 +1003,22 @@ private extension CGSize {
 /// the annotation's appearance is materialised at draw time, not
 /// embedded as a PDF-specific feature.
 private final class StrokeStampAnnotation: PDFAnnotation {
-    private let strokeImage: UIImage
+    private nonisolated(unsafe) let strokeImage: UIImage
 
-    init(bounds: CGRect, image: UIImage) {
+    nonisolated init(bounds: CGRect, image: UIImage) {
         self.strokeImage = image
         super.init(bounds: bounds, forType: .stamp, withProperties: nil)
     }
 
-    required init?(coder: NSCoder) {
+    nonisolated override init(bounds: CGRect, forType annotationType: PDFAnnotationSubtype, withProperties properties: [AnyHashable: Any]?) {
+        fatalError("StrokeStampAnnotation requires init(bounds:image:)")
+    }
+
+    nonisolated required init?(coder: NSCoder) {
         fatalError("StrokeStampAnnotation does not support coder")
     }
 
-    override func draw(with box: PDFDisplayBox, in context: CGContext) {
+    nonisolated override func draw(with box: PDFDisplayBox, in context: CGContext) {
         super.draw(with: box, in: context)
         UIGraphicsPushContext(context)
         // `bounds` is in PDF page coordinates; the stamp annotation

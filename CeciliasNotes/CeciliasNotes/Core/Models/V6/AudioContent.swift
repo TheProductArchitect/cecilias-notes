@@ -82,4 +82,18 @@ final class AudioContent {
     var fileURL: URL {
         MediaStorage.url(for: .audio, id: id)
     }
+
+    /// Decoded `TimingMap` from `timingMapData`, or nil if the field
+    /// is empty (recordings made before this feature shipped, or if
+    /// recognition produced no segments). Read/write round-trips
+    /// through JSON so the stored bytes stay schema-version-stable.
+    @MainActor var timingMap: TimingMap? {
+        get {
+            guard let data = timingMapData else { return nil }
+            return try? JSONDecoder().decode(TimingMap.self, from: data)
+        }
+        set {
+            timingMapData = newValue.flatMap { try? JSONEncoder().encode($0) }
+        }
+    }
 }

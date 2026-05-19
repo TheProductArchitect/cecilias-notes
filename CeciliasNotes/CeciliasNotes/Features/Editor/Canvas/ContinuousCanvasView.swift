@@ -428,7 +428,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// mode users transitioning from finger-only to pencil
         /// don't have to wait for the next SwiftUI tick to lock the
         /// canvas down to pencilOnly.
-        private var capabilityObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var capabilityObserver: NSObjectProtocol?
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,

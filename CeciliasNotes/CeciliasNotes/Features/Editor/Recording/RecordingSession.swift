@@ -113,7 +113,7 @@ final class RecordingSession: ObservableObject {
     /// only) and the elapsed-timer.
     private var cancellables: Set<AnyCancellable> = []
     private var elapsedTimer: Timer?
-    private var interruptionObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var interruptionObserver: NSObjectProtocol?
 
     // MARK: - Init
 

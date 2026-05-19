@@ -30,7 +30,7 @@ enum PDFReferenceImporter {
     /// Preview-image longest dimension in points (~400pt) — small
     /// enough to render quickly at import time, large enough to
     /// look crisp while PDFKit's high-res render is in flight.
-    private static let previewLongestEdge: CGFloat = 400
+    nonisolated private static let previewLongestEdge: CGFloat = 400
 
     /// Run the import. Synchronous SwiftData calls hop to the main
     /// actor; the PDF read + preview rendering happen on a detached

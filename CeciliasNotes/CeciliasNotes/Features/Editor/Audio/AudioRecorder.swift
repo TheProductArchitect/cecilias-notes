@@ -58,7 +58,7 @@ final class AudioRecorder {
 
     #if DEBUG
     deinit {
-        print("[AudioLife] AudioRecorder deinit \(ObjectIdentifier(self)) engine=\(engine == nil ? "nil" : "live")")
+        print("[AudioLife] AudioRecorder deinit \(ObjectIdentifier(self))")
     }
     #endif
 

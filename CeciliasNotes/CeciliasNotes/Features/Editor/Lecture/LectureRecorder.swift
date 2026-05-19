@@ -1,8 +1,8 @@
 import Accelerate
-import AVFoundation
+@preconcurrency import AVFoundation
 import Combine
 import Foundation
-import Speech
+@preconcurrency import Speech
 import UIKit
 
 /// Step 5: `LectureRecorder.stop()` no longer returns a

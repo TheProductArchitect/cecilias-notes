@@ -122,7 +122,7 @@ final class EditorViewModel: ObservableObject {
     /// Drives the mid-session refresh of `activePencilDoubleTapAction`
     /// when the user changes the setting in Settings → Pencil with the
     /// editor still open. See §6.E.
-    private var userDefaultsObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var userDefaultsObserver: NSObjectProtocol?
     @Published var isShowingColorPicker: Bool = false
 
     // MARK: Zoom
@@ -1725,7 +1725,7 @@ final class EditorViewModel: ObservableObject {
 
     func stopRecording() async {
         #if DEBUG
-        print("[Audio] stopRecording entry isMain=\(Thread.isMainThread) state=\(recordingState)")
+        print("[Audio] stopRecording entry state=\(recordingState)")
         #endif
         guard recordingState == .recording else { return }
         recordingState = .processing
@@ -1796,19 +1796,12 @@ final class EditorViewModel: ObservableObject {
                 pendingRecordingId  = nil
                 recordingState      = .idle
 
-                Task.detached(priority: .utility) { [weak self] in
+                Task(priority: .utility) { [weak self] in
                     let result = await SpeechTranscriber.shared.transcribeFile(url: capturedURL)
                     try? FileManager.default.removeItem(at: capturedURL)
                     guard let text = result?.text, !text.isEmpty else { return }
-                    // Hop to MainActor as a Task (not `MainActor.run`)
-                    // and forward `self` through the closure capture
-                    // list so Swift 6 strict-concurrency doesn't flag
-                    // the var-capture of weak self into the
-                    // synchronously-evaluated `MainActor.run` body.
-                    await Task { @MainActor [weak self] in
-                        _ = try? StorageService.shared.createTextBlock(on: capturedPage, content: text)
-                        self?.refreshCurrentPageTextBlocks()
-                    }.value
+                    _ = try? StorageService.shared.createTextBlock(on: capturedPage, content: text)
+                    self?.refreshCurrentPageTextBlocks()
                 }
             }
         } catch {

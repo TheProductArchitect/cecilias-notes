@@ -375,19 +375,23 @@ enum PDFDerivedExport {
 /// element overlays in the PDF-derived export. PDFKit caches the
 /// rendered tiles.
 final class ImageStampAnnotation: PDFAnnotation {
-    private let image: UIImage
+    private nonisolated(unsafe) let image: UIImage
 
-    init(bounds: CGRect, image: UIImage) {
+    nonisolated init(bounds: CGRect, image: UIImage) {
         self.image = image
         super.init(bounds: bounds, forType: .stamp, withProperties: nil)
     }
 
+    nonisolated override init(bounds: CGRect, forType annotationType: PDFAnnotationSubtype, withProperties properties: [AnyHashable: Any]?) {
+        fatalError("ImageStampAnnotation requires init(bounds:image:)")
+    }
+
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    nonisolated required init?(coder: NSCoder) {
         fatalError("ImageStampAnnotation does not support coder")
     }
 
-    override func draw(with box: PDFDisplayBox, in context: CGContext) {
+    nonisolated override func draw(with box: PDFDisplayBox, in context: CGContext) {
         super.draw(with: box, in: context)
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }

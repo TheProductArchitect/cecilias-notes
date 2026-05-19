@@ -17,11 +17,11 @@ import Foundation
 /// on `Notebook` — so existing user data needs no migration step.
 enum CoverToneStore {
 
-    private static let key = "app.notebooks.coverTone"
+    nonisolated private static let key = "app.notebooks.coverTone"
 
     // MARK: Read
 
-    static func tone(
+    nonisolated static func tone(
         for id: UUID,
         defaults: UserDefaults = .standard
     ) -> NotebookCoverTone {
@@ -45,7 +45,7 @@ enum CoverToneStore {
         return migrated
     }
 
-    private static func mapLegacy(_ raw: String) -> NotebookCoverTone {
+    nonisolated private static func mapLegacy(_ raw: String) -> NotebookCoverTone {
         switch raw.lowercased() {
         case "pink", "blush":                       return .parchment
         case "orange", "terracotta":                return .dusk
@@ -59,7 +59,7 @@ enum CoverToneStore {
 
     // MARK: Write
 
-    static func setTone(
+    nonisolated static func setTone(
         _ tone: NotebookCoverTone,
         for id: UUID,
         defaults: UserDefaults = .standard
@@ -72,7 +72,7 @@ enum CoverToneStore {
     /// Drop a notebook's tone entry. Called when the notebook is
     /// permanently deleted so the dictionary doesn't accumulate
     /// orphaned ids.
-    static func forget(
+    nonisolated static func forget(
         _ id: UUID,
         defaults: UserDefaults = .standard
     ) {
@@ -86,7 +86,7 @@ enum CoverToneStore {
     /// All tones currently set, keyed by notebook id. Used by
     /// `CoverToneAssigner` to compute "what's already in this subject"
     /// without touching SwiftData.
-    static func allTones(
+    nonisolated static func allTones(
         defaults: UserDefaults = .standard
     ) -> [UUID: NotebookCoverTone] {
         let raw = readMap(from: defaults)
@@ -102,7 +102,7 @@ enum CoverToneStore {
 
     // MARK: Private
 
-    private static func readMap(from defaults: UserDefaults) -> [String: String] {
+    nonisolated private static func readMap(from defaults: UserDefaults) -> [String: String] {
         guard let raw = defaults.string(forKey: key),
               let data = raw.data(using: .utf8),
               let map = try? JSONDecoder().decode([String: String].self, from: data)
@@ -110,7 +110,7 @@ enum CoverToneStore {
         return map
     }
 
-    private static func writeMap(_ map: [String: String], to defaults: UserDefaults) {
+    nonisolated private static func writeMap(_ map: [String: String], to defaults: UserDefaults) {
         guard let data = try? JSONEncoder().encode(map),
               let json = String(data: data, encoding: .utf8)
         else { return }

@@ -42,7 +42,7 @@ enum MediaStorage {
     enum Category: String, CaseIterable, Sendable {
         case images, audio, lectures
 
-        var fileExtension: String {
+        nonisolated var fileExtension: String {
             switch self {
             case .images:   return "jpg"
             case .audio:    return "m4a"
@@ -51,27 +51,27 @@ enum MediaStorage {
         }
     }
 
-    private static let logger = Logger(subsystem: "app.ink", category: "MediaStorage")
+    nonisolated private static let logger = Logger(subsystem: "app.ink", category: "MediaStorage")
     private static let migrationFlagKey = "media.storage.migrated.v1"
-    private static let rootName = "MediaAttachments"
+    nonisolated private static let rootName = "MediaAttachments"
 
     /// `Documents/`.
-    static var documentsURL: URL {
+    nonisolated static var documentsURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
     /// `Documents/MediaAttachments/`.
-    static var rootURL: URL {
+    nonisolated static var rootURL: URL {
         documentsURL.appendingPathComponent(rootName, isDirectory: true)
     }
 
     /// `Documents/MediaAttachments/<category>/`.
-    static func directory(for category: Category) -> URL {
+    nonisolated static func directory(for category: Category) -> URL {
         rootURL.appendingPathComponent(category.rawValue, isDirectory: true)
     }
 
     /// `Documents/MediaAttachments/<category>/<id>.<ext>`.
-    static func url(for category: Category, id: UUID, fileExtension: String? = nil) -> URL {
+    nonisolated static func url(for category: Category, id: UUID, fileExtension: String? = nil) -> URL {
         let ext = fileExtension ?? category.fileExtension
         return directory(for: category)
             .appendingPathComponent("\(id.uuidString).\(ext)")
@@ -80,7 +80,7 @@ enum MediaStorage {
     /// Documents-relative path string used by records that store a path
     /// rather than just an id. Round-trips through `documentsURL` so a
     /// sandbox relocate can't invalidate it.
-    static func relativePath(forCategory category: Category, id: UUID, fileExtension: String? = nil) -> String {
+    nonisolated static func relativePath(forCategory category: Category, id: UUID, fileExtension: String? = nil) -> String {
         let ext = fileExtension ?? category.fileExtension
         return "\(rootName)/\(category.rawValue)/\(id.uuidString).\(ext)"
     }
@@ -91,7 +91,7 @@ enum MediaStorage {
     /// is missing. Safe to call repeatedly. Also brings up the
     /// PDF directories Step 4.5 added so the dedup index has a
     /// place to land.
-    static func ensureDirectoriesExist() {
+    nonisolated static func ensureDirectoriesExist() {
         let fm = FileManager.default
         for category in Category.allCases {
             try? fm.createDirectory(at: directory(for: category),
@@ -110,17 +110,17 @@ enum MediaStorage {
     // `pdfDocumentId`, computed via `writePDF(from:hash:)`.
 
     /// `Documents/MediaAttachments/pdfs/`.
-    static var pdfDirectory: URL {
+    nonisolated static var pdfDirectory: URL {
         rootURL.appendingPathComponent("pdfs", isDirectory: true)
     }
 
     /// `Documents/MediaAttachments/pdf-previews/`.
-    static var pdfPreviewDirectory: URL {
+    nonisolated static var pdfPreviewDirectory: URL {
         rootURL.appendingPathComponent("pdf-previews", isDirectory: true)
     }
 
     /// `Documents/MediaAttachments/pdfs/<pdfDocumentId>.pdf`.
-    static func url(forPDF id: UUID) -> URL {
+    nonisolated static func url(forPDF id: UUID) -> URL {
         pdfDirectory.appendingPathComponent("\(id.uuidString).pdf")
     }
 
@@ -207,7 +207,7 @@ enum MediaStorage {
     /// PNG encoding is fast and the import pipeline already runs
     /// inside a Task.
     @discardableResult
-    static func writePDFPreview(_ image: UIImage, contentId: UUID) -> String? {
+    nonisolated static func writePDFPreview(_ image: UIImage, contentId: UUID) -> String? {
         ensureDirectoriesExist()
         let name = "\(contentId.uuidString).png"
         let dest = pdfPreviewDirectory.appendingPathComponent(name)
@@ -463,7 +463,7 @@ enum MediaStorage {
     /// Walk the unified tree. Returns counts + bytes per category. Runs
     /// on the calling actor — small (single-directory enumeration), but
     /// callers reaching for it from a UI path should hop off main first.
-    static func diagnostics() -> Diagnostics {
+    nonisolated static func diagnostics() -> Diagnostics {
         ensureDirectoriesExist()
         let (imgCount, imgBytes) = enumerate(directory(for: .images))
         let (audCount, audBytes) = enumerate(directory(for: .audio))
@@ -475,7 +475,7 @@ enum MediaStorage {
         )
     }
 
-    private static func enumerate(_ dir: URL) -> (count: Int, bytes: Int64) {
+    nonisolated private static func enumerate(_ dir: URL) -> (count: Int, bytes: Int64) {
         let fm = FileManager.default
         guard let items = try? fm.contentsOfDirectory(
             at: dir,

@@ -422,14 +422,12 @@ struct ExportOptionsView: View {
         guard let page = firstPage else { return }
         let opts = options
         let nb   = notebook
-        previewTask = Task.detached(priority: .userInitiated) {
+        previewTask = Task(priority: .userInitiated) {
             let img = await ExportService.shared.renderPreviewThumbnail(
                 page: page, notebook: nb, options: opts, size: CGSize(width: 200, height: 260)
             )
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                withAnimation { previewImage = img }
-            }
+            withAnimation { previewImage = img }
         }
     }
 

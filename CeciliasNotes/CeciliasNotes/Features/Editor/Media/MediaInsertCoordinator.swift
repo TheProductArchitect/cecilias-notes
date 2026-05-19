@@ -1,11 +1,12 @@
 import Combine
+@preconcurrency import CoreGraphics
 import Foundation
 import PhotosUI
 import SwiftData
 import UIKit
 import VisionKit
 import UniformTypeIdentifiers
-import PDFKit
+@preconcurrency import PDFKit
 
 // MARK: - MediaSource
 

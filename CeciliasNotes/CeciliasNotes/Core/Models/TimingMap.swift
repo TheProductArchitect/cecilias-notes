@@ -8,9 +8,9 @@ import Foundation
 /// `AudioContent.transcript` (the full-text cached string on the
 /// audio row). They match the character offsets produced by
 /// `SFTranscriptionSegment.substringRange` in the recognition result.
-struct TimingMap: Codable {
+struct TimingMap: Codable, Sendable {
 
-    struct Word: Codable {
+    struct Word: Codable, Sendable {
         let text: String
         let startTime: TimeInterval
         let endTime: TimeInterval
@@ -29,26 +29,6 @@ struct TimingMap: Codable {
     func wordContaining(charIndex: Int) -> Word? {
         words.first {
             charIndex >= $0.charStart && charIndex < $0.charStart + $0.charLength
-        }
-    }
-}
-
-// MARK: - AudioContent convenience
-
-import SwiftData
-
-extension AudioContent {
-    /// Decoded `TimingMap` from `timingMapData`, or nil if the field
-    /// is empty (recordings made before this feature shipped, or if
-    /// recognition produced no segments). Read/write round-trips
-    /// through JSON so the stored bytes stay schema-version-stable.
-    var timingMap: TimingMap? {
-        get {
-            guard let data = timingMapData else { return nil }
-            return try? JSONDecoder().decode(TimingMap.self, from: data)
-        }
-        set {
-            timingMapData = newValue.flatMap { try? JSONEncoder().encode($0) }
         }
     }
 }

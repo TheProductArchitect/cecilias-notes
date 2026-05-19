@@ -75,7 +75,7 @@ final class SearchIndexService {
     /// the device. `URL` is `Sendable`, so a plain `static let` is
     /// safe to access from any isolation context without an
     /// annotation; the compiler proves the type-level safety.
-    private static let indexURL: URL = {
+    nonisolated private static let indexURL: URL = {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("search_index.json")
     }()
@@ -85,7 +85,7 @@ final class SearchIndexService {
     /// (much larger per page) so the searchable surface degrades
     /// gracefully rather than ballooning unbounded. `Int` is
     /// `Sendable` — no annotation needed.
-    private static let maxIndexBytes: Int = 10 * 1024 * 1024
+    nonisolated private static let maxIndexBytes: Int = 10 * 1024 * 1024
 
     /// `true` once `loadAsync()` has finished its first read off disk.
     /// All read + mutation paths early-return until this flips so:

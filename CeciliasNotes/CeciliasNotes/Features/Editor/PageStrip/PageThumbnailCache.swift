@@ -220,7 +220,7 @@ final class PageThumbnailCache {
 
     // MARK: - Internals
 
-    private func cacheKey(_ k: Key) -> NSString {
+    nonisolated private func cacheKey(_ k: Key) -> NSString {
         "\(k.pageId.uuidString)|\(k.strokeFingerprint)|\(k.pdfFingerprint)" as NSString
     }
 

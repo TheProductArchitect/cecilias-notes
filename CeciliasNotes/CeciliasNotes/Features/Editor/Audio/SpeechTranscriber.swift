@@ -81,7 +81,8 @@ actor SpeechTranscriber {
             }
             #endif
             if let result {
-                Task { await self.yieldLive(result.bestTranscription.formattedString) }
+                let text = result.bestTranscription.formattedString
+                Task { await self.yieldLive(text) }
             }
             if error != nil || result?.isFinal == true {
                 Task { await self.finishLive() }

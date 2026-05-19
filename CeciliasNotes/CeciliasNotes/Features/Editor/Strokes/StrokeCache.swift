@@ -46,7 +46,7 @@ final class StrokeCache {
 
     private var entries: [UUID: Entry] = [:]
     private let maxEntries: Int = 20
-    private var memoryWarningObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var memoryWarningObserver: NSObjectProtocol?
 
     private init() {
         memoryWarningObserver = NotificationCenter.default.addObserver(

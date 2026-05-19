@@ -107,11 +107,11 @@ public enum PageTemplate: String, Codable, Sendable, Hashable, CaseIterable {
     /// `Notebook.defaultTemplateRaw` and `Page.backgroundTemplateRaw`
     /// are stored as `String` columns. With the flat enum the bridge
     /// is just the raw value — no JSON encoding required.
-    var jsonString: String { rawValue }
+    nonisolated var jsonString: String { rawValue }
 
     /// Decodes from a stored token. Returns `.blank` on any failure
     /// (unknown raw values, empty string).
-    static func from(jsonString: String) -> PageTemplate {
+    nonisolated static func from(jsonString: String) -> PageTemplate {
         PageTemplate(rawValue: jsonString) ?? .blank
     }
 }
