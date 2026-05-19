@@ -286,6 +286,13 @@ final class RecordingSession: ObservableObject {
 
     private func subscribeLiveTranscript(_ recorder: LectureRecorder) {
         recorder.$liveTranscript
+            // Drop the initial "" emission so we don't spam an
+            // empty `updateText` to SwiftData before the recogniser
+            // has produced any real partial. The previous wiring
+            // logged `routing 0 chars` on every dictation start —
+            // harmless but noisy, and obscured whether real
+            // partials were arriving.
+            .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] transcript in
                 self?.handleLiveTranscript(transcript)

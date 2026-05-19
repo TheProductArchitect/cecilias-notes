@@ -89,31 +89,44 @@ enum DictationFlowCommit {
     /// Throttling is handled upstream (the recorder publishes at
     /// its own cadence; SwiftData coalesces same-runloop writes).
     static func updateText(elementId: UUID, text: String) {
-        let context = StorageService.shared.context
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate { $0.id == elementId }
-        )
-        guard let element = try? context.fetch(descriptor).first,
-              let content = element.textContent
-        else {
-            #if DEBUG
-            print("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
-            #endif
-            return
-        }
-        if content.text != text {
-            content.text = text
-            content.updatedAt = Date()
-            element.updatedAt = Date()
-            do {
-                try context.save()
+        // Defer to the next runloop tick. The recogniser's
+        // partial-result callback lands inside RecordingSession's
+        // Combine sink on the main queue, which fires *during* the
+        // SwiftUI view-update transaction triggered by the
+        // previous partial's @Bindable propagation. Writing
+        // SwiftData synchronously here re-entrantly triggers
+        // another @Published mutation, which produces the
+        // "Publishing changes from within view updates is not
+        // allowed" warning + cascading view-update churn. One
+        // runloop tick breaks the synchronous chain so each
+        // partial lands cleanly.
+        DispatchQueue.main.async {
+            let context = StorageService.shared.context
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate { $0.id == elementId }
+            )
+            guard let element = try? context.fetch(descriptor).first,
+                  let content = element.textContent
+            else {
                 #if DEBUG
-                print("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
+                print("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
                 #endif
-            } catch {
-                #if DEBUG
-                print("[Dictation] updateText SAVE FAILED: \(error)")
-                #endif
+                return
+            }
+            if content.text != text {
+                content.text = text
+                content.updatedAt = Date()
+                element.updatedAt = Date()
+                do {
+                    try context.save()
+                    #if DEBUG
+                    print("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("[Dictation] updateText SAVE FAILED: \(error)")
+                    #endif
+                }
             }
         }
     }

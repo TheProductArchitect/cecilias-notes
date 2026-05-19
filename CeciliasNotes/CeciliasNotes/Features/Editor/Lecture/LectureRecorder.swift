@@ -345,26 +345,57 @@ final class LectureRecorder: ObservableObject {
         currentTask = nil
         await capture.endRequestAudio()
 
+        #if DEBUG
+        let authStatus = SFSpeechRecognizer.authorizationStatus()
+        print("[Dictation] startSpeechRecognition — speech auth status=\(authStatus.rawValue) (\(authStatusString(authStatus)))")
+        #endif
+
         // Pick a recogniser that supports on-device recognition.
         // Order: user-selected locale → system → en-US fallback.
-        let recogniser = Self.makeOnDeviceRecogniser()
+        // If every candidate fails the on-device check, fall back
+        // to the server recogniser (current locale) — better a
+        // network-dependent transcript than no transcript at all.
+        let (recogniser, wasOnDevice) = Self.makeRecogniser()
         self.recogniser = recogniser
-        guard let recogniser else { return }
+        guard let recogniser else {
+            #if DEBUG
+            print("[Dictation] startSpeechRecognition ABORT — no recogniser available (on-device + server fallback both failed)")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[Dictation] selected recogniser locale=\(recogniser.locale.identifier) supportsOnDevice=\(recogniser.supportsOnDeviceRecognition) wasOnDevice=\(wasOnDevice) isAvailable=\(recogniser.isAvailable)")
+        #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults  = true
-        request.requiresOnDeviceRecognition = true
+        // Only require on-device when we actually found an
+        // on-device-capable recogniser. Server fallback allows
+        // dictation to work on devices/models that lack on-device
+        // assets.
+        request.requiresOnDeviceRecognition = wasOnDevice
         request.taskHint                    = .dictation
         await capture.setRequest(request)
 
         #if DEBUG
-        print("[Dictation] startSpeechRecognition — installing recognitionTask")
+        print("[Dictation] startSpeechRecognition — installing recognitionTask (onDevice=\(request.requiresOnDeviceRecognition))")
         #endif
         currentTask = recogniser.recognitionTask(with: request) { [weak self] result, error in
-            // Hop back to MainActor — SFSpeechRecognitionTask
-            // callbacks land on an arbitrary serial queue.
+            // Log BEFORE the Task hop so we can see whether iOS
+            // is firing the callback at all. The hop is needed
+            // because @MainActor isolation is required to touch
+            // the @Published members on `self`, but the print
+            // here doesn't need it.
+            #if DEBUG
+            print("[Dictation] recognitionTask callback fired — hasResult=\(result != nil) hasError=\(error != nil)")
+            #endif
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self else {
+                    #if DEBUG
+                    print("[Dictation] recognitionTask Task DROP — self gone")
+                    #endif
+                    return
+                }
                 if let result {
                     let partial = result.bestTranscription.formattedString
                     self.liveTranscript =
@@ -387,7 +418,24 @@ final class LectureRecorder: ObservableObject {
                 }
             }
         }
+        #if DEBUG
+        if currentTask == nil {
+            print("[Dictation] recognitionTask install returned nil")
+        }
+        #endif
     }
+
+    #if DEBUG
+    private func authStatusString(_ status: SFSpeechRecognizerAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined: return "notDetermined"
+        case .denied:        return "denied"
+        case .restricted:    return "restricted"
+        case .authorized:    return "authorized"
+        @unknown default:    return "unknown"
+        }
+    }
+    #endif
 
     /// Called when a recognition task ends (timeout, final result,
     /// or error). If we're still recording AND not paused AND not
@@ -454,18 +502,60 @@ final class LectureRecorder: ObservableObject {
     }
 
     private static func makeOnDeviceRecogniser() -> SFSpeechRecognizer? {
+        makeRecogniser().0.flatMap { $0.supportsOnDeviceRecognition ? $0 : nil }
+    }
+
+    /// Returns the best available `SFSpeechRecognizer` and a flag
+    /// indicating whether on-device recognition was found. The
+    /// caller uses the flag to set `requiresOnDeviceRecognition`
+    /// only when on-device is genuinely supported — without this,
+    /// `requiresOnDeviceRecognition = true` on a device whose
+    /// on-device model isn't loaded yet fails the task immediately
+    /// with `kAFAssistantErrorDomain Code=1101`. Server-side
+    /// recognition is the documented fallback when on-device
+    /// can't service the request.
+    private static func makeRecogniser() -> (SFSpeechRecognizer?, onDevice: Bool) {
         let chosen = UserDefaults.standard.string(forKey: "ink.transcription.locale") ?? ""
-        if !chosen.isEmpty,
-           let r = SFSpeechRecognizer(locale: Locale(identifier: chosen)),
-           r.supportsOnDeviceRecognition { return r }
-        if let r = SFSpeechRecognizer(locale: .current), r.supportsOnDeviceRecognition {
-            return r
+        let candidateLocales: [Locale] = {
+            var locales: [Locale] = []
+            if !chosen.isEmpty {
+                locales.append(Locale(identifier: chosen))
+            }
+            locales.append(Locale.current)
+            locales.append(Locale(identifier: "en-US"))
+            return locales
+        }()
+
+        // First pass — look for on-device support across the
+        // candidate locales.
+        for locale in candidateLocales {
+            guard let r = SFSpeechRecognizer(locale: locale) else {
+                #if DEBUG
+                print("[Dictation] makeRecogniser — no recogniser for locale=\(locale.identifier)")
+                #endif
+                continue
+            }
+            if r.supportsOnDeviceRecognition {
+                #if DEBUG
+                print("[Dictation] makeRecogniser — on-device match locale=\(locale.identifier)")
+                #endif
+                return (r, true)
+            }
         }
-        if let r = SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
-           r.supportsOnDeviceRecognition {
-            return r
+        // Second pass — accept any available recogniser, even
+        // server-only. Better than refusing dictation entirely.
+        for locale in candidateLocales {
+            if let r = SFSpeechRecognizer(locale: locale), r.isAvailable {
+                #if DEBUG
+                print("[Dictation] makeRecogniser — server-fallback match locale=\(locale.identifier)")
+                #endif
+                return (r, false)
+            }
         }
-        return nil
+        #if DEBUG
+        print("[Dictation] makeRecogniser — no recogniser available, on-device or otherwise")
+        #endif
+        return (nil, false)
     }
 
     // MARK: - Refinement pass
