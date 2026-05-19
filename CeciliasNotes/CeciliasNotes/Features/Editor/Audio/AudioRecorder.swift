@@ -25,7 +25,21 @@ enum AudioRecorderError: Error, LocalizedError {
 /// and feeds PCM buffers to SpeechTranscriber for live transcription.
 ///
 /// **On-device only.** Zero network traffic.
-actor AudioRecorder {
+///
+/// **Why `@MainActor final class` and not `actor`.** The original
+/// implementation was `actor AudioRecorder`, which put
+/// `start()` (including `AVAudioSession.setCategory` /
+/// `setActive` and `AVAudioEngine.start()`) on a background
+/// executor. Empirically that produced an engine which
+/// reported `isRunning=true` but never delivered a single
+/// buffer to the input tap — the engine then idled itself out
+/// after ~500ms. `LectureRecorder` (which uses the same engine
+/// + tap pattern and works) is `@MainActor final class`;
+/// matching that isolation runs the session setup + engine
+/// start on the main thread where AVFoundation's input
+/// routing propagates correctly.
+@MainActor
+final class AudioRecorder {
 
     // MARK: - Public
 
