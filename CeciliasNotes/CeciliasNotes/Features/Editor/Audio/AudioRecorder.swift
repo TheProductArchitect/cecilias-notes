@@ -111,6 +111,19 @@ actor AudioRecorder {
         // if it never appears, the mic is not delivering buffers.
         nonisolated(unsafe) var tapFireCount = 0
         #endif
+        // Dedicated serial queue for off-thread file writes. The
+        // previous implementation called `file.write(from: buffer)`
+        // directly inside the tap closure, which runs on the
+        // real-time audio render thread. `AVAudioFile.write` is
+        // explicitly documented as NOT real-time-safe — it
+        // allocates + blocks on disk I/O. iOS detects that
+        // violation and stops the engine, which is exactly the
+        // "engine.isRunning=true at start, false 500ms later, no
+        // tap fires" symptom the device test reproduces. Hopping
+        // to a dedicated serial queue mirrors what
+        // `LectureRecorder` does (it dispatches buffer handling
+        // to an actor) and lets the tap return immediately.
+        let writeQueue = DispatchQueue(label: "ink.audio.recorder.write", qos: .userInitiated)
         inputNode.installTap(
             onBus:        0,
             bufferSize:   Self.tapBufferSize,
@@ -130,13 +143,37 @@ actor AudioRecorder {
             cont?.yield(Self.rms(buffer: buffer))
             #endif
 
-            // File write — synchronous. The tap is serial so no concurrent access.
-            try? file.write(from: buffer)
+            // File write OFF the real-time audio thread. The
+            // dispatch is async, so the tap returns immediately;
+            // writes serialise behind the queue. AVAudioPCMBuffer
+            // is reused by the engine after the tap returns, so
+            // we must NOT capture `buffer` directly into the
+            // async closure. The recommended pattern is to deep-
+            // copy first.
+            guard let copy = buffer.deepCopy() else { return }
+            writeQueue.async {
+                try? file.write(from: copy)
+            }
         }
         #if DEBUG
         print("[Audio] 4. tap installed, bufferSize=\(Self.tapBufferSize)")
         print("[Audio] 4a. inputNode numberOfInputs=\(inputNode.numberOfInputs) outputFormat(bus0)=\(inputNode.outputFormat(forBus: 0))")
         #endif
+
+        // `prepare()` pre-allocates the engine's internal buffers
+        // and pulls down the input-node connection so `start()`
+        // hits a ready engine. Apple's AVAudioEngine docs explicitly
+        // recommend calling `prepare()` before `start()` when the
+        // graph involves an input tap — without it, some
+        // configurations let `start()` succeed but the input node
+        // never delivers buffers (the tap closure never fires,
+        // the engine internally pauses, and `isRunning` flips
+        // false a few hundred ms later). `LectureRecorder`
+        // happens to work without prepare() because the
+        // `voiceChat` mode warmup path inside iOS calls a
+        // moral-equivalent of prepare under the hood; AudioRecorder
+        // uses `.default` mode and needs the explicit call.
+        eng.prepare()
 
         // NOTE: `eng.reset()` is intentionally NOT called here.
         // The original code reset the engine AFTER installing the
@@ -250,5 +287,32 @@ actor AudioRecorder {
         var rms: Float = 0
         vDSP_rmsqv(data, 1, &rms, frameCount)
         return min(rms * 10, 1.0)
+    }
+}
+
+// MARK: - AVAudioPCMBuffer deep copy
+
+private extension AVAudioPCMBuffer {
+    /// Returns a freshly-allocated buffer with float-channel data
+    /// copied from `self`. Used by the tap closure to hand a
+    /// reusable copy to the off-thread file-write queue —
+    /// AVAudioEngine recycles the tap buffer the moment the
+    /// callback returns, so any deferred consumer must own its
+    /// own bytes. Mirrors the private extension in
+    /// `LectureRecorder.swift`.
+    func deepCopy() -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: frameCapacity
+        ) else { return nil }
+        copy.frameLength = frameLength
+        let channelCount = Int(format.channelCount)
+        let byteCount = Int(frameLength) * MemoryLayout<Float>.size
+        if let src = floatChannelData, let dst = copy.floatChannelData {
+            for ch in 0..<channelCount {
+                memcpy(dst[ch], src[ch], byteCount)
+            }
+        }
+        return copy
     }
 }
