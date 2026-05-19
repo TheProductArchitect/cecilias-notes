@@ -211,13 +211,9 @@ final class LectureRecorder: ObservableObject {
 
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            #if DEBUG
-            print("[Audio] lecture session deactivated on stop")
-            #endif
+            print("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
         } catch {
-            #if DEBUG
-            print("[Audio] failed to deactivate lecture session on stop: \(error)")
-            #endif
+            print("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
         }
 
         let url = outputURL ?? URL(fileURLWithPath: "lecture_\(recordId.uuidString).m4a")

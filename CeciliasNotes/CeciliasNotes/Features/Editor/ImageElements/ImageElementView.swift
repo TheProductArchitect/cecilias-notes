@@ -58,6 +58,7 @@ struct ImageElementView: View {
             height: element.normalizedHeight * pageSize.height
         )
         let displayed = displayedRect(base: base)
+        let _ = print("[GestureAudit] ImageElementView body render — elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) displayed=\(displayed) pageSize=\(pageSize)")
 
         ZStack(alignment: .topLeading) {
             // Order is load-bearing — gestures MUST sit before
@@ -77,7 +78,14 @@ struct ImageElementView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
+                        print("[ImageGesture] 1. tap received on image body, elementId=\(element.id.uuidString.prefix(8)), isSelected before=\(isSelected)")
                         if !isSelected { isSelected = true }
+                        print("[ImageGesture] 1a. tap handler done, isSelected after=\(isSelected)")
+                    }
+                )
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                        print("[ImageGesture] 1b. long-press received on image body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected)")
                     }
                 )
                 .gesture(isSelected ? imageDragGesture : nil)
@@ -89,6 +97,9 @@ struct ImageElementView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+        .onChange(of: isSelected) { oldValue, newValue in
+            print("[ImageGesture] isSelected changed elementId=\(element.id.uuidString.prefix(8)) old=\(oldValue) new=\(newValue)")
+        }
     }
 
     // MARK: - Displayed rect (gesture-deltas applied to base)
@@ -223,15 +234,20 @@ struct ImageElementView: View {
     private var imageDragGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
+                if dragOffset == .zero {
+                    print("[ImageGesture] 2. drag onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) startLocation=\(value.startLocation)")
+                }
                 dragOffset = value.translation
             }
             .onEnded { value in
+                print("[ImageGesture] 3. drag onEnded elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) predictedEnd=\(value.predictedEndTranslation)")
                 let dxNorm = value.translation.width  / pageSize.width
                 let dyNorm = value.translation.height / pageSize.height
                 element.normalizedX = clampNorm(element.normalizedX + Double(dxNorm))
                 element.normalizedY = clampNorm(element.normalizedY + Double(dyNorm))
                 element.updatedAt   = Date()
                 dragOffset = .zero
+                print("[ImageGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
             }
     }
 
@@ -254,9 +270,13 @@ struct ImageElementView: View {
     private func resizeGesture(for corner: Corner) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
+                if resizeDelta == nil {
+                    print("[ImageGesture] 4. resize handle onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation) startLocation=\(value.startLocation)")
+                }
                 resizeDelta = ResizeDelta(corner: corner, translation: value.translation)
             }
             .onEnded { value in
+                print("[ImageGesture] 5. resize handle onEnded elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation)")
                 let base = CGRect(
                     x: element.normalizedX * pageSize.width,
                     y: element.normalizedY * pageSize.height,
@@ -270,6 +290,7 @@ struct ImageElementView: View {
                 element.normalizedHeight = min(1, Double(new.height) / Double(pageSize.height))
                 element.updatedAt        = Date()
                 resizeDelta = nil
+                print("[ImageGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")
             }
     }
 

@@ -71,6 +71,7 @@ struct ImageElementsOverlayView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in
+                        print("[ImageGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) selectedBefore=\(selectedElementId?.uuidString.prefix(8) ?? "nil") allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
                         if selectedElementId != nil { selectedElementId = nil }
                     }
             }

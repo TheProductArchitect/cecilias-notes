@@ -70,6 +70,7 @@ struct StickyNoteElementsOverlayView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { location in
+                        print("[StickyGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) location=\(location) allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
                         handleBackgroundTap(at: location)
                     }
             }

@@ -95,45 +95,39 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     }
 
     func togglePlayPause() {
-        #if DEBUG
-        print("[AudioPlayback] togglePlayPause called, hasPlayer=\(player != nil), isPlaying=\(player?.isPlaying ?? false)")
-        #endif
+        print("[AudioPlay] 2. togglePlayPause entered, isPlaying=\(isPlaying), playerExists=\(player != nil), currentUrl=\(player?.url?.lastPathComponent ?? "nil")")
         guard let player else {
-            #if DEBUG
-            print("[AudioPlayback] togglePlayPause DROP — no player loaded")
-            #endif
+            print("[AudioPlay] 2a. ABORT — no player loaded")
             return
         }
         if player.isPlaying {
             player.pause()
             stopTimer()
             isPlaying = false
-            #if DEBUG
-            print("[AudioPlayback] paused")
-            #endif
+            print("[AudioPlay] 2b. paused (was playing)")
         } else {
+            print("[AudioPlay] 3. play branch entered, spinning Task")
             // Configure the session BEFORE play() so the recorder's
             // `.playAndRecord` residue can't outrace us. The Task is
             // MainActor-isolated so `self.player.play()` runs on the
             // same actor that owns `isPlaying` + the progress timer.
             Task { @MainActor [weak self] in
-                #if DEBUG
-                print("[AudioPlayback] play Task started")
-                #endif
-                guard let self else { return }
-                await Self.configureAudioSession()
-                guard let player = self.player else {
-                    #if DEBUG
-                    print("[AudioPlayback] play Task DROP — player gone after session config")
-                    #endif
+                print("[AudioPlay] 4. Task started, calling configureAudioSession")
+                guard let self else {
+                    print("[AudioPlay] 4a. ABORT — self gone")
                     return
                 }
+                await Self.configureAudioSession()
+                print("[AudioPlay] 5. configureAudioSession returned")
+                guard let player = self.player else {
+                    print("[AudioPlay] 6. ABORT — player is nil after session config")
+                    return
+                }
+                let prepared = player.prepareToPlay()
+                print("[AudioPlay] 6. player exists, url=\(player.url?.lastPathComponent ?? "nil"), duration=\(player.duration), prepareToPlay=\(prepared)")
                 let didPlay = player.play()
-                #if DEBUG
                 let cat = AVAudioSession.sharedInstance().category.rawValue
-                let active = "(setActive query unavailable, see system logs)"
-                print("[AudioPlayback] player.play() returned \(didPlay), isPlaying=\(player.isPlaying), category=\(cat) \(active)")
-                #endif
+                print("[AudioPlay] 7. player.play() returned \(didPlay), isPlaying=\(player.isPlaying), currentTime=\(player.currentTime), category=\(cat)")
                 self.startTimer()
                 self.isPlaying = true
             }
@@ -236,20 +230,24 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     /// had just torn it down.
     private static func configureAudioSession() async {
         let session = AVAudioSession.sharedInstance()
-        #if DEBUG
-        print("[AudioPlayback] configureAudioSession entered, current category=\(session.category.rawValue)")
-        #endif
+        print("[AudioPlay] cas.1 configureAudioSession entered, sessionCategory before=\(session.category.rawValue), mode before=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
+        var firstCategoryOK = false
         do {
             try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-            #if DEBUG
-            print("[AudioPlayback] configureAudioSession SUCCESS on first attempt, category=\(session.category.rawValue)")
-            #endif
-            return
+            firstCategoryOK = true
+            print("[AudioPlay] cas.2 first setCategory(.playback) attempt: OK")
         } catch {
-            #if DEBUG
-            print("[AudioPlayback] first setCategory/setActive attempt failed: \(error) — retrying after settle")
-            #endif
+            print("[AudioPlay] cas.2 first setCategory(.playback) attempt: FAILED: \(error)")
+        }
+        if firstCategoryOK {
+            do {
+                try session.setActive(true)
+                print("[AudioPlay] cas.3 first setActive(true) attempt: OK")
+                print("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
+                return
+            } catch {
+                print("[AudioPlay] cas.3 first setActive(true) attempt: FAILED: \(error)")
+            }
         }
         // System propagation window — empirically ~100ms after the
         // recorder's `setActive(false, .notifyOthersOnDeactivation)`
@@ -257,15 +255,17 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         try? await Task.sleep(nanoseconds: 100_000_000)
         do {
             try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-            #if DEBUG
-            print("[AudioPlayback] configureAudioSession SUCCESS after retry, category=\(session.category.rawValue)")
-            #endif
+            print("[AudioPlay] cas.4 retry setCategory: OK")
         } catch {
-            #if DEBUG
-            print("[AudioPlayback] failed to configure AVAudioSession after retry: \(error)")
-            #endif
+            print("[AudioPlay] cas.4 retry setCategory: FAILED: \(error)")
         }
+        do {
+            try session.setActive(true)
+            print("[AudioPlay] cas.5 retry setActive: OK")
+        } catch {
+            print("[AudioPlay] cas.5 retry setActive: FAILED: \(error)")
+        }
+        print("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
     }
 }
 
