@@ -231,12 +231,14 @@ enum CeciliasNotesTool: Equatable {
     /// Tools that act on the PKCanvasView. `.cursor` yields the
     /// canvas to overlays — the whole point of the neutral mode.
     /// `.text` is finger-driven inline text; `.stickyNote` is
-    /// finger-driven tap-to-place on PDF-backed pages. None of
-    /// these produce PencilKit strokes.
+    /// finger-driven tap-to-place on PDF-backed pages. Step 9:
+    /// `.lasso` moved from PKLassoTool (canvas-internal) to the
+    /// custom V6 lasso overlay, so it yields the canvas the same
+    /// way `.cursor` does. None of these produce PencilKit strokes.
     var isDrawingTool: Bool {
         switch self {
-        case .cursor, .text, .stickyNote, .image: return false
-        default:                                  return true
+        case .cursor, .text, .stickyNote, .image, .lasso: return false
+        default:                                          return true
         }
     }
 
@@ -255,6 +257,16 @@ enum CeciliasNotesTool: Equatable {
     /// markers are hittable for editing.
     var isStickyNoteMode: Bool {
         if case .stickyNote = self { return true }
+        return false
+    }
+
+    /// True when the active tool is the lasso. Step 9: the lasso
+    /// overlay reads this to capture drag gestures + render the
+    /// in-flight lasso path. The canvas is non-interactive in
+    /// this mode (see `isDrawingTool`), so all finger input
+    /// reaches the SwiftUI overlay layer cleanly.
+    var isLassoMode: Bool {
+        if case .lasso = self { return true }
         return false
     }
 
@@ -429,9 +441,7 @@ enum CeciliasNotesTool: Equatable {
             return PKEraserTool(.vector)
         case .eraser(.page):
             return PKInkingTool(.pen, color: .clear, width: 1)
-        case .lasso:
-            return PKLassoTool()
-        case .cursor, .ruler, .text, .stickyNote, .image:
+        case .cursor, .ruler, .text, .stickyNote, .image, .lasso:
             // `.cursor` and `.image` produce no strokes — same dummy
             // PKTool as the other finger-driven modes. The canvas-
             // overlay layer handles tap-to-place + selection above

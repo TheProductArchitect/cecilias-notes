@@ -395,6 +395,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// pattern (seeds the `PageElement(.stroke)` singleton
             /// on first appear; Step 9 lasso binding point).
             var strokesHost: UIHostingController<StrokeElementsOverlayView>
+            /// V6 lasso overlay (Step 9). Captures freeform /
+            /// marquee selection gestures when `.lasso` is the
+            /// active tool, then renders the multi-element
+            /// selection chrome after a selection lands. Sits at
+            /// the TOP of the renderer's subview stack so its
+            /// chrome's drag/handle gestures take priority over
+            /// the per-element overlays below.
+            var lassoHost: UIHostingController<LassoOverlayView>
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
@@ -745,6 +753,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 strokesHost.attachAsChild(of: renderer)
 
+                // Step 9: lasso overlay — sits at the TOP of the
+                // renderer's subview stack so its chrome wins
+                // gestures over the per-element overlays. The
+                // overlay self-gates on `tool == .lasso` for
+                // capture and on `LassoSelectionState.hasSelection`
+                // for chrome — when neither applies it disables
+                // hit-testing entirely so element overlays underneath
+                // still receive touches normally.
+                let lassoHost = UIHostingController(
+                    rootView: LassoOverlayView(
+                        viewModel: viewModel,
+                        pageId: page.id,
+                        coordinateSpace: pageCS
+                    )
+                )
+                lassoHost.view.backgroundColor = .clear
+                lassoHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(lassoHost.view)
+                NSLayoutConstraint.activate([
+                    lassoHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    lassoHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    lassoHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    lassoHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                ])
+                lassoHost.attachAsChild(of: renderer)
+
                 contentView.addSubview(renderer)
                 hosts.append(PageHostState(
                     pageId:          page.id,
@@ -759,6 +793,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     textBlockHost:   textBlockHost,
                     textElementsHost: textElementsHost,
                     strokesHost:     strokesHost,
+                    lassoHost:       lassoHost,
                     template:        page.backgroundTemplate
                 ))
                 y += baseSize.height + pageGap
@@ -799,6 +834,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].textBlockHost.detachFromParentVC()
                 hosts[i].textElementsHost.detachFromParentVC()
                 hosts[i].strokesHost.detachFromParentVC()
+                hosts[i].lassoHost.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
@@ -1160,6 +1196,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.imagesHost.view)
                 case tool.isStickyNoteMode:
                     renderer.bringSubviewToFront(h.stickyHost.view)
+                case tool.isLassoMode:
+                    // Step 9: lasso captures gestures on top of
+                    // every per-element overlay so a freeform drag
+                    // over images / strokes / text isn't stolen
+                    // by those overlays' own tap recognisers.
+                    renderer.bringSubviewToFront(h.lassoHost.view)
                 case tool.isTextMode:
                     // V6 text-elements layer wins tap routing over
                     // the legacy TextBlock layer in text mode so
@@ -1200,6 +1242,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     renderer.bringSubviewToFront(h.textBlockHost.view)
                     renderer.bringSubviewToFront(h.textElementsHost.view)
                 }
+                // Step 9: lasso layer always sits at the absolute
+                // top of the renderer stack so an active selection's
+                // chrome (drag bbox / handles / delete) survives
+                // tool changes. The overlay self-gates hit-testing
+                // on `tool == .lasso || hasSelection` so when
+                // neither applies it lets touches fall through to
+                // the per-element overlays below.
+                renderer.bringSubviewToFront(h.lassoHost.view)
             }
         }
 

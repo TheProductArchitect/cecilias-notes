@@ -1,0 +1,139 @@
+import Combine
+import CoreGraphics
+import Foundation
+import SwiftUI
+
+/// Page-scoped, app-wide singleton observable that tracks the
+/// current lasso selection — which `PageElement`s are selected,
+/// plus the per-PKDrawing partial-stroke indices for any stroke
+/// element only partially captured by the lasso.
+///
+/// Step 9 — the selection model behind freeform / marquee lasso.
+/// The selection persists across tool changes (the user can
+/// switch from lasso to a drawing tool and the selection chrome
+/// stays visible) but clears when the active page changes
+/// (page-scoped per the architecture spec).
+@MainActor
+final class LassoSelectionState: ObservableObject {
+
+    static let shared = LassoSelectionState()
+    private init() {
+        // Restore last-used mode from UserDefaults so the user's
+        // preferred lasso gesture survives app restarts.
+        if let raw = UserDefaults.standard.string(forKey: Self.modeKey),
+           let saved = LassoMath.Mode(rawValue: raw) {
+            self.mode = saved
+        } else {
+            self.mode = .freeform
+        }
+    }
+
+    private static let modeKey = "lasso.mode"
+
+    // MARK: - Selection identity
+
+    /// PageElement IDs currently in the lasso selection.
+    /// Includes whole-stroke elements (those whose every PKStroke
+    /// landed in the lasso) AND whichever non-stroke elements'
+    /// centres landed in the lasso. Excludes stroke elements that
+    /// are *only* partially selected — those live in
+    /// `partialStrokeSelections` and don't get a whole-element
+    /// chrome treatment.
+    @Published private(set) var selectedElementIds: Set<UUID> = []
+
+    /// Per-element partial PKStroke index sets — for stroke
+    /// elements where the lasso captured only some of the strokes.
+    /// Keyed by `PageElement.id`; value is the set of indices into
+    /// the element's `StrokeContent.strokeData` PKDrawing.strokes.
+    @Published private(set) var partialStrokeSelections: [UUID: Set<Int>] = [:]
+
+    /// The page whose elements the current selection refers to.
+    /// `nil` when nothing is selected. Drives the page-scope rule
+    /// — navigating to a different page calls `clear()` (the per-
+    /// page lasso overlay observes this and emits the call).
+    @Published private(set) var pageId: UUID?
+
+    /// Axis-aligned bounding box of the selection in page-pt
+    /// coordinates (NOT normalised). Used by the selection chrome
+    /// to draw the bbox + handles. Empty when nothing is selected.
+    @Published private(set) var selectionBounds: CGRect = .zero
+
+    // MARK: - Mode
+
+    /// Active lasso gesture mode (freeform vs marquee). Persisted
+    /// to UserDefaults on every change so the user's last pick
+    /// survives a fresh launch.
+    @Published var mode: LassoMath.Mode {
+        didSet {
+            guard mode != oldValue else { return }
+            UserDefaults.standard.set(mode.rawValue, forKey: Self.modeKey)
+        }
+    }
+
+    // MARK: - Transient drag state
+
+    /// Live in-flight translation applied to the selection chrome
+    /// while the user is dragging the bounding box. Reset to .zero
+    /// on `.onEnded`; the commit then writes the model. Element
+    /// renderers can choose to read this for live-element preview;
+    /// the v1 chrome moves only the bbox.
+    @Published var transientOffset: CGSize = .zero
+
+    /// `true` while the user is mid-gesture inside the selection
+    /// chrome — drives "snap on release" behaviour for resize +
+    /// rotate (the elements snap to their new positions when the
+    /// gesture ends; only the bbox preview moves during the
+    /// gesture itself). v1 trade-off documented in the Step 9
+    /// report.
+    @Published var isManipulating: Bool = false
+
+    // MARK: - Mutators
+
+    /// Replace the selection wholesale. Called by the lasso
+    /// overlay on `.onEnded` after intersection testing completes.
+    /// Empty inputs collapse to `clear()` so the chrome disappears
+    /// when the user lassoes empty space.
+    func setSelection(
+        elementIds: Set<UUID>,
+        partialStrokes: [UUID: Set<Int>],
+        pageId: UUID,
+        bounds: CGRect
+    ) {
+        guard !elementIds.isEmpty || !partialStrokes.isEmpty else {
+            clear()
+            return
+        }
+        self.selectedElementIds      = elementIds
+        self.partialStrokeSelections = partialStrokes
+        self.pageId                  = pageId
+        self.selectionBounds         = bounds
+        self.transientOffset         = .zero
+        self.isManipulating          = false
+    }
+
+    /// Update the cached bounding box after a committed move /
+    /// resize / rotate so the chrome stays aligned with the new
+    /// element positions without re-running intersection.
+    func updateBounds(_ newBounds: CGRect) {
+        guard pageId != nil else { return }
+        selectionBounds = newBounds
+    }
+
+    /// Clear everything — selection ids, partials, bounds, page,
+    /// transient state. The chrome disappears on the next render.
+    func clear() {
+        selectedElementIds      = []
+        partialStrokeSelections = [:]
+        pageId                  = nil
+        selectionBounds         = .zero
+        transientOffset         = .zero
+        isManipulating          = false
+    }
+
+    /// `true` when the lasso has anything to show chrome for —
+    /// either at least one whole element selected, or at least one
+    /// partially-selected stroke element.
+    var hasSelection: Bool {
+        !selectedElementIds.isEmpty || !partialStrokeSelections.isEmpty
+    }
+}

@@ -27,6 +27,13 @@ struct ToolPaletteView: View {
     @State private var showEraserPopover = false
     @State private var showErasePageConfirm = false
     @State private var showImageVariantPopover = false
+    /// Drives the long-press variant menu on the lasso tool
+    /// (freeform vs marquee). Step 9.
+    @State private var showLassoVariantPopover = false
+    /// Mirrored from `LassoSelectionState.shared.mode` so the
+    /// popover's check-marks update without subscribing the whole
+    /// palette to the singleton.
+    @State private var lassoMode: LassoMath.Mode = LassoSelectionState.shared.mode
     /// Mirror of `ImageToolVariantStore.current` for SwiftUI redraw.
     /// Kept in sync via the `.imageToolVariantChanged` notification so
     /// taps on the variant picker update the toolbar glyph immediately.
@@ -540,6 +547,23 @@ struct ToolPaletteView: View {
                             showEraserPopover = true
                         }
                 )
+        } else if identity == .lasso {
+            // Step 9: long-press opens the freeform / marquee
+            // mode picker. Tap selects the lasso tool using the
+            // last-used mode — persisted via UserDefaults inside
+            // `LassoSelectionState`.
+            core
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.4)
+                        .onEnded { _ in
+                            HapticManager.shared.contextMenuOpened()
+                            showLassoVariantPopover = true
+                        }
+                )
+                .popover(isPresented: $showLassoVariantPopover) {
+                    lassoVariantPopover
+                        .presentationCompactAdaptation(.popover)
+                }
         } else if identity == .image {
             // Long-press on the image button opens the variant picker
             // (photo library / camera). Tap selects the image tool AND
@@ -561,6 +585,48 @@ struct ToolPaletteView: View {
         } else {
             core
         }
+    }
+
+    // MARK: Lasso-tool variant picker
+
+    /// Freeform / marquee mode picker. Mirrors the eraser /
+    /// image variant popovers — two rows, current selection shows
+    /// a check-mark.
+    private var lassoVariantPopover: some View {
+        VStack(spacing: 0) {
+            ForEach(LassoMath.Mode.allCases, id: \.self) { mode in
+                Button {
+                    LassoSelectionState.shared.mode = mode
+                    lassoMode = mode
+                    showLassoVariantPopover = false
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: mode == .freeform
+                              ? "lasso"
+                              : "rectangle.dashed")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(theme.foreground)
+                            .frame(width: 22)
+                        Text(mode == .freeform ? "Freeform" : "Marquee")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundStyle(theme.foreground)
+                        Spacer(minLength: 12)
+                        if lassoMode == mode {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(minWidth: 200)
+        .background(theme.surfaceElevated)
     }
 
     // MARK: Image-tool variant picker
