@@ -84,6 +84,9 @@ struct AudioElementView: View {
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onAppear {
+            #if DEBUG
+            print("[AudioPlayback] AudioElementView.onAppear — elementId=\(element.id.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
+            #endif
             if !isRecording {
                 // Step 10: if the audio file is an iCloud stub
                 // (the SwiftData record arrived ahead of the bytes
@@ -92,6 +95,13 @@ struct AudioElementView: View {
                 // missing file; the user sees the inert strip and
                 // can tap play once iCloud lands the file.
                 let url = content.fileURL
+                #if DEBUG
+                let fm = FileManager.default
+                let exists = fm.fileExists(atPath: url.path)
+                let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+                let ubi = UbiquitousFileStatus.currentState(at: url)
+                print("[AudioPlayback] AudioElementView file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
+                #endif
                 if case .downloading = UbiquitousFileStatus.currentState(at: url) {
                     _ = UbiquitousFileStatus.requestDownload(at: url)
                 }

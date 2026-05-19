@@ -35,10 +35,18 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     private var loadedURL: URL?
 
     func load(url: URL) {
+        #if DEBUG
+        print("[AudioPlayback] load() entered url=\(url.lastPathComponent) loadedURL=\(loadedURL?.lastPathComponent ?? "nil") hasPlayer=\(player != nil)")
+        #endif
         // Idempotent for the same URL — calling `load` multiple
         // times on view re-render doesn't re-create the player or
         // reset playback position.
-        if loadedURL == url, player != nil { return }
+        if loadedURL == url, player != nil {
+            #if DEBUG
+            print("[AudioPlayback] load() idempotent skip — same URL, player live, duration=\(duration)")
+            #endif
+            return
+        }
 
         // Step note: session configuration was previously
         // fire-and-forget here. That race let `togglePlayPause`
@@ -50,24 +58,38 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         // guaranteed hot before playback begins. `load` only
         // prepares the file + decoder.
 
-        guard FileManager.default.fileExists(atPath: url.path) else {
+        let fm = FileManager.default
+        let exists = fm.fileExists(atPath: url.path)
+        let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+        #if DEBUG
+        print("[AudioPlayback] load() file check — exists=\(exists) size=\(size) path=\(url.path)")
+        #endif
+        guard exists else {
             #if DEBUG
-            print("[AudioPlayback] file missing at \(url.path)")
+            print("[AudioPlayback] load() ABORT — file missing at \(url.path)")
             #endif
             return
+        }
+        if size == 0 {
+            #if DEBUG
+            print("[AudioPlayback] load() WARN — file is 0 bytes; recording likely captured nothing")
+            #endif
         }
         do {
             let p = try AVAudioPlayer(contentsOf: url)
             p.delegate = self
-            p.prepareToPlay()
+            let prepared = p.prepareToPlay()
             self.player = p
             self.loadedURL = url
             self.duration = p.duration
             self.currentTime = 0
             self.isPlaying = false
+            #if DEBUG
+            print("[AudioPlayback] load() OK — prepared=\(prepared) duration=\(p.duration) numberOfChannels=\(p.numberOfChannels) format=\(String(describing: p.format))")
+            #endif
         } catch {
             #if DEBUG
-            print("[AudioPlayback] failed to load \(url.lastPathComponent): \(error)")
+            print("[AudioPlayback] load() THROW — failed to construct AVAudioPlayer for \(url.lastPathComponent): \(error)")
             #endif
         }
     }
