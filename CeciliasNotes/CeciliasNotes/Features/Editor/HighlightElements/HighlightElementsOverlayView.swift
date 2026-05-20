@@ -43,6 +43,15 @@ struct HighlightElementsOverlayView: View {
         viewModel.selectedTool.allowsImageSelection
     }
 
+    /// Whether to mount the full-page background tap layer.
+    /// OPEN_ISSUES #1 — the catcher only clears the selection, so
+    /// mount it only while a selection exists. A no-op full-page
+    /// catcher absorbs taps meant for the overlays stacked below
+    /// this one in `PageOverlaysContainer`.
+    private var showsBackgroundCatcher: Bool {
+        allowsInteraction && selectedElementId != nil
+    }
+
     /// Fetch highlight elements for this page. Filter `kind ==
     /// .highlight` in Swift (iOS 26 `#Predicate` workaround
     /// established in Step 3).
@@ -82,10 +91,9 @@ struct HighlightElementsOverlayView: View {
     var body: some View {
         let pdfMap = pdfPageElementsByContentId
         ZStack(alignment: .topLeading) {
-            if allowsInteraction {
-                // Tap-to-deselect on empty area when in interactive
-                // mode. Doesn't block taps that land on highlight
-                // rectangles — those reach the element view first.
+            if showsBackgroundCatcher {
+                // Tap-to-deselect on empty area. Mounted only while a
+                // selection exists — see `showsBackgroundCatcher`.
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in

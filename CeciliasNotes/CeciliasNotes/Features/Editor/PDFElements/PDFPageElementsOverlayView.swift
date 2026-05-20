@@ -48,6 +48,16 @@ struct PDFPageElementsOverlayView: View {
         viewModel.selectedTool.allowsImageSelection
     }
 
+    /// Whether to mount the full-page background tap layer.
+    /// OPEN_ISSUES #1 — the catcher only clears the selection, so
+    /// mount it only while a selection exists. A no-op full-page
+    /// catcher absorbs taps meant for the overlays stacked below
+    /// this one in `PageOverlaysContainer` (the image overlay in
+    /// particular).
+    private var showsBackgroundCatcher: Bool {
+        allowsInteraction && selectedElementId != nil
+    }
+
     private var elements: [PageElement] {
         let _ = refreshTick
         let pid = pageId
@@ -63,7 +73,7 @@ struct PDFPageElementsOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if allowsInteraction {
+            if showsBackgroundCatcher {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in
