@@ -51,14 +51,10 @@ struct PDFPageElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
-            // STRUCTURAL FIX — `.offset`, not `.position`. See
-            // `ImageElementView.body` for the full post-mortem:
-            // `.position` expands the gesture-bearing subtree to
-            // page-sized layout bounds, stacked element views then
-            // break gesture arbitration. `.offset` keeps the layout
-            // bounds at `displayed` size; in this `.topLeading`
-            // ZStack offsetting by (minX, minY) equals the old
-            // `.position(midX, midY)`.
+            // Gestures BEFORE `.position(...)` per the Step 7.2
+            // canonical pattern — see `ImageElementView.body` for
+            // the post-mortem on why post-position gestures fail
+            // to fire on iPad OS 26.
             PDFPageDataView(content: content)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
@@ -70,7 +66,7 @@ struct PDFPageElementView: View {
                 )
                 .gesture(isSelected ? pageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
-                .offset(x: displayed.minX, y: displayed.minY)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected {
                 selectionChrome(rect: displayed)
@@ -153,16 +149,12 @@ struct PDFPageElementView: View {
     }
 
     private func cornerHandle(_ corner: Corner, at point: CGPoint) -> some View {
-        // `.offset`, not `.position` — keeps the handle's layout
-        // bounds at `handleSize`² so it doesn't expand page-sized.
-        // Offsetting by `point - handleSize/2` centres it on `point`.
         Circle()
             .fill(theme.accent)
             .frame(width: Self.handleSize, height: Self.handleSize)
             .contentShape(Rectangle().inset(by: -8))
+            .position(point)
             .gesture(resizeGesture(for: corner))
-            .offset(x: point.x - Self.handleSize / 2,
-                    y: point.y - Self.handleSize / 2)
     }
 
     private func floatingToolbar() -> some View {

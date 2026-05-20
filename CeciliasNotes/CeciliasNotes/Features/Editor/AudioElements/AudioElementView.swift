@@ -58,15 +58,14 @@ struct AudioElementView: View {
         let displayed = displayedRect(base: base)
 
         ZStack(alignment: .topLeading) {
-            // STRUCTURAL FIX — `.offset`, not `.position`. A
-            // `.position`'d strip expands to page-sized layout
-            // bounds; stacked page-sized element views then break
-            // gesture arbitration, and the strip's interior play
-            // button never receives the tap (`[AudioPlay] 1. button
-            // tap received` never logged on device). `.offset` keeps
-            // the strip's layout bounds at `displayed` size so the
-            // tap reaches the button inside it. Equivalent placement
-            // in this `.topLeading` ZStack: offset by (minX, minY).
+            // Gestures BEFORE `.position(...)` per the Step 7.2
+            // canonical pattern. Audio strip didn't have an
+            // explicit `.contentShape` previously — the strip()
+            // view's interior controls (play/pause/seek) own the
+            // foreground hit-tests; we add an explicit shape so
+            // the outer body tap-to-select fires reliably across
+            // the strip's full rect (not only where the play
+            // button happens to sit).
             strip(width: displayed.width)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
@@ -77,7 +76,7 @@ struct AudioElementView: View {
                     }
                 )
                 .gesture(isSelected && !isRecording ? bodyDragGesture : nil)
-                .offset(x: displayed.minX, y: displayed.minY)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected && !isRecording {
                 selectionChrome(rect: displayed)
@@ -344,16 +343,12 @@ struct AudioElementView: View {
     }
 
     private func widthHandle(_ corner: Corner, at point: CGPoint) -> some View {
-        // `.offset`, not `.position` — keeps the handle's layout
-        // bounds at 4×18 so it doesn't expand page-sized and shadow
-        // other gestures. The 4×18 view's natural origin is (0,0);
-        // offsetting by `point - (2, 9)` centres it on `point`.
         Capsule()
             .fill(theme.accent)
             .frame(width: 4, height: 18)
             .contentShape(Rectangle().inset(by: -8))
+            .position(point)
             .gesture(resizeGesture(for: corner))
-            .offset(x: point.x - 2, y: point.y - 9)
     }
 
     private func floatingToolbar() -> some View {

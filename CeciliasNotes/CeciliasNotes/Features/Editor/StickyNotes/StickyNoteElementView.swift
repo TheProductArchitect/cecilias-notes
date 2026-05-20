@@ -71,16 +71,14 @@ struct StickyNoteElementView: View {
         let _ = print("[GestureAudit] StickyNoteElementView body render — elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) isEditing=\(isEditing) displayed=\(displayed) pageSize=\(pageSize)")
 
         ZStack(alignment: .topLeading) {
-            // STRUCTURAL FIX — position the card with `.offset`, not
-            // `.position`. `.position` reports the parent's proposed
-            // size as its layout size, so the gesture-bearing subtree
-            // expands to fill the page-sized overlay frame; stacked
-            // page-sized siblings then break gesture arbitration (the
-            // topmost sticky absorbs every tap). `.offset` keeps the
-            // card's layout bounds at `displayed` size. In this
-            // `.topLeading` ZStack the child's natural origin is
-            // (0,0), so `.offset(minX, minY)` is equivalent to the
-            // old `.position(midX, midY)`. Mirrors `ImageElementView`.
+            // Order is load-bearing — `.contentShape(Rectangle())`
+            // MUST sit BEFORE `.position(...)` so the hit shape is
+            // the card's actual rect, not the parent-filling rect
+            // SwiftUI gives a positioned view. Step 7.1 had these
+            // swapped; the result was every sticky absorbing every
+            // tap on its page (because the contentShape became
+            // page-sized) and the overlay's background-tap handler
+            // never fired. Mirrors `ImageElementView.body`.
             card
                 .frame(width: displayed.width, height: displayed.height)
                 .overlay(textLayer)
@@ -106,7 +104,7 @@ struct StickyNoteElementView: View {
                 .gesture(
                     (isSelected && !isEditing) ? bodyDragGesture : nil
                 )
-                .offset(x: displayed.minX, y: displayed.minY)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected && !isEditing {
                 colorPickerStrip(displayed: displayed)
@@ -323,13 +321,8 @@ struct StickyNoteElementView: View {
             // 32pt hit target (Apple HIG min) without bloating the
             // visual size — matches `ImageElementView.cornerHandle`.
             .contentShape(Rectangle().inset(by: -10))
-            // `.offset` (not `.position`) — keeps the handle's layout
-            // bounds at `handleSize`² so it doesn't expand page-sized
-            // and shadow other elements' gestures. Offsetting by
-            // `point - handleSize/2` centres the handle on `point`.
+            .position(point)
             .gesture(resizeGesture(for: corner))
-            .offset(x: point.x - Self.handleSize / 2,
-                    y: point.y - Self.handleSize / 2)
     }
 
     // MARK: - Gestures

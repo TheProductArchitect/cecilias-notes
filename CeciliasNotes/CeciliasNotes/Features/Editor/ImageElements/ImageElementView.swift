@@ -62,27 +62,17 @@ struct ImageElementView: View {
         let _ = print("[GestureAudit] ImageElementView body render — elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) displayed=\(displayed) pageSize=\(pageSize)")
 
         ZStack(alignment: .topLeading) {
-            // STRUCTURAL FIX (replaces the Step 4/7/7.1/7.2 modifier-
-            // order patches): position the element body with
-            // `.offset`, NOT `.position`.
-            //
-            // `.position` reports the *parent's* proposed size as its
-            // own layout size — so the gesture-bearing subtree
-            // expands to fill the page-sized overlay frame. Every
-            // element view in the overlay's `ForEach` then has
-            // page-sized layout bounds, they overlap 100%, and
-            // SwiftUI gesture arbitration always routes the touch to
-            // the topmost sibling regardless of where the tap landed.
-            // That is why `[ImageGesture] 1. tap received` never
-            // logged in device tests.
-            //
-            // `.offset` shifts the view *without* changing its layout
-            // size. The body keeps `displayed`-sized layout bounds,
-            // so arbitration picks the element whose bounds actually
-            // contain the touch. In this `.topLeading` ZStack the
-            // child's natural origin is (0,0), so offsetting by
-            // (displayed.minX, displayed.minY) is exactly equivalent
-            // to the old `.position(midX, midY)` placement.
+            // Order is load-bearing — gestures MUST sit before
+            // `.position(...)`. After Step 7.2's sticky-gesture
+            // post-mortem: `.position` wraps the modified view in
+            // a parent-sized container; any gesture attached
+            // after `.position` ends up bound to that container
+            // instead of the framed contentShape, which on iPad
+            // OS 26 causes the gesture to never fire even when
+            // the hit area is correct. Apply the canonical
+            // template established by `StickyNoteElementView`:
+            //   frame → overlays/effects → contentShape →
+            //   gestures → position.
             ImageDataView(content: content)
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
@@ -101,7 +91,7 @@ struct ImageElementView: View {
                 )
                 .gesture(isSelected ? imageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
-                .offset(x: displayed.minX, y: displayed.minY)
+                .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected {
                 selectionChrome(imageRect: displayed)
@@ -194,18 +184,12 @@ struct ImageElementView: View {
     }
 
     private func cornerHandle(_ corner: Corner, at point: CGPoint) -> some View {
-        // `.offset` (not `.position`) for the same reason as the body:
-        // a `.position`'d handle expands to page-sized layout bounds
-        // and shadows other elements' gestures. The handle's natural
-        // size is `handleSize`²; offsetting by `point - handleSize/2`
-        // lands its centre on `point`, matching the old `.position`.
         Circle()
             .fill(theme.accent)
             .frame(width: Self.handleSize, height: Self.handleSize)
             .contentShape(Rectangle().inset(by: -8))
+            .position(point)
             .gesture(resizeGesture(for: corner))
-            .offset(x: point.x - Self.handleSize / 2,
-                    y: point.y - Self.handleSize / 2)
     }
 
     private func floatingToolbar() -> some View {
