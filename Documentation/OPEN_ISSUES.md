@@ -41,6 +41,24 @@ adds the `PKCanvasView` to `contentView` **after** each page's
 element overlay, and its gesture recognisers consume the touch even
 in `.pencilOnly` mode.
 
+**Logging.** All `#if DEBUG`.
+- `[TouchPath]` — `TouchPathLogger`. On install:
+  `[TouchPath] installed logger '<label>' on <ViewType>`. On tap:
+  `[TouchPath] <label> tap at <point>` where `<label>` is one of
+  `1. UIWindow`, `2. editor root (CanvasHostView)`, `3. scroll view`,
+  `4. page <id> renderer`, `5. PKCanvasView page <id>`,
+  `6. page <id> image|sticky|audio overlay host`. The last label
+  that logs is where the touch reaches; silence after it is the
+  absorber (or the layer just below).
+- `[GestureAudit]` — `ImageElementView` / `StickyNoteElementView`
+  body-render confirmation (`… body render — elementId=…`).
+- `[ImageGesture]` / `[StickyGesture]` — element-view gesture
+  handlers: `1. tap received`, `1a/1b`, `2. drag`, `3. drag onEnded`,
+  `4./5. resize`, `isSelected changed`, `overlay.bg tap`. These are
+  the logs that currently never fire — the symptom.
+- `[AudioPlay]` — `1. button tap received` on the audio play button
+  (also never fires). `[AudioPlayback]` — audio load / onAppear.
+
 **Next step.** Instrument `PageRenderer` (and the PKCanvasView's
 gesture recognisers) specifically, confirm the absorber, then fix
 the z-order / hit-testing at that layer — not at the element views.
@@ -73,6 +91,20 @@ exist before onboarding raises the keyboard. A 3× retry remains as
 a defensive fallback. Diagnostic `[BrandIcon][diag]` logs at every
 gate transition.
 
+**Logging.** `[BrandIcon][diag]` (not `#if DEBUG`-gated — survives
+in Release):
+- gate lifecycle — `gate — keyboardDidShow/keyboardDidHide`,
+  `gate — scene didActivate/willDeactivate`.
+- gate decision — `gate ready immediately — firing`,
+  `gate waiting — keyboardVisible=… sceneActive=…`,
+  `gate now ready — firing pending completion`,
+  `gate timeout (10s) — firing anyway`.
+- the swap — `icon update pending for key=…`,
+  `setAlternateIconName(<key>) — attempt (<n> left)`,
+  `setAlternateIconName(<key>) SUCCESS` / `… FAILED: <error>`.
+A clean run reads: pending → gate waiting → keyboardDidHide → gate
+now ready → attempt → SUCCESS.
+
 **Next step.** Device-confirm the gate lets the swap land
 (`[BrandIcon][diag] gate now ready` → `setAlternateIconName(…)
 SUCCESS`). If it still fails, the practical resolution is to move
@@ -92,6 +124,10 @@ concurrency boundaries — `PDFDocument` Sendability, `AVAudioPCMBuffer`
 capture in a `@Sendable` closure, captured-`var` races in the media
 pickers — and touch product-sensitive audio/PDF paths. Bigger than a
 focused commit.
+
+**Logging.** None — these are build-time diagnostics, not runtime
+logs. Surface them with
+`xcodebuild build … SWIFT_VERSION=6 | grep ": warning:"`.
 
 **Next step.** See `ARCHITECTURE.md` → "Swift 6 migration status"
 for the full per-file warning inventory. Complete the cleanup and
@@ -114,6 +150,15 @@ the dictation state machine depends on it being set synchronously.
 **Why still open.** That cluster is the clearest evidenced offender,
 but it likely doesn't account for all 12 warnings. Pinning the rest
 needs the device-captured call-stack sites.
+
+**Logging.** No dedicated tag — the signal is SwiftUI's own runtime
+console line, *"Publishing changes from within view updates is not
+allowed; this will cause undefined behavior."* Correlate it with the
+`[Dictation]` start sequence (`RecordingSession.startDictation
+entered`, `navigateToPage — newPageId=…`, `startDictation completed`)
+to see which mutations coincide. There is no call-stack tag yet —
+adding `Thread.callStackSymbols` at suspected publish sites is part
+of the next step.
 
 **Next step.** Capture the remaining warning stacks on device, then
 defer only the genuinely-safe publish sites (never `state`).
@@ -150,3 +195,8 @@ above if they fail.
   `liveTranscript` to `committedTranscript` when a recognition
   session ends without a final result (`91b0617`). Verify: speak,
   pause 5s, speak again — both sentences should remain.
+  Logging (`[Dictation]`, `#if DEBUG`): `partial result, len=<n>`
+  (watch for the length *not* dropping back across a pause),
+  `rotation without final result — promoted <n>-char liveTranscript
+  to committed` (the new fix firing), `handleLiveTranscript routing
+  <n> chars`, `updateText OK — <n> total chars`.
