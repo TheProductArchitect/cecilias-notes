@@ -303,38 +303,11 @@ should address. None are bugs; all are explicit deferrals.
 
 ## Active investigations
 
-Open bugs with diagnostics in place — distinct from the deferrals
-above. Each has instrumentation committed; the fix follows once the
-device evidence localises the cause.
-
-- **Element-tap gesture absorption.** Taps on image / sticky-note /
-  audio elements never reach their SwiftUI element views — the views
-  render (`[GestureAudit] … body render`) but their
-  `[ImageGesture] / [StickyGesture] / [AudioPlay] 1. tap received`
-  logs never fire. Patched 4+ times at the modifier-order level
-  (Steps 4 / 7 / 7.1 / 7.2, audit `42c32aa`); every patch regressed.
-  A `.position → .offset` restructure of the element views
-  (`91b0617`) was a wrong-layer guess and was reverted (`c46440a`).
-  `TouchPathLogger` (`33f3f42`) now instruments the full touch path
-  — UIWindow → editor root → scroll view → page `renderer` →
-  PKCanvasView → overlay hosts — with observe-only, pass-through
-  recognisers. Device `[TouchPath]` logs localise the absorber to
-  the `PageRenderer` layer: the touch dies before reaching the
-  element overlays. Prime suspect — `mountCanvas` adds the
-  PKCanvasView to `contentView` *after* each page's `renderer`, so
-  it is a sibling stacked on top of every element overlay. Next
-  step: instrument `PageRenderer` specifically and fix from there.
-
-- **Alternate app-icon swap on iOS 26.** `setAlternateIconName(_:)`
-  fails near onboarding completion — EAGAIN, then
-  `NSCocoaErrorDomain 3072 "cancelled"` — because the onboarding name
-  field's keyboard is mid-dismiss when the call fires and the
-  keyboard teardown blocks `LSIconAlertManager`'s alert token.
-  `IconUpdateGate` (`33f3f42`) holds the call until the scene is
-  foreground-active AND the keyboard is fully dismissed
-  (`keyboardDidHide` with no later `keyboardDidShow`; 10s safety
-  timeout); a 3× retry remains as a defensive fallback. Pending
-  device confirmation that the gate lets the swap land.
+Open, unresolved bugs are tracked in **`OPEN_ISSUES.md`** — each with
+symptom, failed prior attempts, the diagnostic in place, and the next
+step. Currently open: element-tap gesture absorption, the iOS 26
+alternate-icon swap, the Swift 6 warnings (below), and the dictation
+view-update warnings.
 
 ---
 
