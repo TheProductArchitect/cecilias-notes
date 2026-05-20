@@ -45,6 +45,18 @@ struct ImageElementsOverlayView: View {
         viewModel.selectedTool.allowsImageSelection
     }
 
+    /// Whether to mount the full-page background tap layer.
+    ///
+    /// OPEN_ISSUES #1 — element-tap gesture absorption. A full-page
+    /// `.contentShape` tap catcher absorbs every tap on the page, so
+    /// while it's mounted no tap reaches the overlays stacked below
+    /// this one. This catcher's only job is to clear the selection,
+    /// so mount it only while a selection exists — otherwise it is a
+    /// no-op layer that must not be mounted.
+    private var showsBackgroundCatcher: Bool {
+        allowsInteraction && selectedElementId != nil
+    }
+
     /// Fetch image elements for this page. Filtering by `.image`
     /// kind happens in Swift; the predicate keeps the candidate set
     /// small via pageId + soft-delete.
@@ -64,10 +76,11 @@ struct ImageElementsOverlayView: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             // Background tap surface — clears the selection when
-            // the user taps empty page area. Only present in tools
-            // that allow image interaction so drawing tools route
-            // straight through to the canvas underneath.
-            if allowsInteraction {
+            // the user taps empty page area. See
+            // `showsBackgroundCatcher`: mounted only while a
+            // selection exists, so it never absorbs taps meant for
+            // the image / sticky / audio overlays below.
+            if showsBackgroundCatcher {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in

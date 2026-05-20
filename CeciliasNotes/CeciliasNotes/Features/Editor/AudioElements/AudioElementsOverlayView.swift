@@ -38,6 +38,19 @@ struct AudioElementsOverlayView: View {
         viewModel.selectedTool.allowsImageSelection
     }
 
+    /// Whether to mount the full-page background tap layer.
+    ///
+    /// OPEN_ISSUES #1 — element-tap gesture absorption. A full-page
+    /// `.contentShape` tap catcher absorbs every tap on the page, so
+    /// while it's mounted no tap reaches the overlays stacked below.
+    /// This catcher's only job is to clear the selection, so mount it
+    /// only while a selection exists — otherwise it is a no-op layer
+    /// that would, in particular, swallow taps on the audio play
+    /// button itself.
+    private var showsBackgroundCatcher: Bool {
+        allowsInteraction && selectedElementId != nil
+    }
+
     private var elements: [PageElement] {
         let _ = refreshTick
         let pid = pageId
@@ -59,7 +72,10 @@ struct AudioElementsOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if allowsInteraction {
+            // Background tap surface — see `showsBackgroundCatcher`.
+            // Mounted only while a selection exists, so it never
+            // absorbs taps meant for the audio strip / play button.
+            if showsBackgroundCatcher {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in

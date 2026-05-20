@@ -87,13 +87,32 @@ struct TextElementsOverlayView: View {
             || viewModel.selectedTool.isTextMode
     }
 
+    /// Whether to mount the full-page background tap layer.
+    ///
+    /// OPEN_ISSUES #1 — element-tap gesture absorption. Every per-page
+    /// overlay (text / image / sticky / audio) is a full-page host
+    /// stacked inside the renderer. A full-page `.contentShape` tap
+    /// catcher absorbs *every* tap on the page, so a catcher mounted
+    /// while it has nothing to do starves the overlays below it —
+    /// taps on an image / sticky / audio element never reach them.
+    ///
+    /// The catcher only does work in three cases: an active selection
+    /// or edit to dismiss, or text mode (empty tap creates an
+    /// element). Mount it only then; when idle in cursor mode it is a
+    /// no-op layer and must not be mounted.
+    private var showsBackgroundCatcher: Bool {
+        guard allowsInteraction else { return false }
+        return selectedId != nil
+            || editingId != nil
+            || viewModel.selectedTool.isTextMode
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Background tap layer — present whenever the user is in
-            // a tool that interacts with text. In text mode an empty
-            // tap creates a new element; in cursor mode an empty
-            // tap deselects.
-            if allowsInteraction {
+            // Background tap layer — see `showsBackgroundCatcher`.
+            // In text mode an empty tap creates a new element; with
+            // an active selection / edit, an empty tap dismisses it.
+            if showsBackgroundCatcher {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { location in

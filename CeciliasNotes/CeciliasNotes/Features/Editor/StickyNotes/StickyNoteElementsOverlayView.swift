@@ -45,6 +45,21 @@ struct StickyNoteElementsOverlayView: View {
             || viewModel.selectedTool.isStickyNoteMode
     }
 
+    /// Whether to mount the full-page background tap layer.
+    ///
+    /// OPEN_ISSUES #1 — element-tap gesture absorption. A full-page
+    /// `.contentShape` tap catcher absorbs every tap on the page, so
+    /// a catcher mounted while idle starves the overlays stacked
+    /// below this one. It only does work with an active selection /
+    /// edit to dismiss, or in sticky mode (empty tap creates a
+    /// card) — mount it only then.
+    private var showsBackgroundCatcher: Bool {
+        guard allowsInteraction else { return false }
+        return selectedId != nil
+            || editingId != nil
+            || viewModel.selectedTool.isStickyNoteMode
+    }
+
     /// Fetch + post-filter — `#Predicate` enum-case equality is
     /// rejected on iOS 26 (workaround established in Step 3).
     private var elements: [PageElement] {
@@ -62,11 +77,11 @@ struct StickyNoteElementsOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Background placement / dismiss layer. Present whenever
-            // a sticky-interacting tool is active. In sticky-tool
-            // mode an empty tap creates; in cursor mode it exits
-            // selection / editing.
-            if allowsInteraction {
+            // Background placement / dismiss layer — see
+            // `showsBackgroundCatcher`. In sticky-tool mode an empty
+            // tap creates; with an active selection / edit an empty
+            // tap exits it.
+            if showsBackgroundCatcher {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { location in

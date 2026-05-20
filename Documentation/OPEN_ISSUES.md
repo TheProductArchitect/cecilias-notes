@@ -244,7 +244,8 @@ above if they fail.
   `PKCanvasView` is not in the renderer's subview list at all — the
   bug was entirely inside `PageRenderer`'s overlay stack.
 
-  **Fix.** `ContinuousCanvasView.applyOverlayHitTestingToAll` now
+  **Fix 1 — lasso host (`a2813c3`).**
+  `ContinuousCanvasView.applyOverlayHitTestingToAll` now
   sets `lassoHost.view.isUserInteractionEnabled = tool.isLassoMode`
   on every tool change, and the lasso host is mounted non-interactive
   unless the lasso tool is already active. Subview z-order is
@@ -261,15 +262,46 @@ above if they fail.
   signal — but first confirm the host doesn't re-absorb page taps in
   the selection-active state.
 
-  Verify: outside lasso mode, tap an image / sticky note / audio play
-  button → the matching `[ImageGesture] / [StickyGesture] /
-  [AudioPlay] 1. tap received` log fires, and `[Renderer-hit]` shows
-  `super.hitTest=_UIHostingView<ImageElementsOverlayView>` (or the
-  sticky / audio equivalent) instead of `LassoOverlayView`. Switch to
-  the lasso tool → drag-select still works. Pencil inking still works
-  in inking modes. The `[Renderer-hit]` diagnostic (`673f3c9`) stays
-  in `PageRenderer` for this verification pass — remove it in a
-  separate commit once confirmed.
+  **Fix 2 — overlay background catchers.** After Fix 1 the
+  `[Renderer-hit]` log confirmed `LassoOverlayView` inert
+  (`subview[9] userInteraction=false`) but the absorber had moved one
+  layer down: `_UIHostingView<TextElementsOverlayView>` (`subview[8]`,
+  frontmost in cursor mode) now won every page tap. Each per-page
+  overlay — text / image / sticky / audio — mounts a full-page
+  `Color.clear.contentShape(Rectangle())` background tap-catcher
+  whenever its tool predicate is active; in cursor mode all four are
+  active at once and the topmost absorbs every tap, including taps
+  meant for an element in an overlay below it. Crucially the catcher
+  is usually a *no-op* — in cursor mode with nothing selected it
+  catches the tap and does nothing.
+  The four overlays now gate the catcher behind a
+  `showsBackgroundCatcher` predicate: mounted only when it has work —
+  an active selection / edit to dismiss (all four) or the overlay's
+  own create-mode (text / sticky). When idle, no catcher is mounted,
+  the overlay's `_UIHostingView` returns nil for non-element points,
+  and UIKit's native reverse-z hit-test routes the tap to whichever
+  overlay owns the tapped element — no container shim required.
+
+  **Behaviour note (Fix 2).** When overlay A holds a selection its
+  catcher is full-page, so the *first* tap on an element in a
+  different overlay B is consumed as "dismiss A's selection"; a
+  second tap selects B. Deselect-then-select is intentional and
+  predictable — making a cross-overlay element tap beat a sibling
+  overlay's catcher needs the single-overlay-host refactor
+  (`MEDIA_SUBSYSTEM_AUDIT.md` §6.A) and is out of scope here.
+
+  Verify: in cursor mode with nothing selected, tap an image /
+  sticky note / audio play button → the matching `[ImageGesture] /
+  [StickyGesture] / [AudioPlay] 1. tap received` log fires, and
+  `[Renderer-hit]` shows `super.hitTest` resolving to the matching
+  overlay (or a `UITextView` for a text element) rather than
+  `TextElementsOverlayView`. With an element selected, an empty-area
+  tap still deselects; the text / sticky tools still create on an
+  empty tap; tapping a text element still enters edit mode. Lasso
+  drag-select still works; Pencil inking still works in inking modes.
+  The `[Renderer-hit]` diagnostic (`673f3c9`) stays in `PageRenderer`
+  for this verification pass — remove it in a separate commit once
+  confirmed.
 
   Ruled out — do not retry (disproven by `[TouchPath]` +
   `[Renderer-hit]`):
@@ -281,6 +313,13 @@ above if they fail.
   - *Adding more SwiftUI gestures* (`simultaneousGesture`,
     `highPriorityGesture`) inside the element views — same
     wrong-layer trap.
+  - *Wrapping each overlay host in a passthrough container that
+    returns nil from `hitTest` when the hit resolves to the
+    container itself.* Cannot work: while an overlay's full-page
+    background catcher is mounted its `_UIHostingView` claims every
+    point, so the container never sees an unclaimed hit. The
+    catchers had to be gated (Fix 2) — a UIKit wrapper can't
+    substitute for that.
   - *`PKCanvasView` sibling z-order* — the hypothesis that the
     canvas, mounted in `contentView` above the renderer, consumed
     the touch. Disproven: `PKCanvasView` is not in the renderer's
