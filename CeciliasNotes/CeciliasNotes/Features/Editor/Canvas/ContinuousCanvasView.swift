@@ -241,6 +241,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
             context.coordinator.scrollToPage(viewModel.currentPageIndex, animated: false)
             context.coordinator.installOverlayLayerIntoActivePage(animated: false)
             context.coordinator.installFlushHandler()
+            #if DEBUG
+            // Fix 1 — touch-path diagnostic. Instrument the outer
+            // layers (window / editor root / scroll view). Per-page
+            // layers are instrumented in `rebuildPageHosts` /
+            // `mountCanvas`. Observe-only — see `TouchPathLogger`.
+            if let window = host.window {
+                TouchPathLogger.attach(to: window, label: "1. UIWindow")
+            }
+            TouchPathLogger.attach(to: host, label: "2. editor root (CanvasHostView)")
+            TouchPathLogger.attach(to: scrollView, label: "3. scroll view")
+            #endif
         }
         return host
     }
@@ -780,6 +791,23 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 lassoHost.attachAsChild(of: renderer)
 
                 contentView.addSubview(renderer)
+
+                #if DEBUG
+                // Fix 1 — touch-path diagnostic, per-page layers.
+                // `renderer` is the page container; the image /
+                // sticky / audio hosts are the SwiftUI overlay
+                // mounts whose element gestures go missing.
+                let pidTag = page.id.uuidString.prefix(8)
+                TouchPathLogger.attach(to: renderer,
+                                       label: "4. page \(pidTag) renderer")
+                TouchPathLogger.attach(to: imagesHost.view,
+                                       label: "6. page \(pidTag) image overlay host")
+                TouchPathLogger.attach(to: stickyHost.view,
+                                       label: "6. page \(pidTag) sticky overlay host")
+                TouchPathLogger.attach(to: audioHost.view,
+                                       label: "6. page \(pidTag) audio overlay host")
+                #endif
+
                 hosts.append(PageHostState(
                     pageId:          page.id,
                     frame:           frame,
@@ -1047,6 +1075,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // is required — see the subclass's header comment.
 
             contentView.addSubview(canvas)
+
+            #if DEBUG
+            // Fix 1 — touch-path diagnostic. PKCanvasView is added
+            // to `contentView` AFTER each page's `renderer`, so it
+            // is a sibling stacked ON TOP of every element overlay —
+            // the prime suspect for absorbing element taps. If the
+            // `[TouchPath]` sequence reaches "5. PKCanvasView" and
+            // stops, this layer is the absorber.
+            TouchPathLogger.attach(
+                to: canvas,
+                label: "5. PKCanvasView page \(hosts[i].pageId.uuidString.prefix(8))"
+            )
+            #endif
+
             hosts[i].canvasView = canvas
 
             // Keep the overlay layer (audio pins + sticky notes) above

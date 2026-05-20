@@ -225,11 +225,40 @@ func applyPendingIconUpdateIfNeeded() {
     guard app.supportsAlternateIcons else { return }
     let key = BrandIcon.variantKey(forName: pendingName)
     if app.alternateIconName == key { return }
+
+    // Fix 2 — route the swap through `IconUpdateGate`, which holds
+    // the call until the scene is foreground-active AND the keyboard
+    // is fully dismissed. The onboarding name field's keyboard is
+    // mid-dismiss when `LibraryView.onAppear` fires; calling
+    // `setAlternateIconName` then loses the LSIconAlertManager token
+    // race (EAGAIN, then "cancelled"). Once gated, the retry below
+    // is a defensive fallback that should rarely be exercised.
+    print("[BrandIcon][diag] icon update pending for key=\(key ?? "nil") — handing to gate")
+    IconUpdateGate.shared.whenReady {
+        setAlternateIconWithRetry(key, attemptsLeft: 3)
+    }
+}
+
+/// Defensive retry behind `IconUpdateGate`. With the scene/keyboard
+/// gates in place the first attempt should succeed; the 1s-spaced
+/// retries cover any residual `LSIconAlertManager` contention.
+@MainActor
+private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
+    let app = UIApplication.shared
+    print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) — attempt (\(attemptsLeft) left)")
     app.setAlternateIconName(key) { error in
-        if let error = error {
-            #if DEBUG
-            print("[BrandIcon] setAlternateIconName(\(key ?? "nil")) failed: \(error)")
-            #endif
+        // `setAlternateIconName`'s completion is not guaranteed on
+        // the main thread — hop back before touching UIKit/state.
+        Task { @MainActor in
+            if let error {
+                print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
+                if attemptsLeft > 1 {
+                    try? await Task.sleep(for: .seconds(1))
+                    setAlternateIconWithRetry(key, attemptsLeft: attemptsLeft - 1)
+                }
+            } else {
+                print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
+            }
         }
     }
 }

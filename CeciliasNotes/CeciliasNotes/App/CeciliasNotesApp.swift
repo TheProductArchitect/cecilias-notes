@@ -46,6 +46,13 @@ struct CeciliasNotesApp: App {
         HostingHierarchyDiagnostics.installOnce()
         #endif
 
+        // Fix 2 — instantiate the icon-update gate at launch so its
+        // keyboard-lifecycle observers are installed BEFORE the
+        // onboarding name field can raise the keyboard. Created late,
+        // the gate can't tell a keyboard is already up and would
+        // fire the icon swap early — back into the EAGAIN failure.
+        MainActor.assumeIsolated { IconUpdateGate.shared.prime() }
+
         // Register Apple Intelligence's master toggle as ON-by-default
         // *without* persisting the value. `UserDefaults.register`
         // installs a fallback that's returned when the key is absent
