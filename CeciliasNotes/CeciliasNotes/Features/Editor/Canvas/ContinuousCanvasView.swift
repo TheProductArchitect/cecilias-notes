@@ -285,15 +285,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // directly. The state machine adds the mode-axis check so a
         // lecture / audio recording also suppresses Pencil input
         // even when a drawing tool is selected.
-        coord.applyOverlayHitTestingToAll(
-            canvasInteractive: viewModel.canvasIsInteractive,
-            tool: viewModel.selectedTool
-        )
-        // Bring the active-tool's overlay to the front inside each
-        // renderer so finger taps on images / sticky-notes / text
-        // blocks aren't swallowed by another overlay's hosting view.
-        // See Bug 4.
-        coord.promoteActiveOverlayToFront(for: viewModel.selectedTool)
+        coord.applyOverlayHitTestingToAll(canvasInteractive: viewModel.canvasIsInteractive)
+        // OPEN_ISSUES #1: per-tool overlay z-order promotion is gone.
+        // With every overlay in one `PageOverlaysContainer`, SwiftUI
+        // routes each tap to the element actually at the point — a
+        // fixed ZStack order is all that's needed, no per-tool
+        // `bringSubviewToFront` shuffling.
 
         // Page list change (autoAdd appended a page, or first run).
         coord.rebuildPageHostsIfNeeded()
@@ -358,65 +355,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// a strong ref alongside the renderer so the controller
             /// outlives `mountCanvas` / `unmountCanvas` cycles.
             var templateHost: UIHostingController<TemplatePatternView>
-            /// V6 image-element overlay (BELOW the canvas). Step 4
-            /// replaced the legacy `ImageAttachmentsView` /
-            /// `ImageRecord` flow with the unified PageElement
-            /// model. Stored so the hosting controller outlives
-            /// the page's lifetime — a dangling HC stops driving
-            /// SwiftUI updates and also triggers
-            /// `_UIReparentingView` complaints.
-            var imagesHost:    UIHostingController<ImageElementsOverlayView>
-            /// V6 PDF-page element overlay (BELOW the canvas,
-            /// ABOVE images). Step 4.5: renders Workflow B's
-            /// user-placed PDF page elements. Step 5.5 unified
-            /// Workflow A through this same overlay — full-bleed
-            /// PageElement(.pdfPage) rows now drive every PDF
-            /// surface, retiring `PageRenderer`'s legacy CG path.
-            var pdfPagesHost:  UIHostingController<PDFPageElementsOverlayView>
-            /// V6 highlight overlay (ABOVE the PDF overlay, BELOW
-            /// the canvas). Step 5.5: renders
-            /// `PageElement(kind: .highlight)` rows projected
-            /// through their parent PDFPageContent element's
-            /// bounds — replaces the legacy
-            /// `PDFTextAnnotationStore` Core Graphics overlay.
-            var highlightsHost: UIHostingController<HighlightElementsOverlayView>
-            /// V6 audio-element overlay (ABOVE the canvas).
-            /// Step 5: replaced both `AudioAnnotationCardsOverlayView`
-            /// (short notes) and `LectureBlocksOverlayView` (long-
-            /// form recordings) — consolidated into a single
-            /// `AudioElementsOverlayView` per the audio-migration
-            /// decision.
-            var audioHost:     UIHostingController<AudioElementsOverlayView>
-            /// Sticky-notes overlay (ABOVE the canvas). Phase 3b
-            /// moved this from a single global overlay to per-page;
-            /// Step 7 swapped the underlying view onto V6
-            /// `PageElement(.stickyNote) + StickyNoteContent` —
-            /// the legacy `StickyNoteStore` UserDefaults pipeline is
-            /// gone.
-            var stickyHost:    UIHostingController<StickyNoteElementsOverlayView>
-            /// Text-block overlay (ABOVE the canvas). Phase 3b: was a
-            /// single global overlay in `overlayLayer`, now per-page.
-            var textBlockHost: UIHostingController<TextBlockOverlayView>
-            /// V6 text-element overlay (ABOVE the legacy TextBlock
-            /// layer). Renders `PageElement`s of kind `.text` via
-            /// `TextElementView`. Step 3 — first PageElement-backed
-            /// overlay; pattern reused by Steps 4-7.
-            var textElementsHost: UIHostingController<TextElementsOverlayView>
-            /// V6 stroke overlay (Step 8). **Visually transparent.**
-            /// The actual stroke render stays on `PKCanvasView` —
-            /// this hosting controller exists so the stroke
-            /// primitive participates in the per-page overlay
-            /// pattern (seeds the `PageElement(.stroke)` singleton
-            /// on first appear; Step 9 lasso binding point).
-            var strokesHost: UIHostingController<StrokeElementsOverlayView>
-            /// V6 lasso overlay (Step 9). Captures freeform /
-            /// marquee selection gestures when `.lasso` is the
-            /// active tool, then renders the multi-element
-            /// selection chrome after a selection lands. Sits at
-            /// the TOP of the renderer's subview stack so its
-            /// chrome's drag/handle gestures take priority over
-            /// the per-element overlays below.
-            var lassoHost: UIHostingController<LassoOverlayView>
+            /// OPEN_ISSUES #1 — every interactive per-page overlay
+            /// (stroke seed, legacy text-block, image, PDF page,
+            /// highlight, audio, sticky note, V6 text element,
+            /// lasso) is hosted inside ONE `PageOverlaysContainer`
+            /// rather than nine separate `UIHostingController`s.
+            /// A `_UIHostingView` claims its whole frame for
+            /// hit-testing whenever it is interaction-enabled, so
+            /// stacked separate hosts meant the topmost absorbed
+            /// every tap before the overlays below it were reached.
+            /// One host = one SwiftUI tree = correct internal hit
+            /// routing. See `PageOverlaysContainer`.
+            var overlaysHost: UIHostingController<PageOverlaysContainer>
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
@@ -572,271 +522,57 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
                 let pageCS = PageCoordinateSpace(baseSize: baseSize)
 
-                // Step 4: replaced legacy `ImageAttachmentsView`
-                // (backed by `ImageRecord`) with the unified
-                // `ImageElementsOverlayView` (backed by
-                // `PageElement(kind: .image) + ImageContent`).
-                // Visual + interaction parity preserved; the
-                // selection chrome (dashed border, corner handles,
-                // floating toolbar) lives on the new view.
-                let imagesHost = UIHostingController(
-                    rootView: ImageElementsOverlayView(
+                // OPEN_ISSUES #1 — every interactive overlay (stroke
+                // seed, legacy text-block, image, PDF page, highlight,
+                // audio, sticky, V6 text element, lasso) is hosted in
+                // ONE `PageOverlaysContainer` so a single SwiftUI tree
+                // owns hit routing. Stacking nine separate hosts is
+                // what caused the gesture absorption: a `_UIHostingView`
+                // claims its whole frame whenever it is
+                // interaction-enabled, so the topmost host swallowed
+                // every tap. See `PageOverlaysContainer`. The template
+                // pattern stays a separate host (mounted above) — it's
+                // non-interactive and needs its own `rootView` swap
+                // when the Customise panel changes the template.
+                let overlaysHost = UIHostingController(
+                    rootView: PageOverlaysContainer(
                         viewModel: viewModel,
                         pageId: page.id,
                         notebookId: viewModel.notebook.id,
                         coordinateSpace: pageCS
                     )
                 )
-                imagesHost.view.backgroundColor = .clear
-                imagesHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(imagesHost.view)
+                overlaysHost.view.backgroundColor = .clear
+                overlaysHost.view.translatesAutoresizingMaskIntoConstraints = false
+                renderer.addSubview(overlaysHost.view)
                 NSLayoutConstraint.activate([
-                    imagesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    imagesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    imagesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    imagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+                    overlaysHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                    overlaysHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                    overlaysHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                    overlaysHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
                 ])
-                imagesHost.attachAsChild(of: renderer)
-
-                // Step 4.5: V6 PDF-page elements overlay (Workflow B).
-                // Sits ABOVE the images host so a user-placed PDF
-                // reference renders on top of a same-page image, and
-                // BELOW the audio/lecture/sticky/text overlays whose
-                // primitives demand higher z-priority. Workflow A's
-                // full-page PDF backgrounds still render in
-                // `PageRenderer` — those don't appear in this layer
-                // because they have no `PDFPageContent` rows.
-                let pdfPagesHost = UIHostingController(
-                    rootView: PDFPageElementsOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                pdfPagesHost.view.backgroundColor = .clear
-                pdfPagesHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(pdfPagesHost.view)
-                NSLayoutConstraint.activate([
-                    pdfPagesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    pdfPagesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    pdfPagesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    pdfPagesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                pdfPagesHost.attachAsChild(of: renderer)
-
-                // Step 5.5: V6 highlight overlay. Stacks above the
-                // PDF overlay so highlights paint on top of the
-                // PDF text they annotate, and below the audio /
-                // sticky / text-block overlays which still need
-                // higher z-priority for tap routing.
-                let highlightsHost = UIHostingController(
-                    rootView: HighlightElementsOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                highlightsHost.view.backgroundColor = .clear
-                highlightsHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(highlightsHost.view)
-                NSLayoutConstraint.activate([
-                    highlightsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    highlightsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    highlightsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    highlightsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                highlightsHost.attachAsChild(of: renderer)
-
-                // Step 5: V6 audio-element overlay — replaces both
-                // the legacy `AudioAnnotationCardsOverlayView` and
-                // `LectureBlocksOverlayView` in one mount. Short
-                // notes and lectures share `AudioContent` now;
-                // each renders as a compact `AudioElementView`
-                // strip with play/pause/seek + selection chrome.
-                let audioHost = UIHostingController(
-                    rootView: AudioElementsOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                audioHost.view.backgroundColor = .clear
-                audioHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(audioHost.view)
-                NSLayoutConstraint.activate([
-                    audioHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    audioHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    audioHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    audioHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                audioHost.attachAsChild(of: renderer)
-
-                // Sticky-notes overlay — per-page mount (Phase 3b).
-                // Step 7: now a V6 PageElement-backed overlay
-                // (`StickyNoteElementsOverlayView`).
-                let stickyHost = UIHostingController(
-                    rootView: StickyNoteElementsOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        notebookId: viewModel.notebook.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                stickyHost.view.backgroundColor = .clear
-                stickyHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(stickyHost.view)
-                NSLayoutConstraint.activate([
-                    stickyHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    stickyHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    stickyHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    stickyHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                stickyHost.attachAsChild(of: renderer)
-
-                // Text-block overlay — per-page mount (Phase 3b). Same
-                // overlay also handles `lecture:<uuid>`-prefixed blocks
-                // by routing them through `LectureBlockView` internally.
-                let textBlockHost = UIHostingController(
-                    rootView: TextBlockOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                textBlockHost.view.backgroundColor = .clear
-                textBlockHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(textBlockHost.view)
-                NSLayoutConstraint.activate([
-                    textBlockHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    textBlockHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    textBlockHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    textBlockHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                textBlockHost.attachAsChild(of: renderer)
-
-                // V6 text-element overlay — first PageElement-backed
-                // surface (Step 3). Sits above the legacy TextBlock
-                // layer so taps in cursor/text mode reach the new
-                // primitive first. Inject the SwiftData container so
-                // the overlay's `@Environment(\.modelContext)`
-                // resolves — UIHostingController doesn't inherit the
-                // SwiftUI root environment automatically.
-                let textElementsHost = UIHostingController(
-                    rootView: TextElementsOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        notebookId: viewModel.notebook.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                textElementsHost.view.backgroundColor = .clear
-                textElementsHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(textElementsHost.view)
-                NSLayoutConstraint.activate([
-                    textElementsHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    textElementsHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    textElementsHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    textElementsHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                textElementsHost.attachAsChild(of: renderer)
-
-                // Step 8: stroke overlay — transparent host, exists
-                // so the V6 stroke singleton seeds on first appear
-                // and to give Step 9 a binding mount point. The
-                // actual stroke render stays on PKCanvasView
-                // (mounted in `mountCanvas` directly under
-                // contentView, not inside the renderer). Mount
-                // order at the end of the renderer stack so the
-                // overlay's no-op layer doesn't shadow anything.
-                let strokesHost = UIHostingController(
-                    rootView: StrokeElementsOverlayView(
-                        pageId: page.id,
-                        notebookId: viewModel.notebook.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                strokesHost.view.backgroundColor = .clear
-                strokesHost.view.isUserInteractionEnabled = false
-                strokesHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(strokesHost.view)
-                NSLayoutConstraint.activate([
-                    strokesHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    strokesHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    strokesHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    strokesHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                strokesHost.attachAsChild(of: renderer)
-
-                // Step 9: lasso overlay — sits at the TOP of the
-                // renderer's subview stack so its chrome wins
-                // gestures over the per-element overlays. The
-                // overlay self-gates on `tool == .lasso` for
-                // capture and on `LassoSelectionState.hasSelection`
-                // for chrome — when neither applies it disables
-                // hit-testing entirely so element overlays underneath
-                // still receive touches normally.
-                let lassoHost = UIHostingController(
-                    rootView: LassoOverlayView(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                lassoHost.view.backgroundColor = .clear
-                lassoHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(lassoHost.view)
-                // OPEN_ISSUES #1: the lasso host is full-page and sits
-                // at the top of the renderer's subview stack. Its
-                // SwiftUI `.allowsHitTesting` self-gate does NOT reach
-                // the UIKit `_UIHostingView`, so an interaction-enabled
-                // host absorbs every finger tap before it can fall
-                // through to the image / sticky / audio overlays below.
-                // Start non-interactive unless the lasso tool is
-                // already active; `applyOverlayHitTestingToAll` keeps
-                // it in sync on every tool change.
-                lassoHost.view.isUserInteractionEnabled =
-                    viewModel.selectedTool.isLassoMode
-                NSLayoutConstraint.activate([
-                    lassoHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    lassoHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    lassoHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    lassoHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                lassoHost.attachAsChild(of: renderer)
+                overlaysHost.attachAsChild(of: renderer)
 
                 contentView.addSubview(renderer)
 
                 #if DEBUG
-                // Fix 1 — touch-path diagnostic, per-page layers.
-                // `renderer` is the page container; the image /
-                // sticky / audio hosts are the SwiftUI overlay
-                // mounts whose element gestures go missing.
+                // OPEN_ISSUES #1 touch-path diagnostic. Only two
+                // renderer subviews carry interaction now: the
+                // renderer itself and the single overlays host.
                 let pidTag = page.id.uuidString.prefix(8)
                 TouchPathLogger.attach(to: renderer,
                                        label: "4. page \(pidTag) renderer")
-                TouchPathLogger.attach(to: imagesHost.view,
-                                       label: "6. page \(pidTag) image overlay host")
-                TouchPathLogger.attach(to: stickyHost.view,
-                                       label: "6. page \(pidTag) sticky overlay host")
-                TouchPathLogger.attach(to: audioHost.view,
-                                       label: "6. page \(pidTag) audio overlay host")
+                TouchPathLogger.attach(to: overlaysHost.view,
+                                       label: "6. page \(pidTag) overlays host")
                 #endif
 
                 hosts.append(PageHostState(
-                    pageId:          page.id,
-                    frame:           frame,
-                    renderer:        renderer,
-                    templateHost:    templateHost,
-                    imagesHost:      imagesHost,
-                    pdfPagesHost:    pdfPagesHost,
-                    highlightsHost:  highlightsHost,
-                    audioHost:       audioHost,
-                    stickyHost:      stickyHost,
-                    textBlockHost:   textBlockHost,
-                    textElementsHost: textElementsHost,
-                    strokesHost:     strokesHost,
-                    lassoHost:       lassoHost,
-                    template:        page.backgroundTemplate
+                    pageId:       page.id,
+                    frame:        frame,
+                    renderer:     renderer,
+                    templateHost: templateHost,
+                    overlaysHost: overlaysHost,
+                    template:     page.backgroundTemplate
                 ))
                 y += baseSize.height + pageGap
             }
@@ -868,15 +604,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // removed — otherwise the VC graph holds dangling
                 // children whose `.view` no longer has a window.
                 hosts[i].templateHost.detachFromParentVC()
-                hosts[i].imagesHost.detachFromParentVC()
-                hosts[i].pdfPagesHost.detachFromParentVC()
-                hosts[i].highlightsHost.detachFromParentVC()
-                hosts[i].audioHost.detachFromParentVC()
-                hosts[i].stickyHost.detachFromParentVC()
-                hosts[i].textBlockHost.detachFromParentVC()
-                hosts[i].textElementsHost.detachFromParentVC()
-                hosts[i].strokesHost.detachFromParentVC()
-                hosts[i].lassoHost.detachFromParentVC()
+                hosts[i].overlaysHost.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
@@ -1224,109 +952,28 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// non-drawing tool is active. Acceptable — the user
         /// explicitly switched away from a drawing tool. Switching
         /// back to any drawing tool restores `true`.
-        func applyOverlayHitTestingToAll(
-            canvasInteractive desired: Bool,
-            tool: CeciliasNotesTool
-        ) {
-            // OPEN_ISSUES #1: gate the lasso overlay host at the UIKit
-            // layer. It's full-page and top-of-stack, so while it's
-            // interaction-enabled UIKit's back-to-front hit-test walk
-            // stops at it and no tap reaches the element overlays
-            // underneath. The host's SwiftUI body self-gates with
-            // `.allowsHitTesting`, but that does not propagate to the
-            // `_UIHostingView`, so the gate has to be applied here.
-            //
-            // Gated on the active tool only. This is intentionally
-            // stricter than LassoOverlayView's own
-            // `.allowsHitTesting(isLassoActive || selectionForThisPage)`
-            // — when a selection exists but the lasso tool is not
-            // active, the selection chrome stays visible but is not
-            // hit-testable until the user switches back to the lasso
-            // tool. See the issue-#1 notes in OPEN_ISSUES.md.
-            let lassoInteractive = tool.isLassoMode
+        func applyOverlayHitTestingToAll(canvasInteractive desired: Bool) {
             for h in hosts {
-                if let canvas = h.canvasView,
-                   canvas.isUserInteractionEnabled != desired {
+                guard let canvas = h.canvasView else { continue }
+                if canvas.isUserInteractionEnabled != desired {
                     canvas.isUserInteractionEnabled = desired
-                }
-                if h.lassoHost.view.isUserInteractionEnabled != lassoInteractive {
-                    h.lassoHost.view.isUserInteractionEnabled = lassoInteractive
                 }
             }
         }
 
-        /// Bring the per-page overlay matching the active tool to the
-        /// front inside its renderer. Without this, the per-page overlay
-        /// stack order (image → audio → lecture → sticky → text) means
-        /// the text-block hosting view sits on TOP of the image overlay,
-        /// and `UIHostingController.view` absorbs finger hits even when
-        /// its SwiftUI body has no interactive content. Re-ordering the
-        /// SwiftUI hosting views per the active tool puts the right
-        /// overlay's tap-catcher first in the responder chain. See Bug 4.
-        func promoteActiveOverlayToFront(for tool: CeciliasNotesTool) {
-            for h in hosts {
-                let renderer = h.renderer
-                switch true {
-                case tool.isImageMode:
-                    renderer.bringSubviewToFront(h.imagesHost.view)
-                case tool.isStickyNoteMode:
-                    renderer.bringSubviewToFront(h.stickyHost.view)
-                case tool.isLassoMode:
-                    // Step 9: lasso captures gestures on top of
-                    // every per-element overlay so a freeform drag
-                    // over images / strokes / text isn't stolen
-                    // by those overlays' own tap recognisers.
-                    renderer.bringSubviewToFront(h.lassoHost.view)
-                case tool.isTextMode:
-                    // V6 text-elements layer wins tap routing over
-                    // the legacy TextBlock layer in text mode so
-                    // tap-to-create lands on the new primitive.
-                    renderer.bringSubviewToFront(h.textBlockHost.view)
-                    renderer.bringSubviewToFront(h.textElementsHost.view)
-                case tool.isCursorMode:
-                    // Cursor mode: text elements first (so tap-to-
-                    // edit reaches them), then sticky/audio/
-                    // highlights/PDF/images for selection. Step 5:
-                    // lecture host collapsed into the audio host —
-                    // single audio overlay covers both short notes
-                    // and lectures. Step 5.5: highlights sit just
-                    // above the PDF layer so the cursor can pick
-                    // them up before any underlying PDF reference.
-                    renderer.bringSubviewToFront(h.imagesHost.view)
-                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
-                    renderer.bringSubviewToFront(h.highlightsHost.view)
-                    renderer.bringSubviewToFront(h.audioHost.view)
-                    renderer.bringSubviewToFront(h.stickyHost.view)
-                    renderer.bringSubviewToFront(h.textElementsHost.view)
-                default:
-                    // Drawing tools — restore the standard stacking
-                    // order. `bringSubviewToFront` moves each
-                    // subview to the absolute top in sequence, so
-                    // the last call wins. Step 5.5: highlights must
-                    // paint OVER the PDF (translucent 0.4-alpha
-                    // overlay), so the PDF goes back first, then
-                    // highlights, then the rest. Image / sticky /
-                    // text all live under the PencilKit canvas
-                    // (mounted in contentView, above this stack)
-                    // when a drawing tool is active.
-                    renderer.bringSubviewToFront(h.imagesHost.view)
-                    renderer.bringSubviewToFront(h.pdfPagesHost.view)
-                    renderer.bringSubviewToFront(h.highlightsHost.view)
-                    renderer.bringSubviewToFront(h.audioHost.view)
-                    renderer.bringSubviewToFront(h.stickyHost.view)
-                    renderer.bringSubviewToFront(h.textBlockHost.view)
-                    renderer.bringSubviewToFront(h.textElementsHost.view)
-                }
-                // Step 9: lasso layer always sits at the absolute
-                // top of the renderer stack so an active selection's
-                // chrome (drag bbox / handles / delete) survives
-                // tool changes. The overlay self-gates hit-testing
-                // on `tool == .lasso || hasSelection` so when
-                // neither applies it lets touches fall through to
-                // the per-element overlays below.
-                renderer.bringSubviewToFront(h.lassoHost.view)
-            }
-        }
+        // OPEN_ISSUES #1: `promoteActiveOverlayToFront` is gone. It
+        // existed to shuffle the per-tool z-order of nine separate
+        // overlay hosts so the right one's tap-catcher reached the
+        // front of the renderer's subview stack. With every overlay
+        // now inside one `PageOverlaysContainer`, hit routing happens
+        // inside a single SwiftUI tree — SwiftUI delivers each tap to
+        // the element actually at the point — so a fixed back-to-front
+        // ZStack order in the container replaces all of that.
+        //
+        // The lasso host no longer needs UIKit-layer interaction
+        // gating either: `LassoOverlayView` self-gates with
+        // `.allowsHitTesting`, which is honoured now that it sits in
+        // the same SwiftUI tree as the overlays it must not absorb.
 
         private func applyTool(_ tool: CeciliasNotesTool, to canvasView: PKCanvasView) {
             switch tool {

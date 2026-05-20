@@ -282,25 +282,50 @@ above if they fail.
   and UIKit's native reverse-z hit-test routes the tap to whichever
   overlay owns the tapped element — no container shim required.
 
-  **Behaviour note (Fix 2).** When overlay A holds a selection its
-  catcher is full-page, so the *first* tap on an element in a
-  different overlay B is consumed as "dismiss A's selection"; a
-  second tap selects B. Deselect-then-select is intentional and
-  predictable — making a cross-overlay element tap beat a sibling
-  overlay's catcher needs the single-overlay-host refactor
-  (`MEDIA_SUBSYSTEM_AUDIT.md` §6.A) and is out of scope here.
+  **Fix 1 and Fix 2 did not work — decisive finding.** Device logs
+  after Fix 2 still showed `TextElementsOverlayView` absorbing every
+  tap. The `[Renderer-hit]` per-subview probe settled it: a
+  `_UIHostingView` claims its **entire frame** for hit-testing
+  whenever `isUserInteractionEnabled` is true — proven by an overlay
+  with zero elements and no catcher (`[TextCatcher v3]
+  showsBackgroundCatcher=false elementCount=0`) still returning
+  *itself* from `hitTest`. Every `userInteraction=true` overlay host
+  claimed every point; every `userInteraction=false` host passed
+  through. Hit-testing correlated 100% with the flag and 0% with
+  content. `_UIHostingView` is *greedy* — it does not honour SwiftUI
+  hit-test transparency at the host boundary. So nothing done inside
+  an overlay's SwiftUI body (Fix 2's catcher gating) and no per-host
+  z-order tweak (Fix 1) could ever route a tap past the topmost
+  greedy host. The earlier "prime suspect" lines were all wrong; the
+  prompt author's original "greedy full-bounds hit-testing" call was
+  right.
 
-  Verify: in cursor mode with nothing selected, tap an image /
-  sticky note / audio play button → the matching `[ImageGesture] /
-  [StickyGesture] / [AudioPlay] 1. tap received` log fires, and
-  `[Renderer-hit]` shows `super.hitTest` resolving to the matching
-  overlay (or a `UITextView` for a text element) rather than
-  `TextElementsOverlayView`. With an element selected, an empty-area
-  tap still deselects; the text / sticky tools still create on an
-  empty tap; tapping a text element still enters edit mode. Lasso
-  drag-select still works; Pencil inking still works in inking modes.
-  The `[Renderer-hit]` diagnostic (`673f3c9`) stays in `PageRenderer`
-  for this verification pass — remove it in a separate commit once
+  **Fix 3 — single overlay host (the actual fix).** The nine
+  interactive overlays (stroke seed, legacy text-block, image, PDF
+  page, highlight, audio, sticky, V6 text element, lasso) are now
+  children of one `PageOverlaysContainer` ZStack mounted in a single
+  `UIHostingController`. One `_UIHostingView` ⇒ hit routing happens
+  *inside* one SwiftUI tree, where SwiftUI correctly delivers each
+  tap to the element (or background catcher) actually at the point.
+  Cross-host absorption is now structurally impossible. The mount
+  code in `ContinuousCanvasView` builds one host per page instead of
+  nine; `promoteActiveOverlayToFront` is deleted (a fixed ZStack
+  order replaces it); `applyOverlayHitTestingToAll`'s lasso gating is
+  removed (`LassoOverlayView`'s own `.allowsHitTesting` is honoured
+  now that it shares the tree). Fix 2's `showsBackgroundCatcher`
+  gating stays and is now load-bearing — within one tree a gated-off
+  catcher genuinely lets SwiftUI route around it. The template
+  pattern stays a separate non-interactive host.
+
+  Verify: tap an image / sticky note / audio play button → the
+  matching `[ImageGesture] / [StickyGesture] / [AudioPlay] 1. tap
+  received` log fires; move the element → drag works. Create + move
+  a sticky, an image, an audio clip. Tapping empty space still
+  deselects; text / sticky tools still create on an empty tap;
+  tapping a text element still enters edit mode. Lasso drag-select
+  still works; Pencil inking still works in inking modes. The
+  `[Renderer-hit]` / `[TextCatcher]` diagnostics stay in for this
+  verification pass — remove them in a separate commit once
   confirmed.
 
   Ruled out — do not retry (disproven by `[TouchPath]` +
