@@ -94,4 +94,44 @@ final class PageRenderer: UIView {
         ctx.setFillColor(paper.cgColor)
         ctx.fill(self.bounds)
     }
+
+    // MARK: - Diagnostic — OPEN_ISSUES #1 (element-tap gesture absorption)
+
+    #if DEBUG
+    /// Observe-only `hitTest` instrumentation. The `[TouchPath]`
+    /// logger localised the touch death to this layer — the sequence
+    /// reaches "4. page renderer" and stops; label 5 (PKCanvasView)
+    /// and label 6 (image/sticky/audio overlay hosts) never fire.
+    ///
+    /// For every touch-type hit test over the page this logs:
+    ///   • the point received,
+    ///   • the view `super.hitTest` actually resolves to,
+    ///   • this renderer's superview, and
+    ///   • each immediate subview in z-order (back-to-front) with its
+    ///     type, frame, `isUserInteractionEnabled`, `isHidden`, alpha
+    ///     — the four properties that decide whether `hitTest`
+    ///     descends into a subview.
+    ///
+    /// Pure observation: returns `super`'s result unchanged, exactly
+    /// like `TouchPathLogger`. Remove once #1 is resolved.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let result = super.hitTest(point, with: event)
+        if event?.type == .touches, bounds.contains(point) {
+            let resultType = result.map { String(describing: type(of: $0)) } ?? "nil"
+            let superType  = superview.map { String(describing: type(of: $0)) } ?? "nil"
+            print("[Renderer-hit] point=\(point) rendererFrame=\(frame) "
+                + "super.hitTest=\(resultType) superview=\(superType)")
+            if subviews.isEmpty {
+                print("[Renderer-hit]   subviews: none — overlay hosts are NOT children of this renderer")
+            } else {
+                for (i, sub) in subviews.enumerated() {
+                    print("[Renderer-hit]   subview[\(i)] \(type(of: sub)) "
+                        + "frame=\(sub.frame) userInteraction=\(sub.isUserInteractionEnabled) "
+                        + "hidden=\(sub.isHidden) alpha=\(sub.alpha)")
+                }
+            }
+        }
+        return result
+    }
+    #endif
 }
