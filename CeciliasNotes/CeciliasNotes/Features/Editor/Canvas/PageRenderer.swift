@@ -125,9 +125,22 @@ final class PageRenderer: UIView {
                 print("[Renderer-hit]   subviews: none — overlay hosts are NOT children of this renderer")
             } else {
                 for (i, sub) in subviews.enumerated() {
+                    // Per-subview probe — call `hitTest` on each
+                    // overlay host directly. `→ nil` means that
+                    // host is transparent at this point and the
+                    // touch passes through it; `→ <self>` means
+                    // that host claims the point. This is the
+                    // decisive signal: it tells us, independent of
+                    // z-order, exactly which overlay hosts are
+                    // greedy (claim every point) vs which correctly
+                    // pass non-element taps through.
+                    let localPoint = sub.convert(point, from: self)
+                    let probe = sub.hitTest(localPoint, with: event)
+                    let probeType = probe.map { String(describing: type(of: $0)) } ?? "nil (passes through)"
                     print("[Renderer-hit]   subview[\(i)] \(type(of: sub)) "
                         + "frame=\(sub.frame) userInteraction=\(sub.isUserInteractionEnabled) "
-                        + "hidden=\(sub.isHidden) alpha=\(sub.alpha)")
+                        + "hidden=\(sub.isHidden) alpha=\(sub.alpha) "
+                        + "→ hitTest=\(probeType)")
                 }
             }
         }

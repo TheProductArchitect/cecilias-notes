@@ -141,6 +141,28 @@ struct TextElementsOverlayView: View {
             // sheet). Re-fetch so it appears immediately.
             refreshTick &+= 1
         }
+        #if DEBUG
+        // OPEN_ISSUES #1 diagnostic — reports whether the gated
+        // background catcher is mounted. The `v3` marker confirms
+        // this build includes the catcher-gating fix (`8824a14`);
+        // if no `[TextCatcher v3]` line appears, the device is
+        // running a stale build.
+        .onAppear {
+            print("[TextCatcher v3] onAppear page=\(pageId.uuidString.prefix(8)) "
+                + "showsBackgroundCatcher=\(showsBackgroundCatcher) "
+                + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
+                + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
+                + "tool=\(viewModel.selectedTool.identity) "
+                + "elementCount=\(elements.count)")
+        }
+        .onChange(of: showsBackgroundCatcher) { old, new in
+            print("[TextCatcher v3] page=\(pageId.uuidString.prefix(8)) "
+                + "showsBackgroundCatcher \(old) → \(new) "
+                + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
+                + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
+                + "tool=\(viewModel.selectedTool.identity)")
+        }
+        #endif
     }
 
     // MARK: - Per-element container
