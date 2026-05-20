@@ -41,6 +41,26 @@ adds the `PKCanvasView` to `contentView` **after** each page's
 element overlay, and its gesture recognisers consume the touch even
 in `.pencilOnly` mode.
 
+**Ruled out — do not retry.** Each of these was tried and is
+disproven by the `[TouchPath]` evidence above; repeating them wastes
+a cycle.
+- *Element-view modifier reordering* (the order of `contentShape` /
+  `gesture` / `position`). 4+ attempts. The touch never reaches the
+  element view, so nothing in its modifier chain can be the cause.
+- *`.position → .offset` on the element views* (`91b0617`). Wrong
+  layer for the same reason, and it broke scrolling — reverted in
+  `c46440a`.
+- *Adding more SwiftUI gestures* (`simultaneousGesture`, gesture
+  priority, `highPriorityGesture`) inside the element views — same
+  wrong-layer trap.
+The fix lives at `PageRenderer` / `PKCanvasView` z-order and
+hit-testing, nowhere above it. First thing to check next session:
+whether `canvas.isUserInteractionEnabled = viewModel.canvasIsInteractive`
+is genuinely `false` in cursor / image / sticky modes when the bug
+reproduces — that flag is the *existing* mitigation, so the bug
+means either it isn't false when it should be, or disabling it on
+the PKCanvasView isn't sufficient.
+
 **Logging.** All `#if DEBUG`.
 - `[TouchPath]` — `TouchPathLogger`. On install:
   `[TouchPath] installed logger '<label>' on <ViewType>`. On tap:
@@ -82,6 +102,19 @@ between retry attempts.
 **Tried and failed.** (1) Moved the call onboarding → `LibraryView.onAppear`
 (`a7b6140`). (2) EAGAIN-aware retry with backoff (`16aeb92`).
 Neither helped — the keyboard is still mid-dismiss.
+
+**Ruled out — do not retry.**
+- *Plain retry loops.* Every retry hits the same EAGAIN → "cancelled"
+  condition. Retrying without changing the scene/keyboard state
+  changes nothing — this is exactly why the fix is a state *gate*,
+  not more retries.
+- *Relocating the call to another view's `onAppear`.* onboarding →
+  `LibraryView.onAppear` didn't help; the keyboard is still
+  tearing down wherever the call lands immediately after onboarding.
+- *Removing `.environment(\.theme)` / `.preferredColorScheme` from
+  the `WindowGroup`.* An A/B test suggested this lets the call land,
+  but those modifiers are load-bearing for the whole theme system
+  and cannot be removed. Not a usable fix.
 
 **In place now.** `IconUpdateGate` (`33f3f42`) holds the swap until
 the scene is foreground-active **and** the keyboard is fully
