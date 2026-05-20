@@ -1615,17 +1615,31 @@ final class EditorViewModel: ObservableObject {
             },
             navigateToPage: { [weak self] newPageId in
                 guard let self else { return }
-                self.refreshPages()
-                if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
-                    self.currentPageIndex = idx
-                    self.pendingScrollPageIndex = idx
-                    #if DEBUG
-                    print("[Dictation] navigateToPage — newPageId=\(newPageId) idx=\(idx) currentPage.id now=\(self.currentPage.id)")
-                    #endif
-                } else {
-                    #if DEBUG
-                    print("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
-                    #endif
+                // `startDictation` invokes this closure synchronously
+                // after an `await` resume, so its `@Published`
+                // mutations (`refreshPages()`, `currentPageIndex`,
+                // `pendingScrollPageIndex`) can land inside a SwiftUI
+                // view-update pass — the source of several of the
+                // "Publishing changes from within view updates"
+                // warnings logged on dictation start. Hopping one
+                // runloop tick moves the whole navigation cluster
+                // out of the update pass. Safe to defer: nothing in
+                // the dictation state machine depends on the page
+                // index (only on `RecordingSession.state`, which is
+                // NOT deferred).
+                Task { @MainActor in
+                    self.refreshPages()
+                    if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
+                        self.currentPageIndex = idx
+                        self.pendingScrollPageIndex = idx
+                        #if DEBUG
+                        print("[Dictation] navigateToPage — newPageId=\(newPageId) idx=\(idx) currentPage.id now=\(self.currentPage.id)")
+                        #endif
+                    } else {
+                        #if DEBUG
+                        print("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
+                        #endif
+                    }
                 }
             }
         )

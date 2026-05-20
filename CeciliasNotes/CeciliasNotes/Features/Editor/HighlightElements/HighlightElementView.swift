@@ -41,13 +41,16 @@ struct HighlightElementView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Order: contentShape + gesture BEFORE position. The
-            // legacy pattern (position → contentShape → gesture)
-            // bound the gesture to the parent-sized wrapper, which
-            // either swallowed taps on adjacent highlights or
-            // never fired at all under SwiftUI iOS 26's gesture
-            // hit-testing rules. Mirrors the Step 7.2 sticky fix
-            // and Bug-3 audit applied across image / PDF / audio.
+            // STRUCTURAL FIX — `.offset`, not `.position`. A
+            // `.position`'d paint expands to fill the page-sized
+            // overlay; stacked page-sized highlight views then break
+            // gesture arbitration (adjacent highlights swallow each
+            // other's taps). `.offset` keeps the paint's layout
+            // bounds at `renderRect` size. The `.frame(maxWidth/
+            // maxHeight: .infinity, .topLeading)` anchors this
+            // ZStack to the overlay's top-left so the offset origin
+            // is stable — equivalent to the explicit page-sized
+            // frame the image / PDF / audio / sticky views carry.
             paint
                 .frame(width: renderRect.width, height: renderRect.height)
                 .contentShape(Rectangle())
@@ -56,12 +59,13 @@ struct HighlightElementView: View {
                         if !isSelected { isSelected = true }
                     }
                 )
-                .position(x: renderRect.midX, y: renderRect.midY)
+                .offset(x: renderRect.minX, y: renderRect.minY)
 
             if isSelected {
                 selectionChrome
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Paint

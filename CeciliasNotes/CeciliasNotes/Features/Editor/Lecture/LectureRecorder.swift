@@ -490,6 +490,23 @@ final class LectureRecorder: ObservableObject {
             committedTranscript =
                 (committedTranscript + " " + finalSegment)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if !liveTranscript.isEmpty {
+            // The task ended WITHOUT a final result — a silence
+            // timeout or a daemon error (`result == nil`). Its
+            // in-flight words were only ever delivered as
+            // `isFinal == false` partials, so `finalSegment` is nil
+            // and the branch above can't see them. `liveTranscript`
+            // already holds `committedTranscript + " " + lastPartial`
+            // (set on every partial callback), so promote the whole
+            // thing to `committedTranscript`. Without this the next
+            // session starts from a stale `committedTranscript` and
+            // the transcript visibly resets — the 25→9 character
+            // drop seen in the device dictation logs.
+            committedTranscript = liveTranscript
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            #if DEBUG
+            print("[Dictation] rotation without final result — promoted \(committedTranscript.count)-char liveTranscript to committed (partial would otherwise be lost)")
+            #endif
         }
         // End the previous request's audio and finish the task.
         // `finish()` is preferred over `cancel()` here — it lets
