@@ -23,8 +23,9 @@ enum StrokeCommit {
     static func ensureStrokeElement(
         forPageId pageId: UUID,
         notebookId: UUID,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> (element: PageElement, content: StrokeContent)? {
+        let context = context ?? StorageService.shared.context
         if let existing = strokeElement(forPageId: pageId, context: context) {
             if let content = existing.strokeContent {
                 return (existing, content)
@@ -68,8 +69,9 @@ enum StrokeCommit {
     @MainActor
     static func strokeElement(
         forPageId pageId: UUID,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> PageElement? {
+        let context = context ?? StorageService.shared.context
         let pid = pageId
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {
@@ -92,8 +94,9 @@ enum StrokeCommit {
         forPageId pageId: UUID,
         notebookId: UUID,
         drawing: PKDrawing,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> Bool {
+        let context = context ?? StorageService.shared.context
         guard let pair = ensureStrokeElement(
             forPageId: pageId,
             notebookId: notebookId,

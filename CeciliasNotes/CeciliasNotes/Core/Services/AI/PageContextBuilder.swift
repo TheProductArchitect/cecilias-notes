@@ -25,8 +25,9 @@ enum PageContextBuilder {
     static func build(
         page: Page,
         notebookTitle: String,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> PageContext {
+        let context = context ?? StorageService.shared.context
         let pid = page.id
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {

@@ -25,8 +25,8 @@ final class TrashService {
     private let storage: StorageService
     private var context: ModelContext { storage.context }
 
-    init(storage: StorageService = .shared) {
-        self.storage = storage
+    init(storage: StorageService? = nil) {
+        self.storage = storage ?? .shared
     }
 
     // MARK: - Fetch

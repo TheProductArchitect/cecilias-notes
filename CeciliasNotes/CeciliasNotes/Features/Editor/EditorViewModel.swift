@@ -521,13 +521,16 @@ final class EditorViewModel: ObservableObject {
         // isolation rules).
         storage: StorageService? = nil,
         userDefaults: UserDefaults = .standard,
-        theme: Theme = .default
+        theme: Theme? = nil
     ) {
         self.notebook        = notebook
         let resolvedStorage  = storage ?? .shared
+        // Resolve `@MainActor` singletons in the body, not as default
+        // arguments — default-value expressions are nonisolated.
+        let resolvedTheme    = theme ?? .default
         self.storage         = resolvedStorage
         self.userDefaults    = userDefaults
-        self.theme           = theme
+        self.theme           = resolvedTheme
 
         let fetched = resolvedStorage.fetchPages(in: notebook)
         // SwiftData should always return at least one page (createNotebook seeds one),
@@ -555,7 +558,7 @@ final class EditorViewModel: ObservableObject {
         // `ToolSettingsStore`.
         self.selectedTool     = .cursor
 
-        loadPersistedState(theme: theme)
+        loadPersistedState(theme: resolvedTheme)
 
         // Now that init is done, we can mark this notebook as "currently open" —
         // doing it after init avoids racing the init-time resume check above.
@@ -726,7 +729,12 @@ final class EditorViewModel: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshPencilDoubleTapActionFromUserDefaults()
+            // `queue: .main` guarantees this fires on the main
+            // thread; `assumeIsolated` lets us call the
+            // `@MainActor` method without a Task hop or a warning.
+            MainActor.assumeIsolated {
+                self?.refreshPencilDoubleTapActionFromUserDefaults()
+            }
         }
     }
 
@@ -1826,7 +1834,7 @@ final class EditorViewModel: ObservableObject {
 
     /// Returns the AudioRecorder's live level stream for the waveform view.
     func audioLevelStream() async -> AsyncStream<Float> {
-        await audioRecorder.levelStream ?? AsyncStream { $0.finish() }
+        audioRecorder.levelStream ?? AsyncStream { $0.finish() }
     }
 
     private var pendingRecordingURL: URL?

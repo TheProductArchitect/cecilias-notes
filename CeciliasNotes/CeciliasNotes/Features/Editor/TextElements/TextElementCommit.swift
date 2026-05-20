@@ -28,8 +28,9 @@ enum TextElementCommit {
         notebookId: UUID,
         normalizedRect: CGRect,
         size: TextSize = .body,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> PageElement? {
+        let context = context ?? StorageService.shared.context
         let pid = pageId
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {

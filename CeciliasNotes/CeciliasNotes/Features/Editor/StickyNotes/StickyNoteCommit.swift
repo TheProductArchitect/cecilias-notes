@@ -34,8 +34,9 @@ enum StickyNoteCommit {
         notebookId: UUID,
         pageSize: CGSize,
         colorVariant: String = "yellow",
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> PageElement? {
+        let context = context ?? StorageService.shared.context
         guard pageSize.width > 0, pageSize.height > 0 else { return nil }
         let normW = Double(defaultCardSize.width  / pageSize.width)
         let normH = Double(defaultCardSize.height / pageSize.height)
@@ -101,8 +102,9 @@ enum StickyNoteCommit {
     @MainActor
     static func softDelete(
         elementId: UUID,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.id == elementId }
         )

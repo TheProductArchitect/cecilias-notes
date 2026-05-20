@@ -235,20 +235,29 @@ struct PDFPagePickerSheet: View {
 
     // MARK: - PDF loading
 
+    /// Transfers a freshly-loaded `PDFDocument` out of a detached
+    /// task. `PDFDocument` isn't `Sendable`; the document is created
+    /// inside the task and handed off exactly once, never shared, so
+    /// `@unchecked Sendable` is sound here.
+    private struct LoadedPDF: @unchecked Sendable {
+        let document: PDFDocument
+        let pageCount: Int
+    }
+
     private func loadDocument() async {
         let url = sourceURL
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
-        let loaded: (PDFDocument, Int)? = await Task.detached(priority: .userInitiated) {
+        let loaded: LoadedPDF? = await Task.detached(priority: .userInitiated) {
             guard let doc = PDFDocument(url: url) else { return nil }
-            return (doc, doc.pageCount)
+            return LoadedPDF(document: doc, pageCount: doc.pageCount)
         }.value
 
         await MainActor.run {
             if let loaded {
-                self.document = loaded.0
-                self.pageCount = loaded.1
+                self.document = loaded.document
+                self.pageCount = loaded.pageCount
             }
         }
     }

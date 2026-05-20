@@ -33,8 +33,9 @@ enum LassoGroupOps {
         selection: LassoSelectionState,
         delta: CGSize,
         pageSize: CGSize,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         guard delta != .zero, pageSize.width > 0, pageSize.height > 0 else { return }
 
         let dxNorm = delta.width  / pageSize.width
@@ -85,8 +86,9 @@ enum LassoGroupOps {
         selection: LassoSelectionState,
         scale s: CGFloat,
         pageSize: CGSize,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         guard s > 0, s != 1, pageSize.width > 0, pageSize.height > 0 else { return }
         let anchor = CGPoint(x: selection.selectionBounds.midX,
                              y: selection.selectionBounds.midY)
@@ -134,8 +136,9 @@ enum LassoGroupOps {
         scaleX sx: CGFloat,
         scaleY sy: CGFloat,
         pageSize: CGSize,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         guard pageSize.width > 0, pageSize.height > 0 else { return }
         guard sx > 0, sy > 0, !(sx == 1 && sy == 1) else { return }
         let anchor = CGPoint(x: selection.selectionBounds.midX,
@@ -186,8 +189,9 @@ enum LassoGroupOps {
         selection: LassoSelectionState,
         angle: CGFloat,
         pageSize: CGSize,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         guard angle != 0, pageSize.width > 0, pageSize.height > 0 else { return }
         let anchor = CGPoint(x: selection.selectionBounds.midX,
                              y: selection.selectionBounds.midY)
@@ -228,8 +232,9 @@ enum LassoGroupOps {
     /// element's PKDrawing. Clears the selection on success.
     static func delete(
         selection: LassoSelectionState,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) {
+        let context = context ?? StorageService.shared.context
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             element.deletedAt = Date()

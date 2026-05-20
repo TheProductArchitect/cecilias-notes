@@ -51,8 +51,12 @@ final class AIService {
     /// Chunking + map-reduce summarisation is a follow-up.
     private let maxPromptCharacters = 12_000
 
-    init(provider: AIProvider = AppleFoundationProvider()) {
-        self.provider = provider
+    init(provider: AIProvider? = nil) {
+        // Resolve the default in the (`@MainActor`) body rather than
+        // as a default argument — default-argument expressions are
+        // evaluated in a nonisolated context, which trips a Swift 6
+        // warning on `AppleFoundationProvider()`.
+        self.provider = provider ?? AppleFoundationProvider()
     }
 
     /// Replace the active provider. Reserved for the eventual

@@ -30,8 +30,9 @@ enum PDFDerivedExport {
     /// otherwise. Cheap synchronous SwiftData fetch.
     static func derivationSource(
         for notebook: Notebook,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> UUID? {
+        let context = context ?? StorageService.shared.context
         let pages = (notebook.pages ?? [])
             .filter { !$0.isDeleted }
             .sorted { $0.pageNumber < $1.pageNumber }
@@ -44,8 +45,9 @@ enum PDFDerivedExport {
     /// — matches the import path's seeding contract.
     static func fullBleedPDF(
         forPageId pageId: UUID,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) -> PDFPageContent? {
+        let context = context ?? StorageService.shared.context
         let pid = pageId
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {
@@ -70,8 +72,9 @@ enum PDFDerivedExport {
         pages: [Page],
         outputURL: URL,
         progress: @escaping @Sendable (Double) -> Void,
-        context: ModelContext = StorageService.shared.context
+        context: ModelContext? = nil
     ) throws -> Int {
+        let context = context ?? StorageService.shared.context
         let outDoc = PDFDocument()
 
         let total = pages.count
@@ -375,7 +378,7 @@ enum PDFDerivedExport {
 /// element overlays in the PDF-derived export. PDFKit caches the
 /// rendered tiles.
 final class ImageStampAnnotation: PDFAnnotation {
-    private nonisolated(unsafe) let image: UIImage
+    private let image: UIImage
 
     nonisolated init(bounds: CGRect, image: UIImage) {
         self.image = image

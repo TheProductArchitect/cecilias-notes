@@ -1003,7 +1003,7 @@ private extension CGSize {
 /// the annotation's appearance is materialised at draw time, not
 /// embedded as a PDF-specific feature.
 private final class StrokeStampAnnotation: PDFAnnotation {
-    private nonisolated(unsafe) let strokeImage: UIImage
+    private let strokeImage: UIImage
 
     nonisolated init(bounds: CGRect, image: UIImage) {
         self.strokeImage = image
