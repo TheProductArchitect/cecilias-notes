@@ -87,6 +87,13 @@ struct ImageElementView: View {
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: 0.35).onEnded { _ in
                         print("[ImageGesture] 1b. long-press received on image body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected)")
+                        // Select on long-press too. A press held past
+                        // the long-press threshold does NOT also fire
+                        // the simultaneous `TapGesture`, so without
+                        // this a slow press never selects the image —
+                        // and the drag gesture (gated on `isSelected`)
+                        // never attaches, so the image can't be moved.
+                        if !isSelected { isSelected = true }
                     }
                 )
                 .gesture(isSelected ? imageDragGesture : nil)

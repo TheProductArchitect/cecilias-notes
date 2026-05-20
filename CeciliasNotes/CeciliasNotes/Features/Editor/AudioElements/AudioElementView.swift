@@ -208,6 +208,10 @@ struct AudioElementView: View {
                 .foregroundStyle(theme.accent)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(theme.accentMuted))
+                // Visible button stays 32pt; the tap target is
+                // expanded to 48pt (Apple's ~44pt minimum) so the
+                // user doesn't have to hit the icon exactly.
+                .padding(8)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
