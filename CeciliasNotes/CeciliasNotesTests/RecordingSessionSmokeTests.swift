@@ -99,6 +99,15 @@ final class RecordingSessionSmokeTests: XCTestCase {
         )
         DictationFlowCommit.updateText(elementId: elementId, text: "hello dictation")
 
+        // `updateText` intentionally defers its SwiftData write to the
+        // next main-runloop tick (it breaks a synchronous @Published
+        // chain — see the comment in DictationFlowCommit.updateText).
+        // Spin the runloop once so the deferred write lands before we
+        // read it back.
+        let deferred = expectation(description: "deferred updateText write")
+        DispatchQueue.main.async { deferred.fulfill() }
+        wait(for: [deferred], timeout: 2)
+
         let ctx = StorageService.shared.context
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.id == elementId }

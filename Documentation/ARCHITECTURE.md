@@ -11,7 +11,8 @@ paragraphs are preferred over prose; this is a reference, not a tutorial.
   on-device intelligence.
 - **Deployment target:** iOS 18.4. iPad only (`TARGETED_DEVICE_FAMILY`
   set in build settings).
-- **Stack:** Swift 6 + SwiftUI + UIKit (hybrid). PencilKit for ink,
+- **Stack:** Swift (Swift 5 language mode — see *Swift 6 migration
+  status* below) + SwiftUI + UIKit (hybrid). PencilKit for ink,
   Vision for OCR, Speech for transcription, Foundation Models (gated)
   for AI, CloudKit Database via SwiftData for sync, WidgetKit for the
   home and lock screen tiles.
@@ -297,6 +298,56 @@ should address. None are bugs; all are explicit deferrals.
   boundary. At ~10 callbacks/sec the cost is negligible, but if
   the buffer size grows (e.g. stereo, higher sample rate) this
   could be revisited with a serial-queue-backed Sendable wrapper.
+
+---
+
+## Swift 6 migration status
+
+**Honest accounting (verified 2026-05-20).** The project builds in
+the **Swift 5 language mode** — `SWIFT_VERSION = 5.0` in all eight
+build configurations. It has *not* been moved to Swift 6 mode.
+
+Commit `f69c6ac` ("Swift 6 actor isolation cleanup — zero errors
+under SWIFT_VERSION=6") is accurate on the narrow claim it makes:
+building with `xcodebuild … SWIFT_VERSION=6` succeeds with **zero
+errors**. But the commit *title* overstates completeness — the
+cleanup is partial:
+
+- The project's own build setting was never changed to `6.0`, so
+  the app ships compiled in Swift 5 mode.
+- Building under `SWIFT_VERSION=6` still emits **37 strict-concurrency
+  warnings**. They are warnings (not errors) in Swift 6 mode, so the
+  build passes — but they would need resolving before the project
+  could adopt Swift 6 mode as a clean baseline.
+
+No user-visible impact in the current Swift 5 build.
+
+### Outstanding warning sites (37, under `SWIFT_VERSION=6`)
+
+| File | Count | Pattern |
+|---|---|---|
+| `CloudSyncManager.swift` | 15 | main-actor `value` referenced from a `Sendable` closure |
+| `PDFPagePickerSheet.swift` | 6 | `PDFDocument` is not `Sendable`; `Task.value` crossing main-actor isolation |
+| `ContinuousCanvasView.swift` | 5 | main-actor `shared` / `hasPencil` / `fingerDrawingEnabled` from `Sendable` closures + nonisolated calls |
+| `ExportService.swift` | 2 | unnecessary `nonisolated(unsafe)` on a `Sendable` `UIImage` |
+| `PDFDerivedExport.swift` | 2 | unnecessary `nonisolated(unsafe)` on a `Sendable` `UIImage` |
+| `EditorViewModel.swift` | 2 | nonisolated call to `refreshPencilDoubleTapActionFromUserDefaults()`; redundant `await` |
+| `MediaPickerPresenter.swift` | 1 | mutation of captured `var` in concurrent code |
+| `MediaPickerController.swift` | 1 | mutation of captured `var` in concurrent code |
+| `AudioRecorder.swift` | 1 | `AVAudioPCMBuffer` captured in a `@Sendable` closure (+ `@preconcurrency` hint) |
+| `SpeechTranscriber.swift` | 1 | nonisolated call to a main-actor initializer |
+
+The `ExportService` / `PDFDerivedExport` redundant-annotation sites
+and the `EditorViewModel` redundant `await` are mechanical. The
+`PDFPagePickerSheet`, `MediaPicker*`, and `AudioRecorder` sites are
+genuine concurrency-boundary work (non-`Sendable` Apple types,
+captured-`var` races) and need careful restructuring with the
+media / audio paths exercised — bigger than a focused commit.
+
+**Plan:** complete the cleanup and flip `SWIFT_VERSION` to `6.0` as
+a dedicated commit once the media/audio concurrency restructuring
+can be tested properly. Until then this section is the source of
+truth — not the `f69c6ac` commit message.
 
 ---
 

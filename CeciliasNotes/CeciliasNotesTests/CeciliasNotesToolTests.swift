@@ -37,8 +37,11 @@ final class CeciliasNotesToolTests: XCTestCase {
         XCTAssertTrue(CeciliasNotesTool.pen(colour: .black, width: 2, opacity: 1).hasWidth)
     }
 
-    func test_pixelEraser_hasWidth_isTrue() {
-        XCTAssertTrue(CeciliasNotesTool.eraser(mode: .pixel).hasWidth)
+    func test_pixelEraser_hasWidth_isFalse() {
+        // The pixel eraser used to expose a width slider; the spec
+        // retired that configurability, so every eraser mode now
+        // reports `hasWidth = false` (see CeciliasNotesTool.hasWidth).
+        XCTAssertFalse(CeciliasNotesTool.eraser(mode: .pixel).hasWidth)
     }
 
     func test_wholeStrokeEraser_hasWidth_isFalse() {
@@ -94,8 +97,15 @@ final class CeciliasNotesToolTests: XCTestCase {
         XCTAssertEqual(eraser.eraserType, .vector)
     }
 
-    func test_lasso_makesPKLassoTool() {
+    func test_lasso_makesInertPKTool() {
+        // Step 9 moved the lasso off PKLassoTool to a custom SwiftUI
+        // overlay. `makePKTool()` now returns the inert clear-ink
+        // placeholder shared by every non-stroke mode — the canvas
+        // never sees finger input in lasso mode.
         let pk = CeciliasNotesTool.lasso.makePKTool()
-        XCTAssertTrue(pk is PKLassoTool, "Expected PKLassoTool, got \(type(of: pk))")
+        let inking = pk as? PKInkingTool
+        XCTAssertNotNil(inking, "Expected inert PKInkingTool placeholder, got \(type(of: pk))")
+        XCTAssertEqual(inking?.color.cgColor.alpha, 0,
+                       "Lasso's placeholder PKTool must not paint")
     }
 }

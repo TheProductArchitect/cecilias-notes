@@ -92,6 +92,11 @@ struct PencilSqueezeDetector: UIViewRepresentable {
                 onSqueezeReleased()
             case .cancelled:
                 onSqueezeEndedOrCancelled?()
+            case .changed:
+                // Continuous updates while the squeeze is held — this
+                // detector only acts on the begin/end transitions, so
+                // intermediate `.changed` ticks are intentionally ignored.
+                break
             @unknown default:
                 break
             }
