@@ -285,7 +285,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // directly. The state machine adds the mode-axis check so a
         // lecture / audio recording also suppresses Pencil input
         // even when a drawing tool is selected.
-        coord.applyOverlayHitTestingToAll(canvasInteractive: viewModel.canvasIsInteractive)
+        coord.applyOverlayHitTestingToAll(
+            canvasInteractive: viewModel.canvasIsInteractive,
+            tool: viewModel.selectedTool
+        )
         // Bring the active-tool's overlay to the front inside each
         // renderer so finger taps on images / sticky-notes / text
         // blocks aren't swallowed by another overlay's hosting view.
@@ -782,6 +785,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 lassoHost.view.backgroundColor = .clear
                 lassoHost.view.translatesAutoresizingMaskIntoConstraints = false
                 renderer.addSubview(lassoHost.view)
+                // OPEN_ISSUES #1: the lasso host is full-page and sits
+                // at the top of the renderer's subview stack. Its
+                // SwiftUI `.allowsHitTesting` self-gate does NOT reach
+                // the UIKit `_UIHostingView`, so an interaction-enabled
+                // host absorbs every finger tap before it can fall
+                // through to the image / sticky / audio overlays below.
+                // Start non-interactive unless the lasso tool is
+                // already active; `applyOverlayHitTestingToAll` keeps
+                // it in sync on every tool change.
+                lassoHost.view.isUserInteractionEnabled =
+                    viewModel.selectedTool.isLassoMode
                 NSLayoutConstraint.activate([
                     lassoHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
                     lassoHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
@@ -1210,11 +1224,33 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// non-drawing tool is active. Acceptable — the user
         /// explicitly switched away from a drawing tool. Switching
         /// back to any drawing tool restores `true`.
-        func applyOverlayHitTestingToAll(canvasInteractive desired: Bool) {
+        func applyOverlayHitTestingToAll(
+            canvasInteractive desired: Bool,
+            tool: CeciliasNotesTool
+        ) {
+            // OPEN_ISSUES #1: gate the lasso overlay host at the UIKit
+            // layer. It's full-page and top-of-stack, so while it's
+            // interaction-enabled UIKit's back-to-front hit-test walk
+            // stops at it and no tap reaches the element overlays
+            // underneath. The host's SwiftUI body self-gates with
+            // `.allowsHitTesting`, but that does not propagate to the
+            // `_UIHostingView`, so the gate has to be applied here.
+            //
+            // Gated on the active tool only. This is intentionally
+            // stricter than LassoOverlayView's own
+            // `.allowsHitTesting(isLassoActive || selectionForThisPage)`
+            // — when a selection exists but the lasso tool is not
+            // active, the selection chrome stays visible but is not
+            // hit-testable until the user switches back to the lasso
+            // tool. See the issue-#1 notes in OPEN_ISSUES.md.
+            let lassoInteractive = tool.isLassoMode
             for h in hosts {
-                guard let canvas = h.canvasView else { continue }
-                if canvas.isUserInteractionEnabled != desired {
+                if let canvas = h.canvasView,
+                   canvas.isUserInteractionEnabled != desired {
                     canvas.isUserInteractionEnabled = desired
+                }
+                if h.lassoHost.view.isUserInteractionEnabled != lassoInteractive {
+                    h.lassoHost.view.isUserInteractionEnabled = lassoInteractive
                 }
             }
         }

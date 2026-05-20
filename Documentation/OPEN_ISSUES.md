@@ -11,81 +11,7 @@ the engineering effort.
 
 ---
 
-## 1. Element-tap gesture absorption — HIGH
-
-**Symptom.** Taps on image / sticky-note / audio elements never
-reach their SwiftUI element views. The views render
-(`[GestureAudit] … body render` logs fire) but the
-`[ImageGesture] / [StickyGesture] / [AudioPlay] 1. tap received`
-logs never fire. Images can't be selected; the audio play button
-doesn't respond.
-
-**Tried and failed.** Modifier-order patches at the element-view
-level — Steps 4, 7, 7.1, 7.2, audit `42c32aa`. Each appeared to
-work then regressed. A `.position → .offset` restructure of all
-five element views (`91b0617`) was a wrong-layer guess and was
-reverted (`c46440a`) after it also broke scrolling.
-
-**In place now.** `TouchPathLogger` (`33f3f42`) — observe-only,
-pass-through `UITapGestureRecognizer`s installed across the full
-touch path: UIWindow → editor root → scroll view → per-page
-`PageRenderer` → PKCanvasView → image/sticky/audio overlay hosts.
-Tapping an element and reading the `[TouchPath]` sequence shows
-which layer the touch dies at.
-
-**Evidence so far.** Device logs localise the absorber to the
-`PageRenderer` layer — the touch dies *before* reaching the element
-overlays. Prime suspect: `mountCanvas` in `ContinuousCanvasView`
-adds the `PKCanvasView` to `contentView` **after** each page's
-`renderer`, so the canvas is a sibling stacked on top of every
-element overlay, and its gesture recognisers consume the touch even
-in `.pencilOnly` mode.
-
-**Ruled out — do not retry.** Each of these was tried and is
-disproven by the `[TouchPath]` evidence above; repeating them wastes
-a cycle.
-- *Element-view modifier reordering* (the order of `contentShape` /
-  `gesture` / `position`). 4+ attempts. The touch never reaches the
-  element view, so nothing in its modifier chain can be the cause.
-- *`.position → .offset` on the element views* (`91b0617`). Wrong
-  layer for the same reason, and it broke scrolling — reverted in
-  `c46440a`.
-- *Adding more SwiftUI gestures* (`simultaneousGesture`, gesture
-  priority, `highPriorityGesture`) inside the element views — same
-  wrong-layer trap.
-The fix lives at `PageRenderer` / `PKCanvasView` z-order and
-hit-testing, nowhere above it. First thing to check next session:
-whether `canvas.isUserInteractionEnabled = viewModel.canvasIsInteractive`
-is genuinely `false` in cursor / image / sticky modes when the bug
-reproduces — that flag is the *existing* mitigation, so the bug
-means either it isn't false when it should be, or disabling it on
-the PKCanvasView isn't sufficient.
-
-**Logging.** All `#if DEBUG`.
-- `[TouchPath]` — `TouchPathLogger`. On install:
-  `[TouchPath] installed logger '<label>' on <ViewType>`. On tap:
-  `[TouchPath] <label> tap at <point>` where `<label>` is one of
-  `1. UIWindow`, `2. editor root (CanvasHostView)`, `3. scroll view`,
-  `4. page <id> renderer`, `5. PKCanvasView page <id>`,
-  `6. page <id> image|sticky|audio overlay host`. The last label
-  that logs is where the touch reaches; silence after it is the
-  absorber (or the layer just below).
-- `[GestureAudit]` — `ImageElementView` / `StickyNoteElementView`
-  body-render confirmation (`… body render — elementId=…`).
-- `[ImageGesture]` / `[StickyGesture]` — element-view gesture
-  handlers: `1. tap received`, `1a/1b`, `2. drag`, `3. drag onEnded`,
-  `4./5. resize`, `isSelected changed`, `overlay.bg tap`. These are
-  the logs that currently never fire — the symptom.
-- `[AudioPlay]` — `1. button tap received` on the audio play button
-  (also never fires). `[AudioPlayback]` — audio load / onAppear.
-
-**Next step.** Instrument `PageRenderer` (and the PKCanvasView's
-gesture recognisers) specifically, confirm the absorber, then fix
-the z-order / hit-testing at that layer — not at the element views.
-
----
-
-## 2. Alternate app-icon swap fails on iOS 26 — MEDIUM
+## 1. Alternate app-icon swap fails on iOS 26 — MEDIUM
 
 **Symptom.** `setAlternateIconName(_:)` fails when called near
 onboarding completion — `NSPOSIXErrorDomain` 35 (EAGAIN), then
@@ -146,7 +72,7 @@ and file Apple Feedback — stop speculative iteration.
 
 ---
 
-## 3. Swift 6 language mode not adopted — LOW
+## 2. Swift 6 language mode not adopted — LOW
 
 **State.** The project builds in Swift 5 language mode
 (`SWIFT_VERSION = 5.0`). Building under `SWIFT_VERSION=6` succeeds
@@ -158,6 +84,67 @@ capture in a `@Sendable` closure, captured-`var` races in the media
 pickers — and touch product-sensitive audio/PDF paths. Bigger than a
 focused commit.
 
+**Diagnosis — error cascade fixed in commit `f69c6ac`.** The
+`SWIFT_VERSION=6` build had regressed from "0 errors" to a hard
+multi-file *failure* after the word-level-audio and free-axis-resize
+commits introduced new concurrency-crossing code. `f69c6ac` ("Swift 6
+actor isolation cleanup") walked it back to 0 errors. The failures
+clustered into six mechanisms — recorded so the cascade isn't
+re-triggered or chased down a dead end:
+
+1. **SwiftData `@Model` infects plain-struct `Codable` conformances
+   with `@MainActor`.** A `struct: Codable` in the same module as
+   `@Model` types had its *synthesised* `Decodable`/`Encodable`
+   conformance inferred `@MainActor`-isolated — `JSONDecoder().decode(
+   T.self, …)` from a `nonisolated` context then failed to compile.
+   Hit `TimingMap` and `NotebookPreferences`. Fixes: for `TimingMap`,
+   split it into a SwiftData-free file **and** mark the consuming
+   `AudioContent.timingMap` accessor `@MainActor` (the accessor —
+   annotating the struct itself does nothing). For
+   `NotebookPreferences`, dropped `Codable`/`Equatable` and moved the
+   store to `JSONSerialization` (raw `[String:Bool]`) — no conformance
+   witness, nothing to infer; on-disk JSON format unchanged.
+2. **`@preconcurrency import` is the lever for non-Sendable Apple
+   framework types** (`PDFDocument`, `CGPDFPage`, `AVAudioPCMBuffer`,
+   `SFSpeechAudioBufferRecognitionRequest`) — not per-call
+   annotations. It *downgrades* the Sendable violation from error to
+   warning; it does not erase it (those sites are still among the 37).
+3. **`nonisolated` cascades.** Marking one method `nonisolated`
+   forces every callee and every stored constant it touches to be
+   `nonisolated` too — fix the whole call chain in one pass, not
+   site by site.
+4. **`deinit` of a `@MainActor` class cannot touch non-Sendable
+   stored properties.** NotificationCenter observer tokens →
+   `nonisolated(unsafe)` (legitimate — `removeObserver` is documented
+   thread-safe). `AVAudioEngine` is *not* documented thread-safe →
+   did not annotate it; dropped the `deinit` reference instead.
+5. **`PDFAnnotation` subclasses** — the inherited designated
+   initialiser `init(bounds:forType:withProperties:)` is inferred
+   `@MainActor` against the framework's `nonisolated` base; needs an
+   explicit `nonisolated override`.
+6. **`Task.detached` capturing `@Model` instances** fails the
+   `sending` check — switch to `Task(priority:)`, which inherits the
+   caller's isolation so the model never crosses a boundary.
+
+**Ruled out — do not retry.**
+- *Moving a struct to its own file to escape the `@MainActor`-
+  inferred `Codable` conformance.* Tried for `NotebookPreferences` —
+  relocation alone did **not** clear the inference; the conformance
+  had to be removed (mechanism 1), not moved.
+- *`@preconcurrency import PDFKit` to silence a `CGPDFPage` warning.*
+  `CGPDFPage` is a CoreGraphics type, not PDFKit — `@preconcurrency`
+  only works on the *defining* module's import.
+- *`nonisolated(unsafe)` to quiet any `deinit` / closure-capture
+  warning.* Valid only for Apple-*documented* thread-safe types
+  (NSCache, NotificationCenter tokens); on `AVAudioEngine` and
+  friends it trades a warning for a latent data race — not a fix.
+
+Side effect to sweep later: `f69c6ac`'s mechanism-5 annotations
+added 4 *new* warnings — `nonisolated(unsafe)` is now unnecessary on
+`UIImage` constants in `ExportService` / `PDFDerivedExport`
+(`UIImage` gained `Sendable` in the iOS 26 SDK). Harmless; the
+keyword can simply be deleted.
+
 **Logging.** None — these are build-time diagnostics, not runtime
 logs. Surface them with
 `xcodebuild build … SWIFT_VERSION=6 | grep ": warning:"`.
@@ -168,7 +155,7 @@ flip `SWIFT_VERSION` to `6.0` as a dedicated commit.
 
 ---
 
-## 4. "Publishing changes from within view updates" warnings — LOW
+## 3. "Publishing changes from within view updates" warnings — LOW
 
 **Symptom.** ~12 SwiftUI "Publishing changes from within view
 updates" warnings fire during dictation start.
@@ -198,7 +185,7 @@ defer only the genuinely-safe publish sites (never `state`).
 
 ---
 
-## 5. Magnetic page zoom — not built (deferred feature)
+## 4. Magnetic page zoom — not built (deferred feature)
 
 **State.** Requested as a feature: page always centred, zoom
 anchored to page centre, magnetic edges at 100%. **Not implemented.**
@@ -233,3 +220,78 @@ above if they fail.
   `rotation without final result — promoted <n>-char liveTranscript
   to committed` (the new fix firing), `handleLiveTranscript routing
   <n> chars`, `updateText OK — <n> total chars`.
+
+- **Element-tap gesture absorption** (was issue #1, HIGH) — taps on
+  image / sticky-note / audio elements never reached their SwiftUI
+  element views; the `[ImageGesture] / [StickyGesture] / [AudioPlay]
+  1. tap received` logs never fired, images couldn't be selected,
+  the audio play button didn't respond.
+
+  **Root cause — confirmed by the `[Renderer-hit]` diagnostic
+  (`673f3c9`).** The earlier "prime suspect" (the `PKCanvasView`,
+  mounted in `contentView` above the renderer, consuming the touch)
+  was *wrong*. The `[Renderer-hit]` log showed `PageRenderer.hitTest`
+  returning `_UIHostingView<LassoOverlayView>` for every page tap:
+  the `LassoOverlayView` hosting view sits at the top of every
+  renderer's subview stack (`subview[9]`), is full-page
+  (`frame=(0,0,794,1123)`), and had `isUserInteractionEnabled = true`
+  at all times — including when the lasso tool was inactive. UIKit's
+  back-to-front hit-test walk stopped at the lasso host, so no touch
+  ever reached the image / sticky / audio overlays below it.
+  `LassoOverlayView`'s SwiftUI `.allowsHitTesting(isLassoActive ||
+  selectionForThisPage)` self-gate does **not** propagate to the
+  `_UIHostingView`, so the gate had to be applied at the UIKit layer.
+  `PKCanvasView` is not in the renderer's subview list at all — the
+  bug was entirely inside `PageRenderer`'s overlay stack.
+
+  **Fix.** `ContinuousCanvasView.applyOverlayHitTestingToAll` now
+  sets `lassoHost.view.isUserInteractionEnabled = tool.isLassoMode`
+  on every tool change, and the lasso host is mounted non-interactive
+  unless the lasso tool is already active. Subview z-order is
+  unchanged — the lasso host correctly stays on top so its chrome
+  draws above the other overlays when the tool is active.
+
+  **Behaviour note.** The UIKit gate is tool-only, intentionally
+  stricter than `LassoOverlayView`'s `isLassoActive ||
+  selectionForThisPage` SwiftUI predicate. A lasso *selection* that
+  survives a tool switch (which it does — `selectTool` does not
+  clear it) stays visible but its chrome is not hit-testable until
+  the user switches back to the lasso tool. If that regresses real
+  usage, widen the gate with a `LassoSelectionState.hasSelection`
+  signal — but first confirm the host doesn't re-absorb page taps in
+  the selection-active state.
+
+  Verify: outside lasso mode, tap an image / sticky note / audio play
+  button → the matching `[ImageGesture] / [StickyGesture] /
+  [AudioPlay] 1. tap received` log fires, and `[Renderer-hit]` shows
+  `super.hitTest=_UIHostingView<ImageElementsOverlayView>` (or the
+  sticky / audio equivalent) instead of `LassoOverlayView`. Switch to
+  the lasso tool → drag-select still works. Pencil inking still works
+  in inking modes. The `[Renderer-hit]` diagnostic (`673f3c9`) stays
+  in `PageRenderer` for this verification pass — remove it in a
+  separate commit once confirmed.
+
+  Ruled out — do not retry (disproven by `[TouchPath]` +
+  `[Renderer-hit]`):
+  - *Element-view modifier reordering* (`contentShape` / `gesture` /
+    `position` order). 4+ attempts. The touch never reached the
+    element view — nothing in its modifier chain could be the cause.
+  - *`.position → .offset` on the element views* (`91b0617`,
+    reverted `c46440a`). Wrong layer; also broke scrolling.
+  - *Adding more SwiftUI gestures* (`simultaneousGesture`,
+    `highPriorityGesture`) inside the element views — same
+    wrong-layer trap.
+  - *`PKCanvasView` sibling z-order* — the hypothesis that the
+    canvas, mounted in `contentView` above the renderer, consumed
+    the touch. Disproven: `PKCanvasView` is not in the renderer's
+    subview list, and `[Renderer-hit]` shows the touch dies inside
+    the renderer's own overlay stack.
+  - *`PageRenderer` absorbing the hit itself* — disproven by
+    `[Renderer-hit]`: `super.hitTest` resolves to a subview
+    (`_UIHostingView<LassoOverlayView>`), not the renderer.
+
+  Audit-doc drift: `MEDIA_SUBSYSTEM_AUDIT.md` §1 tabulates seven
+  per-page overlays; the renderer's actual subview stack has ten —
+  it omits `LassoOverlayView`, `StrokeElementsOverlayView`, and
+  `TextElementsOverlayView`. Flagged for the next audit refresh; no
+  action needed here.
