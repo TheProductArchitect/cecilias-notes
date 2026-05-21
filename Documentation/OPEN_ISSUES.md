@@ -42,33 +42,43 @@ Neither helped — the keyboard is still mid-dismiss.
   but those modifiers are load-bearing for the whole theme system
   and cannot be removed. Not a usable fix.
 
-**In place now.** `IconUpdateGate` (`33f3f42`) holds the swap until
-the scene is foreground-active **and** the keyboard is fully
-dismissed (`keyboardDidHide` with no later `keyboardDidShow`; 10s
-safety timeout). Primed at app launch so its keyboard observers
-exist before onboarding raises the keyboard. A 3× retry remains as
-a defensive fallback. Diagnostic `[BrandIcon][diag]` logs at every
-gate transition.
+**Fixed — self-healing reconcile (`788e753`).** The deeper bug was
+that the swap was *one-shot*: `applyPendingIconUpdateIfNeeded()`
+removed its `pendingIconUpdateKey` flag **before** attempting the
+swap, so a single EAGAIN failure stranded the icon permanently — no
+retry path, no user-facing control to re-trigger it. Replaced with
+`reconcileAppIcon()`: idempotent and self-healing. It derives the
+desired icon from the stored user name and runs a gated swap
+whenever the live `alternateIconName` doesn't match; nothing is
+consumed, so a failed attempt is simply retried by the next
+reconcile. It runs from `LibraryView.onAppear` (every launch + every
+return to the library) and on theme apply, so a swap that loses the
+iOS 26 race during onboarding churn lands automatically on a later,
+settled pass — no user action. `IconUpdateGate` still holds each
+attempt until the scene is foreground-active and the keyboard
+dismissed; `iconReconcileInFlight` guards against overlapping
+attempts / duplicate system alerts. The previously ungated
+`ThemeManager.updateAppIcon()` second call site now routes through
+the same reconcile.
 
-**Logging.** `[BrandIcon][diag]` (not `#if DEBUG`-gated — survives
-in Release):
-- gate lifecycle — `gate — keyboardDidShow/keyboardDidHide`,
-  `gate — scene didActivate/willDeactivate`.
-- gate decision — `gate ready immediately — firing`,
-  `gate waiting — keyboardVisible=… sceneActive=…`,
-  `gate now ready — firing pending completion`,
-  `gate timeout (10s) — firing anyway`.
-- the swap — `icon update pending for key=…`,
-  `setAlternateIconName(<key>) — attempt (<n> left)`,
-  `setAlternateIconName(<key>) SUCCESS` / `… FAILED: <error>`.
-A clean run reads: pending → gate waiting → keyboardDidHide → gate
-now ready → attempt → SUCCESS.
+**Logging.** `[BrandIcon][diag]` (survives in Release):
+`reconcile — current=… desired=… — handing to gate`,
+`gate — keyboardDidShow/keyboardDidHide`,
+`gate — scene didActivate/willDeactivate`, `gate ready immediately`,
+`gate waiting …`, `gate now ready …`, `gate timeout (10s) …`,
+`setAlternateIconName(<key>) — attempt (<n> left)`, `… SUCCESS` /
+`… FAILED: <error>`.
 
-**Next step.** Device-confirm the gate lets the swap land
-(`[BrandIcon][diag] gate now ready` → `setAlternateIconName(…)
-SUCCESS`). If it still fails, the practical resolution is to move
-the icon swap to an explicit Settings row (a fully-settled scene)
-and file Apple Feedback — stop speculative iteration.
+**Next step — device-verify on iOS 26.4.** The one-shot trap is
+definitively fixed. What remains unverified is whether iOS 26.4 lets
+a settled-context attempt land at all. Reconcile now retries on
+every launch, so a normal launch straight into the library (no
+onboarding churn) is the settled context that should succeed —
+expect `[BrandIcon][diag] reconcile …` → `gate now ready` →
+`setAlternateIconName(…) SUCCESS`. If logs still show only `FAILED`
+across several launches, the root cause is a genuine iOS 26
+`LSIconAlertManager` regression — file Apple Feedback; the
+self-healing reconcile is the most that can be done app-side.
 
 ---
 
