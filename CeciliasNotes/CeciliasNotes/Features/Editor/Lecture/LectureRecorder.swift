@@ -275,81 +275,18 @@ final class LectureRecorder: ObservableObject {
     private func startEngineAndFile(at url: URL) async throws {
         let eng = AVAudioEngine()
         let input = eng.inputNode
-        let format = input.outputFormat(forBus: 0)
 
-        // AAC settings for the persistent file — Core Audio handles
-        // the PCM→AAC conversion automatically when we write PCM
-        // buffers into an `AVAudioFile` whose settings request AAC.
-        //
-        // Sample rate AND channel count must match the input node's
-        // actual output format; hardcoding either (e.g. forcing
-        // mono on a stereo input) raises
-        // `AudioCodecInitialize failed / kAudioConverterEncodeBitRate
-        // 'fmt?'` at write time because the encoder rejects the
-        // combination. Letting the encoder pick its own bit rate
-        // via `AVEncoderAudioQualityKey` rather than the explicit
-        // `AVEncoderBitRateKey` avoids the second half of that
-        // rejection — the encoder knows which bit rates are valid
-        // for the (sample rate, channel count) pair it actually
-        // ends up using.
-        let aacSettings: [String: Any] = [
-            AVFormatIDKey:            Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey:          format.sampleRate,
-            AVNumberOfChannelsKey:    Int(format.channelCount),
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ]
-        let file = try AVAudioFile(forWriting: url, settings: aacSettings)
-        await capture.setAudioFile(file)
+        // The persistent `.m4a` is created lazily by
+        // `AudioCaptureActor` from the format of the first captured
+        // buffer — see `prepareFile`. The input hardware format can
+        // shift between here and the first tap callback (the speech
+        // AU forces the `.voiceChat` graph from 48 kHz down to
+        // 24 kHz), so a file built up-front against the format read
+        // now would reject every write once the tap re-installs
+        // against the new rate.
+        await capture.prepareFile(url: url)
 
-        // The tap closure captures the actor (a Sendable reference)
-        // and a weak self for the audio-level update; nothing
-        // MainActor-isolated is read from inside the closure body
-        // itself. Buffer is deep-copied before crossing the actor
-        // boundary because AVAudioEngine reuses the tap buffer after
-        // the callback returns.
-        let captureActor = self.capture
-        #if DEBUG
-        // Tap-fire counter mirroring AudioRecorder's diagnostic.
-        // First call + every 50th thereafter print so we can
-        // confirm the engine is actually delivering buffers to
-        // the recogniser. The #1 print is the critical signal:
-        // if it never appears, the tap is silent and SFSpeech
-        // will eventually error with 1101 (no audio received).
-        nonisolated(unsafe) var tapFireCount = 0
-        #endif
-        // Capture `self` weakly directly in the closure's capture
-        // list — the previous `weak var weakSelf = self` form
-        // tripped Swift 6's "never mutated" warning, and `weak let`
-        // is not valid syntax. Capture-list `[weak self]` carries
-        // the same weak semantics.
-        input.installTap(
-            onBus:      0,
-            bufferSize: Self.tapBufferSize,
-            format:     format
-        ) { [weak self] buffer, _ in
-            #if DEBUG
-            tapFireCount += 1
-            if tapFireCount == 1 || tapFireCount % 50 == 0 {
-                let frames = buffer.frameLength
-                print("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
-            }
-            #endif
-            // The tap closure captures `self` weakly so the engine
-            // doesn't retain the recorder. Inside, work that hops
-            // to the main actor goes through its own `[weak self]`
-            // re-capture so Swift 6 strict concurrency doesn't
-            // flag the var capture crossing actor boundaries.
-            let rms = Self.rms(buffer: buffer)
-            Task { @MainActor [weak self] in self?.audioLevel = rms }
-
-            // Copy off the AVAudioEngine queue. The actor will own
-            // this copy; the engine is free to recycle the original.
-            // `captureActor` is a sendable actor reference captured
-            // by value above.
-            guard let copy = buffer.deepCopy() else { return }
-            let wrapped = CapturedAudioBuffer(buffer: copy)
-            Task { await captureActor.handle(wrapped.buffer) }
-        }
+        installInputTap(on: input)
 
         // `prepare()` pre-allocates the engine's internal buffers
         // before `start()` — mirrors the AudioRecorder fix that
@@ -382,15 +319,71 @@ final class LectureRecorder: ObservableObject {
         engine = eng
     }
 
+    /// Install the input tap, reading the input node's *current*
+    /// output format at call time. The tap deep-copies each buffer
+    /// off the engine queue and hands it to `AudioCaptureActor` for
+    /// file write + speech-request append, and publishes an RMS
+    /// level on the main actor.
+    ///
+    /// Factored out of `startEngineAndFile` so the configuration-
+    /// change handler can re-install it against the post-change
+    /// format — `installTap`'s `format:` is resolved once at install
+    /// time, so a tap surviving a 48 kHz → 24 kHz hardware shift
+    /// keeps the stale rate and makes `engine.start()` fail with
+    /// `-10868` (`kAudioUnitErr_FormatNotSupported`).
+    private func installInputTap(on input: AVAudioInputNode) {
+        let format = input.outputFormat(forBus: 0)
+        let captureActor = self.capture
+        #if DEBUG
+        print("[Lecture] installing tap — format sr=\(format.sampleRate) ch=\(format.channelCount)")
+        // Tap-fire counter mirroring AudioRecorder's diagnostic.
+        // First call + every 50th thereafter print so we can confirm
+        // the engine is actually delivering buffers. Resets per
+        // install — acceptable for a debug counter.
+        nonisolated(unsafe) var tapFireCount = 0
+        #endif
+        input.installTap(
+            onBus:      0,
+            bufferSize: Self.tapBufferSize,
+            format:     format
+        ) { [weak self] buffer, _ in
+            #if DEBUG
+            tapFireCount += 1
+            if tapFireCount == 1 || tapFireCount % 50 == 0 {
+                let frames = buffer.frameLength
+                print("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
+            }
+            #endif
+            let rms = Self.rms(buffer: buffer)
+            Task { @MainActor [weak self] in self?.audioLevel = rms }
+
+            // Copy off the AVAudioEngine queue. The actor will own
+            // this copy; the engine is free to recycle the original.
+            guard let copy = buffer.deepCopy() else { return }
+            let wrapped = CapturedAudioBuffer(buffer: copy)
+            Task { await captureActor.handle(wrapped.buffer) }
+        }
+    }
+
     /// Re-start the engine after an `AVAudioEngineConfigurationChange`.
     /// The engine stops itself on a graph reconfiguration (most
-    /// commonly when the speech recogniser's audio unit comes up);
-    /// the installed tap survives the restart, so a plain `start()`
-    /// resumes buffer delivery.
+    /// commonly when the speech recogniser's audio unit comes up).
+    ///
+    /// The reconfiguration can also change the input hardware format
+    /// — the mic drops from 48 kHz to 24 kHz once the speech AU
+    /// forces the `.voiceChat` graph down. The tap installed against
+    /// the pre-change format then mismatches the new hardware format
+    /// and `engine.start()` fails with `-10868`. Remove and
+    /// re-install the tap against the current format before
+    /// restarting; the persistent file is created lazily from the
+    /// first buffer, so it follows the new format automatically.
     private func restartEngineAfterConfigChange() {
         guard isRecording, !isPaused,
               let eng = engine, !eng.isRunning
         else { return }
+        let input = eng.inputNode
+        input.removeTap(onBus: 0)
+        installInputTap(on: input)
         do {
             eng.prepare()
             try eng.start()
@@ -845,7 +838,21 @@ enum LectureRecorderError: Error, LocalizedError {
 /// guarantees.
 actor AudioCaptureActor {
     private var audioFile: AVAudioFile?
+    private var pendingURL: URL?
     private var currentRequest: SFSpeechAudioBufferRecognitionRequest?
+
+    /// Arm the actor to create the persistent `.m4a` lazily, from the
+    /// format of the first captured buffer. Deferring creation until a
+    /// real buffer arrives guarantees the file's sample rate and
+    /// channel count match whatever the input hardware actually
+    /// settled on — the engine's input format can shift (48 kHz →
+    /// 24 kHz when the speech AU forces `.voiceChat` down) between
+    /// engine setup and the first tap callback, and a file created
+    /// up-front against the stale format rejects every write.
+    func prepareFile(url: URL) {
+        self.pendingURL = url
+        self.audioFile = nil
+    }
 
     func setAudioFile(_ file: AVAudioFile?) {
         self.audioFile = file
@@ -867,6 +874,23 @@ actor AudioCaptureActor {
     /// must be a deep copy of the engine's tap buffer — see
     /// `AVAudioPCMBuffer.deepCopy()`.
     func handle(_ buffer: AVAudioPCMBuffer) {
+        // Lazily create the file from the first buffer's format so
+        // the file always matches whatever rate the tap settled on.
+        // Core Audio handles the PCM→AAC conversion automatically on
+        // write; letting the encoder pick its own bit rate via
+        // `AVEncoderAudioQualityKey` (rather than an explicit
+        // `AVEncoderBitRateKey`) avoids `kAudioConverterEncodeBitRate`
+        // rejections for unusual (sample rate, channel count) pairs.
+        if audioFile == nil, let url = pendingURL {
+            let settings: [String: Any] = [
+                AVFormatIDKey:            Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey:          buffer.format.sampleRate,
+                AVNumberOfChannelsKey:    Int(buffer.format.channelCount),
+                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+            ]
+            audioFile = try? AVAudioFile(forWriting: url, settings: settings)
+            pendingURL = nil
+        }
         try? audioFile?.write(from: buffer)
         currentRequest?.append(buffer)
     }
