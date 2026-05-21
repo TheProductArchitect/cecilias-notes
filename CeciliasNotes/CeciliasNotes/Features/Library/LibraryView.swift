@@ -43,11 +43,11 @@ struct LibraryView: View {
                 print("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
                 #endif
                 // Drain any icon update queued during onboarding completion.
-                // No-op outside the post-onboarding window — see the
-                // known-issue block at the top of PersonalIdentity.swift's
-                // "Icon switching" section for the iOS 26 LSIconAlertManager
-                // EAGAIN context that motivates the deferred-fire pattern.
-                applyPendingIconUpdateIfNeeded()
+                // Idempotent + self-healing: no-ops when the icon
+                // already matches the user's name, retries a swap
+                // that lost the iOS 26 race on an earlier pass. See
+                // the "Icon switching" section in PersonalIdentity.swift.
+                reconcileAppIcon()
             }
             .onChange(of: viewModel.pendingExportNotebookId) { _, id in
                 guard let id, let notebook = viewModel.notebook(id: id) else { return }

@@ -9,14 +9,6 @@ enum PersonalIdentity {
     static let nameKey               = "app.user.name"
     static let onboardingCompletedKey = "app.onboarding.completed"
 
-    /// One-shot UserDefaults key holding the user's name when an icon
-    /// update is queued from a UI state that can't safely host the
-    /// system icon-change alert (e.g. mid-onboarding-dismiss transition).
-    /// Picked up by `applyPendingIconUpdateIfNeeded()` from a settled
-    /// view's `onAppear` — see the Step 0.75 Phase G iOS 26 timing fix
-    /// in `updateAppIcon(for:)`.
-    static let pendingIconUpdateKey = "personalIdentity.pendingIconUpdate"
-
     /// App Group key the widget extension reads to render the
     /// possessive in the brand wordmark. Must be kept in sync with
     /// `nameKey` — every commit path that touches `nameKey` should
@@ -156,92 +148,87 @@ func libraryGreeting(forName name: String) -> String {
 
 // MARK: - Icon switching
 //
-// Known issue (Step 0.75 Phase G, deferred to post-Step-0.75):
-// On iOS 26, `UIApplication.setAlternateIconName(_:)` invoked anywhere
-// near onboarding completion returns `NSPOSIXErrorDomain` code 35
-// (EAGAIN, "Resource temporarily unavailable") from the system's
-// internal `LSIconAlertManager`. The icon silently doesn't change.
-// Pre-iOS-26 builds (verified against the byte-identical pre-rename-v5
-// code path) worked reliably; iOS 26 tightened the presentation-context
-// requirements for the mandatory "You have changed the icon for…"
-// alert that Apple does not allow apps to suppress.
+// The app icon mirrors the first letter of the user's name — one
+// bundled alternate icon per letter; the primary is the "C."
+// letterform.
 //
-// We tried three mitigations in commits 3a7ba5a / a7b6140 / 16aeb92:
-//   1. Bug-fixed ThemeManager passing the wrong icon key (real bug, kept).
-//   2. Deferred the call from onboarding completion to LibraryView.onAppear
-//      so the scene would be "settled." Didn't help — keyboard teardown
-//      from onboarding is still in flight when LibraryView appears, and
-//      LSIconAlertManager still rejects the presentation context.
-//   3. EAGAIN-aware retry loop (5 attempts, 0–4s backoff). Didn't help
-//      either — every retry hit the same condition. Reverted in Phase G;
-//      no point keeping noise without payoff.
+// iOS 26 issue: `UIApplication.setAlternateIconName(_:)` can fail
+// with `NSPOSIXErrorDomain` 35 (EAGAIN) when invoked during scene
+// churn — notably right after onboarding, while the keyboard is
+// dismissing and the trait environment is still transitioning —
+// because the system can't present its mandatory "you changed the
+// icon for…" alert (which apps cannot suppress).
 //
-// An A/B test on a throwaway branch isolated the trigger but not a
-// usable fix: removing the `.environment(\.theme, ...)` and
-// `.preferredColorScheme(_:)` modifiers from `CeciliasNotesApp`'s
-// WindowGroup (added in Phase B `27d057b`) likely lets the call land,
-// but those modifiers are load-bearing for the entire theme system and
-// cannot be removed without rewriting Phase B.
+// Design — `reconcileAppIcon()` is idempotent and self-healing:
+//   • It derives the desired icon from the stored user name and, if
+//     the live `alternateIconName` doesn't match, runs a gated swap.
+//     Nothing is consumed — a failed attempt simply leaves the
+//     mismatch in place for the next reconcile to retry.
+//   • It runs from `LibraryView.onAppear` (every launch and every
+//     return to the library) and on theme apply, so a swap that
+//     loses the iOS 26 race during onboarding lands automatically on
+//     a later, settled pass — no user action, no Settings toggle.
+//   • `IconUpdateGate` still holds each attempt until the scene is
+//     foreground-active and the keyboard dismissed; the in-session
+//     retry covers residual `LSIconAlertManager` contention.
 //
-// Practical impact in 1.0: muted. The primary AppIcon now ships as the
-// "C." letterform (commit 16aeb92), so users whose name starts with C
-// see the correct icon by accident even when the swap silently fails.
-// Other users see a "C." icon when they'd see their initial. The
-// in-app wordmark personalisation (BrandWordmark) is unaffected — it
-// reads the user's name directly and renders the correct letter.
-//
-// Post-1.0 paths to explore (in priority order):
-//   • Move icon swap out of the onboarding flow entirely — surface it
-//     as a "Personalise app icon" row in Settings, where the user
-//     explicitly taps to change. Settings is a fully-settled scene
-//     where LSIconAlertManager works reliably.
-//   • Replace `.preferredColorScheme` with a less-aggressive trait
-//     propagation mechanism that doesn't keep the scene in a
-//     SwiftUI-managed trait-transitioning state.
-//   • File feedback with Apple. EAGAIN with no retry-success-window is
-//     a regression from documented behavior.
+// This replaces an earlier one-shot `pendingIconUpdateKey` scheme
+// that removed its pending flag *before* attempting the swap — so a
+// single EAGAIN failure stranded the icon permanently with no retry
+// path. The mandatory system alert still appears whenever a swap
+// finally succeeds.
 
-/// Queue a switch to the alternate icon keyed by the user's name's first
-/// letter. Writes the user's name to `pendingIconUpdateKey`; the actual
-/// `setAlternateIconName(_:)` call happens from
-/// `applyPendingIconUpdateIfNeeded()` invoked from `LibraryView.onAppear`.
-/// See the file header above for the iOS 26 LSIconAlertManager known issue.
-@MainActor
-func updateAppIcon(for name: String) {
-    guard UIApplication.shared.supportsAlternateIcons else { return }
-    UserDefaults.standard.set(name, forKey: PersonalIdentity.pendingIconUpdateKey)
-}
+/// True while a reconcile swap is queued in the gate or its retry
+/// chain is running — prevents overlapping attempts (and duplicate
+/// system alerts) when several call sites reconcile at once.
+@MainActor private var iconReconcileInFlight = false
 
-/// Apply any icon update queued by `updateAppIcon(for:)`. Safe to call
-/// from any settled view's `onAppear` — no-ops if no update is pending.
-/// Clears the pending flag unconditionally so a silent EAGAIN failure
-/// doesn't trigger a retry on every subsequent library appearance.
+/// Reconcile the app icon toward the user's name. Idempotent and
+/// self-healing: no-ops when the icon already matches, and a failed
+/// attempt leaves the mismatch for the next call to retry. Safe to
+/// call from any settled view's `onAppear` and on theme change.
+///
+/// `preferredName` lets a caller that's mid-write (onboarding
+/// completion) pass the name explicitly; otherwise the stored
+/// `nameKey` value is the source of truth.
 @MainActor
-func applyPendingIconUpdateIfNeeded() {
-    let defaults = UserDefaults.standard
-    guard let pendingName = defaults.string(forKey: PersonalIdentity.pendingIconUpdateKey) else { return }
-    defaults.removeObject(forKey: PersonalIdentity.pendingIconUpdateKey)
+func reconcileAppIcon(preferredName: String? = nil) {
     let app = UIApplication.shared
     guard app.supportsAlternateIcons else { return }
-    let key = BrandIcon.variantKey(forName: pendingName)
-    if app.alternateIconName == key { return }
 
-    // Fix 2 — route the swap through `IconUpdateGate`, which holds
-    // the call until the scene is foreground-active AND the keyboard
-    // is fully dismissed. The onboarding name field's keyboard is
-    // mid-dismiss when `LibraryView.onAppear` fires; calling
-    // `setAlternateIconName` then loses the LSIconAlertManager token
-    // race (EAGAIN, then "cancelled"). Once gated, the retry below
-    // is a defensive fallback that should rarely be exercised.
-    print("[BrandIcon][diag] icon update pending for key=\(key ?? "nil") — handing to gate")
+    let name = preferredName
+        ?? UserDefaults.standard.string(forKey: PersonalIdentity.nameKey)
+        ?? ""
+    let desiredKey = BrandIcon.variantKey(forName: name)
+    guard app.alternateIconName != desiredKey else { return }
+    guard !iconReconcileInFlight else {
+        print("[BrandIcon][diag] reconcile — swap already in flight, skipping")
+        return
+    }
+
+    iconReconcileInFlight = true
+    print("[BrandIcon][diag] reconcile — current=\(app.alternateIconName ?? "primary") "
+        + "desired=\(desiredKey ?? "primary") — handing to gate")
     IconUpdateGate.shared.whenReady {
-        setAlternateIconWithRetry(key, attemptsLeft: 3)
+        setAlternateIconWithRetry(desiredKey, attemptsLeft: 3)
     }
 }
 
-/// Defensive retry behind `IconUpdateGate`. With the scene/keyboard
-/// gates in place the first attempt should succeed; the 1s-spaced
-/// retries cover any residual `LSIconAlertManager` contention.
+/// Onboarding entry point. The name is already being written to
+/// `nameKey` by the onboarding flow; this forwards to
+/// `reconcileAppIcon`, passing the name explicitly in case that
+/// write hasn't landed yet.
+@MainActor
+func updateAppIcon(for name: String) {
+    reconcileAppIcon(preferredName: name)
+}
+
+/// Gated swap with a short in-session retry. `IconUpdateGate` has
+/// already held this until the scene/keyboard are settled; the
+/// 1s-spaced retries cover residual `LSIconAlertManager` contention.
+/// On exhaustion the in-flight flag is cleared so the next
+/// `reconcileAppIcon()` — next library appearance or launch —
+/// retries automatically.
 @MainActor
 private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
     let app = UIApplication.shared
@@ -255,9 +242,14 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
                 if attemptsLeft > 1 {
                     try? await Task.sleep(for: .seconds(1))
                     setAlternateIconWithRetry(key, attemptsLeft: attemptsLeft - 1)
+                } else {
+                    // Give up for this session — `reconcileAppIcon()`
+                    // retries on the next library appearance.
+                    iconReconcileInFlight = false
                 }
             } else {
                 print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
+                iconReconcileInFlight = false
             }
         }
     }

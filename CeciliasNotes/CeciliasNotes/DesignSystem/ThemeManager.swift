@@ -90,25 +90,11 @@ public final class ThemeManager: ObservableObject {
     /// composition here so that when Midnight icon variants ship later
     /// the swap point is already correct.
     private func updateAppIcon() {
-        // TODO (post-1.0): When Midnight icon variants ship, compose
-        // `\(current.appIconAssetPrefix)-\(letter)` instead. For now,
-        // resolve through `BrandIcon.variantKey(forName:)` so this path
-        // is byte-identical to the onboarding icon-switch path in
-        // `PersonalIdentity.updateAppIcon(for:)` — both must agree on
-        // the alternate icon name passed to UIKit (just "a"…"z", which
-        // matches the `CFBundleAlternateIcons` keys in Info.plist).
-        let app = UIApplication.shared
-        guard app.supportsAlternateIcons else { return }
-        let name = defaults.string(forKey: PersonalIdentity.nameKey)
-            ?? UserDefaults.standard.string(forKey: PersonalIdentity.nameKey)
-            ?? ""
-        let key = BrandIcon.variantKey(forName: name)
-        if app.alternateIconName == key { return }
-        app.setAlternateIconName(key) { error in
-            if let error = error {
-                print("[Theme] setAlternateIconName(\(key ?? "nil")) failed: \(error)")
-            }
-        }
+        // Route through the shared reconcile path so the swap is
+        // gated (scene/keyboard settled) and self-healing, rather
+        // than an ungated one-shot. `reconcileAppIcon()` reads the
+        // user name and no-ops when the icon already matches.
+        reconcileAppIcon()
     }
 }
 
