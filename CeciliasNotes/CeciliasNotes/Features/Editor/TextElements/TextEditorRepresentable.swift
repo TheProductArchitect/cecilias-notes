@@ -46,7 +46,23 @@ struct TextEditorRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ tv: UITextView, context: Context) {
-        if tv.text != text {
+        // Gate UIKit interaction on the editing state. An idle text
+        // element's UITextView would otherwise win the UIKit
+        // hit-test for any touch over its frame — including drags
+        // meant for a neighbouring element (e.g. an audio pill that
+        // can't be moved when a text box sits nearby). Tap-to-edit
+        // is handled by a separate `Color.clear` catcher in the
+        // overlay, so the text view only needs interaction while
+        // actually editing.
+        tv.isUserInteractionEnabled = isEditing
+
+        // Only push the binding into the text view for *external*
+        // changes. While the view is first responder the user is
+        // typing or dictating into it and the text view is the
+        // source of truth — reassigning `tv.text` here would cancel
+        // an in-flight dictation session and wipe the text that
+        // dictation commits asynchronously after a speech pause.
+        if tv.text != text && !tv.isFirstResponder {
             tv.text = text
         }
         applyStyle(to: tv)
@@ -98,12 +114,21 @@ struct TextEditorRepresentable: UIViewRepresentable {
     }
 
     private func applyStyle(to tv: UITextView) {
-        tv.font = UIFont.systemFont(
-            ofSize: size.pointSize,
-            weight: size.fontWeight
-        )
-        tv.textColor = textColor
-        tv.tintColor = textColor  // caret colour follows text colour
+        // Assign only on actual change. Reassigning `tv.font` forces a
+        // full glyph re-layout; if that lands mid-dictation it drops
+        // the provisional recognition buffer (the "text disappears
+        // after a pause" bug). The values are stable across the
+        // common re-render, so the guarded assignment is a no-op then.
+        let font = UIFont.systemFont(ofSize: size.pointSize, weight: size.fontWeight)
+        if tv.font != font {
+            tv.font = font
+        }
+        if tv.textColor != textColor {
+            tv.textColor = textColor
+        }
+        if tv.tintColor != textColor {
+            tv.tintColor = textColor  // caret colour follows text colour
+        }
     }
 
     // MARK: - Coordinator

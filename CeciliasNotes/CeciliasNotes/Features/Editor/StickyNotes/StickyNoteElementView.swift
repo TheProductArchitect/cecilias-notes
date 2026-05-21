@@ -332,7 +332,11 @@ struct StickyNoteElementView: View {
     /// `(isSelected && !isEditing) ? bodyDragGesture : nil` ternary
     /// at the call site.
     private var bodyDragGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+        // `.global` coordinate space — the gesture drives the same
+        // view's `.position` via `dragOffset`; a local-space drag
+        // feeds back on itself as the view moves under the finger,
+        // causing the jittery non-smooth move.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if dragOffset == .zero {
                     print("[StickyGesture] 2. drag onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) startLocation=\(value.startLocation)")
@@ -357,7 +361,7 @@ struct StickyNoteElementView: View {
     }
 
     private func resizeGesture(for corner: Corner) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 if resizeDelta == nil {
                     print("[StickyGesture] 4. resize handle onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation) startLocation=\(value.startLocation)")

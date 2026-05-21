@@ -32,6 +32,21 @@ struct TextElementView: View {
     @Binding var isEditing: Bool
 
     @Environment(\.theme) private var theme
+    /// Page text is ink on paper — its colour must contrast with the
+    /// *paper*, which `PageRenderer` paints from the system
+    /// light/dark trait, NOT from the app's Theme. Using
+    /// `theme.foreground` here made transcription text invisible when
+    /// the app's Midnight theme disagreed with the device's light
+    /// mode (light ink on light paper). Branch on `colorScheme` so
+    /// the ink always tracks the paper.
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var pageInkColor: UIColor {
+        // Mirrors PageRenderer's paper: #FAFAF8 light / #1C1C1A dark.
+        colorScheme == .dark
+            ? UIColor(hex: "#EDEDEB")
+            : UIColor(hex: "#1C1C1A")
+    }
 
     private var width: CGFloat {
         element.normalizedWidth * pageSize.width
@@ -52,7 +67,7 @@ struct TextElementView: View {
                 text: $content.text,
                 size: content.size,
                 isEditing: $isEditing,
-                textColor: UIColor(theme.foreground)
+                textColor: pageInkColor
             )
             // Selection chrome — dashed border when selected (and
             // not actively editing; editing implies focus, no need

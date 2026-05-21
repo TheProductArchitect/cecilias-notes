@@ -1058,7 +1058,55 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     viewModel.zoomScale = z
                 }
             }
+            // Re-centre the document as it shrinks/grows under the
+            // pinch. `applyContentInset` pads the scroll view so a
+            // page narrower than the viewport sits centred rather
+            // than pinned to the left edge.
+            applyContentInset()
             updateCanvasMembership()
+        }
+
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if !decelerate { snapToEdgesIfClose(scrollView) }
+        }
+
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            snapToEdgesIfClose(scrollView)
+        }
+
+        func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            applyContentInset()
+            snapToEdgesIfClose(scrollView)
+        }
+
+        /// Magnetically snap the document flush to a viewport edge
+        /// when the user releases a pan/zoom with that edge within a
+        /// small threshold — the page feels like it "clicks" into
+        /// place instead of floating a few points off.
+        private func snapToEdgesIfClose(_ scrollView: UIScrollView) {
+            let threshold: CGFloat = 44
+            let inset   = scrollView.contentInset
+            let offset  = scrollView.contentOffset
+
+            // Scrollable bounds for each axis (the resting offsets at
+            // which an edge sits flush against the viewport).
+            let minX = -inset.left
+            let maxX = scrollView.contentSize.width + inset.right - scrollView.bounds.width
+            let minY = -inset.top
+            let maxY = scrollView.contentSize.height + inset.bottom - scrollView.bounds.height
+
+            var target = offset
+            if maxX > minX {
+                if abs(offset.x - minX) < threshold { target.x = minX }
+                else if abs(offset.x - maxX) < threshold { target.x = maxX }
+            }
+            if maxY > minY {
+                if abs(offset.y - minY) < threshold { target.y = minY }
+                else if abs(offset.y - maxY) < threshold { target.y = maxY }
+            }
+            if target != offset {
+                scrollView.setContentOffset(target, animated: true)
+            }
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {

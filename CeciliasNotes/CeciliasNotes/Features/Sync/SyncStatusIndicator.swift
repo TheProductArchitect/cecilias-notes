@@ -14,11 +14,11 @@ struct SyncStatusIndicator: View {
     @EnvironmentObject private var cloudSync: CloudSyncManager
     @Environment(\.theme) private var theme
 
-    /// Rotating phase for the syncing glyph. SwiftUI's
-    /// `.rotationEffect` driven by an `@State` Double, ticked by a
-    /// `.task` that sleeps 1s and increments — cheap, no Timer
-    /// allocation, cancels when the view leaves the hierarchy.
-    @State private var spin: Double = 0
+    /// Continuous rotation for the syncing glyph. A single
+    /// `.repeatForever` animation drives a steady spin — far smoother
+    /// than the previous tick-loop that incremented the angle every
+    /// 800ms (which stuttered at each tick boundary).
+    @State private var spinning: Bool = false
 
     var body: some View {
         Menu {
@@ -28,18 +28,21 @@ struct SyncStatusIndicator: View {
         }
         .menuStyle(.button)
         .accessibilityLabel(accessibilityLabelText)
-        .task(id: cloudSync.syncStatus) {
-            // Spin only while syncing — the task is replaced when
-            // `.syncStatus` changes value, which cancels the
-            // previous spin loop automatically.
-            guard isSyncing else { return }
-            while !Task.isCancelled, isSyncing {
-                try? await Task.sleep(for: .milliseconds(800))
-                if Task.isCancelled { break }
-                withAnimation(.linear(duration: 0.8)) {
-                    spin += 360
-                }
+        .onChange(of: isSyncing) { _, syncing in
+            updateSpin(syncing)
+        }
+        .onAppear { updateSpin(isSyncing) }
+    }
+
+    private func updateSpin(_ syncing: Bool) {
+        if syncing {
+            // 2.4s/rev — a calm, legible rotation. A faster spin
+            // reads as "frantic / stuck" rather than "working".
+            withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
+                spinning = true
             }
+        } else {
+            withAnimation(.default) { spinning = false }
         }
     }
 
@@ -47,12 +50,29 @@ struct SyncStatusIndicator: View {
 
     @ViewBuilder
     private var label: some View {
-        Image(systemName: glyph)
-            .font(.system(size: 13, weight: .regular))
-            .foregroundStyle(tint)
-            .rotationEffect(.degrees(isSyncing ? spin : 0))
-            .frame(width: 28, height: 28)
-            .contentShape(Rectangle())
+        Group {
+            if isSyncing {
+                // Static cloud with the circular arrows spinning
+                // *inside* it — only the arrows rotate, the cloud
+                // outline stays put. Reads as "working" without the
+                // whole glyph wobbling.
+                ZStack {
+                    Image(systemName: "icloud")
+                        .font(.system(size: 13, weight: .regular))
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 7, weight: .semibold))
+                        .rotationEffect(.degrees(spinning ? 360 : 0))
+                        .offset(y: 1)
+                }
+                .foregroundStyle(tint)
+            } else {
+                Image(systemName: glyph)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(tint)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
     }
 
     private var glyph: String {
@@ -97,9 +117,11 @@ struct SyncStatusIndicator: View {
             } else {
                 Text("All changes synced")
             }
-        case .syncing(let progress):
-            let pct = max(0, min(100, Int(progress * 100)))
-            Text("Syncing… \(pct)%")
+        case .syncing:
+            // No percentage — NSMetadataQuery snapshots can't give a
+            // reliable progress figure, and a stuck number reads
+            // worse than an honest "in progress".
+            Text("Syncing…")
         case .checking:
             Text("Checking iCloud…")
         case .waitingForNetwork:
@@ -119,7 +141,7 @@ struct SyncStatusIndicator: View {
         switch cloudSync.syncStatus {
         case .disabled:           return "iCloud sync disabled"
         case .upToDate:           return "iCloud synced"
-        case .syncing(let p):     return "Syncing, \(Int(p * 100)) percent"
+        case .syncing:            return "Syncing"
         case .checking:           return "Checking iCloud"
         case .waitingForNetwork:  return "Waiting for network"
         case .error:              return "Sync error"

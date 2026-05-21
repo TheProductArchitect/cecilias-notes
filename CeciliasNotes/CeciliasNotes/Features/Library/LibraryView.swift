@@ -136,11 +136,20 @@ struct LibraryView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    guard keyboardObserver.isKeyboardVisible else { return }
-                    UIApplication.shared.sendAction(
-                        #selector(UIResponder.resignFirstResponder),
-                        to: nil, from: nil, for: nil
-                    )
+                    // Tap on empty library chrome returns the UI to
+                    // its resting state — drop the keyboard, and
+                    // collapse an active search.
+                    if keyboardObserver.isKeyboardVisible {
+                        UIApplication.shared.sendAction(
+                            #selector(UIResponder.resignFirstResponder),
+                            to: nil, from: nil, for: nil
+                        )
+                    }
+                    if viewModel.isSearchActive {
+                        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                            viewModel.deactivateSearch()
+                        }
+                    }
                 }
         )
         .overlay(alignment: .top) {

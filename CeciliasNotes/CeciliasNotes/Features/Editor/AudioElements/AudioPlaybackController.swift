@@ -40,8 +40,11 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         #endif
         // Idempotent for the same URL — calling `load` multiple
         // times on view re-render doesn't re-create the player or
-        // reset playback position.
-        if loadedURL == url, player != nil {
+        // reset playback position. Exception: a player with
+        // `duration <= 0` was built from an incomplete file (the
+        // recording hadn't finished flushing when `load` first ran);
+        // allow re-creation so a later `load` recovers it.
+        if loadedURL == url, let p = player, p.duration > 0 {
             #if DEBUG
             print("[AudioPlayback] load() idempotent skip — same URL, player live, duration=\(duration)")
             #endif

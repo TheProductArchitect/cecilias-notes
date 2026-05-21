@@ -52,6 +52,14 @@ struct EditorView: View {
         ZStack {
             editorBody
 
+            // Opt the entire editor out of SwiftUI's automatic
+            // keyboard-avoidance reflow. The editor manages keyboard
+            // space manually (`keyboardVisibleHeight`) and the canvas
+            // already ignores the safe area; without this the root
+            // layout shifts up when the keyboard shows and the window
+            // background bleeds through the bottom gap as a white
+            // underlay sized to the keyboard frame.
+
             // Step 6: floating recording controls overlay — always
             // mounted, internally hides when no recording is in
             // flight. Sits above the page content but below modal
@@ -523,6 +531,7 @@ struct EditorView: View {
         // style below).
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         // Phase 5B: editor-internal modals migrated to ModalPresenter.
         // The editor itself is a `.fullScreenCover` from `LibraryView`;
         // sheets presented directly from this view risk SwiftUI's

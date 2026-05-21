@@ -64,6 +64,15 @@ struct CustomisePanel: View {
                     nameSection
                     coverSection
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    // Toggle band moved up directly under the cover
+                    // swatches — these are frequently-used controls
+                    // and previously sat at the foot of a long
+                    // scroll behind the space-heavy template strips.
+                    VStack(spacing: 0) {
+                        autoAddSection
+                        autoHideHeaderSection
+                    }
+                    togglesCaption
                     // Page size + template share one row too —
                     // hidden for PDF-backed notebooks where the
                     // source PDF dictates both. ~35/65 split per
@@ -93,16 +102,8 @@ struct CustomisePanel: View {
                     // the count below already handles the
                     // empty-notebook case by hiding the row.
                     annotationsSection
-                    // Consolidated toggle band — single-line rows
-                    // with hairline separators, then one shared
-                    // recessive caption explaining both toggles.
-                    VStack(spacing: 0) {
-                        autoAddSection
-                        autoHideHeaderSection
-                    }
-                    togglesCaption
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 16)
             }
@@ -167,7 +168,7 @@ struct CustomisePanel: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.hairline).frame(height: 1)

@@ -40,12 +40,6 @@ struct ImageElementView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var pinchScale: CGFloat = 1.0
     @State private var resizeDelta: ResizeDelta? = nil
-    /// Diagnostic — distinguishes view instances in the
-    /// `[GestureAudit]` log. If one drag logs two distinct `inst=`
-    /// values for the same `elementId`, the element view is mounted
-    /// twice (the suspected cause of the laggy double-render).
-    @State private var instanceTag = Int.random(in: 1000...9999)
-
     private static let handleSize: CGFloat = 10
     private static let toolbarGap: CGFloat = 8
     private static let minNormalizedWidth: Double = 0.05
@@ -64,7 +58,6 @@ struct ImageElementView: View {
             height: element.normalizedHeight * pageSize.height
         )
         let displayed = displayedRect(base: base)
-        let _ = print("[GestureAudit] ImageElementView body render — inst=\(instanceTag) elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) displayed=\(displayed) pageSize=\(pageSize)")
 
         ZStack(alignment: .topLeading) {
             // Order is load-bearing — gestures MUST sit before
@@ -250,7 +243,16 @@ struct ImageElementView: View {
     // MARK: - Gestures
 
     private var imageDragGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+        // `.global` coordinate space is load-bearing. The gesture is
+        // attached to the image view, and `dragOffset` (set here)
+        // drives that view's `.position`. With the default `.local`
+        // space, every `onChanged` tick moves the view, which shifts
+        // the gesture's own coordinate frame under the finger, so the
+        // next `translation` is measured against a moved origin — a
+        // feedback loop that oscillates the element ~34pt per frame
+        // (the "laggy / not smooth" move). Global locations don't
+        // move with the view, so `translation` stays stable.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if dragOffset == .zero {
                     print("[ImageGesture] 2. drag onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) startLocation=\(value.startLocation)")
@@ -286,7 +288,10 @@ struct ImageElementView: View {
     }
 
     private func resizeGesture(for corner: Corner) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        // `.global` for the same reason as `imageDragGesture` — the
+        // corner handle's `.position` is driven by `resizeDelta`, so
+        // a local-space drag feeds back on itself as the handle moves.
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 if resizeDelta == nil {
                     print("[ImageGesture] 4. resize handle onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation) startLocation=\(value.startLocation)")

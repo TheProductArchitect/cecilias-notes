@@ -113,6 +113,12 @@ final class LectureRecorder: ObservableObject {
     private var elapsedTimer: Timer?
     private var backgroundObserver: NSObjectProtocol?
     private var foregroundObserver: NSObjectProtocol?
+    /// Observes `AVAudioEngineConfigurationChange`. Starting live
+    /// speech recognition spins up an on-device audio unit that
+    /// reconfigures the audio graph and stops the engine; without a
+    /// restart here the engine dies ~500ms after `start()`, never
+    /// fires a tap, and the `.m4a` is a header-only stub.
+    private var engineConfigObserver: NSObjectProtocol?
 
     private static let tapBufferSize: AVAudioFrameCount = 4_096
 
@@ -202,6 +208,10 @@ final class LectureRecorder: ObservableObject {
         stopElapsedTimer()
         unregisterLifecycleObservers()
 
+        if let o = engineConfigObserver {
+            NotificationCenter.default.removeObserver(o)
+            engineConfigObserver = nil
+        }
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         await endSpeechRecognition(commitFinal: true)
@@ -346,6 +356,19 @@ final class LectureRecorder: ObservableObject {
         // resolved the "engine.start() succeeds but no buffers
         // flow" symptom. Cheap; safe to call on a freshly-allocated
         // engine.
+        // Restart the engine whenever the audio graph reconfigures.
+        // The notification fires on an arbitrary thread; hop to the
+        // main actor before touching `self`.
+        engineConfigObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: eng,
+            queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.restartEngineAfterConfigChange()
+            }
+        }
+
         eng.prepare()
         try eng.start()
         #if DEBUG
@@ -357,6 +380,28 @@ final class LectureRecorder: ObservableObject {
         }
         #endif
         engine = eng
+    }
+
+    /// Re-start the engine after an `AVAudioEngineConfigurationChange`.
+    /// The engine stops itself on a graph reconfiguration (most
+    /// commonly when the speech recogniser's audio unit comes up);
+    /// the installed tap survives the restart, so a plain `start()`
+    /// resumes buffer delivery.
+    private func restartEngineAfterConfigChange() {
+        guard isRecording, !isPaused,
+              let eng = engine, !eng.isRunning
+        else { return }
+        do {
+            eng.prepare()
+            try eng.start()
+            #if DEBUG
+            print("[Lecture] engine restarted after configuration change, isRunning=\(eng.isRunning)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[Lecture] engine restart after config change FAILED: \(error)")
+            #endif
+        }
     }
 
     // MARK: - Speech recognition

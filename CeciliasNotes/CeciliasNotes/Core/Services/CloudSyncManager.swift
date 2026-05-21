@@ -196,9 +196,34 @@ final class CloudSyncManager: ObservableObject {
     }
 
     private func runMetadataQuery() async {
-        // Use NSMetadataQuery to observe upload/download progress
         await MainActor.run { syncStatus = .checking }
+        // Single NSMetadataQuery passes are snapshots — a file that is
+        // 75% uploaded at gather time leaves the status frozen at
+        // `.syncing(0.75)` forever. Re-poll until iCloud reports every
+        // item `.current`, so the indicator actually advances to
+        // `.upToDate`. Capped so a perpetually-stalled upload can't
+        // spin the loop indefinitely.
+        var passes = 0
+        let maxPasses = 40
+        while passes < maxPasses {
+            passes += 1
+            let stillSyncing = await runSingleMetadataPass()
+            if !stillSyncing { return }
+            try? await Task.sleep(for: .seconds(1.5))
+        }
+        // Re-poll budget exhausted — iCloud is taking unusually long
+        // (or the simulator's metadata never settles). Resolve to a
+        // resting state instead of leaving the indicator spinning
+        // forever; a later `syncNow()` will re-check.
+        await MainActor.run {
+            if case .syncing = syncStatus { syncStatus = .upToDate }
+            if case .checking = syncStatus { syncStatus = .upToDate }
+        }
+    }
 
+    /// Runs one NSMetadataQuery gather and folds the result into
+    /// `syncStatus`. Returns `true` while items are still in flight.
+    private func runSingleMetadataPass() async -> Bool {
         let query = NSMetadataQuery()
         query.predicate = NSPredicate(
             format: "%K BEGINSWITH %@",
@@ -212,7 +237,7 @@ final class CloudSyncManager: ObservableObject {
         // Wrap the query and the observer token in @unchecked Sendable boxes so
         // the closure captures compile under Swift 6, and hop to @MainActor
         // before touching MainActor-isolated state on `self`.
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let queryBox    = _UnsafeSendableBox(query)
             let observerBox = _UnsafeSendableBox<NSObjectProtocol?>(nil)
             observerBox.value = NotificationCenter.default.addObserver(
@@ -225,16 +250,19 @@ final class CloudSyncManager: ObservableObject {
                     if let o = observerBox.value {
                         NotificationCenter.default.removeObserver(o)
                     }
-                    self?.processQueryResults(queryBox.value)
-                    continuation.resume()
+                    let stillSyncing = self?.processQueryResults(queryBox.value) ?? false
+                    continuation.resume(returning: stillSyncing)
                 }
             }
             OperationQueue.main.addOperation { queryBox.value.start() }
         }
     }
 
+    /// Folds query results into `syncStatus`; returns `true` while
+    /// items remain in flight.
     @MainActor
-    private func processQueryResults(_ query: NSMetadataQuery) {
+    @discardableResult
+    private func processQueryResults(_ query: NSMetadataQuery) -> Bool {
         var uploading   = 0
         var downloading = 0
 
@@ -250,6 +278,7 @@ final class CloudSyncManager: ObservableObject {
             let total    = query.resultCount > 0 ? query.resultCount : 1
             let progress = Double(total - uploading - downloading) / Double(total)
             syncStatus = .syncing(progress: progress)
+            return true
         } else {
             // Light tap on first transition to upToDate from a non-idle state.
             let wasSyncing: Bool = {
@@ -260,6 +289,7 @@ final class CloudSyncManager: ObservableObject {
             syncStatus = .upToDate
             markSyncCompleted()
             if wasSyncing { HapticManager.shared.iCloudSyncCompleted() }
+            return false
         }
     }
 

@@ -109,6 +109,17 @@ struct AudioElementView: View {
             }
         }
         .onDisappear { player.pause() }
+        // For a freshly-recorded note, `.onAppear` fired *during*
+        // recording (so the `!isRecording` guard skipped `load()`)
+        // and never fires again when recording stops — leaving the
+        // controller with no player, so the first play tap is inert
+        // until the view re-mounts. Loading on the recording→idle
+        // transition makes the just-recorded note playable
+        // immediately. `load(url:)` is idempotent on re-entry.
+        .onChange(of: isRecording) { _, nowRecording in
+            guard !nowRecording else { return }
+            player.load(url: content.fileURL)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
             guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
                   let time = note.userInfo?[AudioSeekKey.time] as? Double,

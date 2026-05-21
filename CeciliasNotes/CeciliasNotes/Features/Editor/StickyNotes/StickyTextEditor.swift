@@ -38,7 +38,11 @@ struct StickyTextEditor: UIViewRepresentable {
     }
 
     func updateUIView(_ tv: UITextView, context: Context) {
-        if tv.text != text {
+        // Skip the reassignment while first responder — see
+        // `TextEditorRepresentable.updateUIView`. Overwriting
+        // `tv.text` mid-dictation cancels the dictation session and
+        // drops text committed after a speech pause.
+        if tv.text != text && !tv.isFirstResponder {
             tv.text = text
         }
         applyStyle(to: tv)
@@ -51,9 +55,19 @@ struct StickyTextEditor: UIViewRepresentable {
     }
 
     private func applyStyle(to tv: UITextView) {
-        tv.font      = UIFont.systemFont(ofSize: 15, weight: .regular)
-        tv.textColor = textColor
-        tv.tintColor = textColor
+        // Guarded assignment — reassigning `tv.font` mid-dictation
+        // forces a glyph re-layout that drops the provisional
+        // recognition buffer. See `TextEditorRepresentable`.
+        let font = UIFont.systemFont(ofSize: 15, weight: .regular)
+        if tv.font != font {
+            tv.font = font
+        }
+        if tv.textColor != textColor {
+            tv.textColor = textColor
+        }
+        if tv.tintColor != textColor {
+            tv.tintColor = textColor
+        }
     }
 
     // MARK: - Coordinator
