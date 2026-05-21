@@ -40,6 +40,11 @@ struct ImageElementView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var pinchScale: CGFloat = 1.0
     @State private var resizeDelta: ResizeDelta? = nil
+    /// Diagnostic — distinguishes view instances in the
+    /// `[GestureAudit]` log. If one drag logs two distinct `inst=`
+    /// values for the same `elementId`, the element view is mounted
+    /// twice (the suspected cause of the laggy double-render).
+    @State private var instanceTag = Int.random(in: 1000...9999)
 
     private static let handleSize: CGFloat = 10
     private static let toolbarGap: CGFloat = 8
@@ -59,7 +64,7 @@ struct ImageElementView: View {
             height: element.normalizedHeight * pageSize.height
         )
         let displayed = displayedRect(base: base)
-        let _ = print("[GestureAudit] ImageElementView body render — elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) displayed=\(displayed) pageSize=\(pageSize)")
+        let _ = print("[GestureAudit] ImageElementView body render — inst=\(instanceTag) elementId=\(element.id.uuidString.prefix(8)) isSelected=\(isSelected) displayed=\(displayed) pageSize=\(pageSize)")
 
         ZStack(alignment: .topLeading) {
             // Order is load-bearing — gestures MUST sit before

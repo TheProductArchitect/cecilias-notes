@@ -287,12 +287,16 @@ extension Theme {
         accent:       Color(hex: "#0A84FF"),
         accentMuted:  Color(hex: "#0A2545"),
 
-        // Borders — alpha overlays on white (dark mode)
-        separator:       Color.white.opacity(0.08),
-        hairline:        Color.white.opacity(0.06),
-        borderSubtle:    Color.white.opacity(0.08),
-        borderDefault:   Color.white.opacity(0.12),
-        borderEmphasis:  Color.white.opacity(0.24),
+        // Borders — alpha overlays on white (dark mode). White at a
+        // low alpha over a near-black surface reads much weaker than
+        // the equivalent black-on-light alpha, so the hairline /
+        // subtle tiers are lifted to stay visible (dividers were
+        // effectively invisible on the dark library home).
+        separator:       Color.white.opacity(0.14),
+        hairline:        Color.white.opacity(0.12),
+        borderSubtle:    Color.white.opacity(0.16),
+        borderDefault:   Color.white.opacity(0.20),
+        borderEmphasis:  Color.white.opacity(0.30),
 
         // Semantic
         success:  Color(hex: "#30D158"),
