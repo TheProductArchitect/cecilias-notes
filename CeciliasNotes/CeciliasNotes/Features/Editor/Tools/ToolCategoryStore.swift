@@ -3,7 +3,7 @@ import Foundation
 // MARK: - ToolCategoryStore
 
 /// Maps each `ToolCategory` to the variant the user most recently picked
-/// inside it. Persisted as JSON in `@AppStorage("ink.tool.lastVariantPerCategory")`.
+/// inside it. Persisted as JSON in `@AppStorage("ceciliasnotes.tool.lastVariantPerCategory")`.
 ///
 /// Why a top-level enum instead of an `ObservableObject`:
 ///   • Read/write happens in three places (palette tap, popover pick,
@@ -12,7 +12,7 @@ import Foundation
 ///   • The map is small (≤4 entries today) so encoding it on every write
 ///     is fine.
 enum ToolCategoryStore {
-    private static let key = "ink.tool.lastVariantPerCategory"
+    private static let key = "ceciliasnotes.tool.lastVariantPerCategory"
 
     /// Returns the last-used variant for `category`, or its default if the
     /// user has never picked a variant in this category yet.

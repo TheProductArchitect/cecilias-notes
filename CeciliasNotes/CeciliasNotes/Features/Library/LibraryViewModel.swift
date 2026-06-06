@@ -84,8 +84,27 @@ final class LibraryViewModel: ObservableObject {
             // sidebar's other rows assign to `selectedContext`, so
             // this didSet is the single chokepoint for that exit.
             if isShowingTrash { isShowingTrash = false }
+            // A subject/recent/all selection also leaves a selected
+            // quiz — the grid and the quiz detail are mutually
+            // exclusive surfaces.
+            if selectedQuizID != nil { selectedQuizID = nil }
         }
     }
+
+    /// The quiz selected in the sidebar's Quizzes section, or `nil`.
+    /// When non-nil, `LibraryView` shows `QuizDetailView` instead of
+    /// the notebook grid. Selecting a quiz leaves the Trash surface;
+    /// selecting a context/trash row clears this (see `selectedContext`
+    /// didSet and the quiz row's tap handler).
+    @Published var selectedQuizID: UUID? {
+        didSet {
+            if selectedQuizID != nil && isShowingTrash { isShowingTrash = false }
+        }
+    }
+
+    /// Drives the quiz builder sheet, presented by `LibraryView` and
+    /// raised by the sidebar's "+ new quiz" button.
+    @Published var isShowingQuizBuilder: Bool = false
 
     /// True when the library is showing the Trash surface instead
     /// of the notebook grid. Toggled by the sidebar's "trash" row.
@@ -857,9 +876,9 @@ final class LibraryViewModel: ObservableObject {
     func createUntitledNotebookAndOpen() {
         HapticManager.shared.notebookCreated()
 
-        let cover    = NotebookCover.from(rawValue: UserDefaults.standard.string(forKey: "ink.lastUsed.cover"))
+        let cover    = NotebookCover.from(rawValue: UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.cover"))
         let pageSize: PageSize = {
-            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize"),
+            if let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.pageSize"),
                let v = PageSize(rawValue: raw) { return v }
             return .a4
         }()
@@ -867,7 +886,7 @@ final class LibraryViewModel: ObservableObject {
             // The flat enum persists as its String raw value via
             // `PageTemplate.jsonString` — no JSON encoding wrapper.
             // Decode by raw value rather than `JSONDecoder`.
-            guard let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.template")
+            guard let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.template")
             else { return .blank }
             return PageTemplate.from(jsonString: raw)
         }()
@@ -1009,9 +1028,9 @@ final class LibraryViewModel: ObservableObject {
         let title = cleanTitle.isEmpty ? "Imported PDF" : cleanTitle
 
         let cover = NotebookCover.from(rawValue:
-            UserDefaults.standard.string(forKey: "ink.lastUsed.cover"))
+            UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.cover"))
         let pageSize: PageSize = {
-            if let raw = UserDefaults.standard.string(forKey: "ink.lastUsed.pageSize"),
+            if let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.pageSize"),
                let v = PageSize(rawValue: raw) { return v }
             return .a4
         }()

@@ -107,6 +107,15 @@ final class LectureRecorder: ObservableObject {
     /// completes, its final best transcription is appended to
     /// `committedTranscript` and a fresh request begins.
     private var committedTranscript: String = ""
+    /// The most recent partial string delivered by the *current*
+    /// recognition task. The on-device recogniser can drop its prior
+    /// context after a pause and restart its hypothesis from scratch
+    /// within the same task (e.g. "…record an audio" → "Hi my name
+    /// is…"). That looks like the transcript jumping backwards. We
+    /// track the last partial so `ingestPartial` can detect the reset
+    /// and fold the prior text into `committedTranscript` instead of
+    /// losing it. Reset to "" whenever a new task starts.
+    private var lastSessionPartial: String = ""
 
     // MARK: Timer + lifecycle observers
 
@@ -332,16 +341,36 @@ final class LectureRecorder: ObservableObject {
     /// keeps the stale rate and makes `engine.start()` fail with
     /// `-10868` (`kAudioUnitErr_FormatNotSupported`).
     private func installInputTap(on input: AVAudioInputNode) {
-        let format = input.outputFormat(forBus: 0)
         let captureActor = self.capture
+        // Use the input node's *input* (hardware) format, NOT its
+        // output format and NOT nil. When the speech AU forces a
+        // `.voiceChat` graph the mic drops 48 kHz → 24 kHz; the engine's
+        // input node then reports the new 24 kHz on `inputFormat` while
+        // `outputFormat` (and therefore `format: nil`, which adopts the
+        // output format) can still read the stale 48 kHz. Installing the
+        // tap at 48 kHz against a 24 kHz hardware chain makes the engine
+        // fail to initialise with `-10868` (and `installTap` itself can
+        // throw) — the mic never starts, so dictation produces nothing.
+        // `inputFormat(forBus:)` is the format the hardware actually
+        // delivers, so the tap always matches the running graph.
+        let format = input.inputFormat(forBus: 0)
         #if DEBUG
-        print("[Lecture] installing tap — format sr=\(format.sampleRate) ch=\(format.channelCount)")
+        print("[Lecture] installing tap — hw input format sr=\(format.sampleRate) ch=\(format.channelCount)")
         // Tap-fire counter mirroring AudioRecorder's diagnostic.
         // First call + every 50th thereafter print so we can confirm
         // the engine is actually delivering buffers. Resets per
         // install — acceptable for a debug counter.
         nonisolated(unsafe) var tapFireCount = 0
         #endif
+        // A zero-rate / zero-channel format means the route is mid-
+        // teardown; installing against it would throw. Skip — the next
+        // config-change callback re-installs once the route settles.
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            #if DEBUG
+            print("[Lecture] installInputTap SKIP — hw format not ready (sr=\(format.sampleRate) ch=\(format.channelCount))")
+            #endif
+            return
+        }
         input.installTap(
             onBus:      0,
             bufferSize: Self.tapBufferSize,
@@ -439,11 +468,18 @@ final class LectureRecorder: ObservableObject {
         // assets.
         request.requiresOnDeviceRecognition = wasOnDevice
         request.taskHint                    = .dictation
+        // Insert sentence punctuation (periods, commas, question marks)
+        // into the transcription instead of one run-on string. iOS 16+.
+        request.addsPunctuation             = true
         await capture.setRequest(request)
 
         #if DEBUG
         print("[Dictation] startSpeechRecognition — installing recognitionTask (onDevice=\(request.requiresOnDeviceRecognition))")
         #endif
+        // Fresh task → fresh partial baseline. The first partial of a
+        // new task is never a "reset" relative to the previous task's
+        // last partial (rotation already folded that into committed).
+        lastSessionPartial = ""
         currentTask = recogniser.recognitionTask(with: request) { [weak self] result, error in
             // Log BEFORE the Task hop so we can see whether iOS
             // is firing the callback at all. The hop is needed
@@ -462,9 +498,7 @@ final class LectureRecorder: ObservableObject {
                 }
                 if let result {
                     let partial = result.bestTranscription.formattedString
-                    self.liveTranscript =
-                        (self.committedTranscript + " " + partial)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.ingestPartial(partial)
                     #if DEBUG
                     print("[Dictation] partial result, len=\(partial.count), isFinal=\(result.isFinal), preview=\(String(partial.prefix(40)))")
                     #endif
@@ -515,6 +549,82 @@ final class LectureRecorder: ObservableObject {
     /// creation gives the daemon room to release the previous
     /// session — short enough that the user doesn't perceive a
     /// gap in the live transcript.
+    /// Fold a freshly-delivered partial into `liveTranscript`,
+    /// accumulating across in-session hypothesis resets.
+    ///
+    /// Normally a task's `bestTranscription` only grows or is revised
+    /// in place, so `liveTranscript = committedTranscript + partial`.
+    /// But after a pause the on-device recogniser can discard its prior
+    /// context and restart the partial from scratch *within the same
+    /// task* — the partial jumps from "…record an audio" to "Hi my name
+    /// is…". Left alone that wipes the earlier sentence off the page
+    /// (the "transcript disappears after a long pause" bug). We detect
+    /// the reset — a shorter partial that no longer shares its opening
+    /// word with the previous one — and promote the previous partial
+    /// into `committedTranscript` first, so the new utterance appends
+    /// rather than replaces.
+    private func ingestPartial(_ partial: String) {
+        if isHypothesisReset(previous: lastSessionPartial, current: partial),
+           !lastSessionPartial.isEmpty {
+            // The just-finished utterance becomes a committed line; the
+            // new one (the current partial) starts on its own line.
+            committedTranscript = Self.joinLine(committedTranscript, lastSessionPartial)
+            #if DEBUG
+            print("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
+            #endif
+        }
+        lastSessionPartial = partial
+        liveTranscript = Self.joinLine(committedTranscript, partial)
+    }
+
+    /// Append `next` below `base` on its own line. Each pause-separated
+    /// utterance lands on a fresh line so a long pause visually breaks
+    /// the transcript instead of running on. Empty `base` → just `next`.
+    private static func joinLine(_ base: String, _ next: String) -> String {
+        let b = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        let n = next.trimmingCharacters(in: .whitespacesAndNewlines)
+        if b.isEmpty { return n }
+        if n.isEmpty { return b }
+        return b + "\n" + n
+    }
+
+    /// True when `current` is a fresh hypothesis (the recogniser
+    /// restarted the sentence) rather than an in-place revision of
+    /// `previous`.
+    ///
+    /// A revision keeps the same opening and usually grows
+    /// ("I'm trying" → "I'm trying to record"). A reset diverges at the
+    /// start — but the old first-word-only check missed two common
+    /// cases that showed up as text being *replaced*:
+    ///   • the new sentence starts with the same word ("The cat." →
+    ///     "The dog…") — same first word, so it slipped through; and
+    ///   • the new sentence is *longer* than the finished one.
+    /// With `addsPunctuation` on, a partial that ends in sentence
+    /// punctuation is a strong "this sentence is done" signal, so we
+    /// treat a diverging opening after a finished sentence as a reset
+    /// regardless of length. We compare a 12-character opening prefix
+    /// (not just the first word) so same-first-word sentence changes
+    /// are caught.
+    private func isHypothesisReset(previous: String, current: String) -> Bool {
+        guard !previous.isEmpty else { return false }
+        let p = previous.lowercased()
+        let c = current.lowercased()
+        let prefixLen = min(12, min(p.count, c.count))
+        guard prefixLen > 0, p.prefix(prefixLen) != c.prefix(prefixLen) else {
+            return false
+        }
+        let trimmedPrev = previous.trimmingCharacters(in: .whitespacesAndNewlines)
+        let endsSentence = trimmedPrev.hasSuffix(".")
+            || trimmedPrev.hasSuffix("!")
+            || trimmedPrev.hasSuffix("?")
+        // Diverging opening counts as a reset when the previous looks
+        // finished (punctuation) OR the new partial is shorter (the
+        // recogniser dropped its prior context). A diverging opening on
+        // a longer, unpunctuated partial is more likely a first-word
+        // revision, so we leave it as a revision.
+        return endsSentence || current.count < previous.count
+    }
+
     private func rotateRecognitionTaskIfStillRecording(finalSegment: String?) async {
         guard !isRotatingRecognition else { return }
         isRotatingRecognition = true
@@ -525,9 +635,8 @@ final class LectureRecorder: ObservableObject {
         // `committedTranscript` regardless of what the new
         // session captures.
         if let finalSegment, !finalSegment.isEmpty {
-            committedTranscript =
-                (committedTranscript + " " + finalSegment)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            // A finished task = a finished utterance → its own line.
+            committedTranscript = Self.joinLine(committedTranscript, finalSegment)
         } else if !liveTranscript.isEmpty {
             // The task ended WITHOUT a final result — a silence
             // timeout or a daemon error (`result == nil`). Its
@@ -596,7 +705,7 @@ final class LectureRecorder: ObservableObject {
     /// recognition is the documented fallback when on-device
     /// can't service the request.
     private static func makeRecogniser() -> (SFSpeechRecognizer?, onDevice: Bool) {
-        let chosen = UserDefaults.standard.string(forKey: "ink.transcription.locale") ?? ""
+        let chosen = UserDefaults.standard.string(forKey: "ceciliasnotes.transcription.locale") ?? ""
         let candidateLocales: [Locale] = {
             var locales: [Locale] = []
             if !chosen.isEmpty {
@@ -659,6 +768,7 @@ final class LectureRecorder: ObservableObject {
         request.shouldReportPartialResults  = false
         request.requiresOnDeviceRecognition = true
         request.taskHint                    = .dictation
+        request.addsPunctuation             = true
 
         let final: String? = await withCheckedContinuation { cont in
             recogniser.recognitionTask(with: request) { result, error in

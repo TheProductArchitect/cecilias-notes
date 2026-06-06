@@ -448,7 +448,7 @@ final class ExportService {
 
     static var globalExportsDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Ink")
+            .appendingPathComponent("CeciliasNotes")
             .appendingPathComponent("Exports")
     }
 

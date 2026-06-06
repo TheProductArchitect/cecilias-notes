@@ -191,15 +191,23 @@ struct TextElementsOverlayView: View {
             // UITextView and immediately start editing — skipping
             // the "select first" intermediate state.
             if !isEditing {
+                // The renderer ignores the element's stored
+                // `normalizedX` / `normalizedWidth` for text and
+                // always lays out at `pageMargin × fullContentWidth`.
+                // Mirror that here so the catcher covers what the
+                // user actually sees — otherwise cursor-mode taps
+                // land on a phantom rect to the side of the text.
+                let pageMargin: CGFloat = 32
+                let catcherWidth  = max(40, pageSize.width - 2 * pageMargin)
+                let catcherHeight = max(24, element.normalizedHeight * pageSize.height)
+                let catcherY      = max(0, min(pageSize.height - 24,
+                                               element.normalizedY * pageSize.height))
                 Color.clear
                     .contentShape(Rectangle())
-                    .frame(
-                        width:  element.normalizedWidth  * pageSize.width,
-                        height: element.normalizedHeight * pageSize.height
-                    )
+                    .frame(width: catcherWidth, height: catcherHeight)
                     .position(
-                        x: (element.normalizedX + element.normalizedWidth  / 2) * pageSize.width,
-                        y: (element.normalizedY + element.normalizedHeight / 2) * pageSize.height
+                        x: pageMargin + catcherWidth / 2,
+                        y: catcherY   + catcherHeight / 2
                     )
                     .onTapGesture {
                         handleElementTap(element: element)

@@ -91,6 +91,23 @@ final class Notebook {
     /// JPEG 200×260pt thumbnail of first page, regenerated on save.
     var thumbnailData: Data?
 
+    // MARK: Agent attribution (additive — default-valued, CloudKit-safe)
+    //
+    // Populated by `CeciliasNotesImporter` when a `.inkbook` file with
+    // an `agent` block is ingested. Plain values rather than a nested
+    // struct because SwiftData CloudKit sync requires concrete scalar
+    // columns. All four are nil/false for user-created notebooks, so
+    // the field set is fully additive — no migration needed (same
+    // shape as `Subject.isPinned`).
+    var isAgentWritten: Bool = false
+    var agentName: String?
+    var agentModel: String?
+    /// Filename (e.g. `Cambridge Coffee.inkbook`) of the source file
+    /// inside the iCloud Inbox. Stored as the leaf rather than a full
+    /// URL because the absolute path differs per device — only the
+    /// leaf is portable. Used by the importer to dedupe re-imports.
+    var sourceInkbookFilename: String?
+
     // MARK: Timestamps
     var createdAt: Date = Date()
     var updatedAt: Date = Date()

@@ -9,7 +9,7 @@ import UIKit
 /// sees (the widget itself still follows system appearance in 1.0 per
 /// architecture §17; this just keeps the door open).
 ///
-/// Migration from the previous "ink.theme" key (which stored "light" /
+/// Migration from the previous "ceciliasnotes.theme" key (which stored "light" /
 /// "dark") runs once on first launch of this build: "light" maps to
 /// "default", "dark" maps to "midnight", any other value falls back to
 /// "default". The old key is left intact so a rollback to the previous
@@ -30,8 +30,8 @@ public final class ThemeManager: ObservableObject {
 
     private let defaults: UserDefaults
     private static let currentIdKey = "theme.currentId"
-    private static let legacyKey    = "ink.theme"
-    private static let appGroupSuite = "group.com.wave.venu.Ink"
+    private static let legacyKey    = "ceciliasnotes.theme"
+    private static let appGroupSuite = "group.app.ceciliasnotes"
 
     // MARK: Init
 
@@ -61,7 +61,7 @@ public final class ThemeManager: ObservableObject {
             return match
         }
 
-        // 2. One-time migration from the legacy "ink.theme" key. Map
+        // 2. One-time migration from the legacy "ceciliasnotes.theme" key. Map
         //    "light" → "default", "dark" → "midnight"; anything else
         //    falls through to the default. The legacy key is left
         //    intact so a rollback to the previous build still sees it.

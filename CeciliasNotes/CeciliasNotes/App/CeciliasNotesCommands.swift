@@ -58,9 +58,9 @@ struct CeciliasNotesCommands: Commands {
 // MARK: - Notification names
 
 extension Notification.Name {
-    static let ceciliasNotesCommandNewNotebook   = Notification.Name("ink.command.newNotebook")
-    static let ceciliasNotesCommandSearch        = Notification.Name("ink.command.search")
-    static let ceciliasNotesCommandCloseNotebook = Notification.Name("ink.command.closeNotebook")
-    static let ceciliasNotesCommandExport        = Notification.Name("ink.command.export")
-    static let ceciliasNotesCommandPrint         = Notification.Name("ink.command.print")
+    static let ceciliasNotesCommandNewNotebook   = Notification.Name("ceciliasnotes.command.newNotebook")
+    static let ceciliasNotesCommandSearch        = Notification.Name("ceciliasnotes.command.search")
+    static let ceciliasNotesCommandCloseNotebook = Notification.Name("ceciliasnotes.command.closeNotebook")
+    static let ceciliasNotesCommandExport        = Notification.Name("ceciliasnotes.command.export")
+    static let ceciliasNotesCommandPrint         = Notification.Name("ceciliasnotes.command.print")
 }

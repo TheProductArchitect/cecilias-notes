@@ -125,7 +125,7 @@ struct AboutSettingsView: View {
     }
 
     private func sendFeedback() {
-        let address = "feedback@ink.app"
+        let address = "feedback@ceciliasnotes.app"
         let subject = "Cecilia's Notes Feedback — \(viewModel.appVersion)"
             .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         guard let url = URL(string: "mailto:\(address)?subject=\(subject)") else { return }

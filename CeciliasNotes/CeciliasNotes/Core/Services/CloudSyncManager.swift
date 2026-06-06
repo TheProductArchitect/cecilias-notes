@@ -25,8 +25,8 @@ final class CloudSyncManager: ObservableObject {
     }
 
     // MARK: Persistence keys
-    private static let enabledKey      = "ink.icloud.sync.enabled"
-    private static let lastSyncedKey   = "ink.icloud.sync.lastSyncedAt"
+    private static let enabledKey      = "ceciliasnotes.icloud.sync.enabled"
+    private static let lastSyncedKey   = "ceciliasnotes.icloud.sync.lastSyncedAt"
 
     // MARK: Init
 
@@ -238,23 +238,23 @@ final class CloudSyncManager: ObservableObject {
         // the closure captures compile under Swift 6, and hop to @MainActor
         // before touching MainActor-isolated state on `self`.
         return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let queryBox    = _UnsafeSendableBox(query)
-            let observerBox = _UnsafeSendableBox<NSObjectProtocol?>(nil)
-            observerBox.value = NotificationCenter.default.addObserver(
+            let queryBox    = _MetadataQueryBox(query)
+            let observerBox = _ObserverTokenBox()
+            observerBox.token = NotificationCenter.default.addObserver(
                 forName: .NSMetadataQueryDidFinishGathering,
-                object: queryBox.value,
+                object: queryBox.query,
                 queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    queryBox.value.stop()
-                    if let o = observerBox.value {
+                    queryBox.query.stop()
+                    if let o = observerBox.token {
                         NotificationCenter.default.removeObserver(o)
                     }
-                    let stillSyncing = self?.processQueryResults(queryBox.value) ?? false
+                    let stillSyncing = self?.processQueryResults(queryBox.query) ?? false
                     continuation.resume(returning: stillSyncing)
                 }
             }
-            OperationQueue.main.addOperation { queryBox.value.start() }
+            OperationQueue.main.addOperation { queryBox.query.start() }
         }
     }
 
@@ -318,12 +318,20 @@ private enum CloudSyncError: LocalizedError {
     }
 }
 
-// MARK: - Sendable box
+// MARK: - Sendable boxes
+//
+// Two concrete (non-generic) wrappers rather than one generic class.
+// The generic _UnsafeSendableBox<T> caused a swift-frontend crash in
+// Release builds: the EarlyPerfInliner pass segfaulted while inlining
+// the synthesised deinit (Swift 6.3.2 / Xcode 26). Concrete classes
+// avoid that optimizer path entirely.
 
-/// Pragmatic helper for crossing a @Sendable boundary with a non-Sendable
-/// Foundation object (e.g. NSMetadataQuery, NSObjectProtocol observer tokens)
-/// when we know the closure runs on a single queue. Keep usage tightly scoped.
-private final class _UnsafeSendableBox<T>: @unchecked Sendable {
-    var value: T
-    init(_ value: T) { self.value = value }
+private final class _MetadataQueryBox: @unchecked Sendable {
+    let query: NSMetadataQuery
+    init(_ query: NSMetadataQuery) { self.query = query }
+}
+
+private final class _ObserverTokenBox: @unchecked Sendable {
+    var token: NSObjectProtocol?
+    init() {}
 }

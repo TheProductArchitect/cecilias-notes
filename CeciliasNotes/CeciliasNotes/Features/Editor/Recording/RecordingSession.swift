@@ -425,11 +425,11 @@ final class RecordingSession: ObservableObject {
         )
 
         // Post-record transcription, gated by the existing
-        // `ink.transcription.auto` setting (architecture intent:
+        // `ceciliasnotes.transcription.auto` setting (architecture intent:
         // dictation always transcribes, voice notes are user-
         // configurable).
         let autoTranscribe = UserDefaults.standard
-            .object(forKey: "ink.transcription.auto") as? Bool ?? true
+            .object(forKey: "ceciliasnotes.transcription.auto") as? Bool ?? true
         if autoTranscribe, let url = pendingRecordingURL {
             let contentId = ctx.audioContentId
             Task.detached(priority: .utility) {

@@ -4,8 +4,8 @@ import SwiftData
 
 extension ModelContainer {
 
-    /// Production container backed by `ink.sqlite` in
-    /// Application Support/Ink/.
+    /// Production container backed by `ceciliasnotes.sqlite` in
+    /// Application Support/CeciliasNotes/.
     ///
     /// CloudKit private database — schema audited for compatibility
     /// in Prompt 7 (every non-optional property has an inline
@@ -24,7 +24,7 @@ extension ModelContainer {
     /// notes" via `CloudSyncManager`.
     static func ceciliasNotesContainer() throws -> ModelContainer {
         let storeURL = StorageService.ceciliasNotesDirectoryURL
-            .appendingPathComponent("ink.sqlite")
+            .appendingPathComponent("ceciliasnotes.sqlite")
         try FileManager.default.createDirectory(
             at: StorageService.ceciliasNotesDirectoryURL,
             withIntermediateDirectories: true
@@ -48,7 +48,7 @@ extension ModelContainer {
         let cloudConfig = ModelConfiguration(
             schema: schema,
             url: storeURL,
-            cloudKitDatabase: .private("iCloud.com.wave.venu.Ink")
+            cloudKitDatabase: .private("iCloud.app.ceciliasnotes")
         )
         do {
             let container = try ModelContainer(
@@ -62,8 +62,8 @@ extension ModelContainer {
             // CKContainer account-status check runs async; logs the
             // user's iCloud sign-in state so we know whether sync
             // even has the prerequisites to fire.
-            print("[CloudKit] container initialised on private database (iCloud.com.wave.venu.Ink)")
-            CKContainer(identifier: "iCloud.com.wave.venu.Ink").accountStatus { status, err in
+            print("[CloudKit] container initialised on private database (iCloud.app.ceciliasnotes)")
+            CKContainer(identifier: "iCloud.app.ceciliasnotes").accountStatus { status, err in
                 let label: String
                 switch status {
                 case .available:           label = "available"
@@ -83,7 +83,7 @@ extension ModelContainer {
             // development; no user-facing error surface.
             #if DEBUG
             print("[ModelContainer] CloudKit init failed, falling back to local: \(error)")
-            print("[CloudKit] *** SYNC DISABLED *** container ran on local-only path; verify (1) iCloud + CloudKit capabilities in app target, (2) iCloud container 'iCloud.com.wave.venu.Ink' exists in Apple Dev portal, (3) user signed into iCloud on device, (4) Ink toggle ON in Settings → Apple ID → iCloud")
+            print("[CloudKit] *** SYNC DISABLED *** container ran on local-only path; verify (1) iCloud + CloudKit capabilities in app target, (2) iCloud container 'iCloud.app.ceciliasnotes' exists in Apple Dev portal, (3) user signed into iCloud on device, (4) Cecilia's Notes toggle ON in Settings → Apple ID → iCloud")
             #endif
             let localConfig = ModelConfiguration(
                 schema: schema,

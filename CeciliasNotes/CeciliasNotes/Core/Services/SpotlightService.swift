@@ -9,14 +9,14 @@ import UniformTypeIdentifiers
 /// (5s after last save) and runs off the main actor. Soft-deletes remove the
 /// index entry immediately.
 ///
-/// Deep-link contract: `uniqueIdentifier == "ink.notebook.{uuid}"`.
+/// Deep-link contract: `uniqueIdentifier == "ceciliasnotes.notebook.{uuid}"`.
 /// `CeciliasNotesApp.onContinueUserActivity` parses this and routes to the editor.
 actor SpotlightService {
 
     static let shared = SpotlightService()
 
-    private static let domain = "ink.notebooks"
-    private static let prefix = "ink.notebook."
+    private static let domain = "ceciliasnotes.notebooks"
+    private static let prefix = "ceciliasnotes.notebook."
 
     // Debounce — id → pending task
     private var pending: [UUID: Task<Void, Never>] = [:]

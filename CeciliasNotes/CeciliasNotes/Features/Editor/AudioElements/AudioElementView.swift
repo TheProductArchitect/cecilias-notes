@@ -49,10 +49,16 @@ struct AudioElementView: View {
     private enum Corner: Equatable { case left, right }
 
     var body: some View {
+        // Audio strip is X-locked to horizontal center of the page —
+        // the only free axis is Y. The drag gesture ignores horizontal
+        // translation and the stored `normalizedX` is overridden here
+        // so legacy rows that drifted off-center snap back in.
+        let stripWidth = element.normalizedWidth * pageSize.width
+        let centeredX = max(0, (pageSize.width - stripWidth) / 2)
         let base = CGRect(
-            x: element.normalizedX * pageSize.width,
+            x: centeredX,
             y: element.normalizedY * pageSize.height,
-            width: element.normalizedWidth * pageSize.width,
+            width: stripWidth,
             height: Self.stripHeight
         )
         let displayed = displayedRect(base: base)
@@ -414,13 +420,18 @@ struct AudioElementView: View {
     private var bodyDragGesture: some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
-                dragOffset = value.translation
+                // Strip is X-locked — drop horizontal translation so
+                // the strip slides only on the vertical axis.
+                dragOffset = CGSize(width: 0, height: value.translation.height)
             }
             .onEnded { value in
-                let dxNorm = value.translation.width  / pageSize.width
+                // X is locked to page center — ignore horizontal
+                // translation. Only Y moves.
                 let dyNorm = value.translation.height / pageSize.height
-                element.normalizedX = clampNorm(element.normalizedX + Double(dxNorm))
-                element.normalizedY = clampNorm(element.normalizedY + Double(dyNorm))
+                let maxY = max(0, 1 - element.normalizedHeight)
+                let centeredNormX = max(0, (1.0 - element.normalizedWidth) / 2.0)
+                element.normalizedX = centeredNormX
+                element.normalizedY = max(0, min(maxY, element.normalizedY + Double(dyNorm)))
                 element.updatedAt   = Date()
                 dragOffset = .zero
             }
@@ -439,8 +450,10 @@ struct AudioElementView: View {
                     height: Self.stripHeight
                 )
                 let new = resizedRect(base: base, corner: corner, translation: value.translation)
-                element.normalizedX     = clampNorm(Double(new.minX) / Double(pageSize.width))
-                element.normalizedWidth = min(1, Double(new.width) / Double(pageSize.width))
+                let normX = Double(new.minX) / Double(pageSize.width)
+                let normW = Double(new.width) / Double(pageSize.width)
+                element.normalizedWidth = max(0.05, min(1, normW))
+                element.normalizedX     = max(0, min(1 - element.normalizedWidth, normX))
                 // Height stays fixed — normalize against current pageSize
                 // so a future page-size change preserves the visual height.
                 element.normalizedHeight = Double(Self.stripHeight) / Double(pageSize.height)

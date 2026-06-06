@@ -217,7 +217,7 @@ actor SpeechTranscriber {
 
     private func makeSupportedRecognizer() -> SFSpeechRecognizer? {
         // 1. User-chosen locale from Settings (Audio & Transcription).
-        let chosen = UserDefaults.standard.string(forKey: "ink.transcription.locale") ?? ""
+        let chosen = UserDefaults.standard.string(forKey: "ceciliasnotes.transcription.locale") ?? ""
         if !chosen.isEmpty,
            let r = SFSpeechRecognizer(locale: Locale(identifier: chosen)),
            r.supportsOnDeviceRecognition {
@@ -235,10 +235,10 @@ actor SpeechTranscriber {
         return nil
     }
 
-    /// Reads the user's `ink.transcription.quality` setting and maps it to
+    /// Reads the user's `ceciliasnotes.transcription.quality` setting and maps it to
     /// `SFSpeechRecognitionTaskHint`. Default is `.dictation`.
     private static func currentTaskHint() -> SFSpeechRecognitionTaskHint {
-        let raw = UserDefaults.standard.string(forKey: "ink.transcription.quality") ?? "fast"
+        let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.transcription.quality") ?? "fast"
         return raw == "fast" ? .search : .dictation
     }
 

@@ -15,7 +15,7 @@ enum PersonalIdentity {
     /// call `mirrorNameToAppGroup()` so the widget never lags the
     /// app's identity.
     static let appGroupNameKey = "user.displayName"
-    private static let appGroupSuite = "group.com.wave.venu.Ink"
+    private static let appGroupSuite = "group.app.ceciliasnotes"
 
     /// Mirror the canonical user name into the App Group's shared
     /// `UserDefaults` so the widget extension can read it. Falls

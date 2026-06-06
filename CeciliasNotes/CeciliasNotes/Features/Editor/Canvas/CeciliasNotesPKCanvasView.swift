@@ -29,6 +29,24 @@ import UIKit
 /// See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
 final class CeciliasNotesPKCanvasView: PKCanvasView {
 
+    /// Set by the canvas coordinator. Given a hit-test point in this
+    /// canvas's coordinate space and the originating event, returns
+    /// `true` when the canvas should yield the touch to the overlay
+    /// layer beneath it — i.e. a *finger* tap landing on an interactive
+    /// element (audio strip, image, sticky, text) while a drawing tool
+    /// is active. Returning nil from `hitTest` lets UIKit continue to
+    /// the sibling overlay below, so the element's controls receive the
+    /// tap. Pencil touches must always draw, so the closure returns
+    /// `false` for them. Nil closure → behave exactly like PKCanvasView.
+    var shouldYieldTouchToOverlay: ((CGPoint, UIEvent?) -> Bool)?
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if shouldYieldTouchToOverlay?(point, event) == true {
+            return nil
+        }
+        return super.hitTest(point, with: event)
+    }
+
     override func addGestureRecognizer(_ gestureRecognizer: UIGestureRecognizer) {
         if gestureRecognizer is UIHoverGestureRecognizer {
             // Refuse silently. The system only adds these from its own

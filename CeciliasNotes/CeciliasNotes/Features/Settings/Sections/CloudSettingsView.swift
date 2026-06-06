@@ -168,7 +168,7 @@ struct CloudSettingsView: View {
 
     private func refreshAccountStatus() async {
         let status: CKAccountStatus = await withCheckedContinuation { cont in
-            CKContainer(identifier: "iCloud.com.wave.venu.Ink")
+            CKContainer(identifier: "iCloud.app.ceciliasnotes")
                 .accountStatus { status, _ in
                     cont.resume(returning: status)
                 }

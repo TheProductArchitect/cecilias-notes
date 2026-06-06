@@ -92,15 +92,13 @@ struct SettingsView: View {
 
     // MARK: Rail (left)
 
-    /// `SettingsSection.allCases` minus rows that should be absent on
-    /// the current device. `.intelligence` is suppressed when the
-    /// Foundation Models framework is missing or Apple Intelligence
-    /// is off in iOS settings — graceful absence, not a disabled
-    /// state.
+    /// `.intelligence` is always shown now: it hosts the quiz controls
+    /// (generation toggle, engine picker, MCP status), and quiz
+    /// generation works on-device regardless of Apple Intelligence
+    /// availability. It used to be suppressed when Foundation Models
+    /// was missing — that hid the quiz settings entirely.
     private var visibleSections: [SettingsSection] {
-        SettingsSection.allCases.filter { section in
-            section != .intelligence || IntelligenceService.shared.isAvailable
-        }
+        SettingsSection.allCases
     }
 
     private var rail: some View {

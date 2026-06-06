@@ -150,7 +150,7 @@ final class AudioRecorder {
         // to a dedicated serial queue mirrors what
         // `LectureRecorder` does (it dispatches buffer handling
         // to an actor) and lets the tap return immediately.
-        let writeQueue = DispatchQueue(label: "ink.audio.recorder.write", qos: .userInitiated)
+        let writeQueue = DispatchQueue(label: "ceciliasnotes.audio.recorder.write", qos: .userInitiated)
         inputNode.installTap(
             onBus:        0,
             bufferSize:   Self.tapBufferSize,

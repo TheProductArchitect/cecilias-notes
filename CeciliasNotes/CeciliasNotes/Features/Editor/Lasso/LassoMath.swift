@@ -75,11 +75,37 @@ enum LassoMath {
     }
 
     /// True when an axis-aligned rectangle's centre is inside the
-    /// lasso path. The architecture spec calls out centre-based
-    /// inclusion as "more forgiving than full-overlap and feels
-    /// right" for non-stroke elements.
+    /// lasso path. Precise containment — used by per-stroke matching
+    /// (each PKStroke's bbox is small, so centre is the right signal).
     static func rectCentreContained(_ rect: CGRect, in path: CGPath) -> Bool {
         contains(path, CGPoint(x: rect.midX, y: rect.midY))
+    }
+
+    /// Whether a non-stroke element's rect counts as "in the lasso."
+    /// True when **either**:
+    ///   • the element's centre is inside the path (the strict case),
+    ///     **or**
+    ///   • the element's rect overlaps the lasso path's bounding box by
+    ///     at least 25% of the element's own area.
+    ///
+    /// Point-only sampling (centre or corner counts) felt unintuitive:
+    /// lassoing 40% of a wide text block but leaving the centre just
+    /// outside the loop selected nothing. The area-overlap rule
+    /// matches the natural "if I loop over a chunk of this thing, it's
+    /// selected" expectation, without catching incidental grazes (a
+    /// 5% clip stays out). For marquee paths the path *is* its bbox so
+    /// the overlap reflects the path exactly; for freeform paths the
+    /// bbox is the convex envelope, which is a fine proxy for the
+    /// typical "draw a loop around content" gesture.
+    static func rectSubstantiallyInside(_ rect: CGRect, in path: CGPath) -> Bool {
+        if contains(path, CGPoint(x: rect.midX, y: rect.midY)) { return true }
+        let pathBBox = path.boundingBoxOfPath
+        let intersection = rect.intersection(pathBBox)
+        guard !intersection.isNull, !intersection.isEmpty else { return false }
+        let elementArea = rect.width * rect.height
+        guard elementArea > 0 else { return false }
+        let coverage = (intersection.width * intersection.height) / elementArea
+        return coverage >= 0.25
     }
 
     // MARK: - Affine transform builders

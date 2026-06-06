@@ -14,7 +14,7 @@ extension StorageService {
 
     /// True iff `notebooksDirectoryURL` currently resolves to an iCloud ubiquity path.
     nonisolated static var isUsingiCloudStorage: Bool {
-        let enabled = UserDefaults.standard.bool(forKey: "ink.icloud.sync.enabled")
+        let enabled = UserDefaults.standard.bool(forKey: "ceciliasnotes.icloud.sync.enabled")
         guard enabled else { return false }
         return FileManager.default.url(forUbiquityContainerIdentifier: nil) != nil
     }

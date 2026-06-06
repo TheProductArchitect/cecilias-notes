@@ -38,6 +38,8 @@ struct SubjectSidebarView: View {
                     sectionDivider
                     recentContextRow
                     trashContextRow
+                    sectionDivider
+                    QuizListView(viewModel: viewModel)
                 }
                 .padding(.top, 24)
                 .padding(.bottom, 16)
@@ -156,7 +158,7 @@ struct SubjectSidebarView: View {
     /// individual recent notebooks; the grid is the canonical surface
     /// for that list now.
     private var recentContextRow: some View {
-        let isSelected = viewModel.selectedContext == .recent
+        let isSelected = viewModel.selectedContext == .recent && viewModel.selectedQuizID == nil
         return SidebarRow(
             isSelected: isSelected,
             onTap: { viewModel.selectedContext = .recent }
@@ -234,6 +236,24 @@ struct SubjectSidebarView: View {
 
                 sidebarDivider
             }
+
+            // "+ new quiz" — sits directly above "+ new subject".
+            // Opens the three-step builder sheet (presented by
+            // `LibraryView`).
+            Button {
+                viewModel.isShowingQuizBuilder = true
+            } label: {
+                Text("+ new quiz")
+                    .font(.system(size: 10.5, weight: .regular))
+                    .foregroundStyle(theme.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Self.horizontalInset)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            sidebarDivider
 
             Button {
                 viewModel.createSubject()
@@ -344,7 +364,7 @@ private struct AllNotesListRow: View {
     @Query(filter: #Predicate<Notebook> { $0.isDeleted == false })
     private var notebooks: [Notebook]
 
-    private var isSelected: Bool { viewModel.selectedContext == .allNotes }
+    private var isSelected: Bool { viewModel.selectedContext == .allNotes && viewModel.selectedQuizID == nil }
 
     var body: some View {
         SidebarRow(
@@ -413,7 +433,7 @@ private struct SubjectListRow: View {
     }
 
     private var isSelected: Bool {
-        viewModel.selectedContext == .subject(subject.id)
+        viewModel.selectedContext == .subject(subject.id) && viewModel.selectedQuizID == nil
     }
 
     /// Drag payload for subject reorder. Distinct from

@@ -15,7 +15,7 @@ struct AudioSettingsView: View {
     /// `objectWillChange`, so the segmented Picker reads stale state and
     /// stays on the previous segment. Re-declaring `@AppStorage` here
     /// makes it a SwiftUI `DynamicProperty` that drives re-rendering.
-    @AppStorage("ink.transcription.quality")
+    @AppStorage("ceciliasnotes.transcription.quality")
     private var transcriptionQuality: TranscriptionQuality = .fast
 
     private var selectedLocaleName: String {

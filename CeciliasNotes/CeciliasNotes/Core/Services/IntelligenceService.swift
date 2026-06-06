@@ -107,7 +107,7 @@ final class IntelligenceService: ObservableObject {
     /// the same key the widget reads. AI prompts that surface user-
     /// facing copy should personalise with this when available.
     var userDisplayName: String {
-        UserDefaults(suiteName: "group.com.wave.venu.Ink")?
+        UserDefaults(suiteName: "group.app.ceciliasnotes")?
             .string(forKey: "user.displayName") ?? ""
     }
 

@@ -102,7 +102,7 @@ public struct Theme: Identifiable, Equatable, Hashable {
     /// Subtle margin indicator (e.g. the soft band at the page edge).
     public let pageMargin: Color
 
-    // MARK: Ink defaults
+    // MARK: Pen defaults
 
     /// New strokes drawn after switching themes use this as the default
     /// pen colour. Existing strokes keep their stored colours.
@@ -208,7 +208,7 @@ extension Theme {
         pageDots:        Color(hex: "#D0D0D0"),
         pageMargin:      Color(hex: "#F0F0F0"),
 
-        // Ink — matches CeciliasNotesTool.Defaults.ceciliasNotesColour(light)
+        // Pen — matches CeciliasNotesTool.Defaults.ceciliasNotesColour(light)
         defaultInkColor: Color(hex: "#1D1D1B"),
 
         // Assets
@@ -309,7 +309,7 @@ extension Theme {
         pageDots:        Color(hex: "#3A3A3C"),
         pageMargin:      Color(hex: "#222224"),
 
-        // Ink — matches CeciliasNotesTool.Defaults.ceciliasNotesColour(dark)
+        // Pen — matches CeciliasNotesTool.Defaults.ceciliasNotesColour(dark)
         defaultInkColor: Color(hex: "#F5F5F2"),
 
         // Assets

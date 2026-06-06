@@ -7,8 +7,8 @@ import UIKit
 /// uses anywhere else in the app.
 ///
 /// Two settings gates from `UserDefaults`:
-/// - `ink.haptics.drawing` — gates drawing-time haptics (stroke begins). Default true.
-/// - `ink.haptics.ui`      — gates all UI haptics (taps, confirmations). Default true.
+/// - `ceciliasnotes.haptics.drawing` — gates drawing-time haptics (stroke begins). Default true.
+/// - `ceciliasnotes.haptics.ui`      — gates all UI haptics (taps, confirmations). Default true.
 ///
 /// Rate-limited: at most one haptic per 80 ms, regardless of caller. This protects
 /// rapid-fire scenarios (e.g. dragging across many cells) from physical buzz fatigue.
@@ -46,11 +46,11 @@ final class HapticManager {
 
     private var uiHapticsEnabled: Bool {
         // Default true if key not yet written
-        UserDefaults.standard.object(forKey: "ink.haptics.ui") as? Bool ?? true
+        UserDefaults.standard.object(forKey: "ceciliasnotes.haptics.ui") as? Bool ?? true
     }
 
     private var drawingHapticsEnabled: Bool {
-        UserDefaults.standard.object(forKey: "ink.haptics.drawing") as? Bool ?? true
+        UserDefaults.standard.object(forKey: "ceciliasnotes.haptics.drawing") as? Bool ?? true
     }
 
     private func canFire(drawing: Bool = false) -> Bool {
@@ -83,7 +83,7 @@ final class HapticManager {
     func pageAdded()                 { fire(impact: lightImpact) }
     func pageDeleted()               { fire(impact: mediumImpact) }
 
-    // Drawing — gated on `ink.haptics.drawing` setting via canFire(drawing:)
+    // Drawing — gated on `ceciliasnotes.haptics.drawing` setting via canFire(drawing:)
     func strokeBegins()              { fire(impact: lightImpact, drawing: true) }
 
     // Tools

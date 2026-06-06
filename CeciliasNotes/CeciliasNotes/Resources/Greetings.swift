@@ -205,7 +205,7 @@ let greetings: [(text: String, tag: String?)] = [
     (text: "the question is usually better than the answer.", tag: nil),
     (text: "leave a thread for tomorrow you.", tag: nil),
     (text: "what's nagging at you?", tag: nil),
-    (text: "ink it before it leaves.", tag: nil),
+    (text: "note it before it leaves.", tag: nil),
     (text: "what was the original feeling?", tag: nil),
     (text: "you can always cross it out.", tag: nil),
     (text: "shorter than you think it should be.", tag: nil),

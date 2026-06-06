@@ -39,7 +39,7 @@ final class StorageService: ObservableObject {
 
     nonisolated static var ceciliasNotesDirectoryURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Ink")
+            .appendingPathComponent("CeciliasNotes")
     }
 
     /// Local-only path. Used as the source/destination during enable/disable
@@ -52,9 +52,9 @@ final class StorageService: ObservableObject {
     /// `Documents/Notebooks` when sync is enabled AND ubiquity is reachable;
     /// otherwise the local Application Support path.
     ///
-    /// Persisted-flag key is `ink.icloud.sync.enabled` (owned by CloudSyncManager).
+    /// Persisted-flag key is `ceciliasnotes.icloud.sync.enabled` (owned by CloudSyncManager).
     nonisolated static var notebooksDirectoryURL: URL {
-        let enabled = UserDefaults.standard.bool(forKey: "ink.icloud.sync.enabled")
+        let enabled = UserDefaults.standard.bool(forKey: "ceciliasnotes.icloud.sync.enabled")
         if enabled,
            let icloudRoot = FileManager.default
             .url(forUbiquityContainerIdentifier: nil)?
@@ -1276,7 +1276,7 @@ extension StorageService {
     func localStorageUsed() async -> StorageInfo {
         let fm = FileManager.default
 
-        let dbURL   = Self.ceciliasNotesDirectoryURL.appendingPathComponent("ink.sqlite")
+        let dbURL   = Self.ceciliasNotesDirectoryURL.appendingPathComponent("ceciliasnotes.sqlite")
         let dbBytes = (try? fm.attributesOfItem(atPath: dbURL.path)[.size] as? Int64) ?? 0
 
         var mediaBytes: Int64 = 0

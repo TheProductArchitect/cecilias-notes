@@ -82,6 +82,15 @@ enum CeciliasNotesSchemaV6: VersionedSchema {
             PDFPageContent.self,
             ShapeContent.self,
             HighlightContent.self,
+            // Quiz feature — additive entities. CloudKit-compatible
+            // (optional relationships with inverses, inline scalar
+            // defaults, JSON-string columns for value-type fields), so
+            // the addition is a lightweight migration on existing
+            // stores — no destructive wipe for the quiz tables.
+            Quiz.self,
+            QuizQuestion.self,
+            QuizAttempt.self,
+            QuestionResponse.self,
         ]
     }
 }

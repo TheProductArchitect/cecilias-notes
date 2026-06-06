@@ -97,6 +97,18 @@ final class TextContent {
     /// first span; continuations know their audio).
     var anchorAudioId: UUID? = nil
 
+    /// NSKeyedArchiver-encoded `NSAttributedString` carrying rich
+    /// text formatting (bold/italic/underline, headings, alignment,
+    /// color, font family, lists). Optional and additive — old rows
+    /// (and rows written by the dictation path) leave this `nil` and
+    /// the editor falls back to `text` + `size`. When non-nil,
+    /// `text` is kept in sync with the plain-string projection so
+    /// search, AI prompts, and export keep working unchanged.
+    /// Storage is `Data` rather than a relationship to keep CloudKit
+    /// schema simple (no extra entity) and the encoded payload is
+    /// small for typical note-sized text.
+    var attributedTextData: Data? = nil
+
     /// Inverse of `AudioContent.anchorText`. SwiftData populates
     /// this when an audio recording's `anchorText` is set to this
     /// text. Empty for typed text and for continuation spans.
@@ -112,15 +124,17 @@ final class TextContent {
         source: TextSource = .typed,
         size: TextSize = .body,
         anchorAudioId: UUID? = nil,
+        attributedTextData: Data? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
-        self.id            = id
-        self.text          = text
-        self.source        = source
-        self.size          = size
-        self.anchorAudioId = anchorAudioId
-        self.createdAt     = createdAt
-        self.updatedAt     = updatedAt
+        self.id                 = id
+        self.text               = text
+        self.source             = source
+        self.size               = size
+        self.anchorAudioId      = anchorAudioId
+        self.attributedTextData = attributedTextData
+        self.createdAt          = createdAt
+        self.updatedAt          = updatedAt
     }
 }

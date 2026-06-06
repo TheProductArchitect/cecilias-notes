@@ -31,7 +31,7 @@ import WidgetKit
 //
 // No borders, no rounded rects beyond the system widget corner
 // radius, no icons. Every tap target deep-links via the existing
-// `ink://` scheme (`quick-capture` or `open/{uuid}`).
+// `ceciliasnotes://` scheme (`quick-capture` or `open/{uuid}`).
 
 // MARK: - Home small (.systemSmall)
 
@@ -68,7 +68,7 @@ private struct HomeSmallView: View {
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
-        .widgetURL(URL(string: "ink://quick-capture"))
+        .widgetURL(URL(string: "ceciliasnotes://quick-capture"))
     }
 }
 
@@ -94,7 +94,7 @@ private struct HomeMediumView: View {
     var body: some View {
         HStack(spacing: 0) {
             // Left — quick-capture half.
-            Link(destination: URL(string: "ink://quick-capture")!) {
+            Link(destination: URL(string: "ceciliasnotes://quick-capture")!) {
                 ZStack {
                     GhostLetter()
                     VStack(alignment: .leading, spacing: 4) {
@@ -127,7 +127,7 @@ private struct HomeMediumView: View {
                     .padding(.bottom, 6)
 
                 ForEach(entry.recents.prefix(3), id: \.id) { nb in
-                    if let url = URL(string: "ink://open/\(nb.id.uuidString)") {
+                    if let url = URL(string: "ceciliasnotes://open/\(nb.id.uuidString)") {
                         Link(destination: url) { recentRow(nb) }
                     } else {
                         recentRow(nb)
@@ -177,7 +177,7 @@ struct LockCircularNewNoteWidget: Widget {
 
 private struct LockCircularView: View {
 
-    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.com.wave.venu.Ink"))
+    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.app.ceciliasnotes"))
     private var sharedName: String = ""
 
     /// First-letter of the user's name, lowercased, ASCII-only.
@@ -200,7 +200,7 @@ private struct LockCircularView: View {
             .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .widgetAccentable()
-            .widgetURL(URL(string: "ink://quick-capture"))
+            .widgetURL(URL(string: "ceciliasnotes://quick-capture"))
     }
 }
 
@@ -231,7 +231,7 @@ private struct LockRectangularView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .widgetURL(URL(string: "ink://quick-capture"))
+        .widgetURL(URL(string: "ceciliasnotes://quick-capture"))
     }
 }
 
@@ -260,9 +260,9 @@ private struct LockInlineView: View {
 
     private var inlineURL: URL? {
         if let id = entry.primary?.id {
-            return URL(string: "ink://open/\(id.uuidString)")
+            return URL(string: "ceciliasnotes://open/\(id.uuidString)")
         }
-        return URL(string: "ink://quick-capture")
+        return URL(string: "ceciliasnotes://quick-capture")
     }
 
     var body: some View {
@@ -279,7 +279,7 @@ private struct LockInlineView: View {
 private struct BrandPossessive: View {
     let size: CGFloat
 
-    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.com.wave.venu.Ink"))
+    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.app.ceciliasnotes"))
     private var sharedName: String = ""
 
     private var displayName: String {
@@ -329,7 +329,7 @@ private struct BrandPossessive: View {
 /// behind the brand mark and bleeds off the bottom-right edge.
 private struct GhostLetter: View {
 
-    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.com.wave.venu.Ink"))
+    @AppStorage("user.displayName", store: UserDefaults(suiteName: "group.app.ceciliasnotes"))
     private var sharedName: String = ""
 
     private var letter: String {

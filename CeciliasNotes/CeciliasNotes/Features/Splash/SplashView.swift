@@ -59,6 +59,13 @@ struct SplashView: View {
 
     @State private var phase: AnimationPhase = .initial
 
+    /// One random illustration per splash render, picked once when the
+    /// view appears so the choreography doesn't swap the artwork mid-
+    /// animation. `SplashIllustration.next()` rotates through the ~480
+    /// bundled SVGs while avoiding the last 20 — feels fresh every
+    /// launch without ever flashing the same image twice in a row.
+    @State private var illustrationURL: URL? = nil
+
     // MARK: Timing constants
     //
     // Named so the choreography reads as a sequence rather than a
@@ -145,13 +152,56 @@ struct SplashView: View {
                 // above true vertical centre so the composition reads
                 // like a book cover rather than a vertically-centred
                 // form.
+                // Was -0.08 (cluster sat ~42% from top). Pulled higher
+                // to -0.33 so the headroom above the wordmark shrinks
+                // by ~60%, freeing the lower half of the screen for
+                // the rotating illustration to breathe at its new
+                // larger size without crowding the title.
                 centreCluster
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .offset(y: -proxy.size.height * 0.08)
+                    .offset(y: -proxy.size.height * 0.33)
+
+                // Rotating illustration — sits in the lower third of
+                // the splash, beneath the wordmark/signoff. Sized to
+                // ~32% of the shorter screen edge so it reads as
+                // supporting art rather than a competing focal point.
+                // Fades in alongside the sign-off so the user's first
+                // visual lock is the wordmark, then the illustration
+                // and signature arrive together as the second beat.
+                if let illustrationURL {
+                    // Orientation-aware sizing + placement. Portrait
+                    // has lots of vertical runway between the lifted
+                    // title (now ~17% from top) and the bottom edge —
+                    // using `min(width, height) * 0.48` left a big
+                    // empty band in the middle on iPhone portrait. So:
+                    //   • Portrait: art scales to ~75% of width (or
+                    //     45% of height, whichever is smaller) and
+                    //     sits centred in the lower half (offset +15%).
+                    //   • Landscape: keep the prior `0.48 × shorter
+                    //     edge` sizing, anchored near the bottom edge.
+                    let isPortrait = proxy.size.height > proxy.size.width
+                    let edge: CGFloat = isPortrait
+                        ? min(proxy.size.width * 0.75, proxy.size.height * 0.45)
+                        : min(proxy.size.width, proxy.size.height) * 0.48
+                    SplashSVGView(url: illustrationURL)
+                        .frame(width: edge, height: edge)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity,
+                               alignment: isPortrait ? .center : .bottom)
+                        .offset(y: isPortrait ? proxy.size.height * 0.15 : 0)
+                        .padding(.bottom, isPortrait ? 0 : proxy.size.height * 0.08)
+                        .opacity(isSignoffVisible ? 1 : 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
             .opacity(phase == .fadingOut ? 0 : 1)
         }
-        .onAppear(perform: runAnimationSequence)
+        .onAppear {
+            if illustrationURL == nil {
+                illustrationURL = SplashIllustration.next()
+            }
+            runAnimationSequence()
+        }
     }
 
     // MARK: Centre cluster

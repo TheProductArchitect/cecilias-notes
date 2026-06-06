@@ -17,14 +17,14 @@ struct PencilSettingsView: View {
     /// purely value-driven and stays stuck on the previous segment.
     /// Reading via SwiftUI's view-level `@AppStorage` makes the Picker
     /// a proper `DynamicProperty` reader and the segments update.
-    @AppStorage("ink.pencil.doubletap") private var doubleTapAction: DoubleTapAction = .switchTool
+    @AppStorage("ceciliasnotes.pencil.doubletap") private var doubleTapAction: DoubleTapAction = .switchTool
 
     /// View-level mirror of the AppStorage key so the Picker
     /// re-renders on selection. Same `DynamicProperty` rationale as
     /// `doubleTapAction` above — `SettingsViewModel`'s
     /// `@AppStorage` properties write through but don't fire
     /// `objectWillChange`.
-    @AppStorage("ink.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
+    @AppStorage("ceciliasnotes.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
 
     var body: some View {
         ScrollView {

@@ -18,7 +18,7 @@ struct ToolSettings: Codable, Equatable {
 // MARK: - ToolSettingsStore
 
 /// Backs the per-tool persisted settings as a single JSON blob in
-/// `@AppStorage("ink.tool.settings")` — one key for the whole app.
+/// `@AppStorage("ceciliasnotes.tool.settings")` — one key for the whole app.
 ///
 /// Why one blob instead of one AppStorage per tool:
 ///   • Adding new tool variants doesn't require touching UserDefaults.
@@ -33,7 +33,7 @@ struct ToolSettingsStore: Codable, Equatable {
     /// "use the default for that identity".
     var settings: [String: ToolSettings] = [:]
 
-    static let userDefaultsKey = "ink.tool.settings"
+    static let userDefaultsKey = "ceciliasnotes.tool.settings"
 
     // MARK: Load / save
 

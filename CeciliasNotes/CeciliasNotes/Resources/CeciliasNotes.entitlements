@@ -11,7 +11,7 @@
       services checked in Xcode. CloudKit is required by SwiftData's
       `cloudKitDatabase: .private(...)` configuration; iCloud Documents is
       required by the existing `CloudSyncManager` ubiquity-container flow.
-    - The CloudKit container `iCloud.com.wave.venu.Ink` must exist in the
+    - The CloudKit container `iCloud.app.ceciliasnotes` must exist in the
       Apple Developer account's CloudKit Dashboard (Xcode auto-creates it
       the first time the capability is added).
     - The CeciliasNotesWidget extension target needs its own .entitlements file with
@@ -29,11 +29,11 @@
     </array>
     <key>com.apple.developer.icloud-container-identifiers</key>
     <array>
-        <string>iCloud.com.wave.venu.Ink</string>
+        <string>iCloud.app.ceciliasnotes</string>
     </array>
     <key>com.apple.developer.ubiquity-container-identifiers</key>
     <array>
-        <string>iCloud.com.wave.venu.Ink</string>
+        <string>iCloud.app.ceciliasnotes</string>
     </array>
 
     <!-- Key-value store identifier (used for any cross-device flags that
@@ -41,12 +41,12 @@
          by the app but provisioned so it's available without an entitlement
          change later). -->
     <key>com.apple.developer.ubiquity-kvstore-identifier</key>
-    <string>$(TeamIdentifierPrefix)com.wave.venu.Ink</string>
+    <string>$(TeamIdentifierPrefix)app.ceciliasnotes</string>
 
     <!-- App Group (shared with CeciliasNotesWidget) -->
     <key>com.apple.security.application-groups</key>
     <array>
-        <string>group.com.wave.venu.Ink</string>
+        <string>group.app.ceciliasnotes</string>
     </array>
 </dict>
 </plist>

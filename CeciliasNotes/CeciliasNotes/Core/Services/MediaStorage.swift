@@ -51,7 +51,7 @@ enum MediaStorage {
         }
     }
 
-    nonisolated private static let logger = Logger(subsystem: "app.ink", category: "MediaStorage")
+    nonisolated private static let logger = Logger(subsystem: "app.ceciliasnotes", category: "MediaStorage")
     private static let migrationFlagKey = "media.storage.migrated.v1"
     nonisolated private static let rootName = "MediaAttachments"
 

@@ -37,6 +37,14 @@ struct CustomisePanel: View {
     /// recomputes the row copy + chevron visibility live.
     @State private var annotationsTick: Int = 0
 
+    /// Measured intrinsic height of the scroll content. The ScrollView
+    /// is then capped at this height so the panel hugs its content
+    /// instead of stretching to fill the available vertical space (the
+    /// old behaviour left a tall band of empty surface below `TAGS` on
+    /// large iPads). If content ever exceeds the screen, the parent's
+    /// `maxHeight` cap kicks in and the ScrollView starts scrolling.
+    @State private var contentHeight: CGFloat = 0
+
     private let coverSwatchSize    = CGSize(width: 64, height: 85)
     private let templateThumbSize  = CGSize(width: 64, height: 85)
 
@@ -106,7 +114,17 @@ struct CustomisePanel: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
                 .padding(.bottom, 16)
+                .background(
+                    GeometryReader { g in
+                        Color.clear.preference(
+                            key: CustomisePanelContentHeightKey.self,
+                            value: g.size.height
+                        )
+                    }
+                )
             }
+            .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
+            .onPreferenceChange(CustomisePanelContentHeightKey.self) { contentHeight = $0 }
         }
         .background(
             UnevenRoundedRectangle(
@@ -909,3 +927,10 @@ struct CustomisePanel: View {
 // PageTemplate.displayName lives on the type itself now (see
 // SupportingTypes.swift) — the local extension was removed when the
 // enum gained the property natively.
+
+private struct CustomisePanelContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}

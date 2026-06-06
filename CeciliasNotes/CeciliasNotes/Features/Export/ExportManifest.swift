@@ -57,7 +57,7 @@ actor ExportManifest {
     private static let maxRecords = 10
     private static var manifestURL: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Ink")
+            .appendingPathComponent("CeciliasNotes")
             .appendingPathComponent("exports_manifest.json")
     }
 

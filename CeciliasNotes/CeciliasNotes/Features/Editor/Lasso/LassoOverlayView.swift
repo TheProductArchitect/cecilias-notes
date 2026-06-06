@@ -167,12 +167,21 @@ struct LassoOverlayView: View {
         )
         let elements = (try? modelContext.fetch(descriptor)) ?? []
 
+        #if DEBUG
+        print("[Lasso] commit mode=\(selection.mode) points=\(lassoPoints.count) bbox=\(lassoBBox) pageSize=\(pageSize) fetched=\(elements.count) elements")
+        #endif
+
         for element in elements {
             switch element.kind {
             case .stroke:
                 guard let content = element.strokeContent,
                       let drawing = try? PKDrawing(data: content.strokeData)
-                else { continue }
+                else {
+                    #if DEBUG
+                    print("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) — no content/decode failed")
+                    #endif
+                    continue
+                }
                 let strokes = drawing.strokes
                 guard !strokes.isEmpty else { continue }
 
@@ -188,6 +197,10 @@ struct LassoOverlayView: View {
                         matchedBBoxes.append(bbox)
                     }
                 }
+                #if DEBUG
+                let firstBBox = strokes.first?.renderBounds ?? .zero
+                print("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) strokes=\(strokes.count) matched=\(matchedIndices.count) firstStrokeBBox=\(firstBBox)")
+                #endif
                 if matchedIndices.isEmpty { continue }
                 if matchedIndices.count == strokes.count {
                     // Whole stroke element — promote to elementIds.
@@ -199,12 +212,27 @@ struct LassoOverlayView: View {
 
             default:
                 let rect = elementRectInPagePoints(element)
-                if LassoMath.rectCentreContained(rect, in: path) {
+                let centre = CGPoint(x: rect.midX, y: rect.midY)
+                // Centre-inside OR ≥25% area overlap — see
+                // `LassoMath.rectSubstantiallyInside`. The earlier
+                // point-sampling rule failed cases where the lasso
+                // genuinely covered a large chunk of a wide element
+                // (e.g. a text block) but the centre just escaped the
+                // loop, so the element was wrongly skipped.
+                let hit = LassoMath.rectSubstantiallyInside(rect, in: path)
+                #if DEBUG
+                print("[Lasso]   \(element.kind) element \(element.id.uuidString.prefix(8)) rect=\(rect) centre=\(centre) contained=\(hit)")
+                #endif
+                if hit {
                     elementIds.insert(element.id)
                     unionBounds = unionBounds?.union(rect) ?? rect
                 }
             }
         }
+
+        #if DEBUG
+        print("[Lasso] result — wholeElements=\(elementIds.count) partialStrokeElements=\(partials.count)")
+        #endif
 
         selection.setSelection(
             elementIds: elementIds,

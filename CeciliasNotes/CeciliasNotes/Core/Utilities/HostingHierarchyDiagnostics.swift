@@ -47,7 +47,7 @@ enum HostingHierarchyDiagnostics {
 
     private static var installed = false
     static let logQueue = DispatchQueue(
-        label: "ink.diag.logger",
+        label: "ceciliasnotes.diag.logger",
         qos: .utility
     )
 

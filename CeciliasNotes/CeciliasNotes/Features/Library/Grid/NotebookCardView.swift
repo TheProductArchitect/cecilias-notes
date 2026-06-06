@@ -195,6 +195,25 @@ struct NotebookCardView: View {
                 .opacity(lastOpenedLabel.isEmpty ? 0 : 1)
 
             tagsRow
+
+            // Agent attribution. Rendered only for `.inkbook` files
+            // ingested from an external agent (Claude / GPT / etc).
+            // Single 4pt dot + lowercase "agent" — matches the spec's
+            // "subtle indicator, otherwise visually identical to any
+            // user-created notebook" rule.
+            if notebook.isAgentWritten {
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(theme.accent)
+                        .frame(width: 4, height: 4)
+                    Text("agent")
+                        .font(.system(size: 7, weight: .regular))
+                        .tracking(0.1)
+                        .foregroundStyle(recessive(0.4))
+                }
+                .padding(.top, 2)
+                .accessibilityLabel("Written by an agent")
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

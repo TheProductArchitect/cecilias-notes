@@ -126,6 +126,9 @@ struct LibraryView: View {
                 if viewModel.isShowingTrash {
                     TrashView(viewModel: viewModel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let quizID = viewModel.selectedQuizID {
+                    QuizDetailView(quizID: quizID, viewModel: viewModel)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     NotebookGridView(viewModel: viewModel)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -208,6 +211,9 @@ struct LibraryView: View {
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $viewModel.isShowingQuizBuilder) {
+            QuizBuilderView(viewModel: viewModel)
         }
         .onChange(of: reExportNotebookId) { _, id in
             guard let id, let notebook = viewModel.notebook(id: id) else { return }

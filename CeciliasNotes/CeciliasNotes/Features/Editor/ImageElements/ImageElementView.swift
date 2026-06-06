@@ -263,8 +263,10 @@ struct ImageElementView: View {
                 print("[ImageGesture] 3. drag onEnded elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) predictedEnd=\(value.predictedEndTranslation)")
                 let dxNorm = value.translation.width  / pageSize.width
                 let dyNorm = value.translation.height / pageSize.height
-                element.normalizedX = clampNorm(element.normalizedX + Double(dxNorm))
-                element.normalizedY = clampNorm(element.normalizedY + Double(dyNorm))
+                let maxX = max(0, 1 - element.normalizedWidth)
+                let maxY = max(0, 1 - element.normalizedHeight)
+                element.normalizedX = max(0, min(maxX, element.normalizedX + Double(dxNorm)))
+                element.normalizedY = max(0, min(maxY, element.normalizedY + Double(dyNorm)))
                 element.updatedAt   = Date()
                 dragOffset = .zero
                 print("[ImageGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
@@ -280,8 +282,13 @@ struct ImageElementView: View {
                 let clamped = max(0.2, min(5, value))
                 let newW = max(Self.minNormalizedWidth, element.normalizedWidth * Double(clamped))
                 let newH = element.normalizedHeight * (newW / element.normalizedWidth)
-                element.normalizedWidth  = min(1, newW)
-                element.normalizedHeight = min(1, newH)
+                // Cap dimensions so the far edge can't extend past the
+                // page. If growth pushes through the right/bottom, cap
+                // there rather than letting the element bleed off.
+                let maxW = max(Self.minNormalizedWidth, 1 - element.normalizedX)
+                let maxH = max(0.01, 1 - element.normalizedY)
+                element.normalizedWidth  = min(maxW, newW)
+                element.normalizedHeight = min(maxH, newH)
                 element.updatedAt        = Date()
                 pinchScale = 1.0
             }
@@ -308,10 +315,16 @@ struct ImageElementView: View {
                 )
                 let new = resizedRect(base: base, corner: corner, translation: value.translation,
                                       freeAxis: modifierKeys.isShiftHeld)
-                element.normalizedX      = clampNorm(Double(new.minX) / Double(pageSize.width))
-                element.normalizedY      = clampNorm(Double(new.minY) / Double(pageSize.height))
-                element.normalizedWidth  = min(1, Double(new.width)  / Double(pageSize.width))
-                element.normalizedHeight = min(1, Double(new.height) / Double(pageSize.height))
+                let normX = Double(new.minX) / Double(pageSize.width)
+                let normY = Double(new.minY) / Double(pageSize.height)
+                let normW = Double(new.width)  / Double(pageSize.width)
+                let normH = Double(new.height) / Double(pageSize.height)
+                // Clamp both origin and far edge: an element must fit
+                // inside [0,1] × [0,1] on the page.
+                element.normalizedWidth  = max(Self.minNormalizedWidth, min(1, normW))
+                element.normalizedHeight = max(0.01, min(1, normH))
+                element.normalizedX = max(0, min(1 - element.normalizedWidth,  normX))
+                element.normalizedY = max(0, min(1 - element.normalizedHeight, normY))
                 element.updatedAt        = Date()
                 resizeDelta = nil
                 print("[ImageGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")

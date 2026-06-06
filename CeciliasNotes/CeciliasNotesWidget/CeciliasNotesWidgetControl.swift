@@ -10,7 +10,7 @@ import SwiftUI
 import WidgetKit
 
 struct CeciliasNotesWidgetControl: ControlWidget {
-    static let kind: String = "com.wave.venu.InkWidget"
+    static let kind: String = "app.ceciliasnotes.widget"
 
     var body: some ControlWidgetConfiguration {
         AppIntentControlConfiguration(

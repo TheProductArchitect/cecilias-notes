@@ -1,7 +1,42 @@
 import Combine
 import PencilKit
+import SwiftData
 import SwiftUI
 import UIKit
+
+// MARK: - Palm-rejecting scroll view
+
+/// `UIScrollView` subclass that drops palm contacts from its built-in
+/// pinch-zoom recognizer. A resting palm registers as large-radius
+/// `.direct` touches; without this, the moment the hand lands the
+/// pinch recognizer reads two of them as a zoom (the "accidental
+/// zoom on palm plant" bug).
+///
+/// This MUST be done by subclassing — `UIScrollView` requires that its
+/// built-in pinch recognizer keep the scroll view itself as delegate
+/// (reassigning it throws `NSInvalidArgumentException`). The scroll
+/// view *is* its own gesture delegate, so overriding the delegate
+/// method here is the supported hook. We return `true` for every
+/// non-palm / non-pinch case, matching UIKit's default, and only veto
+/// palm-sized touches reaching the pinch recognizer — pan, fingertip
+/// pinches, and Pencil input are untouched.
+final class PalmRejectingScrollView: UIScrollView {
+    /// `majorRadius` cutoff: comfortably above a fingertip (~10–25pt),
+    /// well below a resting palm/forearm contact.
+    private let palmRadiusThreshold: CGFloat = 60
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        if gestureRecognizer === pinchGestureRecognizer,
+           touch.type == .direct,
+           touch.majorRadius > palmRadiusThreshold {
+            return false
+        }
+        return true
+    }
+}
 
 // MARK: - UIHostingController parenting helper
 //
@@ -103,7 +138,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
     /// PKCanvasView's drawing policy is computed from this mode +
     /// `InputCapabilityDetector.shared.hasPencil` in
     /// `resolvedFingerDrawingEnabled`.
-    @AppStorage("ink.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
+    @AppStorage("ceciliasnotes.canvas.fingerDrawingMode") private var fingerDrawingMode: FingerDrawingMode = .auto
     /// Bumped on `.inputCapabilityChanged` so view-tree updates
     /// re-evaluate the resolved bool after the first pencil touch
     /// flips `hasPencil`. AppStorage already drives updates for
@@ -149,11 +184,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
             coord?.refreshContentInsetForBounds()
         }
 
-        let scrollView = UIScrollView(frame: host.bounds)
+        let scrollView = PalmRejectingScrollView(frame: host.bounds)
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrollView.backgroundColor = .clear
         scrollView.minimumZoomScale = 0.5
-        scrollView.maximumZoomScale = 4.0
+        // Capped at 1.5× (+50% from native). Higher values were available
+        // but caused stroke-rendering blur and made the active page hard
+        // to keep on-screen; pinching to ~2× was nearly always followed
+        // by a double-tap back to 1×.
+        scrollView.maximumZoomScale = 1.5
         scrollView.bouncesZoom = true
         scrollView.bounces = true
         scrollView.alwaysBounceVertical = true
@@ -232,7 +271,26 @@ struct ContinuousCanvasView: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         doubleTap.numberOfTouchesRequired = 1
         doubleTap.cancelsTouchesInView = false
+        // Don't steal double-taps that land on a UITextView — that's
+        // word-select, not fit-to-width zoom. Same for the two-finger
+        // variant so it doesn't clash with text selection either.
+        doubleTap.delegate = context.coordinator
+        twoFingerDoubleTap.delegate = context.coordinator
         scrollView.addGestureRecognizer(doubleTap)
+
+        // Single-tap dismisser: when a text view is first responder
+        // and the user taps anywhere outside a UITextView, resign
+        // the keyboard. `cancelsTouchesInView = false` so this only
+        // observes — it doesn't eat tool / element gestures.
+        let dismissTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDismissTextTap)
+        )
+        dismissTap.numberOfTapsRequired = 1
+        dismissTap.numberOfTouchesRequired = 1
+        dismissTap.cancelsTouchesInView = false
+        dismissTap.delegate = context.coordinator
+        scrollView.addGestureRecognizer(dismissTap)
 
         // Defer initial layout to the next runloop so SwiftUI's frame
         // assignment has settled.
@@ -413,7 +471,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // time. The resolved bool may flip from anyInput to
                 // pencilOnly (or vice versa) when hasPencil changes
                 // under `.auto` mode.
-                let raw = UserDefaults.standard.string(forKey: "ink.canvas.fingerDrawingMode")
+                let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.canvas.fingerDrawingMode")
                 let mode = raw.flatMap(FingerDrawingMode.init(rawValue:)) ?? .auto
                 let fingerDraws = mode.fingerDrawingEnabled(
                     hasPencil: InputCapabilityDetector.shared.hasPencil
@@ -802,6 +860,27 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // mode axis combined) — see `EditorStateMachine`.
             canvas.isUserInteractionEnabled = viewModel.canvasIsInteractive
 
+            // Tap-through for interactive elements. While a drawing tool
+            // is active the canvas is interaction-enabled and would
+            // otherwise swallow every finger tap — including taps on an
+            // audio strip's play button or an image/sticky/text element
+            // underneath. Yield finger taps that land on such an element
+            // to the overlay below; Pencil keeps drawing everywhere.
+            let canvasPageId = page.id
+            canvas.shouldYieldTouchToOverlay = { [weak self, weak canvas] point, event in
+                guard let self, let canvas else { return false }
+                // Pencil must always draw — never yield.
+                if let touches = event?.allTouches,
+                   touches.contains(where: { $0.type == .pencil }) {
+                    return false
+                }
+                let size = canvas.bounds.size
+                guard size.width > 0, size.height > 0 else { return false }
+                return self.pointHitsInteractiveElement(
+                    point, pageId: canvasPageId, pageSize: size
+                )
+            }
+
             // Pencil double-tap forwarded to the view-model, so the user's
             // configured action (toggle eraser / switch tool / colour
             // picker) fires from any page's canvas.
@@ -1051,6 +1130,57 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { contentView }
 
+        /// True when `point` (in page-pt canvas coordinates) lands on an
+        /// **action** widget — currently audio strips and images — on
+        /// the given page. Backs the canvas tap-through so a finger tap
+        /// on the audio play button or an image's selection handle
+        /// reaches the overlay even while the pen tool keeps the canvas
+        /// interactive.
+        ///
+        /// Text and sticky notes are *not* in this set: a tap on them
+        /// opens the keyboard for editing, which would steal focus
+        /// mid-drawing every time the user tapped over an existing
+        /// text block. Editing text deliberately requires the cursor
+        /// tool. Strokes/highlights/PDF pages are drawn content, not
+        /// tappable widgets, so they're skipped too.
+        ///
+        /// Runs only on finger touch-down (Pencil short-circuits in
+        /// the caller), so the one-shot SwiftData fetch is off the
+        /// drawing hot path.
+        func pointHitsInteractiveElement(
+            _ point: CGPoint,
+            pageId: UUID,
+            pageSize: CGSize
+        ) -> Bool {
+            let ctx = StorageService.shared.container.mainContext
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pageId && $0.deletedAt == nil
+                }
+            )
+            guard let elements = try? ctx.fetch(descriptor) else { return false }
+            for e in elements {
+                switch e.kind {
+                case .audio, .image:
+                    // Clamp to a ≥44pt tap target so a thin/zero-height
+                    // element (e.g. a freshly-created strip whose
+                    // normalized height hasn't been written yet) is
+                    // still reachable.
+                    let w = max(e.normalizedWidth  * pageSize.width,  44)
+                    let h = max(e.normalizedHeight * pageSize.height, 44)
+                    let rect = CGRect(
+                        x: e.normalizedX * pageSize.width,
+                        y: e.normalizedY * pageSize.height,
+                        width: w, height: h
+                    )
+                    if rect.contains(point) { return true }
+                default:
+                    break
+                }
+            }
+            return false
+        }
+
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
             if !suppressZoomUpdate {
                 let z = scrollView.zoomScale
@@ -1075,6 +1205,26 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            // Snap to 1.0× when the user releases the pinch within ~8%
+            // of native — pinch deceleration tends to land at 0.94 or
+            // 1.07 and feel "stuck" off-grid. The snap is animated so
+            // it reads as a magnetic click, and a selection-style haptic
+            // confirms the rest position.
+            let snapTolerance: CGFloat = 0.08
+            if abs(scale - 1.0) > 0.001 && abs(scale - 1.0) < snapTolerance {
+                suppressZoomUpdate = true
+                UIView.animate(withDuration: 0.18, delay: 0,
+                               options: [.curveEaseOut, .beginFromCurrentState]) {
+                    scrollView.zoomScale = 1.0
+                } completion: { _ in
+                    self.suppressZoomUpdate = false
+                    self.viewModel.zoomScale = 1.0
+                    self.applyContentInset()
+                    self.snapToEdgesIfClose(scrollView)
+                }
+                HapticManager.shared.toolSwitched()
+                return
+            }
             applyContentInset()
             snapToEdgesIfClose(scrollView)
         }
@@ -1167,10 +1317,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             considerAutoAddAfterStroke(on: canvasView)
         }
 
-        /// If the just-finished stroke lands in the bottom 15% of the *last*
-        /// page's canvas and auto-add is on, append a new page after it and
-        /// scroll to reveal it. Throttled to one fire per second so a flurry
-        /// of small strokes near the bottom doesn't spawn multiple pages.
+        /// If the just-finished stroke lands in the lower third of the
+        /// *last* page's canvas and auto-add is on, silently append a
+        /// blank page after it so one is ready below as the user keeps
+        /// writing. The append does NOT scroll — the continuous canvas
+        /// reveals the new page when the user reaches it. Throttled to
+        /// one fire per second so a flurry of small strokes near the
+        /// bottom doesn't spawn multiple pages.
         private func considerAutoAddAfterStroke(on canvasView: PKCanvasView) {
             guard viewModel.autoAddEnabled else { return }
             guard let host = hosts.first(where: { $0.canvasView === canvasView }) else { return }
@@ -1178,7 +1331,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let stroke = canvasView.drawing.strokes.last else { return }
             let canvasHeight = canvasView.bounds.height
             guard canvasHeight > 0 else { return }
-            let threshold = canvasHeight * 0.85
+            // Lower third (was bottom 15%) so the user doesn't have to
+            // crowd the very bottom edge to grow the canvas. The append
+            // is silent, so triggering a little early is harmless — the
+            // page just sits ready below.
+            let threshold = canvasHeight * 0.66
             guard stroke.renderBounds.maxY >= threshold else { return }
             let now = Date()
             guard now.timeIntervalSince(lastAutoAddDate) > 1.0 else { return }
@@ -1228,6 +1385,48 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         // MARK: - Gestures
+
+        /// Dismiss the keyboard when a single tap lands outside a
+        /// UITextView. Keeps the editor's "tap anywhere outside the
+        /// text box to exit" behaviour even when the tap reaches the
+        /// scroll view rather than the per-page overlay catcher
+        /// (e.g. when it lands on the page margin or between pages).
+        @objc func handleDismissTextTap(_ gesture: UITapGestureRecognizer) {
+            guard let scrollView else { return }
+            let point = gesture.location(in: scrollView)
+            let hit = scrollView.hitTest(point, with: nil)
+            if Self.isInsideTextView(hit) { return }
+            scrollView.endEditing(true)
+        }
+
+        /// Walks the responder chain looking for a UITextView. Used
+        /// by the dismiss-tap and the double-tap delegate to leave
+        /// text-editing touches alone.
+        private static func isInsideTextView(_ view: UIView?) -> Bool {
+            var node = view
+            while let v = node {
+                if v is UITextView { return true }
+                node = v.superview
+            }
+            return false
+        }
+
+        // MARK: UIGestureRecognizerDelegate (zoom + dismiss)
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldReceive touch: UITouch
+        ) -> Bool {
+            // Refuse double-tap zoom and the dismiss-tap on text views —
+            // double-tap is word-select, dismiss is handled separately
+            // when the tap lands elsewhere.
+            if Self.isInsideTextView(touch.view) {
+                if gestureRecognizer is UITapGestureRecognizer {
+                    return false
+                }
+            }
+            return true
+        }
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
             guard let scrollView else { return }

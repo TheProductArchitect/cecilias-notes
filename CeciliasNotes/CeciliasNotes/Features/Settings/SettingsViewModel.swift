@@ -7,7 +7,7 @@ import SwiftUI
 // MARK: - Persisted enums
 
 /// Mirror of `PencilDoubleTapAction` (in Editor/Tools/CeciliasNotesTool.swift) — must use the
-/// same raw values so the @AppStorage key `ink.pencil.doubletap` round-trips
+/// same raw values so the @AppStorage key `ceciliasnotes.pencil.doubletap` round-trips
 /// between Settings (writer) and EditorViewModel (reader).
 enum DoubleTapAction: String, CaseIterable {
     case switchTool       = "switchTool"
@@ -92,32 +92,32 @@ final class SettingsViewModel: ObservableObject {
     let cloudSyncManager: CloudSyncManager
 
     // MARK: Pencil
-    @AppStorage("ink.pencil.doubletap")   var doubleTapAction:  DoubleTapAction  = .switchTool
-    @AppStorage("ink.pencil.hoverPreview") var hoverPreviewEnabled: Bool         = true
-    @AppStorage("ink.haptics.drawing")    var drawingHapticsEnabled: Bool        = true
+    @AppStorage("ceciliasnotes.pencil.doubletap")   var doubleTapAction:  DoubleTapAction  = .switchTool
+    @AppStorage("ceciliasnotes.pencil.hoverPreview") var hoverPreviewEnabled: Bool         = true
+    @AppStorage("ceciliasnotes.haptics.drawing")    var drawingHapticsEnabled: Bool        = true
 
     // The two below are persisted but not surfaced or read by drawing code.
     // Kept so existing users' values aren't orphaned if the settings return.
     // TODO: re-expose when custom stroke renderer ships (audit #39, #40).
-    @AppStorage("ink.pencil.pressure")    var pressureSetting:  PressureSetting  = .medium
-    @AppStorage("ink.pencil.smoothing")   private var _strokeSmoothing: Double   = 50
+    @AppStorage("ceciliasnotes.pencil.pressure")    var pressureSetting:  PressureSetting  = .medium
+    @AppStorage("ceciliasnotes.pencil.smoothing")   private var _strokeSmoothing: Double   = 50
 
     /// Default OFF — kept as a legacy backing store so existing
     /// installs' user choice survives the Step 3 mode rollout. New
     /// reads should go through `fingerDrawingMode` and resolve via
     /// `InputCapabilityDetector`.
-    @AppStorage("ink.canvas.fingerDrawingEnabled") var fingerDrawingEnabled: Bool = false
+    @AppStorage("ceciliasnotes.canvas.fingerDrawingEnabled") var fingerDrawingEnabled: Bool = false
 
     /// Step 3: user's resolution policy for finger drawing on the
     /// canvas. Defaults to `.auto` — finger-only iPads get finger
     /// drawing; iPads with a Pencil get pencilOnly. Resolved by
     /// callers via `mode.fingerDrawingEnabled(hasPencil:)` against
     /// `InputCapabilityDetector.shared.hasPencil`.
-    @AppStorage("ink.canvas.fingerDrawingMode") var fingerDrawingMode: FingerDrawingMode = .auto
+    @AppStorage("ceciliasnotes.canvas.fingerDrawingMode") var fingerDrawingMode: FingerDrawingMode = .auto
 
     // Pixel-eraser size setting removed — PencilKit's default
     // eraser behaviour now governs. The legacy
-    // `ink.eraser.pixelSize` / `ink.eraser.pixelSize.session` keys
+    // `ceciliasnotes.eraser.pixelSize` / `ceciliasnotes.eraser.pixelSize.session` keys
     // are no longer read; existing installs' stored values are
     // harmless leftovers.
 
@@ -137,26 +137,26 @@ final class SettingsViewModel: ObservableObject {
 
     /// "Resume Where You Left Off" — when ON, cold launch reopens the last
     /// notebook at the last viewed page. Default ON.
-    @AppStorage("ink.resume.enabled") var resumeEnabled: Bool = true
+    @AppStorage("ceciliasnotes.resume.enabled") var resumeEnabled: Bool = true
 
     // The "New Pages" Settings section was removed. Auto-add and
     // page-template defaults are now per-notebook (`coverTone`,
     // `defaultTemplate`, `autoAddPagesOnScroll` on `Notebook`); the
-    // legacy global keys (`ink.newpage.*`) are no longer read.
+    // legacy global keys (`ceciliasnotes.newpage.*`) are no longer read.
 
     // MARK: Audio
-    @AppStorage("ink.transcription.locale")  var transcriptionLocale: String = ""
+    @AppStorage("ceciliasnotes.transcription.locale")  var transcriptionLocale: String = ""
     /// Save the audio clip after recording. When OFF the recording is
     /// discarded once any transcript has been generated; if both this
     /// and `autoTranscribe` are OFF the recording is discarded
     /// outright. Default ON.
-    @AppStorage("ink.audio.saveClips")       var saveAudioClips: Bool = true
+    @AppStorage("ceciliasnotes.audio.saveClips")       var saveAudioClips: Bool = true
     /// Run on-device speech recognition after recording. Default ON.
     /// Persists alongside `saveAudioClips`; the post-recording
     /// pipeline reads both at stop-time (toggle changes apply
     /// immediately).
-    @AppStorage("ink.transcription.auto")    var autoTranscribe: Bool = true
-    @AppStorage("ink.transcription.quality") var transcriptionQuality: TranscriptionQuality = .fast
+    @AppStorage("ceciliasnotes.transcription.auto")    var autoTranscribe: Bool = true
+    @AppStorage("ceciliasnotes.transcription.quality") var transcriptionQuality: TranscriptionQuality = .fast
 
     // MARK: Storage metrics
     @Published var storageInfo: StorageInfo?       = nil
@@ -304,7 +304,7 @@ final class SettingsViewModel: ObservableObject {
     // MARK: Rate app
 
     func requestReviewIfEligible() {
-        let key = "ink.review.requestedVersion"
+        let key = "ceciliasnotes.review.requestedVersion"
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         guard StorageService.shared.notebookCount() >= 3,
               UserDefaults.standard.string(forKey: key) != currentVersion

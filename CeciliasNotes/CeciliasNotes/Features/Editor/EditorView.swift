@@ -29,6 +29,11 @@ struct EditorView: View {
     /// page this id belongs to. Cleared after the first scroll.
     @State private var pendingDeepLinkPageId: UUID?
 
+    /// True while the one-shot agent-attribution banner is visible.
+    /// Initialised from `AgentBannerState` on appear so a previously-
+    /// dismissed banner stays dismissed across re-opens.
+    @State private var isShowingAgentBanner: Bool = false
+
     init(
         notebook: Notebook,
         importPDFURL: URL? = nil,
@@ -68,6 +73,30 @@ struct EditorView: View {
             FloatingRecordingControls()
                 .allowsHitTesting(RecordingSession.shared.state.isRecording)
                 .zIndex(150)
+
+            // Agent-attribution banner — shown once per notebook the
+            // first time the user opens an agent-written `.inkbook`.
+            // Anchored to the top safe-area edge so it sits under the
+            // toolbar without blocking canvas hit-testing.
+            if isShowingAgentBanner {
+                VStack {
+                    AgentBannerView(notebook: viewModel.notebook) {
+                        isShowingAgentBanner = false
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
+                    Spacer(minLength: 0)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .zIndex(160)
+                .allowsHitTesting(true)
+            }
+        }
+        .onAppear {
+            if viewModel.notebook.isAgentWritten,
+               !AgentBannerState.hasSeen(notebookId: viewModel.notebook.id) {
+                isShowingAgentBanner = true
+            }
         }
     }
 

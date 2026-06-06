@@ -1,49 +1,185 @@
 import SwiftUI
 
-/// Settings → Intelligence panel. Surfaces a single master toggle
-/// plus an explanatory caption. The whole section is hidden from the
-/// rail when the Foundation Models framework isn't available — when
-/// it does appear, the only state worth user attention is on / off.
+/// Settings → Intelligence. Hosts the quiz feature's controls: AI
+/// Features (toggles), Generation Engine (tier picker), and MCP Status.
+/// Quiz generation runs on-device by default, so this section is always
+/// available; the Apple Intelligence / MCP rows appear only when those
+/// tiers are present.
 ///
-/// Editorial style matches the rest of Settings: 8pt tracked
-/// uppercase section labels, hairline-only row chrome, no card fills.
+/// Editorial style matches the rest of Settings: eyebrow + heavy title +
+/// hairline rule, 8pt tracked uppercase section labels, no card fills.
 struct IntelligenceSettingsView: View {
     @ObservedObject private var intelligence = IntelligenceService.shared
+    @ObservedObject private var mcp = MCPStatusMonitor.shared
     @Environment(\.theme) private var theme
+
+    // Quiz preference keys (read by QuizGenerationService / the builder).
+    @AppStorage("ceciliasnotes.quiz.enabled")
+    private var quizEnabled: Bool = true
+    @AppStorage("ceciliasnotes.quiz.autoAdd")
+    private var autoAdd: Bool = false
+    @AppStorage("ceciliasnotes.quiz.includeTranscriptions")
+    private var includeTranscriptions: Bool = true
+    @AppStorage("ceciliasnotes.quiz.engine")
+    private var engineRaw: String = AITier.onDevice.rawValue
+
+    private var appleIntelligenceAvailable: Bool { intelligence.isAvailable }
+    private var mcpAvailable: Bool { mcp.hasEverConnected }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                masterToggle
+            VStack(alignment: .leading, spacing: 32) {
+                header
+                aiFeatures
+                generationEngine
+                if mcpAvailable { mcpStatus }
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
-            .padding(.bottom, 28)
+            .padding(.bottom, 40)
         }
         .background(theme.surface)
     }
 
-    private var masterToggle: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("on-device")
+    // MARK: Header
 
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Apple Intelligence")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.foreground)
-                    Text("summaries, suggested titles, and ask your notes — all run on this device. nothing leaves it.")
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("settings")
+                .font(.system(size: 9, weight: .regular))
+                .tracking(0.1)
+                .textCase(.uppercase)
+                .foregroundStyle(theme.recessiveQuaternary)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("intelligence")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundStyle(theme.foreground)
+                Circle()
+                    .fill(theme.accent)
+                    .frame(width: 6, height: 6)
+            }
+            Rectangle()
+                .fill(theme.foreground)
+                .frame(height: 1.5)
+                .padding(.top, 6)
+        }
+    }
+
+    // MARK: AI Features
+
+    private var aiFeatures: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("ai features")
+            toggleRow("quiz generation", caption: nil, isOn: $quizEnabled)
+            toggleRow(
+                "auto-add questions",
+                caption: "quizzes grow as notes grow, weekly",
+                isOn: $autoAdd
+            )
+            toggleRow(
+                "include transcriptions",
+                caption: nil,
+                isOn: $includeTranscriptions,
+                isLast: true
+            )
+        }
+    }
+
+    // MARK: Generation Engine
+
+    private var generationEngine: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("use for quiz generation")
+            engineRow(.onDevice, title: "on-device", caption: "faster · private · works offline")
+            if appleIntelligenceAvailable {
+                engineRow(.appleIntelligence, title: "apple intelligence", caption: "better questions · marks short answers")
+            }
+            if mcpAvailable {
+                engineRow(.mcp, title: "mcp (mac required)", caption: "best quality · requires cecilias-notes-mcp running")
+            }
+        }
+    }
+
+    private func engineRow(_ tier: AITier, title: String, caption: String) -> some View {
+        let isSelected = engineRaw == tier.rawValue
+        return Button {
+            engineRaw = tier.rawValue
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: isSelected ? .bold : .regular))
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
+                Text(caption)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundSubtle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 12)
+            .padding(.leading, 12)
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Rectangle().fill(theme.foreground).frame(width: 2)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: MCP Status
+
+    private var mcpStatus: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("mcp status")
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(mcp.isReachable
+                          ? Color(light: Color(hex: "#34c759"), dark: Color(hex: "#30d158"))
+                          : theme.recessiveTertiary)
+                    .frame(width: 7, height: 7)
+                Text("cecilias-notes-mcp")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.foreground)
+                Spacer()
+                Text(mcp.isReachable ? "connected" : "not reachable — is your Mac running?")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundSubtle)
+            }
+            .padding(.vertical, 12)
+        }
+    }
+
+    // MARK: Helpers
+
+    private func toggleRow(
+        _ title: String,
+        caption: String?,
+        isOn: Binding<Bool>,
+        isLast: Bool = false
+    ) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.foreground)
+                if let caption {
+                    Text(caption)
                         .font(.system(size: 12))
                         .foregroundStyle(theme.foregroundSubtle)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer()
-                Toggle("", isOn: $intelligence.intelligenceEnabled)
-                    .labelsHidden()
-                    .tint(theme.accent)
             }
-            .padding(.vertical, 12)
-            .overlay(alignment: .bottom) {
+            Spacer()
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(theme.accent)
+        }
+        .padding(.vertical, 12)
+        .overlay(alignment: .bottom) {
+            if !isLast {
                 Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
@@ -55,5 +191,6 @@ struct IntelligenceSettingsView: View {
             .tracking(0.08)
             .textCase(.uppercase)
             .foregroundStyle(theme.recessiveQuaternary)
+            .padding(.bottom, 6)
     }
 }

@@ -87,7 +87,7 @@ struct CeciliasNotesApp: App {
         UIScrollView.appearance().delaysContentTouches = false
 
         // UI-test launch hook: when XCUIApplication launches us with the
-        // "-uiTesting" argument, blow away every persisted ink.* /
+        // "-uiTesting" argument, blow away every persisted ceciliasnotes.* /
         // app.user / app.onboarding key so each UI test starts from a
         // clean state. We do *not* delete the SwiftData store here —
         // that lives on disk and the tests that need a clean library
@@ -108,17 +108,17 @@ struct CeciliasNotesApp: App {
         let defaults = UserDefaults.standard
         let allKeys = defaults.dictionaryRepresentation().keys
         for key in allKeys
-            where key.hasPrefix("ink.")
+            where key.hasPrefix("ceciliasnotes.")
                || key.hasPrefix("app.user")
                || key.hasPrefix("app.onboarding") {
             defaults.removeObject(forKey: key)
         }
         // Force resume off for UI tests so a stale lastNotebookId
         // doesn't interfere even on the first launch after install.
-        defaults.set(false, forKey: "ink.resume.enabled")
+        defaults.set(false, forKey: "ceciliasnotes.resume.enabled")
 
         // Wipe the on-disk SwiftData store. We attempt to remove the
-        // entire `Ink` Application Support directory: it contains the
+        // entire `CeciliasNotes` Application Support directory: it contains the
         // SQLite store and per-notebook resources (audio, media). This
         // runs before `StorageService.shared` resolves, so the next
         // container open creates a fresh empty DB.
@@ -169,14 +169,19 @@ struct CeciliasNotesApp: App {
                     // Pixel-eraser session key from the retired
                     // Settings slider — wiped at launch on the
                     // off-chance an old build left a value behind.
-                    UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize.session")
-                    UserDefaults.standard.removeObject(forKey: "ink.eraser.pixelSize")
+                    UserDefaults.standard.removeObject(forKey: "ceciliasnotes.eraser.pixelSize.session")
+                    UserDefaults.standard.removeObject(forKey: "ceciliasnotes.eraser.pixelSize")
 
                     // One-time defensive recompute of `totalPageCount`
                     // for any pre-existing notebooks whose denormalised
                     // count drifted from the live page list. Gated by a
                     // UserDefaults flag — subsequent launches no-op.
                     storageService.runOneTimePageCountBackfillIfNeeded()
+
+                    // Quiz auto-update: grow any `autoUpdateEnabled`
+                    // quizzes from new note content on a weekly cadence.
+                    // Detached + silent — never blocks the first frame.
+                    QuizAutoUpdater.runOnLaunch()
 
                     // MediaStorage migration v1: collapse the three
                     // legacy on-disk media layouts into the unified
@@ -219,6 +224,12 @@ struct CeciliasNotesApp: App {
                         }
                     }
 
+                    // .inkbook ingest: watch the iCloud Inbox folder
+                    // for files dropped by external agents (e.g. the
+                    // cecilias-notes-mcp server running on macOS).
+                    // Idempotent; safe to call on every cold launch.
+                    CeciliasNotesFileWatcher.shared.start()
+
                     // Launch-time notebook resume. The previous rule
                     // — "never restore nav state across cold launches"
                     // — was revised after device testing: users who
@@ -233,7 +244,7 @@ struct CeciliasNotesApp: App {
                     // `applicationDidEnterBackground` (marker → true);
                     // force-quit / crash skip it (marker stays
                     // false). On launch, if the gate is clean AND
-                    // a `ink.resume.lastNotebookId` survives in
+                    // a `ceciliasnotes.resume.lastNotebookId` survives in
                     // defaults (cleared on explicit Back via
                     // `EditorViewModel.prepareForDismissal`), route
                     // through the deep-link router so the library
@@ -241,7 +252,7 @@ struct CeciliasNotesApp: App {
                     if !didAttemptLaunchResume {
                         didAttemptLaunchResume = true
                         if LaunchRecovery.previousShutdownWasClean,
-                           let raw = UserDefaults.standard.string(forKey: "ink.resume.lastNotebookId"),
+                           let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.resume.lastNotebookId"),
                            let lastId = UUID(uuidString: raw) {
                             #if DEBUG
                             print("[Launch] clean shutdown + lastNotebookId=\(lastId) — routing to editor")
@@ -263,7 +274,7 @@ struct CeciliasNotesApp: App {
                         deepLink.openNotebookId = uuid
                     }
                 }
-                // ink:// deep links
+                // ceciliasnotes:// deep links
                 .onOpenURL { url in
                     deepLink.handle(url)
                 }
@@ -363,8 +374,8 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
             // Clear any stale per-notebook resume pointers so the
             // editor's "resume to last page" path can't restore into
             // the broken session that caused the unclean shutdown.
-            defaults.removeObject(forKey: "ink.resume.lastNotebookId")
-            defaults.removeObject(forKey: "ink.resume.lastPageIndex")
+            defaults.removeObject(forKey: "ceciliasnotes.resume.lastNotebookId")
+            defaults.removeObject(forKey: "ceciliasnotes.resume.lastPageIndex")
             #if DEBUG
             print("[Launch] previous shutdown was DIRTY — forcing library home + clearing resume keys")
             #endif
@@ -402,7 +413,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         // FileManager errors here are non-fatal because the
         // ModelContainer's own fallback path will recover.
         let storeURL = StorageService.ceciliasNotesDirectoryURL
-            .appendingPathComponent("ink.sqlite")
+            .appendingPathComponent("ceciliasnotes.sqlite")
         try? FileManager.default.removeItem(at: storeURL)
         for suffix in ["-shm", "-wal", "-journal"] {
             try? FileManager.default.removeItem(
@@ -452,7 +463,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
         // 1. SwiftData store + sidecars.
         let storeURL = StorageService.ceciliasNotesDirectoryURL
-            .appendingPathComponent("ink.sqlite")
+            .appendingPathComponent("ceciliasnotes.sqlite")
         try? FileManager.default.removeItem(at: storeURL)
         for suffix in ["-shm", "-wal", "-journal"] {
             try? FileManager.default.removeItem(
@@ -469,8 +480,8 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         }
 
         // 3. Resume pointers referencing now-deleted notebooks.
-        defaults.removeObject(forKey: "ink.resume.lastNotebookId")
-        defaults.removeObject(forKey: "ink.resume.lastPageIndex")
+        defaults.removeObject(forKey: "ceciliasnotes.resume.lastNotebookId")
+        defaults.removeObject(forKey: "ceciliasnotes.resume.lastPageIndex")
 
         defaults.set(true, forKey: v6WipeKey)
         #if DEBUG
@@ -514,10 +525,10 @@ final class DeepLinkRouter: ObservableObject {
     /// Set on cold launch (via the launch URL), checked once by `LibraryView`.
     @Published var pendingQuickCapture: Bool = false
 
-    /// Parses `ink://open/{uuid}`, `ink://library`, `ink://settings`,
-    /// `ink://quick-capture`.
+    /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://library`,
+    /// `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
     func handle(_ url: URL) {
-        guard url.scheme == "ink" else { return }
+        guard url.scheme == "ceciliasnotes" else { return }
         switch url.host {
         case "open":
             let raw = url.lastPathComponent

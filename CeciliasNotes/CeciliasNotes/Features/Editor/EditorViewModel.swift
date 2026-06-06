@@ -462,10 +462,10 @@ final class EditorViewModel: ObservableObject {
             }
         }
     }
-    /// Defaults from `ink.transcription.auto` (Settings → Audio & Transcription).
+    /// Defaults from `ceciliasnotes.transcription.auto` (Settings → Audio & Transcription).
     /// User can also override per-recording via the panel toggle while recording.
     @Published var isTranscriptionEnabled: Bool =
-        UserDefaults.standard.object(forKey: "ink.transcription.auto") as? Bool ?? true
+        UserDefaults.standard.object(forKey: "ceciliasnotes.transcription.auto") as? Bool ?? true
     @Published var isShowingAudioFilePicker:    Bool      = false
 
     private var audioRecorder = AudioRecorder()
@@ -478,7 +478,7 @@ final class EditorViewModel: ObservableObject {
 
     // MARK: Shape recognition
     /// User toggle, persists across launches. Default OFF.
-    @AppStorage("ink.shape.recognitionEnabled") var shapeRecognitionEnabled: Bool = false
+    @AppStorage("ceciliasnotes.shape.recognitionEnabled") var shapeRecognitionEnabled: Bool = false
 
     /// Pending shape replacement — drives the floating "Undo Shape" pill.
     /// Set after a successful detection; cleared on tap-to-undo, tap-to-dismiss,
@@ -540,30 +540,33 @@ final class EditorViewModel: ObservableObject {
         // Restore the last viewed page if the resume feature is on AND the page
         // is still in range. The check happens once at init; subsequent changes
         // are written back in `currentPageIndex`'s didSet.
-        let resumeOn = userDefaults.object(forKey: "ink.resume.enabled") as? Bool ?? true
-        let savedIndex = userDefaults.integer(forKey: "ink.resume.lastPageIndex")
+        let resumeOn = userDefaults.object(forKey: "ceciliasnotes.resume.enabled") as? Bool ?? true
+        let savedIndex = userDefaults.integer(forKey: "ceciliasnotes.resume.lastPageIndex")
         if resumeOn,
-           userDefaults.string(forKey: "ink.resume.lastNotebookId") == notebook.id.uuidString,
+           userDefaults.string(forKey: "ceciliasnotes.resume.lastNotebookId") == notebook.id.uuidString,
            savedIndex >= 0, savedIndex < fetched.count {
             self.currentPageIndex = savedIndex
         } else {
             self.currentPageIndex = 0
         }
-        // Step 2 (cursor tool): the editor opens on the neutral
-        // cursor by default. The user picks an inking tool when they
-        // actually want to write; until then, finger taps select
-        // content (images, sticky notes today; text/audio/strokes as
-        // Steps 3-9 migrate them onto PageElement). Cursor carries no
-        // colour / width, so there's nothing to restore from
-        // `ToolSettingsStore`.
-        self.selectedTool     = .cursor
+        // The editor reopens on the last inking tool the user worked
+        // with (restored from `StorageKeys.lastInkingTool` with its
+        // persisted colour/width/opacity), falling back to the pen on
+        // first ever open. We never default to the neutral cursor — a
+        // handwriting app should land ready to write, and opening on a
+        // non-drawing tool was the reported regression.
+        self.selectedTool = Self.resolveInitialTool(
+            userDefaults: userDefaults,
+            toolSettings: toolSettings,
+            theme: resolvedTheme
+        )
 
         loadPersistedState(theme: resolvedTheme)
 
         // Now that init is done, we can mark this notebook as "currently open" —
         // doing it after init avoids racing the init-time resume check above.
-        userDefaults.set(notebook.id.uuidString, forKey: "ink.resume.lastNotebookId")
-        userDefaults.set(self.currentPageIndex, forKey: "ink.resume.lastPageIndex")
+        userDefaults.set(notebook.id.uuidString, forKey: "ceciliasnotes.resume.lastNotebookId")
+        userDefaults.set(self.currentPageIndex, forKey: "ceciliasnotes.resume.lastPageIndex")
 
         // Track the open for the Library "recently opened" section.
         // Persisted via StorageService so the change survives a
@@ -578,7 +581,7 @@ final class EditorViewModel: ObservableObject {
             .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
             .sink { [weak self] index in
                 guard let self else { return }
-                self.userDefaults.set(index, forKey: "ink.resume.lastPageIndex")
+                self.userDefaults.set(index, forKey: "ceciliasnotes.resume.lastPageIndex")
             }
             .store(in: &cancellables)
 
@@ -699,9 +702,34 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Persisted state
 
     private struct StorageKeys {
-        static let recentColours       = "ink.colorPicker.recent"
+        static let recentColours       = "ceciliasnotes.colorPicker.recent"
         // Must stay in lock-step with SettingsViewModel.DoubleTapAction's @AppStorage key.
-        static let pencilDoubleTap     = "ink.pencil.doubletap"
+        static let pencilDoubleTap     = "ceciliasnotes.pencil.doubletap"
+        // Identity of the last inking tool the user selected. Restored
+        // on editor open so the canvas reopens on a writing tool rather
+        // than the neutral cursor. Only inking tools (`hasColour`) are
+        // written here — transient modes (cursor/lasso/text/image) never
+        // become the reopen default.
+        static let lastInkingTool      = "ceciliasnotes.tool.lastInkingIdentity"
+    }
+
+    /// Resolves the tool the editor should open with: the user's last
+    /// inking tool (with its persisted settings) if one was recorded,
+    /// otherwise the default pen. Static so it can run during `init`
+    /// before `self` is fully formed.
+    private static func resolveInitialTool(
+        userDefaults: UserDefaults,
+        toolSettings: ToolSettingsStore,
+        theme: Theme
+    ) -> CeciliasNotesTool {
+        if let raw = userDefaults.string(forKey: StorageKeys.lastInkingTool),
+           let identity = CeciliasNotesTool.Identity(rawValue: raw) {
+            let restored = toolSettings.tool(for: identity, theme: theme)
+            // Guard against a stale/invalid persisted value resolving to
+            // a non-inking tool — never reopen on cursor et al.
+            if restored.hasColour { return restored }
+        }
+        return CeciliasNotesTool.Defaults.pen(theme: theme)
     }
 
     private func loadPersistedState(theme: Theme) {
@@ -1030,6 +1058,12 @@ final class EditorViewModel: ObservableObject {
             }
         }
         selectedTool = tool
+        // Remember inking tools as the reopen default. Transient modes
+        // (cursor/lasso/text/image/eraser/ruler) are intentionally not
+        // recorded — see `resolveInitialTool`.
+        if tool.hasColour {
+            userDefaults.set(tool.identity.rawValue, forKey: StorageKeys.lastInkingTool)
+        }
         resetToolbarTimer()
     }
 
@@ -1338,8 +1372,8 @@ final class EditorViewModel: ObservableObject {
     }
 
     // Pixel-eraser size mutator removed — the Settings slider
-    // that drove the legacy `ink.eraser.pixelSize` /
-    // `ink.eraser.pixelSize.session` keys is gone; the eraser
+    // that drove the legacy `ceciliasnotes.eraser.pixelSize` /
+    // `ceciliasnotes.eraser.pixelSize.session` keys is gone; the eraser
     // uses a fixed 24pt width baked into `CeciliasNotesTool.makePKTool`.
 
     func setOpacity(_ opacity: CGFloat) {
@@ -1419,7 +1453,7 @@ final class EditorViewModel: ObservableObject {
 
 /// Appends a new page after the current one, refreshes the pages list,
     /// then navigates to the newly-added page. Triggered by `goToNextPage`
-    /// when at the last page and `ink.newpage.autoAdd` is on; also reachable
+    /// when at the last page and `ceciliasnotes.newpage.autoAdd` is on; also reachable
     /// from the page strip's "Add Page After" context menu.
     func addPageAfterCurrent() {
         guard let _ = try? storage.createPage(
@@ -1433,9 +1467,14 @@ final class EditorViewModel: ObservableObject {
         HapticManager.shared.pageAdded()
     }
 
-    /// Append a new page immediately after the page with the given id, then
-    /// navigate to it. Used by the canvas stroke handler to auto-add a fresh
-    /// page when the user draws near the bottom of the last page.
+    /// Silently append a new page immediately after the page with the
+    /// given id. Used by the canvas stroke handler to keep a blank page
+    /// ready below the one the user is writing on. Deliberately does
+    /// NOT navigate or change `currentPageIndex` — the continuous canvas
+    /// stacks every page, so the new page simply mounts below the
+    /// current view and the user scrolls into it when they reach it. The
+    /// previous behaviour navigated to the new page, yanking the view
+    /// away from the content the user was still writing.
     func addPage(afterPageId pageId: UUID) {
         guard let anchor = pages.first(where: { $0.id == pageId }) else { return }
         guard let _ = try? storage.createPage(
@@ -1445,10 +1484,6 @@ final class EditorViewModel: ObservableObject {
             backgroundTemplate: globalTemplate
         ) else { return }
         refreshPages()
-        if let newIdx = pages.firstIndex(where: { $0.pageNumber == anchor.pageNumber + 1 }) {
-            goToPage(index: newIdx)
-        }
-        HapticManager.shared.pageAdded()
     }
 
     // MARK: - Toolbar state hooks
@@ -1766,7 +1801,7 @@ final class EditorViewModel: ObservableObject {
             // override (the panel's "Transcribe" switch) gates further;
             // the master "Save audio clips" toggle has no per-recording
             // override since it's an always-on default.
-            let saveAudio  = UserDefaults.standard.object(forKey: "ink.audio.saveClips") as? Bool ?? true
+            let saveAudio  = UserDefaults.standard.object(forKey: "ceciliasnotes.audio.saveClips") as? Bool ?? true
             let transcribe = isTranscriptionEnabled
 
             // Both off — nothing to keep. Discard the temp file and
@@ -1989,7 +2024,7 @@ final class EditorViewModel: ObservableObject {
                 tags:          nil,
                 coverTexture:  cover.texture
             )
-            userDefaults.set(cover.rawValue, forKey: "ink.lastUsed.cover")
+            userDefaults.set(cover.rawValue, forKey: "ceciliasnotes.lastUsed.cover")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph
             // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
@@ -2022,7 +2057,7 @@ final class EditorViewModel: ObservableObject {
                 first.pageSize  = size
                 first.updatedAt = Date()
             }
-            userDefaults.set(size.rawValue, forKey: "ink.lastUsed.pageSize")
+            userDefaults.set(size.rawValue, forKey: "ceciliasnotes.lastUsed.pageSize")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph
             // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
@@ -2048,7 +2083,7 @@ final class EditorViewModel: ObservableObject {
                 first.backgroundTemplate = template
                 first.updatedAt          = Date()
             }
-            userDefaults.set(template.jsonString, forKey: "ink.lastUsed.template")
+            userDefaults.set(template.jsonString, forKey: "ceciliasnotes.lastUsed.template")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph
             // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.
@@ -2190,8 +2225,8 @@ final class EditorViewModel: ObservableObject {
         // so the next cold launch should land on library home
         // even though `LaunchRecovery.previousShutdownWasClean`
         // says the prior shutdown was orderly.
-        userDefaults.removeObject(forKey: "ink.resume.lastNotebookId")
-        userDefaults.removeObject(forKey: "ink.resume.lastPageIndex")
+        userDefaults.removeObject(forKey: "ceciliasnotes.resume.lastNotebookId")
+        userDefaults.removeObject(forKey: "ceciliasnotes.resume.lastPageIndex")
     }
 }
 
