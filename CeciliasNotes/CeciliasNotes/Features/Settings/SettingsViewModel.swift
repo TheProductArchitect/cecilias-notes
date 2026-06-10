@@ -156,7 +156,7 @@ final class SettingsViewModel: ObservableObject {
     /// pipeline reads both at stop-time (toggle changes apply
     /// immediately).
     @AppStorage("ceciliasnotes.transcription.auto")    var autoTranscribe: Bool = true
-    @AppStorage("ceciliasnotes.transcription.quality") var transcriptionQuality: TranscriptionQuality = .fast
+    @AppStorage("ceciliasnotes.transcription.quality") var transcriptionQuality: TranscriptionQuality = .accurate
 
     // MARK: Storage metrics
     @Published var storageInfo: StorageInfo?       = nil

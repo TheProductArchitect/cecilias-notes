@@ -16,7 +16,7 @@ struct AudioSettingsView: View {
     /// stays on the previous segment. Re-declaring `@AppStorage` here
     /// makes it a SwiftUI `DynamicProperty` that drives re-rendering.
     @AppStorage("ceciliasnotes.transcription.quality")
-    private var transcriptionQuality: TranscriptionQuality = .fast
+    private var transcriptionQuality: TranscriptionQuality = .accurate
 
     private var selectedLocaleName: String {
         guard !viewModel.transcriptionLocale.isEmpty else { return "System default" }

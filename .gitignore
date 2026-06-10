@@ -1,2 +1,10 @@
 build/
 bug videos/
+
+# macOS
+.DS_Store
+
+# Xcode user-specific
+**/xcuserdata/
+**/*.xcuserstate
+**/*.xcuserdatad/

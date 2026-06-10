@@ -86,23 +86,44 @@ struct StickyNoteElementView: View {
                 .overlay(deleteBadge, alignment: .bottomTrailing)
                 .rotationEffect(.radians(element.rotation))
                 .contentShape(Rectangle())
+                // Quick tap → edit immediately.
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         print("[StickyGesture] 1. tap received on card body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected), isEditing=\(isEditing)")
                         onRequestEdit()
-                        print("[StickyGesture] 1a. onRequestEdit() returned")
                     }
                 )
-                .simultaneousGesture(
+                // Long-press-then-drag: selecting and moving are a single
+                // continuous gesture so the user can press-hold-drag
+                // without lifting their finger. Long press alone selects
+                // (shows chrome); long press followed by drag moves the card.
+                .highPriorityGesture(
                     LongPressGesture(minimumDuration: 0.35)
-                        .onEnded { _ in
-                            print("[StickyGesture] 1b. long-press received on card body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected), isEditing=\(isEditing)")
-                            onRequestSelect()
-                            print("[StickyGesture] 1c. onRequestSelect() returned")
+                        .sequenced(before: DragGesture(minimumDistance: 4))
+                        .onChanged { value in
+                            switch value {
+                            case .first(true):
+                                // Long press confirmed — select without editing.
+                                onRequestSelect()
+                            case .second(true, let drag?):
+                                if !isSelected { onRequestSelect() }
+                                dragOffset = drag.translation
+                            default:
+                                break
+                            }
                         }
-                )
-                .gesture(
-                    (isSelected && !isEditing) ? bodyDragGesture : nil
+                        .onEnded { value in
+                            switch value {
+                            case .first(true):
+                                onRequestSelect()
+                            case .second(true, let drag?):
+                                onRequestSelect()
+                                commitBodyDrag(drag.translation)
+                            default:
+                                break
+                            }
+                            dragOffset = .zero
+                        }
                 )
                 .position(x: displayed.midX, y: displayed.midY)
 
@@ -358,6 +379,20 @@ struct StickyNoteElementView: View {
                 dragOffset = .zero
                 print("[StickyGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
             }
+    }
+
+    /// Commit a completed drag translation to the model. Called from
+    /// the long-press-sequenced drag gesture on the card body.
+    private func commitBodyDrag(_ translation: CGSize) {
+        let dxNorm = translation.width  / pageSize.width
+        let dyNorm = translation.height / pageSize.height
+        let newX   = element.normalizedX + Double(dxNorm)
+        let newY   = element.normalizedY + Double(dyNorm)
+        let maxX   = 1 - element.normalizedWidth
+        let maxY   = 1 - element.normalizedHeight
+        element.normalizedX = max(0, min(maxX, newX))
+        element.normalizedY = max(0, min(maxY, newY))
+        element.updatedAt   = Date()
     }
 
     private func resizeGesture(for corner: Corner) -> some Gesture {

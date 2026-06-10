@@ -45,6 +45,10 @@ struct TextElementView: View {
     /// dictation appending to `content.text`) are picked up via the
     /// `onChange(of: content.text)` handler.
     @State private var didSeed: Bool = false
+    /// Transient vertical drag delta — applied live to the displayed
+    /// position and committed to `element.normalizedY` on `.onEnded`.
+    /// Text blocks span the full content width so only the Y axis moves.
+    @State private var dragOffsetY: CGFloat = 0
 
     private var pageInkColor: UIColor {
         colorScheme == .dark
@@ -97,11 +101,27 @@ struct TextElementView: View {
         return max(24, min(padded, maxH))
     }
     private var originY: CGFloat {
-        let raw = element.normalizedY * pageSize.height
+        let raw = element.normalizedY * pageSize.height + dragOffsetY
         return max(0, min(pageSize.height - 20, raw))
     }
     private var origin: CGPoint {
         CGPoint(x: Self.pageMargin, y: originY)
+    }
+
+    /// Drag gesture active when the block is selected but not being edited.
+    /// Text blocks only move vertically (full-width layout, no horizontal resize).
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                dragOffsetY = value.translation.height
+            }
+            .onEnded { value in
+                let rawY = element.normalizedY * pageSize.height + value.translation.height
+                let clampedY = max(0, min(pageSize.height - 20, rawY))
+                element.normalizedY = clampedY / pageSize.height
+                element.updatedAt   = Date()
+                dragOffsetY = 0
+            }
     }
 
     var body: some View {
@@ -127,6 +147,8 @@ struct TextElementView: View {
             )
         }
         .frame(width: width, height: height, alignment: .topLeading)
+        .contentShape(Rectangle())
+        .gesture(isSelected && !isEditing ? moveGesture : nil)
         .position(x: origin.x + width / 2, y: origin.y + height / 2)
         .rotationEffect(.radians(element.rotation))
         .onAppear { seedIfNeeded() }

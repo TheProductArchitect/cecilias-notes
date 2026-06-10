@@ -507,11 +507,42 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 applyPageMetadataChanges()
                 return
             }
+            // Fast path: pages appended at the end (the auto-add
+            // case). Tearing down every host on a one-page append
+            // causes the visible "page refresh" blink that drops any
+            // in-flight stroke on the currently-active canvas. We
+            // only need to mount the new pages — existing canvases,
+            // overlay hosts, and PKDrawings can stay exactly where
+            // they are.
+            let pages = viewModel.pages
+            if isPurelyAppended(old: lastSnapshot, new: snapshot),
+               canAppendInPlace(newPages: pages) {
+                let appendedStart = lastSnapshot.count
+                let appendedPages = Array(pages[appendedStart...])
+                appendPageHosts(appendedPages)
+                return
+            }
             // Phase 1 simplification: rebuild from scratch on any list
             // change. The cost is 1× PKDrawing reload per page in the warm
             // band, which dominates and is independent of the rebuild.
-            // Auto-add appends one page, so this stays cheap in practice.
             rebuildPageHosts()
+        }
+
+        /// True iff `new` equals `old` followed by zero or more
+        /// additional page IDs (the auto-add / "+ new page" case).
+        private func isPurelyAppended(old: [UUID], new: [UUID]) -> Bool {
+            guard new.count > old.count else { return false }
+            for i in 0..<old.count where old[i] != new[i] { return false }
+            return true
+        }
+
+        /// True iff the appended pages don't widen `maxW` — if they
+        /// did, every existing page would need to be re-centred
+        /// horizontally, and the full rebuild path is simpler.
+        private func canAppendInPlace(newPages: [Page]) -> Bool {
+            let currentMaxW = hosts.map(\.frame.width).max() ?? 0
+            let newMaxW = newPages.map { $0.pageSize.pointSize.width }.max() ?? 0
+            return newMaxW <= currentMaxW + 0.5
         }
 
         func rebuildPageHosts() {
@@ -524,15 +555,64 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let pages   = viewModel.pages
             let maxW    = pages.map { $0.pageSize.pointSize.width }.max() ?? PageSize.a4.pointSize.width
             for page in pages {
-                let baseSize = page.pageSize.pointSize
-                let frame = CGRect(
-                    x: (maxW - baseSize.width) / 2,
-                    y: y,
-                    width: baseSize.width,
-                    height: baseSize.height
-                )
-                let renderer = PageRenderer(pageSize: page.pageSize)
-                renderer.frame = frame
+                y = mountPageHost(page, atY: y, contentMaxWidth: maxW)
+            }
+            // Total content height excludes the trailing gap.
+            let height = max(0, y - pageGap)
+            updateContentSize(width: maxW, height: height)
+            lastSnapshot = pages.map(\.id)
+
+            // Mount canvases for the warm band straight away so the user
+            // doesn't see a paper-only flash when entering the editor.
+            updateCanvasMembership(force: true)
+        }
+
+        /// Append `newPages` to the bottom of the existing host
+        /// stack without touching any existing host. Used by the
+        /// auto-add fast path — keeps the active canvas's PKDrawing
+        /// and in-flight stroke intact while one extra page slides
+        /// in below.
+        private func appendPageHosts(_ newPages: [Page]) {
+            guard contentView != nil else { return }
+            // y picks up where the last existing host ended.
+            var y: CGFloat = (hosts.last?.frame.maxY).map { $0 + pageGap } ?? 0
+            let maxW = hosts.map(\.frame.width).max()
+                ?? newPages.first?.pageSize.pointSize.width
+                ?? PageSize.a4.pointSize.width
+            for page in newPages {
+                y = mountPageHost(page, atY: y, contentMaxWidth: maxW)
+            }
+            let height = max(0, y - pageGap)
+            updateContentSize(width: maxW, height: height)
+            lastSnapshot = viewModel.pages.map(\.id)
+            // Non-forced membership refresh so canvases already mounted
+            // on existing hosts stay mounted. The new page's canvas
+            // will mount if it falls in the warm band; otherwise it
+            // sits as paper until the user scrolls into it.
+            updateCanvasMembership(force: false)
+        }
+
+        /// Mount one page's renderer / template host / overlays host
+        /// at `y` and append a `PageHostState`. Returns the new `y`
+        /// (advance for the next page). Extracted so the full
+        /// rebuild and the append-only path share one canonical
+        /// per-page mount.
+        @discardableResult
+        private func mountPageHost(
+            _ page: Page,
+            atY y: CGFloat,
+            contentMaxWidth maxW: CGFloat
+        ) -> CGFloat {
+            guard let contentView else { return y }
+            let baseSize = page.pageSize.pointSize
+            let frame = CGRect(
+                x: (maxW - baseSize.width) / 2,
+                y: y,
+                width: baseSize.width,
+                height: baseSize.height
+            )
+            let renderer = PageRenderer(pageSize: page.pageSize)
+            renderer.frame = frame
 
                 // Step 5.5: PageRenderer no longer draws PDFs or
                 // highlights — those flow through
@@ -624,28 +704,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
                                        label: "6. page \(pidTag) overlays host")
                 #endif
 
-                hosts.append(PageHostState(
-                    pageId:       page.id,
-                    frame:        frame,
-                    renderer:     renderer,
-                    templateHost: templateHost,
-                    overlaysHost: overlaysHost,
-                    template:     page.backgroundTemplate
-                ))
-                y += baseSize.height + pageGap
-            }
-            // Total content height excludes the trailing gap.
-            let height = max(0, y - pageGap)
-            updateContentSize(width: maxW, height: height)
-            lastSnapshot = pages.map(\.id)
-
-            // Mount canvases for the warm band straight away so the user
-            // doesn't see a paper-only flash when entering the editor.
-            // Active-page detection deliberately deferred: the first
-            // rebuild lands BEFORE the initial scrollToPage moves the
-            // viewport off (0, 0), so we'd otherwise reset the resumed
-            // page back to page 0.
-            updateCanvasMembership(force: true)
+            hosts.append(PageHostState(
+                pageId:       page.id,
+                frame:        frame,
+                renderer:     renderer,
+                templateHost: templateHost,
+                overlaysHost: overlaysHost,
+                template:     page.backgroundTemplate
+            ))
+            return y + baseSize.height + pageGap
         }
 
         private func tearDownAllHosts() {
@@ -872,6 +939,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // Pencil must always draw — never yield.
                 if let touches = event?.allTouches,
                    touches.contains(where: { $0.type == .pencil }) {
+                    return false
+                }
+                // Drawing tools should never yield to the media
+                // overlay: the overlay has `allowsHitTesting(false)`
+                // while a drawing tool is active, so a yield here
+                // strands the finger touch between two views that
+                // both refuse it — the user sees the stroke "not
+                // taking" until they start from outside the image.
+                if self.viewModel.selectedTool.isDrawingTool {
                     return false
                 }
                 let size = canvas.bounds.size

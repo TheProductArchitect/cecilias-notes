@@ -158,7 +158,14 @@ struct SubjectSidebarView: View {
     /// individual recent notebooks; the grid is the canonical surface
     /// for that list now.
     private var recentContextRow: some View {
-        let isSelected = viewModel.selectedContext == .recent && viewModel.selectedQuizID == nil
+        // Grid-context rows must also unhighlight when a non-grid
+        // surface is showing (trash, a selected quiz). Without
+        // these guards, tapping "trash" leaves the previously
+        // active context (recent / all notes / a subject) still
+        // bolded — two rows look "selected" at once.
+        let isSelected = viewModel.selectedContext == .recent
+            && viewModel.selectedQuizID == nil
+            && !viewModel.isShowingTrash
         return SidebarRow(
             isSelected: isSelected,
             onTap: { viewModel.selectedContext = .recent }
@@ -364,7 +371,11 @@ private struct AllNotesListRow: View {
     @Query(filter: #Predicate<Notebook> { $0.isDeleted == false })
     private var notebooks: [Notebook]
 
-    private var isSelected: Bool { viewModel.selectedContext == .allNotes && viewModel.selectedQuizID == nil }
+    private var isSelected: Bool {
+        viewModel.selectedContext == .allNotes
+            && viewModel.selectedQuizID == nil
+            && !viewModel.isShowingTrash
+    }
 
     var body: some View {
         SidebarRow(
@@ -433,7 +444,9 @@ private struct SubjectListRow: View {
     }
 
     private var isSelected: Bool {
-        viewModel.selectedContext == .subject(subject.id) && viewModel.selectedQuizID == nil
+        viewModel.selectedContext == .subject(subject.id)
+            && viewModel.selectedQuizID == nil
+            && !viewModel.isShowingTrash
     }
 
     /// Drag payload for subject reorder. Distinct from

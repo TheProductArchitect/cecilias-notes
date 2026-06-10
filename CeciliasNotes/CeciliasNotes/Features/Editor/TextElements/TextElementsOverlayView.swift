@@ -212,6 +212,17 @@ struct TextElementsOverlayView: View {
                     .onTapGesture {
                         handleElementTap(element: element)
                     }
+                    .onLongPressGesture(minimumDuration: 0.35) {
+                        // Long-press selects without entering edit, giving
+                        // the move gesture a chance to fire while the
+                        // finger is still down (mirrors ImageElementView).
+                        if viewModel.selectedTool.isCursorMode {
+                            selectedId = element.id
+                            // Do not set editingId — leave the block in
+                            // the "selected, not editing" state so the
+                            // drag gesture on TextElementView activates.
+                        }
+                    }
             }
 
             // Word-tap overlay for dictated transcripts that have

@@ -61,6 +61,19 @@ final class MarkdownShortcutHandler {
             return applyBlockquote(lineRange: lineRange, prefixLen: 1)
         }
 
+        // Bullet continuation / exit on Enter.
+        // "• " is inserted by applyBullet — two chars (bullet + space).
+        if text == "\n" && prefix.hasPrefix("• ") {
+            let bulletContent = String(prefix.dropFirst(2))
+            if bulletContent.isEmpty {
+                // Empty bullet → remove the "• " so the user exits the list.
+                return removeBulletPrefix(lineRange: lineRange)
+            } else {
+                // Non-empty bullet → start a new bullet on the next line.
+                return insertContinuationBullet(at: range.location)
+            }
+        }
+
         return true
     }
 
@@ -127,6 +140,32 @@ final class MarkdownShortcutHandler {
         )
         attrString.insert(insertion, at: lineRange.location)
         commit(attrString, cursorAt: lineRange.location + 2)
+        return false
+    }
+
+    /// Remove "• " from the start of the line — called when the user
+    /// presses Enter on an otherwise-empty bullet item to exit the list.
+    private func removeBulletPrefix(lineRange: NSRange) -> Bool {
+        guard let textView else { return true }
+        let attrString = NSMutableAttributedString(attributedString: textView.attributedText)
+        // "• " is 2 characters.
+        let removeRange = NSRange(location: lineRange.location, length: 2)
+        guard removeRange.location + removeRange.length <= attrString.length else { return true }
+        attrString.deleteCharacters(in: removeRange)
+        commit(attrString, cursorAt: lineRange.location)
+        return false
+    }
+
+    /// Insert "\n• " at `location` — called when the user presses Enter
+    /// at the end of a non-empty bullet item to start a new bullet.
+    private func insertContinuationBullet(at location: Int) -> Bool {
+        guard let textView else { return true }
+        let attrString = NSMutableAttributedString(attributedString: textView.attributedText)
+        guard location <= attrString.length else { return true }
+        let insertion = NSAttributedString(string: "\n• ")
+        attrString.insert(insertion, at: location)
+        // Place cursor after "• " on the new line (skip 3 chars: \n + • + space).
+        commit(attrString, cursorAt: location + 3)
         return false
     }
 

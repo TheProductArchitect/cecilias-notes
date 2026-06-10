@@ -109,7 +109,19 @@ final class LibraryViewModel: ObservableObject {
     /// True when the library is showing the Trash surface instead
     /// of the notebook grid. Toggled by the sidebar's "trash" row.
     /// Not persisted — relaunching always lands on the notebook grid.
-    @Published var isShowingTrash: Bool = false
+    @Published var isShowingTrash: Bool = false {
+        didSet {
+            // Entering Trash leaves any selected quiz behind — the
+            // sidebar's "trash" row is the active surface and only
+            // one row should read as selected at a time. Mirrors
+            // the `selectedContext` didSet's mutually-exclusive
+            // discipline; without it, a previously-selected quiz
+            // row stays bolded while the user is viewing Trash.
+            if isShowingTrash, selectedQuizID != nil {
+                selectedQuizID = nil
+            }
+        }
+    }
 
     /// Live count of soft-deleted records across every entity type.
     /// Drives the sidebar's "trash (N)" badge. Refreshed by

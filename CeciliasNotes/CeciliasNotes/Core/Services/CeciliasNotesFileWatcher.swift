@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// Watches the iCloud Inbox folder for `.inkbook` files dropped by
 /// external agents (e.g. `cecilias-notes-mcp` on macOS) and hands
@@ -143,15 +144,14 @@ final class CeciliasNotesFileWatcher {
             }
             lastSeenModification[url] = mtime
 
-            // Dispatch by extension. `.inkbook` is the agent-authored
-            // notebook payload (existing); `.json` is the quiz MCP
-            // response (new).
+            // Dispatch by extension and filename prefix.
             switch url.pathExtension.lowercased() {
             case "inkbook":
                 CeciliasNotesImporter.shared.importFile(at: url)
-            case "json"
-                where url.lastPathComponent.hasPrefix("quiz_generation_response"):
+            case "json" where url.lastPathComponent.hasPrefix("quiz_generation_response"):
                 QuizMCPImporter.shared.importResponse(at: url)
+            case "json" where url.lastPathComponent.hasPrefix("delete_notebook_request_"):
+                handleDeleteRequest(at: url)
             default:
                 continue
             }
@@ -177,6 +177,53 @@ final class CeciliasNotesFileWatcher {
             .url(forUbiquityContainerIdentifier: Self.containerIdentifier)?
             .appendingPathComponent("Documents")
             .appendingPathComponent("Inbox")
+    }
+
+    // MARK: - Delete request handler
+
+    /// Processes a `delete_notebook_request_<uuid>.json` file written by MCP.
+    ///
+    /// Expected payload: `{ "action": "delete_notebook", "notebook_id": "<uuid>" }`
+    ///
+    /// After soft-deleting the notebook in SwiftData the request file is
+    /// removed from the Inbox so the watcher doesn't re-fire on the same file.
+    private func handleDeleteRequest(at url: URL) {
+        Task.detached(priority: .utility) {
+            struct DeleteRequest: Decodable {
+                let action: String
+                let notebook_id: String
+            }
+
+            let coordinator = NSFileCoordinator(filePresenter: nil)
+            var coordError: NSError?
+            var payload: Data?
+
+            coordinator.coordinate(readingItemAt: url, options: [], error: &coordError) { readURL in
+                payload = try? Data(contentsOf: readURL)
+            }
+
+            guard let data   = payload,
+                  let req    = try? JSONDecoder().decode(DeleteRequest.self, from: data),
+                  req.action == "delete_notebook",
+                  let nbId   = UUID(uuidString: req.notebook_id)
+            else { return }
+
+            await MainActor.run {
+                let context = StorageService.shared.context
+                let descriptor = FetchDescriptor<Notebook>(
+                    predicate: #Predicate { $0.id == nbId && $0.isDeleted == false }
+                )
+                if let notebook = (try? context.fetch(descriptor))?.first {
+                    try? StorageService.shared.deleteNotebook(notebook)
+                }
+            }
+
+            // Remove the processed request file so it doesn't re-trigger.
+            var removeError: NSError?
+            coordinator.coordinate(writingItemAt: url, options: .forDeleting, error: &removeError) { delURL in
+                try? FileManager.default.removeItem(at: delURL)
+            }
+        }
     }
 
     private func log(_ message: String) {

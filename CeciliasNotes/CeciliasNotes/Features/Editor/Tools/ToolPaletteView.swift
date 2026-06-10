@@ -117,19 +117,6 @@ struct ToolPaletteView: View {
         ) { _ in
             imageVariant = ImageToolVariantStore.current
         }
-        .popover(isPresented: $viewModel.isShowingColorPicker) {
-            ColorPickerView(viewModel: viewModel) {
-                viewModel.isShowingColorPicker = false
-            }
-        }
-        .popover(isPresented: $showSizePopover) {
-            sizePopover
-                .presentationCompactAdaptation(.popover)
-        }
-        .popover(isPresented: $showEraserPopover) {
-            eraserPopover
-                .presentationCompactAdaptation(.popover)
-        }
         .alert("Erase all ink on this page?",
                isPresented: $showErasePageConfirm) {
             Button("Erase", role: .destructive) {
@@ -547,6 +534,10 @@ struct ToolPaletteView: View {
                             showEraserPopover = true
                         }
                 )
+                .popover(isPresented: $showEraserPopover) {
+                    eraserPopover
+                        .presentationCompactAdaptation(.popover)
+                }
         } else if identity == .lasso {
             // Step 9: long-press opens the freeform / marquee
             // mode picker. Tap selects the lasso tool using the
@@ -779,6 +770,11 @@ struct ToolPaletteView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.ceciliasNotesPressable)
+        .popover(isPresented: $viewModel.isShowingColorPicker) {
+            ColorPickerView(viewModel: viewModel) {
+                viewModel.isShowingColorPicker = false
+            }
+        }
     }
 
     // MARK: Size controls
@@ -827,6 +823,10 @@ struct ToolPaletteView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.ceciliasNotesPressable)
+        .popover(isPresented: $showSizePopover) {
+            sizePopover
+                .presentationCompactAdaptation(.popover)
+        }
     }
 
     private var sizeDecrementButton: some View {

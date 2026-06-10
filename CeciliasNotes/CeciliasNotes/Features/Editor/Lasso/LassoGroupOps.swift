@@ -53,9 +53,10 @@ enum LassoGroupOps {
                     context: context
                 )
             default:
-                element.normalizedX += dxNorm
-                element.normalizedY += dyNorm
-                element.updatedAt    = Date()
+                // Clamp so the element stays fully within the page.
+                element.normalizedX = max(0, min(1 - element.normalizedWidth,  element.normalizedX + dxNorm))
+                element.normalizedY = max(0, min(1 - element.normalizedHeight, element.normalizedY + dyNorm))
+                element.updatedAt   = Date()
             }
         }
         // Partial-stroke members.

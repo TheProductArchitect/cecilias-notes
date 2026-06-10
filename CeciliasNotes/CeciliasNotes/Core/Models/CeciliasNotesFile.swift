@@ -100,11 +100,37 @@ struct CeciliasNotesFile: Codable {
             }
         }
 
-        // App is read-only for this format; encode is a no-op stub
-        // to satisfy Codable.
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
-            try c.encode("unknown", forKey: .type)
+            switch self {
+            case .heading(let content, let level):
+                try c.encode("heading",   forKey: .type)
+                try c.encode(content,     forKey: .content)
+                try c.encode(level,       forKey: .level)
+            case .paragraph(let content):
+                try c.encode("paragraph", forKey: .type)
+                try c.encode(content,     forKey: .content)
+            case .list(let style, let items):
+                try c.encode("list",      forKey: .type)
+                try c.encode(style,       forKey: .style)
+                try c.encode(items,       forKey: .items)
+            case .code(let content, let language):
+                try c.encode("code",      forKey: .type)
+                try c.encode(content,     forKey: .content)
+                try c.encodeIfPresent(language, forKey: .language)
+            case .divider:
+                try c.encode("divider",   forKey: .type)
+            case .quote(let content, let attribution):
+                try c.encode("quote",     forKey: .type)
+                try c.encode(content,     forKey: .content)
+                try c.encodeIfPresent(attribution, forKey: .attribution)
+            case .callout(let content, let kind):
+                try c.encode("callout",   forKey: .type)
+                try c.encode(content,     forKey: .content)
+                try c.encode(kind,        forKey: .kind)
+            case .unknown:
+                try c.encode("unknown",   forKey: .type)
+            }
         }
     }
 }
@@ -152,6 +178,53 @@ extension CeciliasNotesFile {
         case "letter":       return .letter
         case "ipad-canvas":  return .ipadCanvas
         default:             return .a4
+        }
+    }
+
+    // MARK: - Reverse mappings (app enum → schema string, used by exporter)
+
+    static func schemaString(for size: PageSize) -> String {
+        switch size {
+        case .a4:         return "a4"
+        case .letter:     return "letter"
+        case .ipadCanvas: return "ipad-canvas"
+        }
+    }
+
+    /// Maps internal `PageTemplate` cases back to the six coarse
+    /// schema strings. Any template not in the schema's vocabulary
+    /// maps to its nearest representative.
+    static func schemaString(for template: PageTemplate) -> String {
+        switch template {
+        case .blank, .storyboard, .mindMap,
+             .calendarWeek, .dayPlanner,
+             .taskList, .habitTracker:  return "blank"
+        case .collegeRuled,
+             .wideRuled,
+             .narrowRuled,
+             .twoColumn:               return "lined"
+        case .squareGrid5,
+             .squareGrid10,
+             .engineeringGrid:         return "grid"
+        case .dotGrid5,
+             .dotGrid10,
+             .isoDots:                 return "dot-grid"
+        case .cornell:                 return "cornell"
+        case .music:                   return "music"
+        }
+    }
+
+    static func schemaString(for tone: NotebookCoverTone?) -> String? {
+        guard let tone else { return nil }
+        switch tone {
+        case .parchment:   return "parchment"
+        case .studioWhite: return "studio-white"
+        case .ash:         return "ash"
+        case .coal:        return "coal"
+        case .midnight:    return "midnight"
+        case .moss:        return "moss"
+        case .dusk:        return "dusk"
+        case .inkBlack:    return "ink-black"
         }
     }
 }

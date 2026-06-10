@@ -33,6 +33,8 @@ struct ImageElementView: View {
 
     @Environment(\.theme) private var theme
     @ObservedObject private var modifierKeys = ModifierKeyObserver.shared
+    /// True while the full-screen crop sheet is presented.
+    @State private var isCropping: Bool = false
 
     // Transient gesture deltas — kept local so a drag/resize tick
     // doesn't write to SwiftData every frame; commits land on
@@ -105,6 +107,13 @@ struct ImageElementView: View {
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onChange(of: isSelected) { oldValue, newValue in
             print("[ImageGesture] isSelected changed elementId=\(element.id.uuidString.prefix(8)) old=\(oldValue) new=\(newValue)")
+        }
+        .fullScreenCover(isPresented: $isCropping) {
+            ImageCropSheet(
+                content: content,
+                onDone:   { isCropping = false },
+                onCancel: { isCropping = false }
+            )
         }
     }
 
@@ -210,6 +219,17 @@ struct ImageElementView: View {
                 rotate90()
             } label: {
                 Image(systemName: "rotate.right")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                isCropping = true
+            } label: {
+                Image(systemName: "crop")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(theme.foreground)
                     .frame(width: 24, height: 24)

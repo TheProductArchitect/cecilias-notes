@@ -555,6 +555,7 @@ extension StorageService {
         try ensureDir(notebookDir(notebook.id))
         scheduleSpotlightReindex(for: notebook)
         scheduleWidgetSnapshot()
+        CeciliasNotesExporter.shared.export(notebook)
         return notebook
     }
 
@@ -667,6 +668,7 @@ extension StorageService {
         try context.save()
         scheduleSpotlightReindex(for: notebook)
         scheduleWidgetSnapshot()
+        CeciliasNotesExporter.shared.export(notebook)
     }
 
     func moveNotebook(_ notebook: Notebook, to subjectId: UUID?) throws {
@@ -706,6 +708,7 @@ extension StorageService {
         // the OS-level Spotlight donation without a duplicate call.
         SearchIndexService.shared.removeNotebook(id: id)
         scheduleWidgetSnapshot()
+        CeciliasNotesExporter.shared.removeExport(for: id)
     }
 
     func duplicateNotebook(_ notebook: Notebook) async throws -> Notebook {

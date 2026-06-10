@@ -153,6 +153,11 @@ final class CeciliasNotesImporter {
         notebook.totalPageCount = sortedPages.count
 
         try context.save()
+
+        // Mirror the imported notebook to the MCP-readable directory so that
+        // list_notebooks / read_notebook / search_notes tools see it
+        // immediately without waiting for a user-triggered export.
+        CeciliasNotesExporter.shared.export(notebook)
     }
 
     // MARK: Helpers

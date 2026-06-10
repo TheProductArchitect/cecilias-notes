@@ -190,9 +190,16 @@ struct LassoOverlayView: View {
                 for (i, stroke) in strokes.enumerated() {
                     let bbox = stroke.renderBounds
                     // Cheap reject — if the stroke's bbox doesn't
-                    // intersect the lasso's bbox, skip the centre check.
+                    // intersect the lasso's bbox, skip the check.
                     if !bbox.intersects(lassoBBox) { continue }
-                    if LassoMath.rectCentreContained(bbox, in: path) {
+                    // Use the same substantial-overlap rule as non-stroke
+                    // elements: select if the stroke bbox centre is inside
+                    // the path OR if ≥25 % of the bbox area overlaps the
+                    // path bbox. This makes the marquee tool work correctly
+                    // for strokes — previously only centre containment was
+                    // tested, which failed when a stroke's bbox centre fell
+                    // just outside the drawn marquee rectangle.
+                    if LassoMath.rectSubstantiallyInside(bbox, in: path) {
                         matchedIndices.insert(i)
                         matchedBBoxes.append(bbox)
                     }

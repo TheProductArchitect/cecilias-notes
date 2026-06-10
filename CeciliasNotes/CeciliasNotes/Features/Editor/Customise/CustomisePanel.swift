@@ -45,6 +45,14 @@ struct CustomisePanel: View {
     /// `maxHeight` cap kicks in and the ScrollView starts scrolling.
     @State private var contentHeight: CGFloat = 0
 
+    /// Measured width of the template / right-column row band.
+    /// Drives the 55/45 split so both halves stay fluid regardless
+    /// of the template carousel's intrinsic content width. Seeded
+    /// to a conservative 700pt — close enough to a portrait iPad
+    /// editor pane that the first layout pass doesn't visibly
+    /// shift when the real width measures in.
+    @State private var rowWidth: CGFloat = 700
+
     private let coverSwatchSize    = CGSize(width: 64, height: 85)
     private let templateThumbSize  = CGSize(width: 64, height: 85)
 
@@ -72,38 +80,51 @@ struct CustomisePanel: View {
                     nameSection
                     coverSection
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    // Toggle band moved up directly under the cover
-                    // swatches — these are frequently-used controls
-                    // and previously sat at the foot of a long
-                    // scroll behind the space-heavy template strips.
-                    VStack(spacing: 0) {
-                        autoAddSection
-                        autoHideHeaderSection
-                    }
-                    togglesCaption
-                    // Page size + template share one row too —
-                    // hidden for PDF-backed notebooks where the
-                    // source PDF dictates both. ~35/65 split per
-                    // spec — `pageSizeSection` is narrower because
-                    // its three text options need less horizontal
-                    // run than the template carousel.
-                    // Step 5.5: `isPDFBacked` retired — page-size +
-                    // template controls render unconditionally now.
-                    // For Workflow A notebooks the PDF page element
-                    // ignores the template (it fills the page at
-                    // zIndex 0); the controls are harmless when set
-                    // on a PDF page.
-                    if true {
-                        HStack(alignment: .top, spacing: 16) {
+                    // Two-column band below the cover:
+                    // left = template carousel, right = page size +
+                    // toggles + tags. Keeps the visually heavy
+                    // template strip on the left so the eye reads
+                    // content → settings left-to-right.
+                    // Split the band by explicit width proportions
+                    // rather than `layoutPriority`. The template
+                    // section's horizontal scroll strips have an
+                    // intrinsic width equal to the sum of every
+                    // thumbnail; without an explicit width cap the
+                    // left column claims almost all of the row and
+                    // the right column collapses to its content
+                    // minimum (the "right side only 10% wide" bug).
+                    // We measure the row width via a PreferenceKey,
+                    // then set explicit widths on both columns so
+                    // they hold a stable 55/45 share on every iPad
+                    // size without GeometryReader's vertical-fill
+                    // quirk.
+                    HStack(alignment: .top, spacing: 16) {
+                        templateSection
+                            .frame(width: max(120, rowWidth * 0.55 - 8),
+                                   alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 0) {
                             pageSizeSection
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .layoutPriority(35)
-                            templateSection
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .layoutPriority(65)
+                                .padding(.bottom, 8)
+                            autoAddSection
+                            autoHideHeaderSection
+                            togglesCaption
+                                .padding(.top, 6)
+                                .padding(.bottom, 8)
+                            tagsSection
                         }
+                        .frame(width: max(120, rowWidth * 0.45 - 8),
+                               alignment: .leading)
                     }
-                    tagsSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(
+                                key: CustomisePanelRowWidthKey.self,
+                                value: g.size.width
+                            )
+                        }
+                    )
                     // Step 5.5: annotation section surfaces
                     // whenever the notebook has any V6 highlights.
                     // The legacy gate was `isPDFBacked` (retired);
@@ -125,6 +146,7 @@ struct CustomisePanel: View {
             }
             .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
             .onPreferenceChange(CustomisePanelContentHeightKey.self) { contentHeight = $0 }
+            .onPreferenceChange(CustomisePanelRowWidthKey.self) { rowWidth = $0 }
         }
         .background(
             UnevenRoundedRectangle(
@@ -929,6 +951,17 @@ struct CustomisePanel: View {
 // enum gained the property natively.
 
 private struct CustomisePanelContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Measures the width of the template / right-column row band so
+/// the columns can be sized at explicit fractional widths. Without
+/// an explicit width cap the template carousel's intrinsic width
+/// dominates and the right column collapses.
+private struct CustomisePanelRowWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())

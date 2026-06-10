@@ -236,9 +236,11 @@ actor SpeechTranscriber {
     }
 
     /// Reads the user's `ceciliasnotes.transcription.quality` setting and maps it to
-    /// `SFSpeechRecognitionTaskHint`. Default is `.dictation`.
+    /// `SFSpeechRecognitionTaskHint`. Default is `.dictation` (best accuracy for
+    /// note-taking); users can switch to "fast" in Audio settings for quicker but
+    /// less accurate results.
     private static func currentTaskHint() -> SFSpeechRecognitionTaskHint {
-        let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.transcription.quality") ?? "fast"
+        let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.transcription.quality") ?? "accurate"
         return raw == "fast" ? .search : .dictation
     }
 
