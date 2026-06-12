@@ -4,9 +4,24 @@ import SwiftData
 /// Ingests `.inkbook` files written by external agents into the
 /// app's SwiftData store. Idempotent: re-importing a file with the
 /// same notebook UUID updates the existing record in place rather
-/// than creating a duplicate. Pages are replaced wholesale on
-/// update — the schema is a snapshot, not a CRDT, so an agent that
-/// regenerates a notebook gets a clean overwrite.
+/// than creating a duplicate.
+///
+/// **Concurrency strategy (v1.1).** Incoming files declare an
+/// `mcp_action`:
+///
+///   • `create` / nil / unknown → wholesale replace of pages
+///     (back-compat with pre-v1.1 MCPs and any non-MCP writer)
+///   • `replace` → wholesale replace, explicit
+///   • `append` → optimistic concurrency check:
+///       - notebook missing → create (MCP got out of sync; accept)
+///       - notebook present and live `updatedAt` matches the
+///         file's `base_updated_at` → safe wholesale replace (no
+///         iPad edits since the MCP read)
+///       - notebook present but `updatedAt` ≠ `base_updated_at` →
+///         **conflict**: keep every page currently on the notebook
+///         and append only incoming pages whose `id` is not
+///         already present locally. The iPad's concurrent edits
+///         survive.
 ///
 /// All persistence work runs on the main actor because the SwiftData
 /// `ModelContext` reachable through `StorageService.shared` is
@@ -63,10 +78,20 @@ final class CeciliasNotesImporter {
         // blocks and rebuild; missing → insert fresh.
         let existing = try fetchNotebook(id: notebookId, context: context)
 
+        // Decide the page-write strategy before touching the
+        // notebook. Default (`nil` / `create` / `replace` / unknown)
+        // is the historical wholesale-replace behaviour; `append`
+        // adds the optimistic concurrency check.
+        let strategy = pageWriteStrategy(for: file, existing: existing)
+
         let notebook: Notebook
         if let existing {
             notebook = existing
-            try resetPages(of: notebook, context: context)
+            if strategy == .replace {
+                try resetPages(of: notebook, context: context)
+            }
+            // For `.append` we keep the existing pages and let the
+            // page-build loop below skip duplicates by id.
         } else {
             notebook = Notebook(
                 title: file.title,
@@ -100,45 +125,92 @@ final class CeciliasNotesImporter {
             CoverToneStore.setTone(tone, for: notebook.id)
         }
 
-        // Agent attribution
+        // Agent attribution — persist EVERY field verbatim so the
+        // mirror's `agent` block round-trips exactly. The previous
+        // setup dropped `tool` / `tool_version` on the floor and
+        // the exporter hard-coded substitutes, which corrupted the
+        // attribution metadata external agents rely on for version
+        // gating ("tool_version '1.0.1' becomes '1'" bug).
         if let agent = file.agent {
-            notebook.isAgentWritten      = true
-            notebook.agentName           = agent.written_by
-            notebook.agentModel          = agent.model
+            notebook.isAgentWritten   = true
+            notebook.agentName        = agent.written_by
+            notebook.agentModel       = agent.model
+            notebook.agentTool        = agent.tool
+            notebook.agentToolVersion = agent.tool_version
         } else {
-            notebook.isAgentWritten = false
-            notebook.agentName      = nil
-            notebook.agentModel     = nil
+            notebook.isAgentWritten   = false
+            notebook.agentName        = nil
+            notebook.agentModel       = nil
+            notebook.agentTool        = nil
+            notebook.agentToolVersion = nil
         }
         notebook.sourceInkbookFilename = sourceFilename
         notebook.updatedAt = Date()
 
-        // Rebuild pages
+        // Rebuild pages — behaviour depends on `strategy`:
+        //   • `.replace` — `notebook.pages` was wiped above; insert
+        //     every incoming page fresh, numbered 1..N.
+        //   • `.append`  — `notebook.pages` is intact; insert only
+        //     incoming pages whose id is not already present and
+        //     number them after the existing tail. This preserves
+        //     iPad edits made between the MCP's read and write.
         let sortedPages = file.pages.sorted { $0.index < $1.index }
-        notebook.pages = []
+        let existingIds: Set<UUID> = Set((notebook.pages ?? []).map(\.id))
+        let existingTail = (notebook.pages ?? []).map(\.pageNumber).max() ?? 0
+        let basePageNumber = strategy == .append ? existingTail : 0
+        if strategy == .replace { notebook.pages = [] }
+
+        var nextPageNumber = basePageNumber + 1
         for (idx, pageNode) in sortedPages.enumerated() {
+            let candidateId = UUID(uuidString: pageNode.id)
+            // Append-strategy skip: already on the notebook.
+            if strategy == .append,
+               let cid = candidateId, existingIds.contains(cid) {
+                continue
+            }
+
             let page = Page(
                 notebookId: notebook.id,
-                pageNumber: idx + 1,
+                pageNumber: nextPageNumber,
                 pageSize: notebook.pageSize,
                 backgroundTemplate: notebook.defaultTemplate
             )
-            if let pageId = UUID(uuidString: pageNode.id) { page.id = pageId }
+            if let pageId = candidateId { page.id = pageId }
             page.notebook = notebook
+            // Stash the source blocks verbatim so the mirror can
+            // emit them later without going through the lossy
+            // text-flattening path. Encoded with the same JSON
+            // settings the exporter uses so the bytes are
+            // byte-identical when emitted.
+            if let blocksJSON = Self.encodeBlocks(pageNode.blocks) {
+                page.inkbookBlocksJSON = blocksJSON
+            }
             context.insert(page)
             notebook.pages = (notebook.pages ?? []) + [page]
+            nextPageNumber += 1
 
             // Single full-width TextBlock per page carrying the
             // rendered attributed string for every block on that
             // page. Coordinates are normalised 0..1; we give the
             // block a margin so it doesn't bleed into the page edge.
+            // `pageRichText` is indexed against `sortedPages` (the
+            // incoming page list), so the index is `idx`, not the
+            // running `nextPageNumber`.
             let rich = pageRichText.indices.contains(idx)
                 ? pageRichText[idx]
                 : NSAttributedString()
             if rich.length > 0 {
+                // Page-margin layout — `width = 0.80` leaves 10% gutter
+                // on each side, matching the editor's text-element
+                // page margin (~32pt at standard page widths) and
+                // keeping MCP-written paragraphs well inside the
+                // visible page-template area. The previous 0.88
+                // width caused content to ride right up against the
+                // page edge — looked like overflow next to a ruled
+                // template whose lines have a real inner margin.
                 let block = TextBlock(
                     pageId: page.id,
-                    x: 0.06, y: 0.06, width: 0.88, height: 0.88
+                    x: 0.10, y: 0.06, width: 0.80, height: 0.88
                 )
                 block.page         = page
                 block.content      = rich.string
@@ -150,7 +222,7 @@ final class CeciliasNotesImporter {
                 page.textBlocks = (page.textBlocks ?? []) + [block]
             }
         }
-        notebook.totalPageCount = sortedPages.count
+        notebook.totalPageCount = (notebook.pages ?? []).count
 
         try context.save()
 
@@ -158,6 +230,83 @@ final class CeciliasNotesImporter {
         // list_notebooks / read_notebook / search_notes tools see it
         // immediately without waiting for a user-triggered export.
         CeciliasNotesExporter.shared.export(notebook)
+    }
+
+    // MARK: Concurrency strategy
+
+    /// Page-write strategy for one incoming file.
+    /// `.replace` — wipe existing pages, insert all incoming.
+    /// `.append`  — keep existing pages, insert only new (by id).
+    enum PageWriteStrategy: Equatable { case replace, append }
+
+    /// Resolve `mcp_action` + `base_updated_at` into a concrete
+    /// page-write strategy. The default for any existing-notebook
+    /// update is **merge by page id**, not wholesale replace —
+    /// wholesale-replace as the implicit default was clobbering
+    /// iPad-side edits and ink whenever the MCP wrote with a stale
+    /// view of the mirror. Exposed `internal` for unit tests; the
+    /// production call lives in `persist(...)`.
+    func pageWriteStrategy(
+        for file: CeciliasNotesFile,
+        existing: Notebook?
+    ) -> PageWriteStrategy {
+        // No existing notebook: nothing to preserve, always replace.
+        guard let existing else { return .replace }
+
+        switch file.parsedMCPAction {
+        case .create:
+            // Notebook somehow already exists despite the MCP
+            // intending to create it — treat the MCP's view as
+            // authoritative (it wins on the dedupe-by-id case).
+            return .replace
+        case .replace:
+            // Explicit "overwrite no matter what" — honour it.
+            return .replace
+        case .append:
+            // Honour the optimistic-concurrency check when the
+            // writer supplied `base_updated_at`: equal bases →
+            // safe replace; mismatched / missing → merge. Either
+            // way the merge path preserves iPad state for any
+            // page id the incoming file doesn't carry.
+            if let base = file.base_updated_at, !base.isEmpty,
+               Self.iso.string(from: existing.updatedAt) == base {
+                return .replace
+            }
+            return .append
+        case nil:
+            // No declared action (older MCPs, hand-dropped files).
+            // The old default was wholesale replace, which lost
+            // iPad work whenever the writer's view was stale —
+            // by the time the file hits the Inbox, the iPad has
+            // almost always moved on. Default to id-merge so the
+            // safe path is the one that wins by accident.
+            return .append
+        }
+    }
+
+    /// Same formatter the exporter uses (default options →
+    /// second-precision, UTC). Kept in sync with
+    /// `CeciliasNotesExporter.iso` so the round-trip is exact.
+    private static let iso = ISO8601DateFormatter()
+
+    /// Encode an inkbook block array as a JSON string for storage
+    /// on `Page.inkbookBlocksJSON`. Returns nil on encode failure
+    /// (block list stays untracked → exporter falls back to the
+    /// text-extraction path for that page).
+    private static func encodeBlocks(_ blocks: [CeciliasNotesFile.Block]) -> String? {
+        guard !blocks.isEmpty else { return "[]" }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(blocks) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Inverse of `encodeBlocks`. Used by the exporter to round-trip
+    /// stored inkbook blocks back into the structured `Block` array.
+    static func decodeBlocks(_ json: String?) -> [CeciliasNotesFile.Block]? {
+        guard let json, !json.isEmpty,
+              let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([CeciliasNotesFile.Block].self, from: data)
     }
 
     // MARK: Helpers

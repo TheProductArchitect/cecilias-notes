@@ -277,20 +277,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
         doubleTap.delegate = context.coordinator
         twoFingerDoubleTap.delegate = context.coordinator
         scrollView.addGestureRecognizer(doubleTap)
-
-        // Single-tap dismisser: when a text view is first responder
-        // and the user taps anywhere outside a UITextView, resign
-        // the keyboard. `cancelsTouchesInView = false` so this only
-        // observes — it doesn't eat tool / element gestures.
-        let dismissTap = UITapGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleDismissTextTap)
-        )
-        dismissTap.numberOfTapsRequired = 1
-        dismissTap.numberOfTouchesRequired = 1
-        dismissTap.cancelsTouchesInView = false
-        dismissTap.delegate = context.coordinator
-        scrollView.addGestureRecognizer(dismissTap)
+        // NOTE: a single-tap "global dismiss" recognizer used to be
+        // attached here to resign the keyboard on any tap outside a
+        // UITextView. Even with `cancelsTouchesInView = false`, the
+        // recognizer's mere presence on the scrollview interfered
+        // with single-finger pan-to-scroll under some configurations
+        // (the "scroll function is not working" report). The
+        // per-page background-tap catcher in
+        // `TextElementsOverlayView.showsBackgroundCatcher` covers
+        // the in-page dismissal case without touching the scroll
+        // gesture machinery; if global out-of-page dismissal is
+        // needed later we'll do it through a UIKit window-level
+        // tap-outside instead.
 
         // Defer initial layout to the next runloop so SwiftUI's frame
         // assignment has settled.
@@ -1462,22 +1460,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // MARK: - Gestures
 
-        /// Dismiss the keyboard when a single tap lands outside a
-        /// UITextView. Keeps the editor's "tap anywhere outside the
-        /// text box to exit" behaviour even when the tap reaches the
-        /// scroll view rather than the per-page overlay catcher
-        /// (e.g. when it lands on the page margin or between pages).
-        @objc func handleDismissTextTap(_ gesture: UITapGestureRecognizer) {
-            guard let scrollView else { return }
-            let point = gesture.location(in: scrollView)
-            let hit = scrollView.hitTest(point, with: nil)
-            if Self.isInsideTextView(hit) { return }
-            scrollView.endEditing(true)
-        }
-
         /// Walks the responder chain looking for a UITextView. Used
-        /// by the dismiss-tap and the double-tap delegate to leave
-        /// text-editing touches alone.
+        /// by the double-tap delegate to leave text-editing touches
+        /// alone (single-tap word-select).
         private static func isInsideTextView(_ view: UIView?) -> Bool {
             var node = view
             while let v = node {

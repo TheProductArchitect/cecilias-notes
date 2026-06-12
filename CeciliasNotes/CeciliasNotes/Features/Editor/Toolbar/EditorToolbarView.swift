@@ -242,6 +242,21 @@ struct EditorToolbarView: View {
                 recordingModePopover
                     .presentationCompactAdaptation(.popover)
             }
+            // While the dictation / voice-note popover is open the
+            // top header MUST stay visible — letting it auto-hide
+            // mid-record is counter-intuitive and hides the stop
+            // button. `.recordingPanel` was wired into the
+            // `InteractionReason` set for exactly this purpose but
+            // had no caller; the begin/end pair here closes the
+            // loop and is mirrored by other panels (customise,
+            // share, page strip) the same way.
+            .onChange(of: showRecordingPopover) { _, nowOpen in
+                if nowOpen {
+                    viewModel.beginInteraction(.recordingPanel)
+                } else {
+                    viewModel.endInteraction(.recordingPanel)
+                }
+            }
 
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
             iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }

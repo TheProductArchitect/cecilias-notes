@@ -1109,6 +1109,9 @@ extension StorageService {
             block.height = rect.height
         }
         block.updatedAt = Date()
+        // User-edit on the legacy text-block path → mirror must
+        // reflect the new text rather than the inkbook stash.
+        Page.clearInkbookStash(forPageId: block.pageId, context: context)
         try context.save()
     }
 
@@ -1141,6 +1144,10 @@ extension StorageService {
         context.insert(block)
         page.textBlocks = (page.textBlocks ?? []) + [block]
         page.updatedAt    = Date()
+        // Adding a new text block to an inkbook-origin page is a
+        // user edit too — invalidate the stash so the mirror shows
+        // the combined live content.
+        Page.clearInkbookStash(forPageId: page.id, context: context)
         try context.save()
         return block
     }
@@ -1170,6 +1177,8 @@ extension StorageService {
         context.insert(block)
         page.textBlocks = (page.textBlocks ?? []) + [block]
         page.updatedAt = Date()
+        // Same invalidation reasoning as the sibling overload.
+        Page.clearInkbookStash(forPageId: page.id, context: context)
         try context.save()
         return block
     }

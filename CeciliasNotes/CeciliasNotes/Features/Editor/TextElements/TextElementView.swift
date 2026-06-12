@@ -255,7 +255,8 @@ struct TextElementView: View {
         // Keep plain text in sync — search, AI prompts, export, and
         // the dictation pipeline all read `content.text` directly.
         let plain = value.string
-        if content.text != plain {
+        let textChanged = content.text != plain
+        if textChanged {
             content.text = plain
         }
         if let data = encodeAttributed(value) {
@@ -267,6 +268,18 @@ struct TextElementView: View {
         }
         content.updatedAt = Date()
         element.updatedAt = Date()
+
+        // Invalidate the inkbook block stash so the next mirror
+        // export reflects the iPad edit. Without this, an MCP-
+        // sourced page would forever round-trip its original AI
+        // text into the mirror even after the user retypes the
+        // page. No-op when the page wasn't inkbook-sourced.
+        if textChanged {
+            Page.clearInkbookStash(
+                forPageId: element.pageId,
+                context: StorageService.shared.context
+            )
+        }
     }
 
     private func makeAttributed(from plain: String) -> NSAttributedString {

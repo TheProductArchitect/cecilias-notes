@@ -124,7 +124,7 @@ struct AudioElementView: View {
         // immediately. `load(url:)` is idempotent on re-entry.
         .onChange(of: isRecording) { _, nowRecording in
             guard !nowRecording else { return }
-            player.load(url: content.fileURL)
+            player.load(url: content.resolvedFileURL() ?? content.fileURL)
         }
         .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
             guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
@@ -243,7 +243,7 @@ struct AudioElementView: View {
                     #if DEBUG
                     print("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(element.id)")
                     #endif
-                    player.debugPlayDirectly(url: content.fileURL)
+                    player.debugPlayDirectly(url: content.resolvedFileURL() ?? content.fileURL)
                 }
         )
         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")

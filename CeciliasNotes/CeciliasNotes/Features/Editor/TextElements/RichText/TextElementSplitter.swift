@@ -87,6 +87,12 @@ enum TextElementSplitter {
 
         // Persist the fit-portion back into the current row.
         commit(attributed: fit, into: content)
+        // Splitting is a user-edit on this page — invalidate the
+        // inkbook stash so the mirror reflects the post-split text.
+        Page.clearInkbookStash(
+            forPageId: element.pageId,
+            context: StorageService.shared.context
+        )
 
         // Place overflow on the next page (creating one if needed).
         placeOverflow(

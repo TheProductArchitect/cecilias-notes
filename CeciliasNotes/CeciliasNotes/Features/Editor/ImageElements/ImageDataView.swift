@@ -27,6 +27,7 @@ struct ImageDataView: View {
     /// the old, uncropped bitmap.
     private var loadKey: String {
         "\(content.id.uuidString)|\(content.filename)|"
+            + "\(content.imageData?.count ?? -1)|"
             + "\(content.cropOriginX ?? -1)|\(content.cropOriginY ?? -1)|"
             + "\(content.cropWidth ?? -1)|\(content.cropHeight ?? -1)"
     }
@@ -76,6 +77,22 @@ struct ImageDataView: View {
     // MARK: - Load
 
     private func loadIfNeeded() async {
+        // Prefer the in-row `imageData` column when present: that's
+        // the canonical sync source (CloudKit-synced @externalStorage
+        // attribute) and the bytes are guaranteed to be available
+        // even on a device that has never seen the local file.
+        if let inline = content.imageData, !inline.isEmpty {
+            await loadFromData(inline)
+            // Best-effort write a local file cache so other paths
+            // (export, share sheet) still find a URL. Skip if the
+            // file already exists or the column is huge — the
+            // renderer doesn't need it to display.
+            warmFileCache(from: inline)
+            return
+        }
+
+        // Legacy / pre-backfill rows fall through to the on-disk
+        // path. Same logic as before.
         let url = content.fileURL
         switch UbiquitousFileStatus.currentState(at: url) {
         case .local:
@@ -95,6 +112,41 @@ struct ImageDataView: View {
                 self.isDownloadingFromCloud = false
             }
         }
+    }
+
+    /// Decode the in-row bytes + apply the crop rect (if any).
+    private func loadFromData(_ data: Data) async {
+        let cropX = content.cropOriginX
+        let cropY = content.cropOriginY
+        let cropW = content.cropWidth
+        let cropH = content.cropHeight
+        let loaded: UIImage? = await Task.detached(priority: .userInitiated) {
+            guard let raw = UIImage(data: data) else { return nil }
+            return Self.applyCrop(to: raw, x: cropX, y: cropY, w: cropW, h: cropH)
+        }.value
+        await MainActor.run {
+            self.isDownloadingFromCloud = false
+            if let loaded {
+                self.image = loaded
+                self.loadFailed = false
+            } else {
+                self.image = nil
+                self.loadFailed = true
+            }
+        }
+    }
+
+    /// Write the bytes to the local file cache when the file isn't
+    /// already there. Lets export / share / drag-out still resolve
+    /// via the documented `fileURL`. Best-effort; failure is fine.
+    private func warmFileCache(from data: Data) {
+        let url = content.fileURL
+        guard !FileManager.default.fileExists(atPath: url.path) else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: .atomic)
     }
 
     private func load(url: URL) async {

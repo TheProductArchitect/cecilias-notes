@@ -67,6 +67,21 @@ enum CeciliasNotesParser {
             if out.length > 0 { out.append(separator) }
             out.append(rendered)
         }
+        // Apply a wrapping-friendly paragraph style across the whole
+        // rendered run. Default attributed strings don't carry an
+        // explicit paragraph style, which means a single very long
+        // unbroken token (URL, hash, code snippet) renders without
+        // any break and pushes the visible text past the text
+        // container's width. `.byCharWrapping` keeps the rendered
+        // line tight against the page boundary even when no word
+        // boundary exists; the typical sentence still word-wraps
+        // because word boundaries are checked first.
+        let para = NSMutableParagraphStyle()
+        para.alignment = .natural
+        para.lineBreakMode = .byCharWrapping
+        para.lineBreakStrategy = .standard
+        out.addAttribute(.paragraphStyle, value: para,
+                         range: NSRange(location: 0, length: out.length))
         return out
     }
 

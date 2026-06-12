@@ -34,6 +34,20 @@ final class AudioContent {
     var filename: String        = ""
     var durationSeconds: Double = 0
 
+    /// Encoded audio bytes — canonical source for sync and AI.
+    /// `@Attribute(.externalStorage)` keeps the bytes outside the
+    /// SQLite row and lets CloudKit promote them to a CKAsset
+    /// automatically, so a recording made on one device is
+    /// reachable on every signed-in device. The local file path is
+    /// still maintained as a playback cache (AVPlayer wants a
+    /// URL); when the column is populated but the file is missing
+    /// — e.g. on a freshly-synced second device — the audio
+    /// loader materialises the file from the column on first
+    /// playback. See [[image-data-design]] for the parallel
+    /// `ImageContent.imageData` field.
+    @Attribute(.externalStorage)
+    var audioData: Data? = nil
+
     /// Cached full transcript. Lives here in addition to the
     /// per-page `TextContent` rows so audio whose transcript failed
     /// (or which the user deleted) still carries the original
@@ -61,6 +75,7 @@ final class AudioContent {
         durationSeconds: Double = 0,
         transcript: String = "",
         timingMapData: Data? = nil,
+        audioData: Data? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -69,6 +84,7 @@ final class AudioContent {
         self.durationSeconds = durationSeconds
         self.transcript      = transcript
         self.timingMapData   = timingMapData
+        self.audioData       = audioData
         self.createdAt       = createdAt
         self.updatedAt       = updatedAt
     }
@@ -81,6 +97,30 @@ final class AudioContent {
     /// AAC/M4A in `AudioRecorder`).
     var fileURL: URL {
         MediaStorage.url(for: .audio, id: id)
+    }
+
+    /// Returns the local file URL, materialising the file from
+    /// `audioData` on demand if the file is missing. Use this when
+    /// a URL is required (AVPlayer / share / export) — it covers
+    /// the cross-device case where the SwiftData row arrived via
+    /// CloudKit but the local cache is empty. Returns `nil` only
+    /// when both the file *and* the data column are missing
+    /// (legacy row that hasn't been backfilled yet and whose file
+    /// didn't survive — the caller surfaces a placeholder).
+    func resolvedFileURL() -> URL? {
+        let url = fileURL
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        guard let data = audioData, !data.isEmpty else { return nil }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
     }
 
     /// Decoded `TimingMap` from `timingMapData`, or nil if the field

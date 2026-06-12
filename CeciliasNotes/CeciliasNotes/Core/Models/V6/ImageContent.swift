@@ -24,6 +24,25 @@ final class ImageContent {
     /// `MediaStorage.url(for: .images, id: self.id, fileExtension: fileFormat)`.
     var filename: String = ""
 
+    /// Encoded image bytes — the canonical source for cross-device
+    /// sync and downstream AI consumers. `@Attribute(.externalStorage)`
+    /// keeps the bytes out of the SQLite row (SwiftData writes them
+    /// to a sibling file in the store directory), and CloudKit
+    /// promotes that file to a CKAsset on its own — no manual
+    /// CKAsset handling required.
+    ///
+    /// **Why this exists.** Until now `MediaStorage` wrote the bytes
+    /// to `Documents/MediaAttachments/images/<id>.<ext>` — a local
+    /// path that does NOT sync. A notebook opened on a second device
+    /// rendered its `ImageContent` rows as broken-image placeholders.
+    /// With this column the bytes ride the same CloudKit pipeline
+    /// the row itself uses, so AI features (OCR, captioning, RAG)
+    /// can read the bytes directly without filesystem coordination.
+    /// The local file path is kept as a cache; readers fall back to
+    /// it when the column is missing (legacy rows).
+    @Attribute(.externalStorage)
+    var imageData: Data? = nil
+
     /// On-disk format suffix, e.g. `"jpg"`, `"png"`, `"heic"`.
     /// Added in Step 4 so source format can be preserved when the
     /// picker hands us HEIC; defaulted to `"jpg"` for older or
@@ -61,6 +80,7 @@ final class ImageContent {
         fileFormat: String = "jpg",
         originalPixelWidth: Int = 0,
         originalPixelHeight: Int = 0,
+        imageData: Data? = nil,
         cropOriginX: Double? = nil,
         cropOriginY: Double? = nil,
         cropWidth: Double? = nil,
@@ -69,6 +89,7 @@ final class ImageContent {
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
+        self.imageData = imageData
         self.id                  = id
         self.filename            = filename
         self.fileFormat          = fileFormat

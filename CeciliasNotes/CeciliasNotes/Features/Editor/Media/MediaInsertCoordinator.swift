@@ -324,7 +324,8 @@ final class MediaInsertCoordinator: ObservableObject {
             filename: processed.fileName,
             fileFormat: "jpg",  // ImageProcessingService writes JPG only
             originalPixelWidth: Int(processed.originalSize.width),
-            originalPixelHeight: Int(processed.originalSize.height)
+            originalPixelHeight: Int(processed.originalSize.height),
+            imageData: processed.fullData
         )
         element.imageContent = content
         context.insert(element)

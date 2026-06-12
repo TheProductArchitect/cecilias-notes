@@ -13,6 +13,11 @@ struct ProcessedImage {
     let originalSize: CGSize       // points (pixels / screenScale used for normalisation)
     let fileURL: URL
     let thumbnailURL: URL
+    /// Encoded JPEG bytes that were just written to `fileURL`.
+    /// Carried alongside the file path so the caller can stash them
+    /// in `ImageContent.imageData` (the sync-friendly column) in
+    /// the same step — no re-read of the file we just wrote.
+    let fullData: Data
 }
 
 // MARK: - ImageInput
@@ -63,7 +68,8 @@ actor ImageProcessingService {
             fileSizeBytes:    Int64(fullJpeg.count),
             originalSize:     scaled.size,
             fileURL:          fileURL,
-            thumbnailURL:     thumbURL
+            thumbnailURL:     thumbURL,
+            fullData:         fullJpeg
         )
     }
 

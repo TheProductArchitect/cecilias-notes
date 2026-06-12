@@ -25,10 +25,50 @@ struct CeciliasNotesFile: Codable {
     let agent: Agent?
     let pages: [PageNode]
 
+    // MARK: - Optimistic concurrency (v1.1 additive)
+    //
+    // The MCP's append/edit tools follow a read-modify-write loop:
+    // they read the mirror, mutate, and write back to the Inbox.
+    // Without a base check, an iPad edit made between read and
+    // write is clobbered on import. The two optional fields below
+    // are the contract the MCP uses to declare:
+    //
+    //   • `mcp_action` — what the writer intended:
+    //       "create"  : brand-new notebook, no base check needed
+    //       "append"  : appending pages to an existing notebook;
+    //                   importer must reconcile against the base
+    //       "replace" : explicit overwrite regardless of base
+    //   • `base_updated_at` — the `updated_at` value the MCP read
+    //     from the mirror before mutating. Importer compares this
+    //     against the live notebook's `updatedAt`; mismatch =
+    //     concurrent iPad edit = merge instead of replace.
+    //
+    // Older MCP versions and any non-MCP writer leave both fields
+    // nil; the importer falls back to wholesale replace
+    // (current-behaviour back-compat).
+    let mcp_action: String?
+    let base_updated_at: String?
+
     enum CodingKeys: String, CodingKey {
         case schema = "$schema"
         case version, id, title, subject, created_at, updated_at
         case cover_tone, page_template, page_size, agent, pages
+        case mcp_action, base_updated_at
+    }
+
+    /// Parsed `mcp_action`. Unknown strings collapse to `nil`
+    /// (back-compat path) so a future MCP that ships a new verb
+    /// doesn't break older app builds — they fall through to
+    /// wholesale replace, the same conservative default applied
+    /// for files with no `mcp_action` at all.
+    enum MCPAction: String {
+        case create
+        case append
+        case replace
+    }
+    var parsedMCPAction: MCPAction? {
+        guard let raw = mcp_action else { return nil }
+        return MCPAction(rawValue: raw)
     }
 
     struct Agent: Codable {
@@ -43,6 +83,27 @@ struct CeciliasNotesFile: Codable {
         let index: Int
         let created_at: String?
         let blocks: [Block]
+        /// True when the page contains Apple Pencil ink strokes.
+        /// Optional + omitted-when-false so the schema stays
+        /// back-compatible (a mirror written before this field
+        /// existed decodes cleanly). Agents reading the mirror
+        /// inspect this to tell "the user wrote with the Pencil"
+        /// apart from "the page is genuinely empty."
+        let has_ink: Bool?
+
+        init(
+            id: String,
+            index: Int,
+            created_at: String?,
+            blocks: [Block],
+            has_ink: Bool? = nil
+        ) {
+            self.id = id
+            self.index = index
+            self.created_at = created_at
+            self.blocks = blocks
+            self.has_ink = has_ink
+        }
     }
 
     /// Discriminated-union block. Decoded by `type`; unknown types
@@ -168,7 +229,14 @@ extension CeciliasNotesFile {
         case "dot-grid":   return .dotGrid10
         case "cornell":    return .cornell
         case "music":      return .music
-        default:           return .collegeRuled
+        // Default to a blank page when the MCP didn't specify a
+        // template. The previous default (`college-ruled` lines)
+        // dominated AI-written content visually and made the
+        // notebook feel pre-formatted even when the agent intended
+        // a clean canvas. Blank reads as "AI wrote this freeform";
+        // agents that want a ruled background opt in via the
+        // explicit `page_template: "lined"` schema value.
+        default:           return .blank
         }
     }
 

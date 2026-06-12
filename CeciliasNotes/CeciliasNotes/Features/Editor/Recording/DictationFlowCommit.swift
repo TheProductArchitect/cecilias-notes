@@ -117,6 +117,14 @@ enum DictationFlowCommit {
                 content.text = text
                 content.updatedAt = Date()
                 element.updatedAt = Date()
+                // Invalidate the inkbook stash on this page so the
+                // mirror reflects dictation appends rather than the
+                // original AI-written blocks. Funnels dictation
+                // through the same exporter path as typed edits.
+                Page.clearInkbookStash(
+                    forPageId: element.pageId,
+                    context: context
+                )
                 do {
                     try context.save()
                     #if DEBUG
@@ -265,6 +273,28 @@ enum DictationFlowCommit {
         stripElement.audioContent = audioContent
         context.insert(stripElement)
         try? context.save()
+
+        // Populate `audioData` from the on-disk recording so the
+        // bytes ride CloudKit alongside the row. Done as a follow-up
+        // task to avoid blocking finalize on a multi-MB read for
+        // long lectures; the row already exists, this just attaches
+        // the bytes once the file system has caught up.
+        let audioId = audioContent.id
+        Task.detached(priority: .utility) {
+            let url = MediaStorage.url(for: .audio, id: audioId)
+            guard let data = try? Data(contentsOf: url) else { return }
+            await MainActor.run {
+                let ctx = StorageService.shared.context
+                let descriptor = FetchDescriptor<AudioContent>(
+                    predicate: #Predicate<AudioContent> { $0.id == audioId }
+                )
+                if let row = (try? ctx.fetch(descriptor))?.first {
+                    row.audioData = data
+                    row.updatedAt = Date()
+                    try? ctx.save()
+                }
+            }
+        }
 
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }

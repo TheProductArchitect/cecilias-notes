@@ -209,8 +209,15 @@ final class EditorViewModel: ObservableObject {
         let pageId = currentPage.id
         let notebookId = notebook.id
         Task { @MainActor in
-            let writtenPath = await MediaStorage.writeImage(image, id: attachmentId, format: format)
-            guard writtenPath != nil else { return }
+            // Write to disk AND capture the bytes so the SwiftData
+            // row can carry them under `@Attribute(.externalStorage)`.
+            // That's the column CloudKit promotes to a CKAsset, so
+            // the image rides the same sync pipeline as the row
+            // itself — present on every signed-in device, and
+            // readable by AI consumers without filesystem lookups.
+            guard let written = await MediaStorage.writeImageReturningBytes(
+                image, id: attachmentId, format: format
+            ) else { return }
 
             let context = StorageService.shared.context
             let element = PageElement(
@@ -228,7 +235,8 @@ final class EditorViewModel: ObservableObject {
                 filename: "\(attachmentId.uuidString).\(safeExt)",
                 fileFormat: safeExt,
                 originalPixelWidth: Int(pixelWidth),
-                originalPixelHeight: Int(pixelHeight)
+                originalPixelHeight: Int(pixelHeight),
+                imageData: written.data
             )
             element.imageContent = content
             context.insert(element)
@@ -582,6 +590,27 @@ final class EditorViewModel: ObservableObject {
             .sink { [weak self] index in
                 guard let self else { return }
                 self.userDefaults.set(index, forKey: "ceciliasnotes.resume.lastPageIndex")
+            }
+            .store(in: &cancellables)
+
+        // Mirror RecordingSession's state into the interaction set so
+        // the top header stays visible for the entire dictation /
+        // voice-note lifecycle. The toolbar's popover already begins
+        // `.recordingPanel` while open, but once the user picks a
+        // mode the popover dismisses and recording continues — this
+        // subscription holds the lock until `state` returns to
+        // `.idle`. Same auto-hide-suppression pattern as the
+        // customise panel and share sheet.
+        RecordingSession.shared.$state
+            .map { $0.isRecording }
+            .removeDuplicates()
+            .sink { [weak self] isRecording in
+                guard let self else { return }
+                if isRecording {
+                    self.beginInteraction(.recordingPanel)
+                } else {
+                    self.endInteraction(.recordingPanel)
+                }
             }
             .store(in: &cancellables)
 

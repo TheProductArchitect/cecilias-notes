@@ -67,14 +67,48 @@ final class CeciliasNotesExporter {
             .appendingPathComponent("notebooks")
     }
 
+    /// Canonical mirror filename for `notebookId`. Always uppercase
+    /// — Swift's `UUID().uuidString` emits uppercase, so writers
+    /// SHOULD normalise on uppercase. Readers MUST be
+    /// case-insensitive (`existingExportURL(for:)` below) so a
+    /// lowercase variant left over from an older MCP version still
+    /// resolves to the right file on disk instead of triggering a
+    /// stale duplicate write.
     private static func exportURL(for notebookId: UUID) -> URL? {
         mcpNotebooksURL()?.appendingPathComponent("\(notebookId.uuidString).inkbook")
     }
 
+    /// Look for an existing mirror file regardless of UUID casing.
+    /// Returns the canonical (uppercase) URL when the file already
+    /// exists at that path; otherwise, scans the mirror directory
+    /// for a case-insensitive UUID match (covers files written by
+    /// older lowercase-emitting MCP versions). Returns nil when no
+    /// match exists.
+    private static func existingExportURL(for notebookId: UUID) -> URL? {
+        guard let canonical = exportURL(for: notebookId) else { return nil }
+        if FileManager.default.fileExists(atPath: canonical.path) { return canonical }
+        guard let dir = mcpNotebooksURL(),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil
+              )
+        else { return nil }
+        let targetStem = notebookId.uuidString.lowercased()
+        for entry in entries {
+            let stem = entry.deletingPathExtension().lastPathComponent.lowercased()
+            if stem == targetStem { return entry }
+        }
+        return nil
+    }
+
     private static func writeFile(_ file: CeciliasNotesFile, notebookId: UUID) async {
-        guard let dir     = mcpNotebooksURL(),
-              let fileURL = exportURL(for: notebookId)
-        else { return }
+        guard let dir = mcpNotebooksURL() else { return }
+        // Resolve to an existing (potentially lowercase) URL when
+        // present so we overwrite the same file an older MCP wrote
+        // rather than spawning a casing-variant duplicate.
+        let fileURL = existingExportURL(for: notebookId)
+            ?? exportURL(for: notebookId)
+        guard let fileURL else { return }
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -91,13 +125,22 @@ final class CeciliasNotesExporter {
     }
 
     private static func deleteExportFile(for notebookId: UUID) async {
-        guard let fileURL = exportURL(for: notebookId) else { return }
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        // Use the case-insensitive lookup so a lowercase variant
+        // left over from an older MCP gets deleted too.
+        guard let fileURL = existingExportURL(for: notebookId) else { return }
         let coordinator = NSFileCoordinator(filePresenter: nil)
         var coordError: NSError?
         coordinator.coordinate(writingItemAt: fileURL, options: .forDeleting, error: &coordError) { url in
             try? FileManager.default.removeItem(at: url)
         }
+    }
+
+    /// Test-only entry point to the file builder. Production code
+    /// uses `export(_:)` which writes the result to disk; tests
+    /// need the in-memory `CeciliasNotesFile` for structural
+    /// assertions without round-tripping through the filesystem.
+    func testOnlyBuildFile(for notebook: Notebook) -> CeciliasNotesFile {
+        buildFile(for: notebook)
     }
 
     // MARK: - CeciliasNotesFile construction (main actor)
@@ -112,21 +155,31 @@ final class CeciliasNotesExporter {
         let pages = (notebook.pages ?? [])
             .sorted { $0.pageNumber < $1.pageNumber }
             .enumerated()
-            .map { idx, page in
-                CeciliasNotesFile.PageNode(
+            .map { idx, page -> CeciliasNotesFile.PageNode in
+                let hasInk = pageHasInk(page, context: context)
+                return CeciliasNotesFile.PageNode(
                     id: page.id.uuidString,
                     index: idx,
                     created_at: Self.iso.string(from: page.createdAt),
-                    blocks: extractBlocks(from: page, context: context)
+                    blocks: extractBlocks(from: page, context: context),
+                    // Emit `has_ink` only when there are strokes —
+                    // the optional field is omitted on encode when
+                    // nil, keeping the schema additive (older
+                    // readers see no extra key on text-only pages).
+                    has_ink: hasInk ? true : nil
                 )
             }
 
+        // Agent block emitted verbatim from persisted columns —
+        // `tool` and `tool_version` are NOT synthesised here.
+        // Hard-coding them stomped on the original metadata
+        // ("1.0.1" → "1"); they now round-trip exactly.
         let agent: CeciliasNotesFile.Agent? = notebook.isAgentWritten
             ? CeciliasNotesFile.Agent(
                 written_by: notebook.agentName ?? "agent",
                 model: notebook.agentModel,
-                tool: "cecilias-notes-mcp",
-                tool_version: "1"
+                tool: notebook.agentTool ?? "cecilias-notes-mcp",
+                tool_version: notebook.agentToolVersion ?? "1"
               )
             : nil
 
@@ -144,11 +197,34 @@ final class CeciliasNotesExporter {
             page_template: CeciliasNotesFile.schemaString(for: notebook.defaultTemplate),
             page_size: CeciliasNotesFile.schemaString(for: notebook.pageSize),
             agent: agent,
-            pages: pages.isEmpty ? [placeholderPage()] : pages
+            pages: pages.isEmpty ? [placeholderPage()] : pages,
+            // The app's exporter never participates in the MCP's
+            // append concurrency loop — it writes the canonical
+            // snapshot that *becomes* the next `base_updated_at`
+            // for any MCP read. Both concurrency fields are
+            // intentionally left nil here so the mirror file is
+            // treated as a fresh authoritative state, not as a
+            // read-modify-write product.
+            mcp_action: nil,
+            base_updated_at: nil
         )
     }
 
     private func extractBlocks(from page: Page, context: ModelContext) -> [CeciliasNotesFile.Block] {
+        // Preferred path: the page was ingested from an `.inkbook`
+        // file and the importer stashed the original block array
+        // verbatim. Emit those bytes back as-is so heading levels,
+        // list styles, callout kinds, code languages, etc. survive
+        // the round-trip. The previous flatten-everything-into-
+        // paragraphs behaviour permanently destroyed structure on
+        // every mirror write.
+        if let stashed = CeciliasNotesImporter.decodeBlocks(page.inkbookBlocksJSON) {
+            return stashed
+        }
+
+        // Fallback for user-created pages and edited pages whose
+        // structured source is gone — best-effort reconstruction
+        // from the live SwiftData model.
         var blocks: [CeciliasNotesFile.Block] = []
 
         // 1. Old TextBlock model — used by agent-imported notebooks.
@@ -173,6 +249,24 @@ final class CeciliasNotesExporter {
         }
 
         return blocks
+    }
+
+    /// True iff the page has a non-empty stroke singleton — i.e.
+    /// the user has drawn ink on it. Surfaced as the `has_ink` flag
+    /// on the mirror's `PageNode` so agents can tell handwritten
+    /// pages apart from "this page literally has zero content."
+    private func pageHasInk(_ page: Page, context: ModelContext) -> Bool {
+        let pid = page.id
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        for element in elements where element.kind == .stroke {
+            if let stroke = element.strokeContent, !stroke.strokeData.isEmpty {
+                return true
+            }
+        }
+        return false
     }
 
     private func resolveSubjectName(id: UUID?, context: ModelContext) -> String? {

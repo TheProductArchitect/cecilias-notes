@@ -102,6 +102,14 @@ final class Notebook {
     var isAgentWritten: Bool = false
     var agentName: String?
     var agentModel: String?
+    /// `tool` and `tool_version` from the source `.inkbook` `agent`
+    /// block. Persisted verbatim so the mirror round-trips the exact
+    /// strings the external agent wrote — the previous setup
+    /// hard-coded `"cecilias-notes-mcp"` / `"1"` in the exporter and
+    /// stomped on whatever the agent had set (the "tool_version
+    /// '1.0.1' becomes '1'" bug).
+    var agentTool: String?
+    var agentToolVersion: String?
     /// Filename (e.g. `Cambridge Coffee.inkbook`) of the source file
     /// inside the iCloud Inbox. Stored as the leaf rather than a full
     /// URL because the absolute path differs per device — only the

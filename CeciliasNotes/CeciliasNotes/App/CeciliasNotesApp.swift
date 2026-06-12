@@ -183,6 +183,27 @@ struct CeciliasNotesApp: App {
                     // Detached + silent — never blocks the first frame.
                     QuizAutoUpdater.runOnLaunch()
 
+                    // Media sync backfill: copy the bytes of any
+                    // pre-existing image / audio rows into their
+                    // SwiftData `@Attribute(.externalStorage)` data
+                    // columns so they flow through CloudKit going
+                    // forward. Idempotent — guarded by UserDefaults
+                    // flag, no-op after first successful run.
+                    MediaSyncBackfill.runIfNeeded()
+
+                    // MCP mirror backfill + refresh. Walk every
+                    // live notebook on launch and rewrite its
+                    // mirror file. This is the single hook that
+                    // both seeds the mirror for any notebook
+                    // created before the MCP feature shipped
+                    // (the "8 notebooks, 2 mirror files" case)
+                    // AND captures any edits made between the
+                    // last `applicationDidEnterBackground` pass
+                    // and a fresh launch. Cheap — one short
+                    // JSON write per notebook, off the main
+                    // actor.
+                    CeciliasNotesExporter.shared.exportAll()
+
                     // MediaStorage migration v1: collapse the three
                     // legacy on-disk media layouts into the unified
                     // `Documents/MediaAttachments/{images,audio,lectures}/`
@@ -491,15 +512,31 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        // Refresh every notebook's MCP mirror on background — the
+        // historical "write mirror once at creation" behaviour left
+        // the mirror stale after every page add, ink stroke, or
+        // text edit. Backgrounding is the natural sync point where
+        // an MCP that's about to read the mirror needs the latest
+        // state, so a full re-export here keeps the agent's view
+        // consistent without per-mutation plumbing.
+        Task { @MainActor in
+            CeciliasNotesExporter.shared.exportAll()
+        }
         #if DEBUG
-        print("[Launch] applicationDidEnterBackground → marked shutdown clean")
+        print("[Launch] applicationDidEnterBackground → marked shutdown clean + queued mirror refresh")
         #endif
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
         UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        // Same reasoning as `applicationDidEnterBackground` — catch
+        // the case where the user force-quits or iOS terminates the
+        // app without a background pass.
+        Task { @MainActor in
+            CeciliasNotesExporter.shared.exportAll()
+        }
         #if DEBUG
-        print("[Launch] applicationWillTerminate → marked shutdown clean")
+        print("[Launch] applicationWillTerminate → marked shutdown clean + queued mirror refresh")
         #endif
     }
 }

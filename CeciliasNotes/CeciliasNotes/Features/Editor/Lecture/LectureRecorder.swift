@@ -564,6 +564,21 @@ final class LectureRecorder: ObservableObject {
     /// into `committedTranscript` first, so the new utterance appends
     /// rather than replaces.
     private func ingestPartial(_ partial: String) {
+        // Empty/whitespace-only partial deliveries are transient
+        // updates between hypothesis revisions — they are NOT the
+        // recogniser dropping the user's words. The previous
+        // behaviour set `liveTranscript = committed + ""` on every
+        // empty partial, which during a pause produced the
+        // "line erases then rewrites back" flash the moment the
+        // next non-empty partial arrived. Bail without touching
+        // any state so the last good transcript stays on screen.
+        let trimmed = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            #if DEBUG
+            print("[Dictation] ingestPartial — dropping empty partial; preserving liveTranscript=\(liveTranscript.count) chars")
+            #endif
+            return
+        }
         if isHypothesisReset(previous: lastSessionPartial, current: partial),
            !lastSessionPartial.isEmpty {
             // The just-finished utterance becomes a committed line; the

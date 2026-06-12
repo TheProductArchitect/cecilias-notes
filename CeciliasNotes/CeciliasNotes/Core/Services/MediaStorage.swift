@@ -344,6 +344,21 @@ enum MediaStorage {
         id: UUID,
         format: ImageFormat = .jpeg(quality: 0.85)
     ) async -> String? {
+        await writeImageReturningBytes(image, id: id, format: format)?.path
+    }
+
+    /// Variant of `writeImage` that also surfaces the encoded
+    /// bytes alongside the path. Callers writing an `ImageContent`
+    /// row use this so they can populate the row's
+    /// `imageData: Data?` column in the same step — the column is
+    /// what CloudKit promotes to a CKAsset and what cross-device
+    /// + AI consumers ultimately read. Avoids a redundant disk
+    /// re-read of the file we just wrote.
+    static func writeImageReturningBytes(
+        _ image: UIImage,
+        id: UUID,
+        format: ImageFormat = .jpeg(quality: 0.85)
+    ) async -> (path: String, data: Data)? {
         ensureDirectoriesExist()
         let ext = format.fileExtension
         let url = Self.url(for: .images, id: id, fileExtension: ext)
@@ -358,7 +373,7 @@ enum MediaStorage {
             try await Task.detached(priority: .userInitiated) {
                 try data.write(to: url, options: .atomic)
             }.value
-            return relativePath(forCategory: .images, id: id, fileExtension: ext)
+            return (relativePath(forCategory: .images, id: id, fileExtension: ext), data)
         } catch {
             logger.error("writeImage failed id=\(id, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             return nil
