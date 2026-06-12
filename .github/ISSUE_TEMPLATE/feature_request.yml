@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a new feature or behaviour change.
+title: "[feature] "
+labels: ["enhancement", "needs-discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature proposals are evaluated on user-facing impact first,
+        engineering cost second. Please describe the problem before
+        the solution — most rejected proposals are rejected because
+        the problem wasn't articulated.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Concrete user story or scenario, please.
+      placeholder: |
+        Example: when I dictate a long lecture I lose track of
+        which page the transcript is on, and going back to find a
+        specific moment means scrolling through every page.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Optional. Sometimes a problem describes itself.
+      placeholder: |
+        Example: a "lecture index" sidebar listing each ~30s
+        segment with its first sentence as the label, tap to jump.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: |
+        Example: I tried searching with command-F but the search
+        doesn't span pages within a notebook.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      description: Best-guess estimate of how big this is.
+      options:
+        - Small (a few hours, single-file)
+        - Medium (a day, a small system)
+        - Large (multi-day, multi-system)
+        - Don't know
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I've read CONTRIBUTING.md and understand the maintainer is the sole approver.
+          required: true

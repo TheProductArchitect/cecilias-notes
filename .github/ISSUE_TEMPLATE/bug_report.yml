@@ -1,0 +1,91 @@
+name: Bug report
+description: Something is broken or behaving unexpectedly on iPad.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing. A focused bug report saves a lot of
+        triage time. Please don't strip the placeholders — they're
+        the bare minimum we need to start.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Plain-English description of the symptom.
+      placeholder: |
+        Example: dictation stopped capturing audio after about 90
+        seconds. The live transcript froze on screen but the
+        recording timer kept counting.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      placeholder: |
+        Example: dictation should keep running until I stop it, or
+        at least surface a "stopped recording" indicator.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open notebook X
+        2. Tap the mic, pick "dictation"
+        3. Speak for 90+ seconds
+        4. …
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: iPad model
+      placeholder: e.g. iPad Pro 13-inch (M4)
+    validations:
+      required: true
+
+  - type: input
+    id: ios
+    attributes:
+      label: iPadOS version
+      placeholder: e.g. 26.4.1
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version + build
+      description: From Settings → About in the app.
+      placeholder: e.g. 1.2.0 (build 247)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console logs (optional but very helpful)
+      description: |
+        DEBUG builds emit prefixed log lines like `[Dictation] …` and
+        `[Sync] …`. Filter Console.app to "CeciliasNotes" and paste
+        anything in the failure window. Redact personal note content
+        before pasting.
+      render: text
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm running the current TestFlight or App Store build.
+          required: true

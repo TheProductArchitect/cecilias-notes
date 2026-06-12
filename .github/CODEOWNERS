@@ -1,0 +1,13 @@
+# Cecilia's Notes — code owners
+#
+# Every pull request automatically requests review from the owners
+# listed below. Branch protection on `main` is configured to require
+# at least one approval from a CODEOWNER before merge, so the
+# pattern below is the gate: anything matching `*` (i.e. every
+# file in the repo) is owned by @TheProductArchitect.
+#
+# When the project grows, narrow ownership by adding more specific
+# patterns ABOVE the catch-all line — GitHub uses the last matching
+# pattern, but conventionally folks put specific rules first.
+
+* @TheProductArchitect
