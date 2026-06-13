@@ -22,7 +22,22 @@ enum PDFReferenceImporter {
         /// `PageElement` on the current page, stacked with a small
         /// stagger so multiples don't perfectly overlap.
         case onCurrentPage
+        /// Create a new notebook in the current notebook's subject
+        /// (or "Uncategorised"), populate it with one notebook page
+        /// per PDF page, and signal LibraryView to swap the editor
+        /// cover to it. The swap goes through a binding flip on
+        /// `editingNotebook`, not a cover dismiss → re-present, so
+        /// the user sees one transition instead of a flash.
+        case newNotebook
     }
+
+    /// Posted after a `.newNotebook` import succeeds. `userInfo`
+    /// carries the new notebook's UUID under the
+    /// `notebookId` key. LibraryView observes this and re-points
+    /// the editor cover.
+    static let requestSwitchNotebookNotification = Notification.Name(
+        "PDFImport.requestSwitchNotebook"
+    )
 
     /// Default target width (normalised) for inserted pages.
     /// Centered horizontally; vertical stagger applied to multiples.
@@ -111,7 +126,40 @@ enum PDFReferenceImporter {
         // page onto its own notebook page so multi-page imports
         // are actually readable.
         let context = StorageService.shared.context
-        let notebookId = viewModel.notebook.id
+
+        // For .newNotebook we create the target notebook here so
+        // the rest of the switch can treat it uniformly with
+        // `viewModel.notebook` (a freshly created notebook fills
+        // the same role for the importer — it's "the notebook we're
+        // writing into for this run"). The resulting notebook ID
+        // is broadcast at the end so LibraryView can swap the
+        // editor cover atomically; we don't tear down the cover
+        // ourselves.
+        let targetNotebook: Notebook
+        var createdNotebookId: UUID?
+        switch destination {
+        case .afterCurrentPage, .onCurrentPage:
+            targetNotebook = viewModel.notebook
+        case .newNotebook:
+            do {
+                let created = try StorageService.shared.createNotebook(
+                    title: defaultNotebookTitle(from: sourceURL),
+                    subjectId: viewModel.notebook.subjectId,
+                    coverColorHex: viewModel.notebook.coverColorHex,
+                    coverTexture: viewModel.notebook.coverTexture,
+                    pageSize: viewModel.notebook.pageSize,
+                    template: viewModel.notebook.defaultTemplate
+                )
+                targetNotebook = created
+                createdNotebookId = created.id
+            } catch {
+                #if DEBUG
+                print("[PDFImport] createNotebook failed: \(error)")
+                #endif
+                return
+            }
+        }
+        let notebookId = targetNotebook.id
 
         switch destination {
         case .onCurrentPage:
@@ -151,19 +199,27 @@ enum PDFReferenceImporter {
                 context.insert(element)
             }
 
-        case .afterCurrentPage:
-            // Each PDF page becomes its own notebook page, inserted
-            // in order directly after the page the user is on. The
-            // PDF element fills the entire page (normalised 0…1 in
-            // both axes); aspect mismatches letterbox naturally
-            // inside the renderer.
-            var anchorPageNumber = viewModel.currentPage.pageNumber
+        case .afterCurrentPage, .newNotebook:
+            // Each PDF page becomes its own notebook page. For
+            // `.afterCurrentPage` we anchor on the page the user
+            // is on; for `.newNotebook` the target notebook is
+            // fresh (no current page yet), so we anchor at 0 and
+            // every page lands sequentially. The PDF element fills
+            // the entire page (normalised 0…1 in both axes); aspect
+            // mismatches letterbox naturally inside the renderer.
+            var anchorPageNumber: Int = {
+                switch destination {
+                case .afterCurrentPage: return viewModel.currentPage.pageNumber
+                case .newNotebook:      return 0
+                case .onCurrentPage:    return 0   // unreachable in this branch
+                }
+            }()
             for payload in payloads {
                 guard let newPage = try? StorageService.shared.createPage(
-                    in: viewModel.notebook,
+                    in: targetNotebook,
                     after: anchorPageNumber,
-                    pageSize: viewModel.notebook.pageSize,
-                    backgroundTemplate: viewModel.notebook.defaultTemplate
+                    pageSize: targetNotebook.pageSize,
+                    backgroundTemplate: targetNotebook.defaultTemplate
                 ) else { continue }
                 anchorPageNumber = newPage.pageNumber
 
@@ -202,6 +258,32 @@ enum PDFReferenceImporter {
             viewModel.refreshPages()
         }
         NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
+
+        // `.newNotebook` is the only path that needs a cover-level
+        // swap. We post a single notification carrying the new
+        // notebook's UUID; LibraryView observes this and flips the
+        // `editingNotebook` binding directly. SwiftUI treats that
+        // as a binding swap (one transition), not a dismiss-then-
+        // present, so the user sees a clean replace rather than a
+        // flash of the library.
+        if let createdNotebookId {
+            NotificationCenter.default.post(
+                name: requestSwitchNotebookNotification,
+                object: nil,
+                userInfo: ["notebookId": createdNotebookId]
+            )
+        }
+    }
+
+    /// Best-effort title for the auto-created notebook: PDF
+    /// filename minus its extension, trimmed. Falls back to
+    /// "Imported PDF" when the filename is empty after trimming
+    /// (rare — mostly defensive against directories named without
+    /// a basename).
+    private static func defaultNotebookTitle(from url: URL) -> String {
+        let trimmed = url.deletingPathExtension().lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Imported PDF" : trimmed
     }
 
     // MARK: - Helpers

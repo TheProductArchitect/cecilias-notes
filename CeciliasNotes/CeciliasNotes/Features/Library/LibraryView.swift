@@ -265,6 +265,27 @@ struct LibraryView: View {
             viewModel.pendingOpenAfterImport = nil
             editingNotebook = nb
         }
+        // PDF import "new notebook" destination posts this from
+        // inside the editor cover. Flipping `editingNotebook` to
+        // the freshly-created notebook reads as a single binding
+        // swap to SwiftUI — the cover content replaces in one
+        // transition rather than dismissing back to the library
+        // and re-presenting.
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: PDFReferenceImporter.requestSwitchNotebookNotification
+            )
+        ) { note in
+            guard
+                let id = note.userInfo?["notebookId"] as? UUID
+            else { return }
+            Task { @MainActor in
+                viewModel.refresh()
+                if let notebook = viewModel.notebook(id: id) {
+                    editingNotebook = notebook
+                }
+            }
+        }
         .fullScreenCover(item: $editingNotebook) { notebook in
             EditorView(
                 notebook: notebook,

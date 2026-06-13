@@ -104,6 +104,11 @@ struct PDFPagePickerSheet: View {
                 subtitle: "embed as elements",
                 value: .onCurrentPage
             )
+            destinationChip(
+                title: "new notebook",
+                subtitle: "switches to it after import",
+                value: .newNotebook
+            )
         }
         .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .padding(.vertical, CeciliasNotes.Spacing.sm)
