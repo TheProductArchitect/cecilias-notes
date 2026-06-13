@@ -262,7 +262,12 @@ struct EditorToolbarView: View {
 
             // Share is read-only friendly (export, send PDF) and
             // stays visible everywhere.
-            iconButton("square.and.arrow.up") { onShare() }
+            iconButton("square.and.arrow.up") {
+                #if DEBUG
+                print("[Share] toolbar share button tapped")
+                #endif
+                onShare()
+            }
 
             // The ellipsis menu surfaces several mutation actions
             // (customise notebook, etc.); on read-only devices

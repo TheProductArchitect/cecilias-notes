@@ -44,6 +44,9 @@ final class ModalPresenter: ObservableObject {
     /// If something IS presenting, it queues behind that modal and
     /// shows when the current modal dismisses.
     func present(_ modal: Modal) {
+        #if DEBUG
+        print("[Modal] present id=\(modal.id) kind=\(modal.kind) active=\(String(describing: active?.id)) queued=\(queue.count)")
+        #endif
         guard active != nil else {
             active = modal
             return
@@ -55,6 +58,9 @@ final class ModalPresenter: ObservableObject {
     /// Bound to RootView's `.sheet`/`.fullScreenCover` `onDismiss`
     /// callbacks so SwiftUI's user-driven dismiss also drains the queue.
     func dismiss() {
+        #if DEBUG
+        print("[Modal] dismiss active=\(String(describing: active?.id)) queueCount=\(queue.count)")
+        #endif
         let onDidDismiss = active?.onDidDismiss
         active = nil
         onDidDismiss?()

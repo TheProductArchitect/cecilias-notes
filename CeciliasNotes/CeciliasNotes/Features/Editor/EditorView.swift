@@ -962,6 +962,9 @@ struct EditorView: View {
     /// Routes through the export sheet so the user gets a real PDF + Share button
     /// (rather than sharing just the title string, which the previous stub did).
     private func shareNotebook() {
+        #if DEBUG
+        print("[Share] shareNotebook() called; isShowingExportSheet was=\(viewModel.isShowingExportSheet)")
+        #endif
         viewModel.isShowingExportSheet = true
     }
 
