@@ -37,6 +37,20 @@ struct TextElementView: View {
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Live lasso drag: when this text element is part of the active
+    /// lasso selection and the user is dragging the chrome, follow
+    /// the chrome's vertical translation in real time so the block
+    /// and its bounding box move together. Text blocks are full-
+    /// content-width and can't translate horizontally, so only the
+    /// height component is consumed.
+    @ObservedObject private var lassoSelection = LassoSelectionState.shared
+    private var lassoDragOffsetY: CGFloat {
+        guard lassoSelection.isManipulating,
+              lassoSelection.selectedElementIds.contains(element.id)
+        else { return 0 }
+        return lassoSelection.transientOffset.height
+    }
+
     @StateObject private var controller = RichTextController()
     @State private var attributed: NSAttributedString = NSAttributedString()
     /// Tracks whether we've seeded `attributed` from `content` yet —
@@ -101,7 +115,7 @@ struct TextElementView: View {
         return max(24, min(padded, maxH))
     }
     private var originY: CGFloat {
-        let raw = element.normalizedY * pageSize.height + dragOffsetY
+        let raw = element.normalizedY * pageSize.height + dragOffsetY + lassoDragOffsetY
         return max(0, min(pageSize.height - 20, raw))
     }
     private var origin: CGPoint {

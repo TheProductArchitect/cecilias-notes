@@ -11,8 +11,19 @@ struct LibraryView: View {
 
     /// Sidebar visibility — toggled by the leading action-strip button.
     /// Persisted across launches so a user who collapsed it stays
-    /// collapsed.
-    @AppStorage("library.sidebar.visible") private var isSidebarVisible: Bool = true
+    /// collapsed. iPhone uses a separate key so the iPad default
+    /// (visible) doesn't push a cramped 240pt sidebar onto a 390pt
+    /// screen.
+    @AppStorage("library.sidebar.visible") private var isSidebarVisibleTablet: Bool = true
+    @AppStorage("library.sidebar.visible.phone") private var isSidebarVisiblePhone: Bool = false
+
+    private var isSidebarVisible: Bool {
+        get { DeviceCapabilities.prefersTabletLayout ? isSidebarVisibleTablet : isSidebarVisiblePhone }
+    }
+    private func setSidebarVisible(_ value: Bool) {
+        if DeviceCapabilities.prefersTabletLayout { isSidebarVisibleTablet = value }
+        else { isSidebarVisiblePhone = value }
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
 
@@ -116,22 +127,39 @@ struct LibraryView: View {
         VStack(spacing: 0) {
             actionStrip
             LibraryHeaderView(viewModel: viewModel)
-            HStack(spacing: 0) {
-                if isSidebarVisible {
-                    SubjectSidebarView(viewModel: viewModel)
-                        .frame(width: Self.sidebarWidth)
-                        .background(theme.surface)
-                        .transition(.move(edge: .leading))
+            ZStack(alignment: .leading) {
+                HStack(spacing: 0) {
+                    if isSidebarVisible && DeviceCapabilities.prefersTabletLayout {
+                        SubjectSidebarView(viewModel: viewModel)
+                            .frame(width: Self.sidebarWidth)
+                            .background(theme.surface)
+                            .transition(.move(edge: .leading))
+                    }
+                    if viewModel.isShowingTrash {
+                        TrashView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if let quizID = viewModel.selectedQuizID {
+                        QuizDetailView(quizID: quizID, viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        NotebookGridView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
-                if viewModel.isShowingTrash {
-                    TrashView(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if let quizID = viewModel.selectedQuizID {
-                    QuizDetailView(quizID: quizID, viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    NotebookGridView(viewModel: viewModel)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // iPhone: sidebar as a drawer overlay. Tapping the
+                // dimmed content area closes it; on iPad we never hit
+                // this branch (sidebar is inline above).
+                if isSidebarVisible && !DeviceCapabilities.prefersTabletLayout {
+                    Color.black.opacity(0.22)
+                        .ignoresSafeArea()
+                        .onTapGesture { setSidebarVisible(false) }
+                        .transition(.opacity)
+                    SubjectSidebarView(viewModel: viewModel)
+                        .frame(width: min(280, Self.sidebarWidth))
+                        .background(theme.surface)
+                        .shadow(color: .black.opacity(0.18), radius: 16, x: 2, y: 0)
+                        .transition(.move(edge: .leading))
                 }
             }
         }
@@ -293,6 +321,24 @@ struct LibraryView: View {
 
     private var actionStrip: some View {
         HStack(spacing: 0) {
+            // iPhone-only: hamburger to summon the sidebar drawer.
+            // iPad keeps the always-on sidebar so it doesn't need one.
+            if !DeviceCapabilities.prefersTabletLayout {
+                Button {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
+                        setSidebarVisible(!isSidebarVisible)
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(theme.recessiveTertiary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isSidebarVisible ? "Hide sidebar" : "Show sidebar")
+            }
+
             Spacer()
 
             Button {

@@ -8,5 +8,10 @@ import Foundation
 /// accessors are `nonisolated` and construct it off the main actor.
 nonisolated struct NotebookPreferences: Sendable {
     var autoAddPagesOnScroll: Bool = true
-    var autoHideHeader:       Bool = true
+    /// Off by default — discovered through the in-toolbar "try
+    /// auto-hide" nudge on the first few notebook opens, then
+    /// surfaced as a toggle in the customise panel for ongoing
+    /// control. Defaulting on surprised users who weren't expecting
+    /// the chrome to disappear mid-stroke.
+    var autoHideHeader:       Bool = false
 }

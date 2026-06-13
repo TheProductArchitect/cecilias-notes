@@ -4,7 +4,14 @@ struct NotebookGridView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.theme) private var theme
 
-    private let columns = [GridItem(.adaptive(minimum: 168), spacing: 16)]
+    private var columns: [GridItem] {
+        DeviceCapabilities.prefersTabletLayout
+            ? [GridItem(.adaptive(minimum: 168), spacing: 16)]
+            : [GridItem(.flexible(), spacing: 12)]
+    }
+    private var cardWidth: CGFloat? {
+        DeviceCapabilities.prefersTabletLayout ? 168 : nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +61,8 @@ struct NotebookGridView: View {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(levelFolders) { folder in
                         FolderCardView(folder: folder, viewModel: viewModel)
-                            .frame(width: 168, height: 200)
+                            .frame(maxWidth: .infinity)
+                            .frame(width: cardWidth, height: 200)
                             .transition(.scale(scale: 0.85).combined(with: .opacity))
                     }
 
@@ -89,14 +97,15 @@ struct NotebookGridView: View {
         let isManual   = viewModel.sortOrder == .manual
         let dragData   = (try? JSONEncoder().encode(NotebookTransferID(id: notebook.id))) ?? Data()
         NotebookCardView(notebook: notebook, viewModel: viewModel)
-            .frame(width: 168, height: 224)
+            .frame(maxWidth: .infinity)
+            .frame(width: cardWidth, height: 224)
             .overlay(alignment: .topTrailing) {
                 if isManual { reorderDragHandle }
             }
             .transition(.scale(scale: 0.85).combined(with: .opacity))
             .draggable(dragData) {
                 NotebookCardView(notebook: notebook, viewModel: viewModel)
-                    .frame(width: 168, height: 224)
+                    .frame(width: cardWidth ?? 168, height: 224)
                     .scaleEffect(1.03)
                     .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
                     .opacity(0.85)

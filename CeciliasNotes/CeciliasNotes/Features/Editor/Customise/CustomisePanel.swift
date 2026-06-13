@@ -162,19 +162,15 @@ struct CustomisePanel: View {
         .transition(.move(edge: .top).combined(with: .opacity))
         .onAppear {
             titleBuffer = viewModel.notebook.title
-            // Auto-focus the notebook name field when the panel
-            // was opened via the "+ new notebook" auto-customise
-            // path. Cleared on consume so a subsequent manual
-            // re-open doesn't steal focus from the user.
-            if viewModel.pendingCustomiseNameFocus {
-                viewModel.pendingCustomiseNameFocus = false
-                // One runloop tick so the panel finishes its
-                // slide-down animation before the keyboard
-                // animates up — feels less abrupt than both
-                // animating simultaneously.
-                DispatchQueue.main.async {
-                    nameFieldFocused = true
-                }
+            // Always auto-focus the name field on open — the panel's
+            // primary intent is "edit this notebook's identity," so
+            // surfacing the keyboard immediately removes the extra
+            // tap that the duplicate-title-row design used to mask.
+            // The pending-focus flag is still consumed so the call
+            // site doesn't think it has work left to do.
+            viewModel.pendingCustomiseNameFocus = false
+            DispatchQueue.main.async {
+                nameFieldFocused = true
             }
         }
     }
@@ -183,10 +179,10 @@ struct CustomisePanel: View {
 
     private var sheetHeader: some View {
         HStack {
-            Text(viewModel.notebook.title.lowercased())
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.foreground)
-                .lineLimit(1)
+            // The notebook title is the editable field below in
+            // `nameSection` — duplicating it here as static text was
+            // confusing. The header now just hosts the "done" affordance
+            // so the eye lands on the single editable title row.
             Spacer()
             Button {
                 // Resign first responder BEFORE the panel begins

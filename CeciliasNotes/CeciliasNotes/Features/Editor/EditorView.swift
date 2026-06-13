@@ -163,7 +163,9 @@ struct EditorView: View {
                 // outright on read-only devices since none of the
                 // tools (pen, highlighter, lasso, text, image, audio)
                 // do anything without mutation rights.
-                if !viewModel.isFullScreen && DeviceCapabilities.canMutate {
+                if !viewModel.isFullScreen
+                    && !viewModel.isToolPaletteHidden
+                    && DeviceCapabilities.canMutate {
                     ToolPaletteView(
                         viewModel: viewModel,
                         parentSize: proxy.size,

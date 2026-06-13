@@ -48,6 +48,13 @@ struct ToolPaletteView: View {
     @State private var pdfPickerSourceURL: URL?
     /// Which category, if any, is showing its variant picker popover.
     @State private var openVariantCategory: ToolCategory?
+    /// Identity of the tool whose tap-when-active customization
+    /// popover is currently open. Drives the per-tool popover that
+    /// replaced the always-visible color + width strip — the panel
+    /// only shows up when the user explicitly re-taps a selected
+    /// tool, so tools without customization (cursor, image, ruler,
+    /// sticky-note, text) stay out of the way.
+    @State private var openCustomizeTool: CeciliasNotesTool.Identity?
 
     /// Per-notebook persisted edge — keyed by the notebook UUID per the
     /// redesign spec. Replaces the older per-orientation pair (which
@@ -225,17 +232,13 @@ struct ToolPaletteView: View {
         // visibility heuristics if needed.
         toolButton(.stickyNote)
 
-        // Colour + size controls are hidden when cursor is active —
-        // a neutral selection tool shouldn't show colour choices or
-        // a width readout. Other non-inking tools (eraser, lasso,
-        // ruler, text, image, stickyNote) keep the dimmed-but-
-        // visible affordance pattern.
-        if !viewModel.selectedTool.isCursorMode {
-            divider
-            colourDot
-            divider
-            sizeControls
-        }
+        // Per-tool customization (color / width / mode) used to live
+        // here as an always-visible strip — it cluttered the pill for
+        // tools that have no meaningful options (text, image, ruler,
+        // sticky-note, cursor). The strip is now a popover surfaced
+        // by re-tapping a selected tool. See `handleToolTap` /
+        // `handleCategoryTap` for the trigger and
+        // `customizePopover(for:)` for the per-tool content.
         divider
         shapeRecognitionToggle
     }
@@ -426,15 +429,37 @@ struct ToolPaletteView: View {
             variantPicker(for: category)
                 .presentationCompactAdaptation(.popover)
         }
+        // Re-tap customize popover (color + width). Driven by
+        // `openCustomizeTool`; matches when the open identity
+        // belongs to this category's variants.
+        .popover(
+            isPresented: Binding(
+                get: {
+                    guard let id = openCustomizeTool else { return false }
+                    return category.variants.contains(id)
+                },
+                set: { if !$0 { openCustomizeTool = nil } }
+            )
+        ) {
+            if let id = openCustomizeTool {
+                customizePopover(for: id)
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
     }
 
     private func handleCategoryTap(_ category: ToolCategory) {
-        // Tap always activates the category's last-used variant.
-        // Re-tapping an already-active category is a no-op (no flash,
-        // no animation churn). The variant picker is opened via
-        // long-press — see the gesture on `categoryButton`.
+        // Tap activates the category's last-used variant. When the
+        // tool is already active, re-tapping opens the customize
+        // popover (color / width / opacity) instead — the always-on
+        // customization strip is gone, so this re-tap is now the
+        // single discoverable affordance for those options.
         let variant = ToolCategoryStore.lastVariant(for: category)
-        guard viewModel.selectedTool.identity != variant else { return }
+        if viewModel.selectedTool.identity == variant {
+            openCustomizeTool = variant
+            HapticManager.shared.contextMenuOpened()
+            return
+        }
         withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: variant)
         }
@@ -738,14 +763,93 @@ struct ToolPaletteView: View {
             requestImageImport(source: imageVariant.importSource)
             return
         }
-        // Tap always activates. Re-tapping an active tool is a no-op
-        // — the eraser mode picker (formerly opened by tap-when-active)
-        // moved to long-press. See `toolButton`.
-        guard viewModel.selectedTool.identity != identity else { return }
+        // Tap activates. Re-tapping an active tool opens its
+        // customization popover (eraser → mode + width, lasso →
+        // freeform/marquee, text → no popover today). Tools with no
+        // meaningful options stay inert on re-tap. The eraser's
+        // long-press popover is retained as an alternate path so
+        // muscle memory from the previous flow still works.
+        if viewModel.selectedTool.identity == identity {
+            // Re-tap on the already-selected tool opens its
+            // customization popover. Eraser and lasso route through
+            // their existing per-button popovers (so a long-press
+            // and a tap-when-active reach the same panel); other
+            // tools have no customize popover and the tap no-ops.
+            switch identity {
+            case .eraser:
+                showEraserPopover = true
+                HapticManager.shared.contextMenuOpened()
+            case .lasso:
+                showLassoVariantPopover = true
+                HapticManager.shared.contextMenuOpened()
+            default:
+                break
+            }
+            return
+        }
         withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
             viewModel.selectTool(identity: identity)
         }
         HapticManager.shared.toolSwitched()
+    }
+
+    // MARK: Customize popover (re-tap selected tool)
+
+    /// Per-tool customization content shown when the user re-taps
+    /// the selected tool. Inking tools get color + width; eraser
+    /// gets its existing mode popover; lasso gets the freeform /
+    /// marquee picker. Tools without options fall through to an
+    /// empty view (the popover only opens when content exists).
+    @ViewBuilder
+    private func customizePopover(for identity: CeciliasNotesTool.Identity) -> some View {
+        if identity == .eraser {
+            eraserPopover
+        } else if identity == .lasso {
+            lassoVariantPopover
+        } else if viewModel.selectedTool.hasColour || viewModel.selectedTool.hasWidth {
+            inkingCustomizePopover
+        } else {
+            EmptyView()
+        }
+    }
+
+    /// Color swatch + width slider for pen / pencil / brush /
+    /// highlighter. Replaces the always-visible colour-dot + size
+    /// strip that used to live in the pill itself.
+    private var inkingCustomizePopover: some View {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            if viewModel.selectedTool.hasColour {
+                Text("Colour")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundSubtle)
+                ColorPickerView(viewModel: viewModel) {
+                    openCustomizeTool = nil
+                }
+            }
+            if viewModel.selectedTool.hasWidth {
+                Text("Width")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundSubtle)
+                HStack {
+                    Slider(
+                        value: Binding(
+                            get: { Double(viewModel.selectedTool.currentWidth) },
+                            set: { viewModel.setWidth(CGFloat($0)) }
+                        ),
+                        in: 0.5...20,
+                        step: 0.5
+                    )
+                    .tint(theme.accent)
+                    Text(formatWidth(viewModel.selectedTool.currentWidth))
+                        .font(.ceciliasNotesSubhead)
+                        .foregroundColor(theme.foreground)
+                        .monospacedDigit()
+                        .frame(width: 36, alignment: .trailing)
+                }
+            }
+        }
+        .padding(CeciliasNotes.Spacing.md)
+        .frame(width: 260)
     }
 
     // identity.systemImage / identity.displayName replaced the old

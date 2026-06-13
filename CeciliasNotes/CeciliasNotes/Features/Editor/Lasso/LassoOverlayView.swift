@@ -347,16 +347,23 @@ struct LassoOverlayView: View {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
                 activeManipulation = .drag
-                dragOffset = value.translation
-                selection.transientOffset = value.translation
+                // Constrain the chrome's apparent translation to the
+                // axes the selection can actually commit. Text-only
+                // selections can't move horizontally (text blocks span
+                // the full content width and are pinned to the page
+                // margin), so showing the box drifting on X creates a
+                // false promise — the box snaps back to its column
+                // when the user releases. Lock X when nothing in the
+                // selection can move horizontally.
+                let raw = value.translation
+                let constrained = constrainTranslation(raw)
+                dragOffset = constrained
+                selection.transientOffset = constrained
                 selection.isManipulating = true
             }
             .onEnded { value in
                 selection.isManipulating = false
-                let delta = CGSize(
-                    width:  value.translation.width,
-                    height: value.translation.height
-                )
+                let delta = constrainTranslation(value.translation)
                 LassoGroupOps.translate(
                     selection: selection,
                     delta: delta,
@@ -367,6 +374,31 @@ struct LassoOverlayView: View {
                 selection.transientOffset = .zero
                 activeManipulation = .none
             }
+    }
+
+    /// Mask out axes the selection can't actually move along. Today
+    /// the only constrained kind is `.text` (full-width, Y-only); a
+    /// pure text selection therefore loses its X component so the
+    /// chrome no longer drifts left/right while the underlying
+    /// blocks stay column-pinned.
+    private func constrainTranslation(_ raw: CGSize) -> CGSize {
+        if selectionIsTextOnly() {
+            return CGSize(width: 0, height: raw.height)
+        }
+        return raw
+    }
+
+    private func selectionIsTextOnly() -> Bool {
+        let ids = selection.selectedElementIds
+        guard !ids.isEmpty, selection.partialStrokeSelections.isEmpty else { return false }
+        for id in ids {
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> { $0.id == id }
+            )
+            guard let el = (try? modelContext.fetch(descriptor))?.first else { return false }
+            if el.kind != .text { return false }
+        }
+        return true
     }
 
     // MARK: - Corner handle (resize)

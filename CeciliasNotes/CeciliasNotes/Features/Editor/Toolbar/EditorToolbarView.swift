@@ -50,6 +50,17 @@ struct EditorToolbarView: View {
     /// Drives the live mic-button glyph from the singleton state.
     @ObservedObject private var recordingSession = RecordingSession.shared
 
+    /// Auto-hide is off by default. To help users discover the
+    /// option without burying it in the customise panel, a small
+    /// "try auto-hide" chip sits in the toolbar for the first five
+    /// notebook opens (or until the user enables auto-hide / taps
+    /// the chip's × to dismiss it permanently).
+    @AppStorage("editor.autoHideNudge.opens")
+    private var autoHideNudgeOpens: Int = 0
+    @AppStorage("editor.autoHideNudge.dismissed")
+    private var autoHideNudgeDismissed: Bool = false
+    @State private var didCountThisOpen: Bool = false
+
     private let toolbarHeight: CGFloat = 56
 
     private var tone: NotebookCoverTone { viewModel.notebook.coverTone }
@@ -238,6 +249,37 @@ struct EditorToolbarView: View {
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }.mutationOnly()
             iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }.mutationOnly()
 
+            // Tool palette show/hide — mutation-only since the
+            // palette itself doesn't mount on read-only devices.
+            iconButton(
+                viewModel.isToolPaletteHidden
+                    ? "pencil.tip.crop.circle.badge.plus"
+                    : "pencil.tip.crop.circle.badge.minus"
+            ) {
+                viewModel.isToolPaletteHidden.toggle()
+            }
+            .mutationOnly()
+
+            // Focus mode toggle — same semantics as the more-menu
+            // entry but reachable in one tap. Mutation-only because
+            // focus mode exists to make writing feel calmer; a
+            // read-only device has no writing surface to calm.
+            iconButton(
+                viewModel.isFocusMode
+                    ? "rectangle.portrait.inset.filled"
+                    : "rectangle.portrait"
+            ) {
+                viewModel.toggleFocusMode()
+            }
+            .mutationOnly()
+
+            // Auto-hide nudge chip. Visible only when auto-hide is
+            // currently off AND the user hasn't already dismissed
+            // the nudge AND we're within the first five notebook
+            // opens. Tapping enables auto-hide; the × marks it
+            // dismissed forever.
+            autoHideNudgeChip.mutationOnly()
+
             // Share is read-only friendly (export, send PDF) and
             // stays visible everywhere.
             iconButton("square.and.arrow.up") { onShare() }
@@ -371,6 +413,59 @@ struct EditorToolbarView: View {
                     ? "rectangle.portrait.inset.filled"
                     : "rectangle.portrait"
             )
+        }
+    }
+
+    // MARK: Auto-hide nudge chip
+
+    /// Small "try auto-hide" chip in the actionCluster. Compact:
+    /// 11pt label, capsule outline, × dismiss. Hidden once the user
+    /// either enables auto-hide (the nudge served its purpose) or
+    /// explicitly dismisses it (the nudge becomes noise).
+    @ViewBuilder
+    private var autoHideNudgeChip: some View {
+        let shouldShow = !viewModel.notebook.autoHideHeader
+            && !autoHideNudgeDismissed
+            && autoHideNudgeOpens <= 5
+
+        if shouldShow {
+            HStack(spacing: 4) {
+                Button {
+                    viewModel.notebook.autoHideHeader = true
+                    viewModel.notifyAutoHidePreferenceChanged()
+                    autoHideNudgeDismissed = true
+                } label: {
+                    Text("try auto-hide")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(recessive(0.55))
+                }
+                .buttonStyle(.plain)
+                Button {
+                    autoHideNudgeDismissed = true
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(recessive(0.35))
+                        .padding(3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss auto-hide nudge")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .overlay(
+                Capsule().strokeBorder(recessive(0.18), lineWidth: 0.5)
+            )
+            .padding(.horizontal, 4)
+            .onAppear {
+                // Count this notebook open once per view-lifetime so
+                // returning from a sheet or sub-screen doesn't bump
+                // the counter mid-session.
+                guard !didCountThisOpen else { return }
+                didCountThisOpen = true
+                autoHideNudgeOpens += 1
+            }
         }
     }
 

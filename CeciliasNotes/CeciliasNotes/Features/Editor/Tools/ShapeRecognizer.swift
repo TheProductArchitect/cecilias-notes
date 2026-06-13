@@ -65,65 +65,54 @@ enum ShapeRecognizer {
         let endGap   = distance(points.first ?? .zero, points.last ?? .zero)
         let isClosed = endGap < pathLength * 0.18
 
-        // 1. Open strokes — try arrow first, then line.
+        // Recognition is intentionally restricted to lines and
+        // circles. Polygon / arrow / ellipse / square detection were
+        // unreliable enough in the wild that users routinely got
+        // unwanted shape conversions; pulling them out shrinks the
+        // surface area to the two cases the recogniser handles well.
+        // The dead detection helpers (arrow, polygon-approximation,
+        // quadrilateral classification) are kept for now in case a
+        // future "extended shapes" toggle resurrects them — they
+        // simply aren't reachable from this entry point.
+
+        // 1. Open strokes — line only (arrows disabled).
         if !isClosed {
-            if let arrow = detectArrow(points: points, pathLength: pathLength) {
-                return arrow
-            }
             if let line = scoreLine(points: points), line.confidence >= confidenceThreshold {
                 return line.shape
             }
             return nil
         }
 
-        // 2. Closed strokes — Vision contour + polygon approximation.
-        guard let cgImage = rasterise(points: points, bbox: bbox) else { return nil }
-        guard let normalisedVertices = await detectPolygon(in: cgImage) else { return nil }
-        guard normalisedVertices.count >= 3 else { return nil }
+        // 2. Closed strokes — accept only roughly-round shapes as
+        // circles. We use a coarse circularity heuristic instead of
+        // Vision contour polygon approximation: actual circle =
+        // isoperimetric ratio close to 1.
+        let circularity = 4 * .pi * area(points) / max(1, pathLength * pathLength)
+        let aspect = bbox.width / max(1, bbox.height)
+        let isCircular = circularity > 0.78 && abs(aspect - 1) < 0.22
+        guard isCircular else { return nil }
 
-        let rawCanvasVertices = normalisedVertices.map { remap($0, bbox: bbox, image: cgImage) }
-        // Merge near-coincident vertices. Vision's contour approximation
-        // occasionally produces a "ghost" vertex within 1–2pt of a real
-        // corner (rasterisation seam artifacts on closed paths), which
-        // would otherwise tip a 4-corner rectangle into the pentagon
-        // branch. Tolerance is a small fraction of the bbox diagonal
-        // so it scales with the user's stroke size.
-        let mergeTolerance = max(4, hypot(bbox.width, bbox.height) * 0.025)
-        let canvasVertices = mergeNearbyVertices(rawCanvasVertices, tolerance: mergeTolerance)
-        let n = canvasVertices.count
+        let side = (bbox.width + bbox.height) / 2
+        let centred = CGRect(
+            x: bbox.midX - side / 2,
+            y: bbox.midY - side / 2,
+            width: side, height: side
+        )
+        return .circle(rect: centred)
+    }
 
-        // Confidence here is binary-ish — we passed Vision's detection AND
-        // landed on a recognised vertex count. Keep the literal at 0.85 so
-        // an obvious shape wins easily over the line/arrow score path.
-        let confidence: CGFloat = 0.85
-        guard confidence >= confidenceThreshold else { return nil }
-
-        switch n {
-        case 3:
-            return .triangle(a: canvasVertices[0],
-                             b: canvasVertices[1],
-                             c: canvasVertices[2])
-        case 4:
-            return classifyQuad(canvasVertices, bbox: bbox)
-        case 5:
-            return .pentagon(points: canvasVertices)
-        case 6:
-            return .hexagon(points: canvasVertices)
-        default:
-            // Lots of vertices → rounded curve. Distinguish circle vs
-            // ellipse by aspect ratio of the original bbox.
-            let aspect = bbox.width / bbox.height
-            if abs(aspect - 1) < 0.18 {
-                let side = (bbox.width + bbox.height) / 2
-                let centred = CGRect(
-                    x: bbox.midX - side / 2,
-                    y: bbox.midY - side / 2,
-                    width: side, height: side
-                )
-                return .circle(rect: centred)
-            }
-            return .ellipse(rect: bbox)
+    /// Shoelace area of a closed polygon. Magnitude only — sign
+    /// depends on traversal direction. Used to compute circularity
+    /// without invoking Vision for closed shapes.
+    private static func area(_ pts: [CGPoint]) -> CGFloat {
+        guard pts.count > 2 else { return 0 }
+        var sum: CGFloat = 0
+        for i in 0..<pts.count {
+            let a = pts[i]
+            let b = pts[(i + 1) % pts.count]
+            sum += a.x * b.y - b.x * a.y
         }
+        return abs(sum) / 2
     }
 
     // MARK: - Sampling

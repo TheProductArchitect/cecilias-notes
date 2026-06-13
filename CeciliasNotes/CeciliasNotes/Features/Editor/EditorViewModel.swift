@@ -86,6 +86,12 @@ final class EditorViewModel: ObservableObject {
     /// follow-up — for now the palette stays at 30% opacity.)
     @Published var isFocusMode: Bool = false
 
+    /// User-driven palette visibility. Independent of Focus Mode
+    /// (which dims the palette to 30%) and Full Screen (which hides
+    /// it together with the rest of the chrome). Defaults to visible;
+    /// the toolbar's palette toggle flips it.
+    @Published var isToolPaletteHidden: Bool = false
+
     // MARK: Pencil Pro squeeze radial wheel
     /// Drives the radial wheel overlay. Nil = wheel hidden.
     @Published var squeezeWheelCentre: CGPoint?
