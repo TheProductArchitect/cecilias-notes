@@ -191,6 +191,7 @@ final class LibraryViewModel: ObservableObject {
     /// meaningful and the sidebar visibly switches to that subject.
     /// No-op when no subjects exist.
     func createNotebookWithFallback() {
+        guard DeviceCapabilities.canCreateInLibrary else { return }
         guard canCreateNotebook else { return }
         if selectedSubjectId == nil,
            let target = inferredSubjectIdForNewNotebook {
@@ -655,6 +656,7 @@ final class LibraryViewModel: ObservableObject {
     // MARK: - Subjects
 
     func createSubject() {
+        guard DeviceCapabilities.canCreateInLibrary else { return }
         guard let subject = try? storage.createSubject(
             name: "New Subject",
             colorHex: CeciliasNotesColorPresets.subjectColors[6]
@@ -1139,6 +1141,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func renameNotebook(_ notebook: Notebook, newTitle: String) {
+        guard DeviceCapabilities.canMutate else { return }
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
@@ -1150,6 +1153,7 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func deleteNotebook(_ notebook: Notebook) {
+        guard DeviceCapabilities.canMutate else { return }
         withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
             do {
                 try storage.deleteNotebook(notebook)

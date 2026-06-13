@@ -142,6 +142,11 @@ final class RecordingSession: ObservableObject {
         notebookId: UUID,
         pageSize: CGSize
     ) async {
+        // Defense in depth — the mic button is hidden on read-only
+        // devices, but a deep link or keyboard shortcut could still
+        // route here. We refuse cleanly rather than half-start a
+        // recording the UI can't surface.
+        guard DeviceCapabilities.canRecord else { return }
         guard case .idle = state else { return }
         interruptionMessage = nil
 
@@ -202,6 +207,9 @@ final class RecordingSession: ObservableObject {
         createNewPage: () -> Page?,
         navigateToPage: (UUID) -> Void
     ) async {
+        // Read-only devices never start dictation — same defense
+        // posture as `startVoiceNote`.
+        guard DeviceCapabilities.canRecord else { return }
         #if DEBUG
         print("[Dictation] RecordingSession.startDictation entered, state=\(state)")
         #endif

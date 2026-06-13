@@ -114,8 +114,16 @@ final class EditorViewModel: ObservableObject {
     /// Single source of truth the canvas reads to gate Pencil input.
     /// Combines tool-type signal (`selectedTool.isDrawingTool`) with
     /// the mode signal (`stateMachine.mode == .drawing`).
+    ///
+    /// Read-only devices (iPhone) **always** report inactive — the
+    /// canvas never accepts touches even if a tool somehow became
+    /// active. Defense in depth: the tool palette is hidden on the
+    /// same devices so `selectedTool` should never be a drawing
+    /// tool there anyway, but this guard means a keyboard shortcut
+    /// / deep-link / hot-reload race can't slip through.
     var canvasIsInteractive: Bool {
-        stateMachine.canvasIsInteractive(toolIsDrawing: selectedTool.isDrawingTool)
+        guard DeviceCapabilities.canDraw else { return false }
+        return stateMachine.canvasIsInteractive(toolIsDrawing: selectedTool.isDrawingTool)
     }
     @Published var activePencilDoubleTapAction: PencilDoubleTapAction = .toggleEraser
     /// `UserDefaults.didChangeNotification` token. Released in `deinit`.

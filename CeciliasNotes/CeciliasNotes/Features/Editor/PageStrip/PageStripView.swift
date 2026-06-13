@@ -58,25 +58,30 @@ struct PageStripView: View {
                         .id(page.id)
                     }
 
-                    // + add page button
-                    Button {
-                        viewModel.addPage()
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(theme.accent)
-                                .frame(width: thumbWidth, height: thumbHeight)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
-                                        .strokeBorder(
-                                            theme.accent,
-                                            style: StrokeStyle(lineWidth: 0.5, dash: [4, 4])
-                                        )
-                                )
+                    // + add page button — hidden on read-only
+                    // devices. Page navigation still works via the
+                    // thumbnails above, so the strip remains
+                    // useful as a "jump to page N" affordance.
+                    if DeviceCapabilities.canMutate {
+                        Button {
+                            viewModel.addPage()
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(theme.accent)
+                                    .frame(width: thumbWidth, height: thumbHeight)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous)
+                                            .strokeBorder(
+                                                theme.accent,
+                                                style: StrokeStyle(lineWidth: 0.5, dash: [4, 4])
+                                            )
+                                    )
+                            }
                         }
+                        .buttonStyle(.ceciliasNotesPressable)
                     }
-                    .buttonStyle(.ceciliasNotesPressable)
                 }
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.md)

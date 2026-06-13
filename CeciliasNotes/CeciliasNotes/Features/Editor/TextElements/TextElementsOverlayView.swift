@@ -331,6 +331,12 @@ struct TextElementsOverlayView: View {
     }
 
     private func handleElementTap(element: PageElement) {
+        // Read-only devices never enter edit mode — selection
+        // remains for visual highlight only, no keyboard.
+        guard DeviceCapabilities.canMutate else {
+            selectedId = element.id
+            return
+        }
         if selectedId == element.id {
             // Second tap on an already-selected element → enter
             // edit mode (keyboard appears).
@@ -407,6 +413,11 @@ struct TextElementsOverlayView: View {
     // MARK: - Create
 
     private func createNewElement(at location: CGPoint) {
+        // Belt-and-braces: even if the tool palette is hidden on a
+        // read-only device, a deep-link or hot-reload path could
+        // theoretically leave the editor in text-tool mode.
+        guard DeviceCapabilities.canMutate else { return }
+
         // Default placement: tap location becomes the top-left
         // corner. Width: 50% of page width. Height: enough for one
         // line at body size, with a small breathing margin.

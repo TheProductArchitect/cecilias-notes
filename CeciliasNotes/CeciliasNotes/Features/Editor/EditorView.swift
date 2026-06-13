@@ -159,8 +159,11 @@ struct EditorView: View {
                 }
 
                 // 2. Floating tool palette — dims in Focus Mode but stays
-                // mounted so re-emerging on exit is instant.
-                if !viewModel.isFullScreen {
+                // mounted so re-emerging on exit is instant. Hidden
+                // outright on read-only devices since none of the
+                // tools (pen, highlighter, lasso, text, image, audio)
+                // do anything without mutation rights.
+                if !viewModel.isFullScreen && DeviceCapabilities.canMutate {
                     ToolPaletteView(
                         viewModel: viewModel,
                         parentSize: proxy.size,

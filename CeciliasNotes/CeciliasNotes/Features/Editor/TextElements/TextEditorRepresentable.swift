@@ -56,7 +56,12 @@ struct TextEditorRepresentable: UIViewRepresentable {
     }
 
     func updateUIView(_ tv: UITextView, context: Context) {
-        tv.isUserInteractionEnabled = isEditing
+        // Read-only devices (iPhone) never go editable, regardless
+        // of what the parent thinks `isEditing` is. The text view
+        // still renders its attributed string; it just won't
+        // accept first-responder status or surface a keyboard.
+        tv.isUserInteractionEnabled = isEditing && DeviceCapabilities.canMutate
+        tv.isEditable               = DeviceCapabilities.canMutate
 
         // Push attributed binding into the view only for external
         // mutations and only when not first responder — exact same

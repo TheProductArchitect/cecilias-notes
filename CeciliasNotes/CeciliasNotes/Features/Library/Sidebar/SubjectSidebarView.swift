@@ -227,7 +227,14 @@ struct SubjectSidebarView: View {
             // so the affordance is hidden until the user picks a
             // subject from the list above. "+ new subject" stays
             // visible always — subject creation is context-free.
-            if case .subject = viewModel.selectedContext {
+            //
+            // Read-only devices (iPhone) never see any of these
+            // create affordances: the entire bottom bar's create
+            // section is gated on `canCreateInLibrary`. The bar
+            // itself still mounts so the iCloud status indicator
+            // (if added later) keeps its anchor.
+            if case .subject = viewModel.selectedContext,
+               DeviceCapabilities.canCreateInLibrary {
                 Button {
                     createNewNotebook()
                 } label: {
@@ -244,38 +251,40 @@ struct SubjectSidebarView: View {
                 sidebarDivider
             }
 
-            // "+ new quiz" — sits directly above "+ new subject".
-            // Opens the three-step builder sheet (presented by
-            // `LibraryView`).
-            Button {
-                viewModel.isShowingQuizBuilder = true
-            } label: {
-                Text("+ new quiz")
-                    .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(theme.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Self.horizontalInset)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
+            if DeviceCapabilities.canCreateInLibrary {
+                // "+ new quiz" — sits directly above "+ new subject".
+                // Opens the three-step builder sheet (presented by
+                // `LibraryView`).
+                Button {
+                    viewModel.isShowingQuizBuilder = true
+                } label: {
+                    Text("+ new quiz")
+                        .font(.system(size: 10.5, weight: .regular))
+                        .foregroundStyle(theme.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Self.horizontalInset)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                sidebarDivider
+
+                Button {
+                    viewModel.createSubject()
+                } label: {
+                    Text("+ new subject")
+                        .font(.system(size: 10.5, weight: .regular))
+                        .foregroundStyle(theme.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Self.horizontalInset)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                sidebarDivider
             }
-            .buttonStyle(.plain)
-
-            sidebarDivider
-
-            Button {
-                viewModel.createSubject()
-            } label: {
-                Text("+ new subject")
-                    .font(.system(size: 10.5, weight: .regular))
-                    .foregroundStyle(theme.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Self.horizontalInset)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            sidebarDivider
 
             HStack(spacing: 6) {
                 iCloudStatusView(syncStatus: cloudSync.syncStatus)

@@ -172,7 +172,7 @@ struct EditorToolbarView: View {
     private var titleView: some View {
         let titleSize = WordmarkSizing.notebookHeaderSize(for: viewModel.notebook.title)
 
-        if viewModel.isEditingTitle {
+        if viewModel.isEditingTitle && DeviceCapabilities.canMutate {
             TextField("Untitled", text: $titleBuffer)
                 .font(.system(size: titleSize, weight: .heavy))
                 .tracking(-0.5)
@@ -185,7 +185,9 @@ struct EditorToolbarView: View {
                     if !focused { commitTitle() }
                 }
                 .frame(maxWidth: 280)
-        } else {
+        } else if DeviceCapabilities.canMutate {
+            // iPad: title is tappable → opens the customise panel
+            // where the rename happens.
             Button {
                 viewModel.openCustomisePanel()
             } label: {
@@ -199,6 +201,17 @@ struct EditorToolbarView: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Open the customise panel")
+        } else {
+            // Read-only devices show the title as a static label —
+            // no edit affordance, no tap target, no customise
+            // panel entry point.
+            Text(viewModel.notebook.title)
+                .font(.system(size: titleSize, weight: .heavy))
+                .tracking(-0.5)
+                .foregroundStyle(tone.textColor)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 320, alignment: .leading)
         }
     }
 
@@ -212,56 +225,28 @@ struct EditorToolbarView: View {
 
     private var actionCluster: some View {
         HStack(spacing: 4) {
+            // Page strip toggle stays available on read-only
+            // devices — it's pure navigation, not mutation.
             iconButton("rectangle.bottomthird.inset.filled") { onTogglePageStrip() }
 
-            // Step 6: two-mode recording entry. Tap the mic to open
-            // a popover offering Voice note + Dictation; pick one
-            // and the recording starts immediately (no confirmation
-            // — the popover IS the choice point). The mic glyph
-            // switches to `.fill` while either mode is active so
-            // the user can see at a glance that something's
-            // recording.
-            Button {
-                if recordingSession.state.isRecording {
-                    Task { await recordingSession.stop() }
-                } else {
-                    showRecordingPopover = true
-                }
-            } label: {
-                Image(systemName: recordingSession.state.isRecording ? "mic.fill" : "mic")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(
-                        recordingSession.state.isRecording
-                            ? theme.accent
-                            : recessive(0.4)
-                    )
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showRecordingPopover) {
-                recordingModePopover
-                    .presentationCompactAdaptation(.popover)
-            }
-            // While the dictation / voice-note popover is open the
-            // top header MUST stay visible — letting it auto-hide
-            // mid-record is counter-intuitive and hides the stop
-            // button. `.recordingPanel` was wired into the
-            // `InteractionReason` set for exactly this purpose but
-            // had no caller; the begin/end pair here closes the
-            // loop and is mirrored by other panels (customise,
-            // share, page strip) the same way.
-            .onChange(of: showRecordingPopover) { _, nowOpen in
-                if nowOpen {
-                    viewModel.beginInteraction(.recordingPanel)
-                } else {
-                    viewModel.endInteraction(.recordingPanel)
-                }
-            }
+            // Mic + undo/redo are mutation surfaces — hidden
+            // entirely on read-only devices (iPhone) so the
+            // toolbar doesn't show controls that can't do
+            // anything. iPad behaviour is unchanged: the gate is a
+            // no-op view modifier when `canMutate == true`.
+            recordingMicButton.mutationOnly()
+            iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }.mutationOnly()
+            iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }.mutationOnly()
 
-            iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }
-            iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }
+            // Share is read-only friendly (export, send PDF) and
+            // stays visible everywhere.
             iconButton("square.and.arrow.up") { onShare() }
 
+            // The ellipsis menu surfaces several mutation actions
+            // (customise notebook, etc.); on read-only devices
+            // most entries are removed inside `moreMenuContent`
+            // and only read-friendly items remain. Keep the menu
+            // mounted so users can still discover those.
             Menu { moreMenuContent } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 14, weight: .regular))
@@ -271,58 +256,102 @@ struct EditorToolbarView: View {
         }
     }
 
+    /// Mic button extracted so the actionCluster reads cleanly and
+    /// the `.mutationOnly()` modifier can wrap the entire surface
+    /// (button + popover + onChange wiring) in one shot.
+    @ViewBuilder
+    private var recordingMicButton: some View {
+        Button {
+            if recordingSession.state.isRecording {
+                Task { await recordingSession.stop() }
+            } else {
+                showRecordingPopover = true
+            }
+        } label: {
+            Image(systemName: recordingSession.state.isRecording ? "mic.fill" : "mic")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(
+                    recordingSession.state.isRecording
+                        ? theme.accent
+                        : recessive(0.4)
+                )
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showRecordingPopover) {
+            recordingModePopover
+                .presentationCompactAdaptation(.popover)
+        }
+        .onChange(of: showRecordingPopover) { _, nowOpen in
+            if nowOpen {
+                viewModel.beginInteraction(.recordingPanel)
+            } else {
+                viewModel.endInteraction(.recordingPanel)
+            }
+        }
+    }
+
     @ViewBuilder
     private var moreMenuContent: some View {
-        Button {
-            viewModel.openCustomisePanel()
-        } label: { Label("Customise Notebook…", systemImage: "sparkles") }
-
-        if let onOpenCoverPicker {
+        // Mutation-only entries — Customise, Cover, Insert Media,
+        // Summarize, Duplicate / Delete page, Undo All. Hidden on
+        // read-only devices so the menu stays useful: Export PDF,
+        // Print, Full Screen still appear below.
+        if DeviceCapabilities.canMutate {
             Button {
-                onOpenCoverPicker()
-            } label: { Label("Cover", systemImage: "paintpalette") }
-        }
+                viewModel.openCustomisePanel()
+            } label: { Label("Customise Notebook…", systemImage: "sparkles") }
 
-        Divider()
-
-        Menu {
-            Button { viewModel.mediaInsertCoordinator.insertPhotos() }
-                label: { Label("Photo Library…",    systemImage: "photo.on.rectangle") }
-            Button { viewModel.mediaInsertCoordinator.insertFromFiles() }
-                label: { Label("Files…",             systemImage: "folder") }
-            Button { viewModel.mediaInsertCoordinator.insertFromCamera() }
-                label: { Label("Camera…",            systemImage: "camera") }
-            Button { viewModel.mediaInsertCoordinator.insertScan() }
-                label: { Label("Scan Document…",     systemImage: "doc.viewfinder") }
-        } label: { Label("Insert Media", systemImage: "photo.badge.plus") }
-
-        Divider()
-
-        // AI capability — absent entirely when AI can't run (no
-        // disabled state), per the graceful-absence rule for AI
-        // surfaces documented on `IntelligenceService`.
-        if AIService.shared.canRun {
-            Button { onMoreMenuSummarizePage() }
-                label: { Label("Summarize Page", systemImage: "sparkles") }
+            if let onOpenCoverPicker {
+                Button {
+                    onOpenCoverPicker()
+                } label: { Label("Cover", systemImage: "paintpalette") }
+            }
 
             Divider()
+
+            Menu {
+                Button { viewModel.mediaInsertCoordinator.insertPhotos() }
+                    label: { Label("Photo Library…",    systemImage: "photo.on.rectangle") }
+                Button { viewModel.mediaInsertCoordinator.insertFromFiles() }
+                    label: { Label("Files…",             systemImage: "folder") }
+                Button { viewModel.mediaInsertCoordinator.insertFromCamera() }
+                    label: { Label("Camera…",            systemImage: "camera") }
+                Button { viewModel.mediaInsertCoordinator.insertScan() }
+                    label: { Label("Scan Document…",     systemImage: "doc.viewfinder") }
+            } label: { Label("Insert Media", systemImage: "photo.badge.plus") }
+
+            Divider()
+
+            // AI capability — absent entirely when AI can't run (no
+            // disabled state), per the graceful-absence rule for AI
+            // surfaces documented on `IntelligenceService`.
+            if AIService.shared.canRun {
+                Button { onMoreMenuSummarizePage() }
+                    label: { Label("Summarize Page", systemImage: "sparkles") }
+
+                Divider()
+            }
         }
 
         Button { onMoreMenuExportPDF() }
             label: { Label("Export as PDF…", systemImage: "doc.richtext") }
         Button { onMoreMenuPrint() }
             label: { Label("Print…",         systemImage: "printer") }
-        Button { onMoreMenuDuplicatePage() }
-            label: { Label("Duplicate Page", systemImage: "doc.on.doc") }
-        Button(role: .destructive) { onMoreMenuDeletePage() }
-            label: { Label("Delete Page", systemImage: "trash") }
 
-        Button(role: .destructive) {
-            while viewModel.canvasView?.undoManager?.canUndo == true {
-                viewModel.canvasView?.undoManager?.undo()
-            }
-        } label: { Label("Undo All Strokes", systemImage: "arrow.uturn.backward.circle") }
-        .disabled(!canUndo)
+        if DeviceCapabilities.canMutate {
+            Button { onMoreMenuDuplicatePage() }
+                label: { Label("Duplicate Page", systemImage: "doc.on.doc") }
+            Button(role: .destructive) { onMoreMenuDeletePage() }
+                label: { Label("Delete Page", systemImage: "trash") }
+
+            Button(role: .destructive) {
+                while viewModel.canvasView?.undoManager?.canUndo == true {
+                    viewModel.canvasView?.undoManager?.undo()
+                }
+            } label: { Label("Undo All Strokes", systemImage: "arrow.uturn.backward.circle") }
+            .disabled(!canUndo)
+        }
 
         Divider()
 
