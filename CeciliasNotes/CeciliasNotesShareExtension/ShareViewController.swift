@@ -21,13 +21,30 @@ final class ShareViewController: UIViewController {
     private static let appGroupID = "group.app.ceciliasnotes"
     private static let inboxFolderName = "ShareInbox"
 
+    private let spinner: UIActivityIndicatorView = {
+        let s = UIActivityIndicatorView(style: .medium)
+        s.translatesAutoresizingMaskIntoConstraints = false
+        s.startAnimating()
+        return s
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Empty surface — we never want the extension UI to be
-        // visible. The view exists because UIViewController needs
-        // one; it just renders a clear/system background for the
-        // brief moment between viewDidLoad and the deep-link open.
+        // Minimal-but-visible surface. Earlier we tried rendering
+        // nothing at all to make the extension feel instant, but
+        // iOS appears to treat a content-less extension view as
+        // broken and silently aborts the request — no
+        // `completeRequest` log, no `open` callback, the share
+        // sheet just hangs. A bare centred spinner is enough for
+        // the system to consider the UI "real," and it dismisses
+        // fast enough that the user perceives the share as
+        // instant.
         view.backgroundColor = .systemBackground
+        view.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -39,22 +56,21 @@ final class ShareViewController: UIViewController {
 
     private func ingestAndComplete() async {
         // Save the file to the app-group inbox, then deep-link into
-        // the main app immediately. No spinner, no "Saved." label,
-        // no animated wait — the user picked Cecilia's Notes from
-        // the share sheet, they don't need a confirmation screen.
-        // The main app foregrounds and the picker appears in one
-        // continuous motion.
+        // the main app. `completeRequest` runs unconditionally
+        // right after the open call — we used to chain it inside
+        // `open`'s completion handler, but iOS doesn't always fire
+        // that callback (especially when the open is queued or
+        // partially rejected), leaving the extension stuck.
+        // Calling both in sequence dismisses the share sheet
+        // reliably regardless of whether the deep link landed.
         await ingestAttachments()
         await MainActor.run {
             let deepLink = URL(string: "ceciliasnotes://library")!
-            self.extensionContext?.open(deepLink) { [weak self] _ in
-                Task { @MainActor in
-                    self?.extensionContext?.completeRequest(
-                        returningItems: nil,
-                        completionHandler: nil
-                    )
-                }
-            }
+            self.extensionContext?.open(deepLink, completionHandler: nil)
+            self.extensionContext?.completeRequest(
+                returningItems: nil,
+                completionHandler: nil
+            )
         }
     }
 
