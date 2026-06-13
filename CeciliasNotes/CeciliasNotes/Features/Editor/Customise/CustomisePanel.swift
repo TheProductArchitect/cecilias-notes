@@ -45,14 +45,6 @@ struct CustomisePanel: View {
     /// `maxHeight` cap kicks in and the ScrollView starts scrolling.
     @State private var contentHeight: CGFloat = 0
 
-    /// Measured width of the template / right-column row band.
-    /// Drives the 55/45 split so both halves stay fluid regardless
-    /// of the template carousel's intrinsic content width. Seeded
-    /// to a conservative 700pt — close enough to a portrait iPad
-    /// editor pane that the first layout pass doesn't visibly
-    /// shift when the real width measures in.
-    @State private var rowWidth: CGFloat = 700
-
     private let coverSwatchSize    = CGSize(width: 64, height: 85)
     private let templateThumbSize  = CGSize(width: 64, height: 85)
 
@@ -65,89 +57,61 @@ struct CustomisePanel: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(spacing: 0) {
-            sheetHeader
-            ScrollView(showsIndicators: false) {
-                // Tightened layout: 8pt vertical rhythm between
-                // sections so the cover tones + page templates do the
-                // visual heavy lifting and the panel fits on a
-                // standard 11" iPad in portrait without scrolling.
-                // Two-column rows pair related controls; the toggle
-                // band is consolidated into compact single-line rows
-                // with a shared caption underneath.
-                VStack(alignment: .leading, spacing: 8) {
-                    suggestedTagsBanner
-                    nameSection
-                    coverSection
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    // Two-column band below the cover:
-                    // left = template carousel, right = page size +
-                    // toggles + tags. Keeps the visually heavy
-                    // template strip on the left so the eye reads
-                    // content → settings left-to-right.
-                    // Split the band by explicit width proportions
-                    // rather than `layoutPriority`. The template
-                    // section's horizontal scroll strips have an
-                    // intrinsic width equal to the sum of every
-                    // thumbnail; without an explicit width cap the
-                    // left column claims almost all of the row and
-                    // the right column collapses to its content
-                    // minimum (the "right side only 10% wide" bug).
-                    // We measure the row width via a PreferenceKey,
-                    // then set explicit widths on both columns so
-                    // they hold a stable 55/45 share on every iPad
-                    // size without GeometryReader's vertical-fill
-                    // quirk.
-                    HStack(alignment: .top, spacing: 16) {
-                        templateSection
-                            .frame(width: max(120, rowWidth * 0.55 - 8),
-                                   alignment: .leading)
-
-                        VStack(alignment: .leading, spacing: 0) {
-                            pageSizeSection
-                                .padding(.bottom, 8)
-                            autoAddSection
-                            autoHideHeaderSection
-                            togglesCaption
-                                .padding(.top, 6)
-                                .padding(.bottom, 8)
-                            tagsSection
-                        }
-                        .frame(width: max(120, rowWidth * 0.45 - 8),
-                               alignment: .leading)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.preference(
-                                key: CustomisePanelRowWidthKey.self,
-                                value: g.size.width
+        ScrollView(showsIndicators: false) {
+            // Stacked vertical layout — the earlier two-column band
+            // relied on a measured row width to split 55/45, and on
+            // narrower screens (iPad mini, split view) or before the
+            // first geometry pass the right column collapsed and
+            // hid its toggles. Single-column eliminates that whole
+            // class of layout failure and matches the way the panel
+            // actually reads (top → bottom: identity → cover →
+            // template → behaviour → tags → annotations).
+            VStack(alignment: .leading, spacing: 14) {
+                suggestedTagsBanner
+                nameSection
+                    .overlay(alignment: .topTrailing) {
+                        // Inline "done" — sits in the same row band as
+                        // the name field so we don't need a dedicated
+                        // header strip above the panel content (which
+                        // was just an empty band of theme.surface
+                        // above the first section).
+                        Button {
+                            UIApplication.shared.sendAction(
+                                #selector(UIResponder.resignFirstResponder),
+                                to: nil, from: nil, for: nil
                             )
+                            commitTitle()
+                            viewModel.closeCustomisePanel()
+                        } label: {
+                            Text("done")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(theme.accent)
                         }
-                    )
-                    // Step 5.5: annotation section surfaces
-                    // whenever the notebook has any V6 highlights.
-                    // The legacy gate was `isPDFBacked` (retired);
-                    // the count below already handles the
-                    // empty-notebook case by hiding the row.
-                    annotationsSection
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 16)
-                .background(
-                    GeometryReader { g in
-                        Color.clear.preference(
-                            key: CustomisePanelContentHeightKey.self,
-                            value: g.size.height
-                        )
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.defaultAction)
                     }
-                )
+                coverSection
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                templateSection
+                pageSizeSection
+                behaviourSection
+                tagsSection
+                annotationsSection
             }
-            .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
-            .onPreferenceChange(CustomisePanelContentHeightKey.self) { contentHeight = $0 }
-            .onPreferenceChange(CustomisePanelRowWidthKey.self) { rowWidth = $0 }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
+            .background(
+                GeometryReader { g in
+                    Color.clear.preference(
+                        key: CustomisePanelContentHeightKey.self,
+                        value: g.size.height
+                    )
+                }
+            )
         }
+        .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
+        .onPreferenceChange(CustomisePanelContentHeightKey.self) { contentHeight = $0 }
         .background(
             UnevenRoundedRectangle(
                 cornerRadii: .init(
@@ -175,41 +139,10 @@ struct CustomisePanel: View {
         }
     }
 
-    // MARK: Header
-
-    private var sheetHeader: some View {
-        HStack {
-            // The notebook title is the editable field below in
-            // `nameSection` — duplicating it here as static text was
-            // confusing. The header now just hosts the "done" affordance
-            // so the eye lands on the single editable title row.
-            Spacer()
-            Button {
-                // Resign first responder BEFORE the panel begins
-                // its slide-away animation. If we let the panel
-                // dismiss first, the in-flight keyboard animation
-                // can race the panel's transition and leave the
-                // keyboard stranded on the canvas. Order matters.
-                UIApplication.shared.sendAction(
-                    #selector(UIResponder.resignFirstResponder),
-                    to: nil, from: nil, for: nil
-                )
-                commitTitle()
-                viewModel.closeCustomisePanel()
-            } label: {
-                Text("done")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(theme.accent)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.defaultAction)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 1)
-        }
-    }
+    // Header strip retired — the empty band of theme.surface above
+    // the first section read as a visible gap below the editor
+    // toolbar. The "done" button moved into the name-section
+    // overlay so the row band reads as one continuous surface.
 
     // MARK: Name
 
@@ -862,18 +795,24 @@ struct CustomisePanel: View {
     // mounted right below the band so the panel keeps its overall
     // height down.
 
-    private var autoAddSection: some View {
-        toggleRow(
-            label:   "auto-add pages",
-            binding: autoAddBinding
-        )
-    }
-
-    private var autoHideHeaderSection: some View {
-        toggleRow(
-            label:   "auto-hide top bar",
-            binding: autoHideBinding
-        )
+    /// "Behaviour" block — full-width rows that hold their own toggles
+    /// without depending on a measured column split. Replaces the
+    /// earlier two-column band where the toggles disappeared when
+    /// the right column collapsed before the first geometry pass.
+    private var behaviourSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("behaviour")
+                .padding(.bottom, 4)
+            toggleRow(
+                label:   "auto-add pages",
+                binding: autoAddBinding
+            )
+            toggleRow(
+                label:   "auto-hide top bar",
+                binding: autoHideBinding
+            )
+            togglesCaption
+        }
     }
 
     private func toggleRow(label: String, binding: Binding<Bool>) -> some View {

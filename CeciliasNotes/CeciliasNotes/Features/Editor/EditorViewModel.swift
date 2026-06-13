@@ -962,6 +962,13 @@ final class EditorViewModel: ObservableObject {
     /// When the user disables auto-hide, snap the header back into
     /// view immediately and cancel any pending re-hide work.
     func notifyAutoHidePreferenceChanged() {
+        // `notebook.autoHideHeader` is a computed property over the
+        // side-channel `NotebookPreferencesStore`. Setting it does NOT
+        // trigger @Published / @Model observation, so SwiftUI doesn't
+        // know to re-evaluate. Explicit `objectWillChange` makes the
+        // toolbar's pin icon and the customise-panel toggle flip
+        // visually the moment the user taps.
+        objectWillChange.send()
         guard !notebook.autoHideHeader else { return }
         headerManualReHideTask?.cancel()
         interactionGraceTask?.cancel()
