@@ -9,13 +9,20 @@ struct ColorPickerView: View {
 
     @State private var showCustomColorPicker = false
 
-    private let presetRows: [[String]] = [
-        // 5 rows × 8 columns of curated colours.
-        ["#000000", "#1D1D1B", "#3A3A3A", "#6B6B68", "#ADADAA", "#D6D6D2", "#F5F5F2", "#FFFFFF"],
-        ["#FF3B30", "#FF453A", "#FF9500", "#FFCC00", "#FFD60A", "#34C759", "#30D158", "#00C7BE"],
-        ["#5AC8FA", "#30B0C7", "#007AFF", "#0A84FF", "#5856D6", "#5E5CE6", "#AF52DE", "#BF5AF2"],
-        ["#FF2D55", "#FF375F", "#A2845E", "#AC8E68", "#8E8E93", "#3F587A", "#2E5734", "#7E1B1B"],
-        ["#7E5BAB", "#1E3A5F", "#0D4F0F", "#9C5C00", "#5B3D2F", "#4F1A2C", "#2C2C2E", "#1C1C1A"],
+    /// One row of essentials. The full 40-colour grid was cramped
+    /// inside the popover and most users only ever touched a
+    /// handful of swatches; everything else is one tap away via
+    /// "Custom Colour…". Recent selections sit above the row when
+    /// the user has picked colours this session.
+    private let presets: [String] = [
+        "#000000", // black
+        "#FFFFFF", // white
+        "#FF3B30", // red
+        "#FF9500", // orange
+        "#FFCC00", // yellow
+        "#34C759", // green
+        "#007AFF", // blue
+        "#AF52DE", // purple
     ]
 
     var body: some View {
@@ -32,15 +39,11 @@ struct ColorPickerView: View {
                 }
             }
 
-            // Presets
+            // Presets — one row of essentials.
             section(title: "Presets") {
-                VStack(spacing: 6) {
-                    ForEach(Array(presetRows.enumerated()), id: \.offset) { _, row in
-                        HStack(spacing: 6) {
-                            ForEach(row, id: \.self) { hex in
-                                colourCircle(colour: UIColor(hex: hex), size: 26)
-                            }
-                        }
+                HStack(spacing: 6) {
+                    ForEach(presets, id: \.self) { hex in
+                        colourCircle(colour: UIColor(hex: hex), size: 28)
                     }
                 }
             }
@@ -68,7 +71,7 @@ struct ColorPickerView: View {
             }
         }
         .padding(CeciliasNotes.Spacing.md)
-        .frame(width: 280)
+        .frame(width: 300)
         .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
         .sheet(isPresented: $showCustomColorPicker) {

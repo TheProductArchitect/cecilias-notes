@@ -50,21 +50,11 @@ struct EditorToolbarView: View {
     /// Drives the live mic-button glyph from the singleton state.
     @ObservedObject private var recordingSession = RecordingSession.shared
 
-    /// Auto-hide pin button + auto-popover.
-    /// - The button itself is always visible (a small pin glyph) and
-    ///   toggles the per-notebook `autoHideHeader` setting on tap.
-    /// - On the first three notebook opens where auto-hide is still
-    ///   off, a popover auto-appears next to the button for ~3
-    ///   seconds explaining what the button does, then disappears
-    ///   on its own. After 3 opens — or if the user taps the
-    ///   button — the popover never re-appears.
-    @AppStorage("editor.autoHidePin.opens")
-    private var autoHidePinOpens: Int = 0
-    @AppStorage("editor.autoHidePin.userInteracted")
-    private var autoHidePinUserInteracted: Bool = false
-    @State private var didCountThisOpen: Bool = false
-    @State private var showAutoHideTeachPopover: Bool = false
-    @State private var autoHideTeachTask: Task<Void, Never>?
+    // Auto-hide pin is a permanent toolbar button — tap to flip
+    // the per-notebook `autoHideHeader` setting. The earlier
+    // auto-popover that explained the icon on first opens was
+    // removed; the icon's filled/slash state plus its
+    // accessibility label carry the discovery work.
 
     private let toolbarHeight: CGFloat = 56
 
@@ -422,25 +412,18 @@ struct EditorToolbarView: View {
         }
     }
 
-    // MARK: Auto-hide pin button + teach popover
+    // MARK: Auto-hide pin button
 
-    /// Toolbar pin button. Visible state mirrors the per-notebook
-    /// `autoHideHeader`:
+    /// Permanent toolbar pin button. The icon mirrors the
+    /// per-notebook `autoHideHeader`:
     ///   • OFF (toolbar always visible) → filled pin
     ///   • ON  (toolbar slides away while writing) → pin.slash
-    /// Tap flips the state and marks the user as having interacted,
-    /// which silences the teach popover for good.
+    /// Tap flips the state — direct, no popover, no nudging.
     private var autoHidePinButton: some View {
         let isAutoHideOn = viewModel.notebook.autoHideHeader
         return Button {
             viewModel.notebook.autoHideHeader = !isAutoHideOn
             viewModel.notifyAutoHidePreferenceChanged()
-            autoHidePinUserInteracted = true
-            // If the teach popover was up, hide it on the tap so the
-            // immediate visual feedback is the icon flipping, not the
-            // popover lingering.
-            autoHideTeachTask?.cancel()
-            showAutoHideTeachPopover = false
         } label: {
             Image(systemName: isAutoHideOn ? "pin.slash.fill" : "pin.fill")
                 .font(.system(size: 13, weight: .regular))
@@ -454,58 +437,6 @@ struct EditorToolbarView: View {
         .accessibilityLabel(
             isAutoHideOn ? "Unpin (toolbar auto-hides)" : "Pin toolbar"
         )
-        .popover(isPresented: $showAutoHideTeachPopover) {
-            autoHideTeachContent
-                .presentationCompactAdaptation(.popover)
-        }
-        .onAppear {
-            // Count this open once per view-lifetime so re-renders
-            // (sheet dismissals, sub-screens) don't bump the counter.
-            guard !didCountThisOpen else { return }
-            didCountThisOpen = true
-            autoHidePinOpens += 1
-
-            // Auto-teach: only the first three opens, only while
-            // auto-hide is still off, only if the user has never
-            // tapped the button. 0.6s delay so the popover doesn't
-            // race the editor's own mount animation.
-            let shouldTeach = !isAutoHideOn
-                && !autoHidePinUserInteracted
-                && autoHidePinOpens <= 3
-            guard shouldTeach else { return }
-
-            autoHideTeachTask?.cancel()
-            autoHideTeachTask = Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                guard !Task.isCancelled else { return }
-                showAutoHideTeachPopover = true
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-                guard !Task.isCancelled else { return }
-                showAutoHideTeachPopover = false
-            }
-        }
-        .onDisappear {
-            autoHideTeachTask?.cancel()
-            autoHideTeachTask = nil
-        }
-    }
-
-    /// Three-line copy explaining the pin button. Stays simple —
-    /// it shows for ~3s and disappears, so the user just needs to
-    /// register what the icon does.
-    private var autoHideTeachContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("auto-hide top bar")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.foreground)
-            Text("Tap to let the toolbar slide away while you draw, so you get more room. Tap again to keep it pinned.")
-                .font(.system(size: 11))
-                .foregroundStyle(theme.foregroundSubtle)
-                .lineLimit(3)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(width: 240)
     }
 
     // MARK: Meta (page count + last opened, top-right)
