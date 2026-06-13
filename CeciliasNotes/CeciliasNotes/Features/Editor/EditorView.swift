@@ -625,28 +625,26 @@ struct EditorView: View {
                 .presentationDetents([.medium])
             })
         }
-        .onChange(of: viewModel.isShowingExportSheet) { _, newValue in
-            guard newValue else { return }
+        // Export sheet is presented LOCALLY off EditorView rather
+        // than through `ModalPresenter`. `ModalPresenter`'s sheet is
+        // attached at the same SwiftUI level as the editor's own
+        // `.fullScreenCover` (both modifiers on `LibraryView`); when
+        // both try to present, iPadOS rejects the second with
+        // "Currently, only presenting a single sheet is supported"
+        // and the export sheet flashes in then disappears. Mounting
+        // the export sheet on EditorView puts it INSIDE the cover,
+        // not in competition with it.
+        .sheet(isPresented: $viewModel.isShowingExportSheet) {
             #if DEBUG
-            print("[Share] isShowingExportSheet → true; ModalPresenter.active=\(String(describing: ModalPresenter.shared.active?.id)); notebook=\(viewModel.notebook.title); pages=\(viewModel.pages.count)")
+            let _ = print("[Share] viewBuilder invoked — about to render ExportOptionsView")
             #endif
-            ModalPresenter.shared.present(.sheet(
-                id: "editor.export",
-                onDidDismiss: {
-                    Task { @MainActor in viewModel.isShowingExportSheet = false }
-                }
+            ExportOptionsView(
+                notebook: viewModel.notebook,
+                pages: viewModel.pages,
+                currentIndex: viewModel.currentPageIndex
             ) {
-                #if DEBUG
-                let _ = print("[Share] viewBuilder invoked — about to render ExportOptionsView")
-                #endif
-                ExportOptionsView(
-                    notebook: viewModel.notebook,
-                    pages: viewModel.pages,
-                    currentIndex: viewModel.currentPageIndex
-                ) {
-                    ModalPresenter.shared.dismiss()
-                }
-            })
+                viewModel.isShowingExportSheet = false
+            }
         }
         .statusBarHidden(viewModel.isFullScreen || viewModel.isFocusMode)
         .persistentSystemOverlays(viewModel.isFocusMode ? .hidden : .automatic)

@@ -21,11 +21,18 @@ enum NotebookPreferencesStore {
         for notebookId: UUID,
         defaults: UserDefaults = .standard
     ) -> NotebookPreferences {
+        // Keys missing from the stored dictionary fall through to
+        // the in-memory struct's default — single source of truth.
+        // Using a literal `?? true` here used to disagree with the
+        // struct default (`false`) and the delete-on-default
+        // optimisation, which caused toggles to round-trip back to
+        // the wrong value.
+        let fallback = NotebookPreferences()
         if let data = defaults.data(forKey: key(for: notebookId)),
            let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Bool] {
             return NotebookPreferences(
-                autoAddPagesOnScroll: dict["autoAddPagesOnScroll"] ?? true,
-                autoHideHeader:       dict["autoHideHeader"]       ?? true
+                autoAddPagesOnScroll: dict["autoAddPagesOnScroll"] ?? fallback.autoAddPagesOnScroll,
+                autoHideHeader:       dict["autoHideHeader"]       ?? fallback.autoHideHeader
             )
         }
 
@@ -47,8 +54,12 @@ enum NotebookPreferencesStore {
         defaults: UserDefaults = .standard
     ) {
         // Defaults aren't persisted — when a notebook's prefs match
-        // `NotebookPreferences()` the entry is deleted.
-        if prefs.autoAddPagesOnScroll == true && prefs.autoHideHeader == true {
+        // `NotebookPreferences()` the entry is deleted. Compare against
+        // the struct default explicitly so a future default flip can
+        // change the value in one place without breaking the round-trip.
+        let fallback = NotebookPreferences()
+        if prefs.autoAddPagesOnScroll == fallback.autoAddPagesOnScroll
+            && prefs.autoHideHeader == fallback.autoHideHeader {
             defaults.removeObject(forKey: key(for: notebookId))
             removeLegacyAutoAddEntry(for: notebookId, defaults: defaults)
             return
@@ -82,7 +93,13 @@ enum NotebookPreferencesStore {
         guard let legacyMap = readLegacyAutoAddMap(defaults: defaults),
               let value = legacyMap[notebookId.uuidString]
         else { return nil }
-        return NotebookPreferences(autoAddPagesOnScroll: value, autoHideHeader: true)
+        // Legacy migration only knew the autoAdd key; autoHide falls
+        // through to the in-memory struct default so a future flip
+        // doesn't strand migrated rows on a hard-coded `true`.
+        return NotebookPreferences(
+            autoAddPagesOnScroll: value,
+            autoHideHeader: NotebookPreferences().autoHideHeader
+        )
     }
 
     nonisolated private static func readLegacyAutoAddMap(defaults: UserDefaults) -> [String: Bool]? {

@@ -278,12 +278,9 @@ struct EditorToolbarView: View {
                         .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundStyle(recessive(0.55))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .overlay(
-                    Capsule().strokeBorder(recessive(0.22), lineWidth: 0.5)
-                )
-                .contentShape(Capsule())
+                .padding(.horizontal, 8)
+                .frame(height: 32)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Share or export")
