@@ -41,6 +41,14 @@ struct LibraryView: View {
     /// Image from the share extension's inbox. Same lifecycle as
     /// `sharedPDFURL`; presented through `ShareImagePickerSheet`.
     @State private var sharedImageURL: SharedImageURL?
+    /// Holding pens for inbox arrivals that came in while the editor
+    /// cover was up. iPadOS can't present a `.sheet` and a
+    /// `.fullScreenCover` from the same view at the same time —
+    /// trying it locks the entire presentation stack and silently
+    /// kills the touch system. We stash the URL here instead, then
+    /// flush it as soon as the cover dismisses.
+    @State private var pendingSharedPDFURL: SharedPDFURL?
+    @State private var pendingSharedImageURL: SharedImageURL?
 
     // Image-picker presentation is now driven by
     // `viewModel.pendingImageImport`. The editor signals intent
@@ -368,19 +376,42 @@ struct LibraryView: View {
             NotificationCenter.default.publisher(for: .shareInboxPDFArrived)
         ) { note in
             guard let url = note.userInfo?["fileURL"] as? URL else { return }
-            sharedPDFURL = SharedPDFURL(url: url)
+            // Only present when the editor cover isn't already up —
+            // otherwise the .sheet/.fullScreenCover collision jams
+            // the entire presentation stack and kills touch input.
+            // The pending stash + onChange handler below picks it up
+            // once the cover dismisses.
+            if editingNotebook == nil {
+                sharedPDFURL = SharedPDFURL(url: url)
+            } else {
+                pendingSharedPDFURL = SharedPDFURL(url: url)
+            }
         }
-        // Share extension dropped an image. Same mental model as the
-        // PDF flow but no page selection — there's only one image, so
-        // the picker shrinks to a destination chooser (new notebook
-        // with subject / existing notebook to append to). The image
-        // lands centred at ~60% page width; the user can resize or
-        // reposition from the editor.
         .onReceive(
             NotificationCenter.default.publisher(for: .shareInboxImageArrived)
         ) { note in
             guard let url = note.userInfo?["fileURL"] as? URL else { return }
-            sharedImageURL = SharedImageURL(url: url)
+            if editingNotebook == nil {
+                sharedImageURL = SharedImageURL(url: url)
+            } else {
+                pendingSharedImageURL = SharedImageURL(url: url)
+            }
+        }
+        // When the editor cover dismisses, drain any inbox arrival
+        // that came in while it was up. One runloop tick of slack so
+        // SwiftUI finishes the cover's dismiss transition before we
+        // ask it to present a sheet.
+        .onChange(of: editingNotebook) { _, new in
+            guard new == nil else { return }
+            DispatchQueue.main.async {
+                if let pending = pendingSharedPDFURL {
+                    pendingSharedPDFURL = nil
+                    sharedPDFURL = pending
+                } else if let pending = pendingSharedImageURL {
+                    pendingSharedImageURL = nil
+                    sharedImageURL = pending
+                }
+            }
         }
         .fullScreenCover(item: $editingNotebook) { notebook in
             EditorView(
