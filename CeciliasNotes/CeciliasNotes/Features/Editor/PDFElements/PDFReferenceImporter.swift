@@ -16,19 +16,21 @@ enum PDFReferenceImporter {
         /// One PDF page per fresh notebook page, inserted after the
         /// current page in order. Each PDF page fills its page edge
         /// to edge — the fix for the stacked-element bug where many
-        /// pages on one canvas was unreadable.
+        /// pages on one canvas was unreadable. In-editor only.
         case afterCurrentPage
         /// Legacy: embed every selected PDF page as a single
         /// `PageElement` on the current page, stacked with a small
-        /// stagger so multiples don't perfectly overlap.
+        /// stagger so multiples don't perfectly overlap. In-editor
+        /// only.
         case onCurrentPage
-        /// Create a new notebook in the current notebook's subject
-        /// (or "Uncategorised"), populate it with one notebook page
-        /// per PDF page, and signal LibraryView to swap the editor
-        /// cover to it. The swap goes through a binding flip on
-        /// `editingNotebook`, not a cover dismiss → re-present, so
-        /// the user sees one transition instead of a flash.
-        case newNotebook
+        /// Create a new notebook in the given subject (nil =
+        /// uncategorised), populate it with one notebook page per
+        /// PDF page, and signal LibraryView to swap the editor
+        /// cover to it.
+        case newNotebook(subjectId: UUID?)
+        /// Append the selected PDF pages onto the end of an
+        /// existing notebook (one PDF page per new notebook page).
+        case existingNotebook(notebookId: UUID)
     }
 
     /// Posted after a `.newNotebook` import succeeds. `userInfo`
@@ -39,13 +41,139 @@ enum PDFReferenceImporter {
         "PDFImport.requestSwitchNotebook"
     )
 
-    /// Standalone "share inbox" entry: ingest every page of `sourceURL`
-    /// into a freshly-created notebook with no editor in play. Used by
-    /// `ShareInboxWatcher` when a PDF arrives from the iOS share sheet
-    /// — there's no current editor / notebook to anchor against. The
-    /// new notebook is created in "Uncategorised" with the default
-    /// page size + template; the user can re-file or customise from
-    /// the Library afterwards.
+    /// Library-context entry: ingest the selected PDF pages without
+    /// an `EditorViewModel`. Used by the share-inbox picker, where
+    /// the user has chosen pages + a destination (new notebook in a
+    /// subject, or appending into an existing notebook) but the
+    /// editor isn't on screen. Returns the resulting notebook's
+    /// UUID so the caller can swap the editor cover to it.
+    @discardableResult
+    static func importPagesFromLibrary(
+        from sourceURL: URL,
+        pageIndices: [Int],
+        destination: Destination
+    ) async -> UUID? {
+        guard !pageIndices.isEmpty else { return nil }
+        guard let data = try? Data(contentsOf: sourceURL) else { return nil }
+        let hash = MediaStorage.sha256Hex(of: data)
+        let pdfDocumentId = MediaStorage.writePDF(from: data, hash: hash)
+        guard let document = PDFDocument(url: MediaStorage.url(forPDF: pdfDocumentId)) else { return nil }
+
+        struct PerPagePayload {
+            let pageIndex: Int
+            let previewFilename: String?
+            let originalSize: CGSize
+            let aspect: Double
+        }
+        let payloads: [PerPagePayload] = await Task.detached(priority: .userInitiated) {
+            var out: [PerPagePayload] = []
+            for index in pageIndices {
+                guard index >= 0, index < document.pageCount,
+                      let page = document.page(at: index) else { continue }
+                let bounds = page.bounds(for: .mediaBox)
+                let aspect = max(0.01, Double(bounds.height) / Double(bounds.width))
+                let preview = renderPreviewImage(for: page, sourceBounds: bounds)
+                let contentId = UUID()
+                let previewName: String? = preview.flatMap {
+                    MediaStorage.writePDFPreview($0, contentId: contentId)
+                }
+                _ = contentId
+                out.append(PerPagePayload(
+                    pageIndex: index,
+                    previewFilename: previewName,
+                    originalSize: bounds.size,
+                    aspect: aspect
+                ))
+            }
+            return out
+        }.value
+
+        let context = StorageService.shared.context
+        let targetNotebook: Notebook
+        switch destination {
+        case .newNotebook(let subjectId):
+            do {
+                targetNotebook = try StorageService.shared.createNotebook(
+                    title: defaultNotebookTitle(from: sourceURL),
+                    subjectId: subjectId,
+                    coverColorHex: "#FAFAF8",
+                    coverTexture: .none,
+                    pageSize: .a4,
+                    template: .blank
+                )
+            } catch {
+                #if DEBUG
+                print("[PDFImport-Library] createNotebook failed: \(error)")
+                #endif
+                return nil
+            }
+        case .existingNotebook(let id):
+            let descriptor = FetchDescriptor<Notebook>(
+                predicate: #Predicate<Notebook> { $0.id == id }
+            )
+            guard let existing = (try? context.fetch(descriptor))?.first else {
+                #if DEBUG
+                print("[PDFImport-Library] existingNotebook(\(id)) not found")
+                #endif
+                return nil
+            }
+            targetNotebook = existing
+        case .afterCurrentPage, .onCurrentPage:
+            // These require an editor; library-context callers
+            // should never hit this branch (the picker only offers
+            // the two destinations above when launched from the
+            // library). Defensive only.
+            #if DEBUG
+            print("[PDFImport-Library] editor-only destination in library context")
+            #endif
+            return nil
+        }
+
+        let existingPages = (targetNotebook.pages ?? [])
+            .filter { !$0.isDeleted }
+            .map(\.pageNumber)
+        var anchorPageNumber = existingPages.max() ?? 0
+        for payload in payloads {
+            guard let newPage = try? StorageService.shared.createPage(
+                in: targetNotebook,
+                after: anchorPageNumber,
+                pageSize: targetNotebook.pageSize,
+                backgroundTemplate: targetNotebook.defaultTemplate
+            ) else { continue }
+            anchorPageNumber = newPage.pageNumber
+
+            let element = PageElement(
+                id: UUID(),
+                pageId: newPage.id,
+                notebookId: targetNotebook.id,
+                kind: .pdfPage,
+                normalizedX: 0,
+                normalizedY: 0,
+                normalizedWidth: 1,
+                normalizedHeight: 1,
+                zIndex: 0
+            )
+            let content = PDFPageContent(
+                id: UUID(),
+                pdfDocumentId: pdfDocumentId,
+                pageIndex: payload.pageIndex,
+                originalPageWidth: Double(payload.originalSize.width),
+                originalPageHeight: Double(payload.originalSize.height),
+                previewImageFilename: payload.previewFilename
+            )
+            element.pdfPageContent = content
+            context.insert(element)
+        }
+        try? context.save()
+        NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
+        return targetNotebook.id
+    }
+
+    /// Legacy convenience: ingest every page of `sourceURL` into a
+    /// freshly-created notebook with no editor in play. Kept as a
+    /// thin wrapper over `importPagesFromLibrary` so the earlier
+    /// share-inbox callsite (which had no page selection UI) still
+    /// works without changes.
     static func importAllPagesIntoNewNotebook(
         from sourceURL: URL
     ) async -> Notebook? {
@@ -238,11 +366,15 @@ enum PDFReferenceImporter {
         switch destination {
         case .afterCurrentPage, .onCurrentPage:
             targetNotebook = viewModel.notebook
-        case .newNotebook:
+        case .newNotebook(let subjectId):
+            // Subject picked by the user (in-editor: defaults to the
+            // source notebook's subject; library/share-inbox: defaults
+            // to the currently-selected subject or nil). Carry it
+            // verbatim into the freshly-created notebook.
             do {
                 let created = try StorageService.shared.createNotebook(
                     title: defaultNotebookTitle(from: sourceURL),
-                    subjectId: viewModel.notebook.subjectId,
+                    subjectId: subjectId ?? viewModel.notebook.subjectId,
                     coverColorHex: viewModel.notebook.coverColorHex,
                     coverTexture: viewModel.notebook.coverTexture,
                     pageSize: viewModel.notebook.pageSize,
@@ -256,6 +388,18 @@ enum PDFReferenceImporter {
                 #endif
                 return
             }
+        case .existingNotebook(let id):
+            let descriptor = FetchDescriptor<Notebook>(
+                predicate: #Predicate<Notebook> { $0.id == id }
+            )
+            guard let existing = (try? context.fetch(descriptor))?.first else {
+                #if DEBUG
+                print("[PDFImport] existingNotebook(\(id)) not found")
+                #endif
+                return
+            }
+            targetNotebook = existing
+            createdNotebookId = existing.id   // signal editor swap
         }
         let notebookId = targetNotebook.id
 
@@ -297,19 +441,26 @@ enum PDFReferenceImporter {
                 context.insert(element)
             }
 
-        case .afterCurrentPage, .newNotebook:
-            // Each PDF page becomes its own notebook page. For
-            // `.afterCurrentPage` we anchor on the page the user
-            // is on; for `.newNotebook` the target notebook is
-            // fresh (no current page yet), so we anchor at 0 and
-            // every page lands sequentially. The PDF element fills
-            // the entire page (normalised 0…1 in both axes); aspect
-            // mismatches letterbox naturally inside the renderer.
+        case .afterCurrentPage, .newNotebook, .existingNotebook:
+            // Each PDF page becomes its own notebook page. Anchor
+            // depends on destination:
+            //   • afterCurrentPage → after the editor's current page
+            //   • newNotebook      → fresh notebook, anchor at 0
+            //   • existingNotebook → append after the last existing
+            //                        page in the target notebook
             var anchorPageNumber: Int = {
                 switch destination {
-                case .afterCurrentPage: return viewModel.currentPage.pageNumber
-                case .newNotebook:      return 0
-                case .onCurrentPage:    return 0   // unreachable in this branch
+                case .afterCurrentPage:
+                    return viewModel.currentPage.pageNumber
+                case .newNotebook:
+                    return 0
+                case .existingNotebook:
+                    let existingPages = (targetNotebook.pages ?? [])
+                        .filter { !$0.isDeleted }
+                        .map(\.pageNumber)
+                    return existingPages.max() ?? 0
+                case .onCurrentPage:
+                    return 0   // unreachable in this branch
                 }
             }()
             for payload in payloads {
@@ -352,7 +503,7 @@ enum PDFReferenceImporter {
             print("[PDFImport] save failed: \(error)")
             #endif
         }
-        if destination == .afterCurrentPage {
+        if case .afterCurrentPage = destination {
             viewModel.refreshPages()
         }
         NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)

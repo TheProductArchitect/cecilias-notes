@@ -33,6 +33,11 @@ struct LibraryView: View {
     @State private var isShowingRecentExports = false
     @State private var isShowingSettings      = false
     @State private var reExportNotebookId: UUID?
+    /// PDF from the share extension's inbox, presented through the
+    /// shared `PDFPagePickerSheet` in library mode. Wrapped in an
+    /// Identifiable so SwiftUI's `.sheet(item:)` can drive
+    /// presentation/dismissal off it.
+    @State private var sharedPDFURL: SharedPDFURL?
 
     // Image-picker presentation is now driven by
     // `viewModel.pendingImageImport`. The editor signals intent
@@ -243,6 +248,43 @@ struct LibraryView: View {
         .sheet(isPresented: $viewModel.isShowingQuizBuilder) {
             QuizBuilderView(viewModel: viewModel)
         }
+        // Share-inbox PDF picker. Lives at the library level (above
+        // the editor cover) so a PDF arriving from outside the app
+        // can be filed into a brand-new notebook or appended to an
+        // existing one without the user needing to be inside an
+        // editor first.
+        .sheet(item: $sharedPDFURL) { wrapper in
+            PDFPagePickerSheet(
+                sourceURL: wrapper.url,
+                onConfirm: { indices, destination in
+                    let url = wrapper.url
+                    sharedPDFURL = nil
+                    Task { @MainActor in
+                        if let nbId = await PDFReferenceImporter
+                            .importPagesFromLibrary(
+                                from: url,
+                                pageIndices: indices,
+                                destination: destination
+                            ) {
+                            ShareInboxWatcher.shared.consume(url)
+                            viewModel.refresh()
+                            if let notebook = viewModel.notebook(id: nbId) {
+                                editingNotebook = notebook
+                            }
+                        }
+                    }
+                },
+                onCancel: {
+                    // Cancel leaves the file in the inbox so the
+                    // user can try again on the next foreground.
+                    sharedPDFURL = nil
+                },
+                mode: .library(
+                    subjects: viewModel.subjects,
+                    notebooks: viewModel.notebooks
+                )
+            )
+        }
         .onChange(of: reExportNotebookId) { _, id in
             guard let id, let notebook = viewModel.notebook(id: id) else { return }
             DispatchQueue.main.async { reExportNotebookId = nil }
@@ -287,22 +329,16 @@ struct LibraryView: View {
             }
         }
         // Share extension dropped a PDF in the app-group inbox.
-        // Create a fresh notebook (one notebook page per PDF page,
-        // each filling the page edge-to-edge), then open it. The
-        // source file is deleted from the inbox once the notebook
-        // is created so a relaunch doesn't re-ingest it.
+        // Present the PDF page picker in library mode so the user
+        // can pick pages, a destination notebook (new or existing),
+        // and a subject (for new). This mirrors the in-editor PDF
+        // import workflow — same picker UI, same selection model,
+        // just different destination chips.
         .onReceive(
             NotificationCenter.default.publisher(for: .shareInboxPDFArrived)
         ) { note in
             guard let url = note.userInfo?["fileURL"] as? URL else { return }
-            Task { @MainActor in
-                if let notebook = await PDFReferenceImporter
-                    .importAllPagesIntoNewNotebook(from: url) {
-                    ShareInboxWatcher.shared.consume(url)
-                    viewModel.refresh()
-                    editingNotebook = notebook
-                }
-            }
+            sharedPDFURL = SharedPDFURL(url: url)
         }
         // Image-from-share path is intentionally deferred to a
         // follow-up — ingesting an image into a fresh notebook
@@ -364,6 +400,15 @@ struct LibraryView: View {
             .opacity(0)
             .accessibilityHidden(true)
         )
+    }
+
+    /// Identifiable URL wrapper so the share-inbox PDF can drive a
+    /// `.sheet(item:)` binding. Equality is by URL path so a second
+    /// arrival with the same path doesn't immediately re-present
+    /// after dismiss.
+    private struct SharedPDFURL: Identifiable {
+        let url: URL
+        var id: String { url.path }
     }
 
     private func handleQuickCaptureOnLaunch() {

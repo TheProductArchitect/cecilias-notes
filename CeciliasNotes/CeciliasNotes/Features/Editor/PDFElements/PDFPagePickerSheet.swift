@@ -14,12 +14,27 @@ import UIKit
 ///   • Footer hint with selected-page count.
 struct PDFPagePickerSheet: View {
 
+    /// Context the sheet is presented from. Drives the destination
+    /// chooser UI — different destinations make sense from inside
+    /// an editor vs. from the library (e.g. "on this page" only
+    /// applies when there's a current page to embed onto).
+    enum Mode {
+        /// In-editor: shows after-current-page / on-current-page /
+        /// new-notebook chips. New notebook inherits the source
+        /// notebook's subject by default.
+        case editor
+        /// Library (share-inbox or similar): shows existing-notebook
+        /// (pick which) / new-notebook (pick which subject) chips.
+        case library(subjects: [Subject], notebooks: [Notebook])
+    }
+
     let sourceURL: URL
     /// Called when the user confirms with at least one page picked.
     /// Carries the 0-indexed page indices in click order plus the
     /// chosen import destination.
     let onConfirm: ([Int], PDFReferenceImporter.Destination) -> Void
     let onCancel: () -> Void
+    var mode: Mode = .editor
 
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
@@ -30,10 +45,15 @@ struct PDFPagePickerSheet: View {
     @State private var jumpToInput: String = "1"
     @State private var thumbnailCache: [Int: UIImage] = [:]
     @State private var scrollTargetPage: Int?
-    /// Destination chooser — defaults to `.afterCurrentPage` so a
-    /// fresh multi-page PDF expands into its own readable pages
-    /// instead of stacking on the current canvas.
+    /// Destination chooser — defaults to `.afterCurrentPage` for
+    /// editor mode, `.newNotebook(nil)` for library mode (see
+    /// `.onAppear` initialiser below).
     @State private var destination: PDFReferenceImporter.Destination = .afterCurrentPage
+    /// Library-mode pickers: subject (for new notebook) and
+    /// notebook (for existing). Seeded from the mode payload on
+    /// first appear.
+    @State private var librarySubjectId: UUID?
+    @State private var libraryNotebookId: UUID?
 
     private let thumbnailSize = CGSize(width: 110, height: 140)
     private let columns: [GridItem] = Array(
@@ -59,6 +79,16 @@ struct PDFPagePickerSheet: View {
         }
         .background(theme.surface.ignoresSafeArea())
         .task { await loadDocument() }
+        .onAppear {
+            // Seed library-mode defaults from the mode payload so
+            // the picker's initial destination is already valid
+            // (no unselected dropdowns on first render).
+            if case .library(let subjects, let notebooks) = mode {
+                librarySubjectId = subjects.first?.id
+                libraryNotebookId = notebooks.first?.id
+                destination = .newNotebook(subjectId: librarySubjectId)
+            }
+        }
     }
 
     // MARK: - Top bar
@@ -86,13 +116,22 @@ struct PDFPagePickerSheet: View {
 
     // MARK: - Destination picker
 
-    /// Two-segment "where do these land" chooser. Default
-    /// (`afterCurrentPage`) creates a new notebook page per PDF
-    /// page so multi-page imports stay readable; the legacy
-    /// `onCurrentPage` mode is preserved for users who want a
-    /// PDF page embedded inside an existing canvas (annotations,
-    /// margin notes around the page).
+    /// Two surfaces:
+    ///   • Editor mode: the three "where do these land" chips
+    ///     (after this page / on this page / new notebook).
+    ///   • Library mode: existing notebook (with notebook picker)
+    ///     vs new notebook (with subject picker).
+    @ViewBuilder
     private var destinationPicker: some View {
+        switch mode {
+        case .editor:
+            editorDestinationPicker
+        case .library(let subjects, let notebooks):
+            libraryDestinationPicker(subjects: subjects, notebooks: notebooks)
+        }
+    }
+
+    private var editorDestinationPicker: some View {
         HStack(spacing: 8) {
             destinationChip(
                 title: "after this page",
@@ -107,11 +146,123 @@ struct PDFPagePickerSheet: View {
             destinationChip(
                 title: "new notebook",
                 subtitle: "switches to it after import",
-                value: .newNotebook
+                // In-editor "new notebook" inherits subject from
+                // the source notebook (the importer reads
+                // `viewModel.notebook.subjectId` when subjectId is
+                // nil), so we pass nil here.
+                value: .newNotebook(subjectId: nil)
             )
         }
         .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .padding(.vertical, CeciliasNotes.Spacing.sm)
+    }
+
+    private func libraryDestinationPicker(
+        subjects: [Subject],
+        notebooks: [Notebook]
+    ) -> some View {
+        let isNew: Bool = {
+            if case .newNotebook = destination { return true }
+            return false
+        }()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                destinationChip(
+                    title: "new notebook",
+                    subtitle: "create one with these pages",
+                    value: .newNotebook(subjectId: librarySubjectId)
+                )
+                destinationChip(
+                    title: "existing notebook",
+                    subtitle: "append to one you've made",
+                    value: libraryNotebookId.map {
+                        PDFReferenceImporter.Destination.existingNotebook(notebookId: $0)
+                    } ?? .newNotebook(subjectId: librarySubjectId)
+                )
+            }
+
+            if isNew {
+                Menu {
+                    Button("Uncategorised") {
+                        librarySubjectId = nil
+                        destination = .newNotebook(subjectId: nil)
+                    }
+                    ForEach(subjects) { subject in
+                        Button(subject.name) {
+                            librarySubjectId = subject.id
+                            destination = .newNotebook(subjectId: subject.id)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("subject")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.foregroundSubtle)
+                        Text(librarySubjectName(subjects: subjects))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.foreground)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(theme.foregroundSubtle)
+                    }
+                }
+            } else {
+                Menu {
+                    ForEach(notebooks) { nb in
+                        Button(nb.title) {
+                            libraryNotebookId = nb.id
+                            destination = .existingNotebook(notebookId: nb.id)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("notebook")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.foregroundSubtle)
+                        Text(libraryNotebookName(notebooks: notebooks))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(theme.foreground)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(theme.foregroundSubtle)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, CeciliasNotes.Spacing.lg)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
+    }
+
+    /// Chip-level "is this chip selected" check that compares
+    /// destination *cases* only — the associated values (subjectId
+    /// for newNotebook, notebookId for existingNotebook) shouldn't
+    /// affect chip highlighting (those live in the dropdown below
+    /// the chip, not on the chip itself).
+    private func chipsMatch(
+        _ a: PDFReferenceImporter.Destination,
+        _ b: PDFReferenceImporter.Destination
+    ) -> Bool {
+        switch (a, b) {
+        case (.afterCurrentPage, .afterCurrentPage): return true
+        case (.onCurrentPage, .onCurrentPage):       return true
+        case (.newNotebook, .newNotebook):           return true
+        case (.existingNotebook, .existingNotebook): return true
+        default:                                     return false
+        }
+    }
+
+    private func librarySubjectName(subjects: [Subject]) -> String {
+        guard let id = librarySubjectId,
+              let match = subjects.first(where: { $0.id == id })
+        else { return "Uncategorised" }
+        return match.name
+    }
+
+    private func libraryNotebookName(notebooks: [Notebook]) -> String {
+        guard let id = libraryNotebookId,
+              let match = notebooks.first(where: { $0.id == id })
+        else { return notebooks.first?.title ?? "—" }
+        return match.title
     }
 
     private func destinationChip(
@@ -119,7 +270,7 @@ struct PDFPagePickerSheet: View {
         subtitle: String,
         value: PDFReferenceImporter.Destination
     ) -> some View {
-        let isSelected = destination == value
+        let isSelected = chipsMatch(destination, value)
         return Button {
             destination = value
             HapticManager.shared.toolSwitched()
