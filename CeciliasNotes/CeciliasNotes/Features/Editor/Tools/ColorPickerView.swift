@@ -27,6 +27,14 @@ struct ColorPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
+            // Current — always-visible swatch of the active colour,
+            // so the user can tell at a glance what they're drawing
+            // with. Without this the active colour was only marked
+            // by an accent ring on whichever preset matched (and
+            // a custom-picked colour outside the preset palette
+            // had no visible "current" affordance at all).
+            currentSwatchSection
+
             // Recent
             if !viewModel.recentColours.isEmpty {
                 section(title: "Recent") {
@@ -90,6 +98,32 @@ struct ColorPickerView: View {
                 showCustomColorPicker = false
                 onClose()
             }
+        }
+    }
+
+    // MARK: Current swatch (top of popover)
+
+    private var currentSwatchSection: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(Color(viewModel.selectedTool.currentColour))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Circle().strokeBorder(theme.accent, lineWidth: 2)
+                )
+                .overlay(
+                    Circle().strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+                        .padding(2)
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Current")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundSubtle)
+                Text(viewModel.selectedTool.currentColour.hexString.uppercased())
+                    .font(.system(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundColor(theme.foreground)
+            }
+            Spacer()
         }
     }
 

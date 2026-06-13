@@ -183,10 +183,11 @@ struct PDFPagePickerSheet: View {
 
             if isNew {
                 Menu {
-                    Button("Uncategorised") {
-                        librarySubjectId = nil
-                        destination = .newNotebook(subjectId: nil)
-                    }
+                    // Subject menu lists user-created subjects only.
+                    // Notebooks are required to live in a subject, so
+                    // we don't surface "Uncategorised" as an option
+                    // here — picking it would put the notebook in a
+                    // bucket that isn't a real subject.
                     ForEach(subjects) { subject in
                         Button(subject.name) {
                             librarySubjectId = subject.id
@@ -206,6 +207,7 @@ struct PDFPagePickerSheet: View {
                             .foregroundStyle(theme.foregroundSubtle)
                     }
                 }
+                .disabled(subjects.isEmpty)
             } else {
                 Menu {
                     ForEach(notebooks) { nb in
@@ -254,7 +256,7 @@ struct PDFPagePickerSheet: View {
     private func librarySubjectName(subjects: [Subject]) -> String {
         guard let id = librarySubjectId,
               let match = subjects.first(where: { $0.id == id })
-        else { return "Uncategorised" }
+        else { return subjects.isEmpty ? "no subjects yet" : (subjects.first?.name ?? "—") }
         return match.name
     }
 

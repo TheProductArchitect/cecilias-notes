@@ -38,6 +38,9 @@ struct LibraryView: View {
     /// Identifiable so SwiftUI's `.sheet(item:)` can drive
     /// presentation/dismissal off it.
     @State private var sharedPDFURL: SharedPDFURL?
+    /// Image from the share extension's inbox. Same lifecycle as
+    /// `sharedPDFURL`; presented through `ShareImagePickerSheet`.
+    @State private var sharedImageURL: SharedImageURL?
 
     // Image-picker presentation is now driven by
     // `viewModel.pendingImageImport`. The editor signals intent
@@ -285,6 +288,33 @@ struct LibraryView: View {
                 )
             )
         }
+        // Share-inbox image picker. Smaller than the PDF picker —
+        // no page selection step — but the same destination chooser
+        // (new notebook + subject / existing notebook).
+        .sheet(item: $sharedImageURL) { wrapper in
+            ShareImagePickerSheet(
+                sourceURL: wrapper.url,
+                subjects: viewModel.subjects,
+                notebooks: viewModel.notebooks,
+                onConfirm: { destination in
+                    let url = wrapper.url
+                    sharedImageURL = nil
+                    Task { @MainActor in
+                        if let nbId = await ShareImageImporter.importImage(
+                            from: url,
+                            destination: destination
+                        ) {
+                            ShareInboxWatcher.shared.consume(url)
+                            viewModel.refresh()
+                            if let notebook = viewModel.notebook(id: nbId) {
+                                editingNotebook = notebook
+                            }
+                        }
+                    }
+                },
+                onCancel: { sharedImageURL = nil }
+            )
+        }
         .onChange(of: reExportNotebookId) { _, id in
             guard let id, let notebook = viewModel.notebook(id: id) else { return }
             DispatchQueue.main.async { reExportNotebookId = nil }
@@ -340,22 +370,17 @@ struct LibraryView: View {
             guard let url = note.userInfo?["fileURL"] as? URL else { return }
             sharedPDFURL = SharedPDFURL(url: url)
         }
-        // Image-from-share path is intentionally deferred to a
-        // follow-up — ingesting an image into a fresh notebook
-        // touches three SwiftData models and the MediaStorage write
-        // pipeline, more than I want to land in the PDF-MVP commit.
-        // The file is left in the inbox so a future build can pick
-        // it up without losing the user's content. The watcher will
-        // re-emit the notification on each foreground until the
-        // file is consumed; that's intentional.
+        // Share extension dropped an image. Same mental model as the
+        // PDF flow but no page selection — there's only one image, so
+        // the picker shrinks to a destination chooser (new notebook
+        // with subject / existing notebook to append to). The image
+        // lands centred at ~60% page width; the user can resize or
+        // reposition from the editor.
         .onReceive(
             NotificationCenter.default.publisher(for: .shareInboxImageArrived)
         ) { note in
-            #if DEBUG
-            if let url = note.userInfo?["fileURL"] as? URL {
-                print("[ShareInbox] image arrived but ingestion not yet wired: \(url.lastPathComponent)")
-            }
-            #endif
+            guard let url = note.userInfo?["fileURL"] as? URL else { return }
+            sharedImageURL = SharedImageURL(url: url)
         }
         .fullScreenCover(item: $editingNotebook) { notebook in
             EditorView(
@@ -407,6 +432,13 @@ struct LibraryView: View {
     /// arrival with the same path doesn't immediately re-present
     /// after dismiss.
     private struct SharedPDFURL: Identifiable {
+        let url: URL
+        var id: String { url.path }
+    }
+
+    /// Same shape as `SharedPDFURL`, separate type so the two
+    /// `.sheet(item:)` bindings stay independent.
+    private struct SharedImageURL: Identifiable {
         let url: URL
         var id: String { url.path }
     }

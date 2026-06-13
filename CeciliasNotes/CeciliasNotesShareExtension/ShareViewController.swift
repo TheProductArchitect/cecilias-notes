@@ -21,37 +21,13 @@ final class ShareViewController: UIViewController {
     private static let appGroupID = "group.app.ceciliasnotes"
     private static let inboxFolderName = "ShareInbox"
 
-    private let statusLabel: UILabel = {
-        let l = UILabel()
-        l.text = "Saving to Cecilia's Notes…"
-        l.font = .systemFont(ofSize: 15, weight: .medium)
-        l.textColor = .label
-        l.textAlignment = .center
-        l.translatesAutoresizingMaskIntoConstraints = false
-        return l
-    }()
-
-    private let spinner: UIActivityIndicatorView = {
-        let s = UIActivityIndicatorView(style: .medium)
-        s.translatesAutoresizingMaskIntoConstraints = false
-        s.startAnimating()
-        return s
-    }()
-
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Empty surface — we never want the extension UI to be
+        // visible. The view exists because UIViewController needs
+        // one; it just renders a clear/system background for the
+        // brief moment between viewDidLoad and the deep-link open.
         view.backgroundColor = .systemBackground
-
-        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel])
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-        ])
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -62,19 +38,13 @@ final class ShareViewController: UIViewController {
     // MARK: - Ingest
 
     private func ingestAndComplete() async {
+        // Save the file to the app-group inbox, then deep-link into
+        // the main app immediately. No spinner, no "Saved." label,
+        // no animated wait — the user picked Cecilia's Notes from
+        // the share sheet, they don't need a confirmation screen.
+        // The main app foregrounds and the picker appears in one
+        // continuous motion.
         await ingestAttachments()
-        await MainActor.run {
-            statusLabel.text = "Saved. Opening Cecilia's Notes…"
-            spinner.stopAnimating()
-        }
-        // Give the user a beat to see the confirmation, then deep-
-        // link into the main app. Opening any `ceciliasnotes://`
-        // URL is enough — the act of foregrounding triggers the
-        // app's `didBecomeActive` observer, which sweeps the
-        // share inbox and presents the page picker. The
-        // `library` host is a no-op deep link that doesn't change
-        // navigation; we just need the transition.
-        try? await Task.sleep(nanoseconds: 350_000_000)
         await MainActor.run {
             let deepLink = URL(string: "ceciliasnotes://library")!
             self.extensionContext?.open(deepLink) { [weak self] _ in
