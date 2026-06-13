@@ -7,9 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00181233B958550275405AA1 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 718E648107BB2F53D2ABF279 /* Foundation.framework */; };
+		2C1428D646D4DFEC4F438491 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 707A06BA192104E6C2CAD656 /* ShareViewController.swift */; };
 		ABB82F3E2FAD0C6100EAEC50 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */; };
 		ABB82F402FAD0C6100EAEC50 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */; };
 		ABB82F512FAD0C6300EAEC50 /* CeciliasNotesWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AEBDD1C843F95549D4FC3FAF /* CeciliasNotesShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0D2E9E45FB06E5323A18DA69 /* CeciliasNotesShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -34,6 +37,13 @@
 			remoteGlobalIDString = ABB82F3A2FAD0C6100EAEC50;
 			remoteInfo = CeciliasNotesWidgetExtension;
 		};
+		D172600895C0255B01F138C7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ABB82E182FAD01B300EAEC50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A9990A6A7CA431173D36636B;
+			remoteInfo = CeciliasNotesShareExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -44,6 +54,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				ABB82F512FAD0C6300EAEC50 /* CeciliasNotesWidgetExtension.appex in Embed Foundation Extensions */,
+				AEBDD1C843F95549D4FC3FAF /* CeciliasNotesShareExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -51,12 +62,17 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0D2E9E45FB06E5323A18DA69 /* CeciliasNotesShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CeciliasNotesShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		707A06BA192104E6C2CAD656 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		718E648107BB2F53D2ABF279 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		87A6CA5DEAB7A58C80DD5E3F /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = venu_bundle_1.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82E2D2FAD01B400EAEC50 /* CeciliasNotesTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CeciliasNotesTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82E372FAD01B400EAEC50 /* CeciliasNotesUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CeciliasNotesUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CeciliasNotesWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		BEBD418F864F793079F7B293 /* CeciliasNotesShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = CeciliasNotesShareExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -94,11 +110,15 @@
 		};
 		ABB82E302FAD01B400EAEC50 /* CeciliasNotesTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = CeciliasNotesTests;
 			sourceTree = "<group>";
 		};
 		ABB82E3A2FAD01B400EAEC50 /* CeciliasNotesUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = CeciliasNotesUITests;
 			sourceTree = "<group>";
 		};
@@ -113,6 +133,14 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		7B1EA0225FE8569DA2A7C01F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00181233B958550275405AA1 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABB82E1D2FAD01B300EAEC50 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -146,6 +174,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		62670A8D31320BFCA39E4F25 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				718E648107BB2F53D2ABF279 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
 		ABB82E172FAD01B300EAEC50 = {
 			isa = PBXGroup;
 			children = (
@@ -155,6 +191,7 @@
 				ABB82F412FAD0C6100EAEC50 /* CeciliasNotesWidget */,
 				ABB82F3C2FAD0C6100EAEC50 /* Frameworks */,
 				ABB82E212FAD01B300EAEC50 /* Products */,
+				DF115FFA824CCAE1CD2297B2 /* CeciliasNotesShareExtension */,
 			);
 			sourceTree = "<group>";
 		};
@@ -165,6 +202,7 @@
 				ABB82E2D2FAD01B400EAEC50 /* CeciliasNotesTests.xctest */,
 				ABB82E372FAD01B400EAEC50 /* CeciliasNotesUITests.xctest */,
 				ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */,
+				0D2E9E45FB06E5323A18DA69 /* CeciliasNotesShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -174,13 +212,42 @@
 			children = (
 				ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */,
 				ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */,
+				62670A8D31320BFCA39E4F25 /* iOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		DF115FFA824CCAE1CD2297B2 /* CeciliasNotesShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				707A06BA192104E6C2CAD656 /* ShareViewController.swift */,
+				87A6CA5DEAB7A58C80DD5E3F /* Info.plist */,
+				BEBD418F864F793079F7B293 /* CeciliasNotesShareExtension.entitlements */,
+			);
+			name = CeciliasNotesShareExtension;
+			path = CeciliasNotesShareExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A9990A6A7CA431173D36636B /* CeciliasNotesShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5A8C1A2A5DE793DF65DA8A16 /* Build configuration list for PBXNativeTarget "CeciliasNotesShareExtension" */;
+			buildPhases = (
+				3B09FA2C90569179BE7B2E64 /* Sources */,
+				7B1EA0225FE8569DA2A7C01F /* Frameworks */,
+				1C89CD586698E72340A38D75 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CeciliasNotesShareExtension;
+			productName = CeciliasNotesShareExtension;
+			productReference = 0D2E9E45FB06E5323A18DA69 /* CeciliasNotesShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		ABB82E1F2FAD01B300EAEC50 /* CeciliasNotes */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = ABB82E412FAD01B400EAEC50 /* Build configuration list for PBXNativeTarget "CeciliasNotes" */;
@@ -194,13 +261,12 @@
 			);
 			dependencies = (
 				ABB82F502FAD0C6300EAEC50 /* PBXTargetDependency */,
+				78136A9B4173FFAAB9D66692 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				ABB82E222FAD01B300EAEC50 /* CeciliasNotes */,
 			);
 			name = CeciliasNotes;
-			packageProductDependencies = (
-			);
 			productName = CeciliasNotes;
 			productReference = ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */;
 			productType = "com.apple.product-type.application";
@@ -222,8 +288,6 @@
 				ABB82E302FAD01B400EAEC50 /* CeciliasNotesTests */,
 			);
 			name = CeciliasNotesTests;
-			packageProductDependencies = (
-			);
 			productName = CeciliasNotesTests;
 			productReference = ABB82E2D2FAD01B400EAEC50 /* CeciliasNotesTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -245,8 +309,6 @@
 				ABB82E3A2FAD01B400EAEC50 /* CeciliasNotesUITests */,
 			);
 			name = CeciliasNotesUITests;
-			packageProductDependencies = (
-			);
 			productName = CeciliasNotesUITests;
 			productReference = ABB82E372FAD01B400EAEC50 /* CeciliasNotesUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -267,8 +329,6 @@
 				ABB82F412FAD0C6100EAEC50 /* CeciliasNotesWidget */,
 			);
 			name = CeciliasNotesWidgetExtension;
-			packageProductDependencies = (
-			);
 			productName = CeciliasNotesWidgetExtension;
 			productReference = ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -317,11 +377,19 @@
 				ABB82E2C2FAD01B400EAEC50 /* CeciliasNotesTests */,
 				ABB82E362FAD01B400EAEC50 /* CeciliasNotesUITests */,
 				ABB82F3A2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension */,
+				A9990A6A7CA431173D36636B /* CeciliasNotesShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		1C89CD586698E72340A38D75 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABB82E1E2FAD01B300EAEC50 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -353,6 +421,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		3B09FA2C90569179BE7B2E64 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C1428D646D4DFEC4F438491 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		ABB82E1C2FAD01B300EAEC50 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -384,6 +460,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		78136A9B4173FFAAB9D66692 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CeciliasNotesShareExtension;
+			target = A9990A6A7CA431173D36636B /* CeciliasNotesShareExtension */;
+			targetProxy = D172600895C0255B01F138C7 /* PBXContainerItemProxy */;
+		};
 		ABB82E2F2FAD01B400EAEC50 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = ABB82E1F2FAD01B300EAEC50 /* CeciliasNotes */;
@@ -402,6 +484,32 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		7FA54D07E7BD03899F157FB6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = CeciliasNotesShareExtension/CeciliasNotesShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CeciliasNotesShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		ABB82E3F2FAD01B400EAEC50 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -731,9 +839,45 @@
 			};
 			name = Release;
 		};
+		E3A1969923A25FBD59464C0F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = CeciliasNotesShareExtension/CeciliasNotesShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CeciliasNotesShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		5A8C1A2A5DE793DF65DA8A16 /* Build configuration list for PBXNativeTarget "CeciliasNotesShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E3A1969923A25FBD59464C0F /* Release */,
+				7FA54D07E7BD03899F157FB6 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		ABB82E1B2FAD01B300EAEC50 /* Build configuration list for PBXProject "CeciliasNotes" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

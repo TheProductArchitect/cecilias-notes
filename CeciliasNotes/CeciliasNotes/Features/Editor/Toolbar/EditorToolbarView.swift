@@ -50,16 +50,21 @@ struct EditorToolbarView: View {
     /// Drives the live mic-button glyph from the singleton state.
     @ObservedObject private var recordingSession = RecordingSession.shared
 
-    /// Auto-hide is off by default. To help users discover the
-    /// option without burying it in the customise panel, a small
-    /// "try auto-hide" chip sits in the toolbar for the first five
-    /// notebook opens (or until the user enables auto-hide / taps
-    /// the chip's × to dismiss it permanently).
-    @AppStorage("editor.autoHideNudge.opens")
-    private var autoHideNudgeOpens: Int = 0
-    @AppStorage("editor.autoHideNudge.dismissed")
-    private var autoHideNudgeDismissed: Bool = false
+    /// Auto-hide pin button + auto-popover.
+    /// - The button itself is always visible (a small pin glyph) and
+    ///   toggles the per-notebook `autoHideHeader` setting on tap.
+    /// - On the first three notebook opens where auto-hide is still
+    ///   off, a popover auto-appears next to the button for ~3
+    ///   seconds explaining what the button does, then disappears
+    ///   on its own. After 3 opens — or if the user taps the
+    ///   button — the popover never re-appears.
+    @AppStorage("editor.autoHidePin.opens")
+    private var autoHidePinOpens: Int = 0
+    @AppStorage("editor.autoHidePin.userInteracted")
+    private var autoHidePinUserInteracted: Bool = false
     @State private var didCountThisOpen: Bool = false
+    @State private var showAutoHideTeachPopover: Bool = false
+    @State private var autoHideTeachTask: Task<Void, Never>?
 
     private let toolbarHeight: CGFloat = 56
 
@@ -273,12 +278,13 @@ struct EditorToolbarView: View {
             }
             .mutationOnly()
 
-            // Auto-hide nudge chip. Visible only when auto-hide is
-            // currently off AND the user hasn't already dismissed
-            // the nudge AND we're within the first five notebook
-            // opens. Tapping enables auto-hide; the × marks it
-            // dismissed forever.
-            autoHideNudgeChip.mutationOnly()
+            // Auto-hide pin toggle. A single 32×32 icon button —
+            // tapping flips the per-notebook `autoHideHeader`. On the
+            // first three opens (while still off and untouched) a
+            // popover auto-appears next to the button for ~3s
+            // explaining what it does, then dismisses itself. After
+            // that it stays silent.
+            autoHidePinButton.mutationOnly()
 
             // Share is read-only friendly (export, send PDF) and
             // stays visible everywhere.
@@ -416,57 +422,90 @@ struct EditorToolbarView: View {
         }
     }
 
-    // MARK: Auto-hide nudge chip
+    // MARK: Auto-hide pin button + teach popover
 
-    /// Small "try auto-hide" chip in the actionCluster. Compact:
-    /// 11pt label, capsule outline, × dismiss. Hidden once the user
-    /// either enables auto-hide (the nudge served its purpose) or
-    /// explicitly dismisses it (the nudge becomes noise).
-    @ViewBuilder
-    private var autoHideNudgeChip: some View {
-        let shouldShow = !viewModel.notebook.autoHideHeader
-            && !autoHideNudgeDismissed
-            && autoHideNudgeOpens <= 5
+    /// Toolbar pin button. Visible state mirrors the per-notebook
+    /// `autoHideHeader`:
+    ///   • OFF (toolbar always visible) → filled pin
+    ///   • ON  (toolbar slides away while writing) → pin.slash
+    /// Tap flips the state and marks the user as having interacted,
+    /// which silences the teach popover for good.
+    private var autoHidePinButton: some View {
+        let isAutoHideOn = viewModel.notebook.autoHideHeader
+        return Button {
+            viewModel.notebook.autoHideHeader = !isAutoHideOn
+            viewModel.notifyAutoHidePreferenceChanged()
+            autoHidePinUserInteracted = true
+            // If the teach popover was up, hide it on the tap so the
+            // immediate visual feedback is the icon flipping, not the
+            // popover lingering.
+            autoHideTeachTask?.cancel()
+            showAutoHideTeachPopover = false
+        } label: {
+            Image(systemName: isAutoHideOn ? "pin.slash.fill" : "pin.fill")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(
+                    isAutoHideOn ? theme.accent : recessive(0.4)
+                )
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            isAutoHideOn ? "Unpin (toolbar auto-hides)" : "Pin toolbar"
+        )
+        .popover(isPresented: $showAutoHideTeachPopover) {
+            autoHideTeachContent
+                .presentationCompactAdaptation(.popover)
+        }
+        .onAppear {
+            // Count this open once per view-lifetime so re-renders
+            // (sheet dismissals, sub-screens) don't bump the counter.
+            guard !didCountThisOpen else { return }
+            didCountThisOpen = true
+            autoHidePinOpens += 1
 
-        if shouldShow {
-            HStack(spacing: 4) {
-                Button {
-                    viewModel.notebook.autoHideHeader = true
-                    viewModel.notifyAutoHidePreferenceChanged()
-                    autoHideNudgeDismissed = true
-                } label: {
-                    Text("try auto-hide")
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(recessive(0.55))
-                }
-                .buttonStyle(.plain)
-                Button {
-                    autoHideNudgeDismissed = true
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(recessive(0.35))
-                        .padding(3)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss auto-hide nudge")
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .overlay(
-                Capsule().strokeBorder(recessive(0.18), lineWidth: 0.5)
-            )
-            .padding(.horizontal, 4)
-            .onAppear {
-                // Count this notebook open once per view-lifetime so
-                // returning from a sheet or sub-screen doesn't bump
-                // the counter mid-session.
-                guard !didCountThisOpen else { return }
-                didCountThisOpen = true
-                autoHideNudgeOpens += 1
+            // Auto-teach: only the first three opens, only while
+            // auto-hide is still off, only if the user has never
+            // tapped the button. 0.6s delay so the popover doesn't
+            // race the editor's own mount animation.
+            let shouldTeach = !isAutoHideOn
+                && !autoHidePinUserInteracted
+                && autoHidePinOpens <= 3
+            guard shouldTeach else { return }
+
+            autoHideTeachTask?.cancel()
+            autoHideTeachTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                guard !Task.isCancelled else { return }
+                showAutoHideTeachPopover = true
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled else { return }
+                showAutoHideTeachPopover = false
             }
         }
+        .onDisappear {
+            autoHideTeachTask?.cancel()
+            autoHideTeachTask = nil
+        }
+    }
+
+    /// Three-line copy explaining the pin button. Stays simple —
+    /// it shows for ~3s and disappears, so the user just needs to
+    /// register what the icon does.
+    private var autoHideTeachContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("auto-hide top bar")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.foreground)
+            Text("Tap to let the toolbar slide away while you draw, so you get more room. Tap again to keep it pinned.")
+                .font(.system(size: 11))
+                .foregroundStyle(theme.foregroundSubtle)
+                .lineLimit(3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: 240)
     }
 
     // MARK: Meta (page count + last opened, top-right)

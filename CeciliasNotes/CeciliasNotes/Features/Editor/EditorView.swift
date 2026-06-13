@@ -627,12 +627,18 @@ struct EditorView: View {
         }
         .onChange(of: viewModel.isShowingExportSheet) { _, newValue in
             guard newValue else { return }
+            #if DEBUG
+            print("[Share] isShowingExportSheet → true; ModalPresenter.active=\(String(describing: ModalPresenter.shared.active?.id)); notebook=\(viewModel.notebook.title); pages=\(viewModel.pages.count)")
+            #endif
             ModalPresenter.shared.present(.sheet(
                 id: "editor.export",
                 onDidDismiss: {
                     Task { @MainActor in viewModel.isShowingExportSheet = false }
                 }
             ) {
+                #if DEBUG
+                let _ = print("[Share] viewBuilder invoked — about to render ExportOptionsView")
+                #endif
                 ExportOptionsView(
                     notebook: viewModel.notebook,
                     pages: viewModel.pages,
