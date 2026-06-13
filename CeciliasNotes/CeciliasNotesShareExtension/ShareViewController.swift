@@ -64,16 +64,27 @@ final class ShareViewController: UIViewController {
     private func ingestAndComplete() async {
         await ingestAttachments()
         await MainActor.run {
-            statusLabel.text = "Saved."
+            statusLabel.text = "Saved. Opening Cecilia's Notes…"
             spinner.stopAnimating()
         }
-        // Give the user a beat to see the confirmation, then dismiss.
+        // Give the user a beat to see the confirmation, then deep-
+        // link into the main app. Opening any `ceciliasnotes://`
+        // URL is enough — the act of foregrounding triggers the
+        // app's `didBecomeActive` observer, which sweeps the
+        // share inbox and presents the page picker. The
+        // `library` host is a no-op deep link that doesn't change
+        // navigation; we just need the transition.
         try? await Task.sleep(nanoseconds: 350_000_000)
         await MainActor.run {
-            self.extensionContext?.completeRequest(
-                returningItems: nil,
-                completionHandler: nil
-            )
+            let deepLink = URL(string: "ceciliasnotes://library")!
+            self.extensionContext?.open(deepLink) { [weak self] _ in
+                Task { @MainActor in
+                    self?.extensionContext?.completeRequest(
+                        returningItems: nil,
+                        completionHandler: nil
+                    )
+                }
+            }
         }
     }
 
