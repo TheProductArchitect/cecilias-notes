@@ -525,8 +525,16 @@ final class LibraryViewModel: ObservableObject {
         // its UserDefaults flag.
         SearchIndexService.shared.backfillEmbeddingsIfNeeded()
 
-        subjects        = storage.fetchSubjects()
-        folders         = storage.fetchAllFolders()
+        // CloudKit and SwiftData occasionally surface duplicate rows
+        // (CloudKit echo, stale local replicas after a manual import,
+        // failed delete-propagation), and on iOS 26 SwiftUI's
+        // `ForEach` now hard-crashes — not just warns — when it sees
+        // two children with the same id ("NativeDictionary.swift:792:
+        // Fatal error: Duplicate values for key..."). Deduping every
+        // collection BEFORE it reaches the view layer turns that into
+        // a layout warning at worst.
+        subjects        = dedupedById(storage.fetchSubjects())
+        folders         = dedupedById(storage.fetchAllFolders())
         let raw: [Notebook]
         switch selectedContext {
         case .recent:
@@ -535,16 +543,16 @@ final class LibraryViewModel: ObservableObject {
             // recency. The grid uses `notebooks` directly so this is
             // what shows up.
             raw = storage.fetchRecentNotebooks(limit: 12)
-            notebooks = applyTagFilter(raw)
+            notebooks = dedupedById(applyTagFilter(raw))
         case .allNotes:
             raw = storage.fetchAllNotebooks()
-            notebooks = sorted(applyTagFilter(raw))
+            notebooks = dedupedById(sorted(applyTagFilter(raw)))
         case .subject(let id):
             raw = storage.fetchNotebooks(subjectId: id)
-            notebooks = sorted(applyTagFilter(raw))
+            notebooks = dedupedById(sorted(applyTagFilter(raw)))
         }
-        pinnedNotebooks = storage.fetchPinnedNotebooks()
-        recentNotebooks = storage.fetchRecentNotebooks(limit: 6)
+        pinnedNotebooks = dedupedById(storage.fetchPinnedNotebooks())
+        recentNotebooks = dedupedById(storage.fetchRecentNotebooks(limit: 6))
         refreshTrashCount()
     }
 
@@ -555,6 +563,20 @@ final class LibraryViewModel: ObservableObject {
     /// filter step runs in memory. With a few hundred notebooks
     /// this is sub-millisecond; if the library scale grows past
     /// thousands of notebooks the fix is a sidecar `Tag` model.
+    /// Drop any entries whose `id` we've already seen. First-wins,
+    /// stable order. Used to defend every collection that reaches a
+    /// SwiftUI `ForEach` — see `refresh()` for the call sites and
+    /// the underlying iOS 26 ForEach-on-duplicate-id crash.
+    private func dedupedById<T: Identifiable>(_ items: [T]) -> [T] where T.ID: Hashable {
+        var seen: Set<T.ID> = []
+        var out: [T] = []
+        out.reserveCapacity(items.count)
+        for item in items where seen.insert(item.id).inserted {
+            out.append(item)
+        }
+        return out
+    }
+
     private func applyTagFilter(_ pool: [Notebook]) -> [Notebook] {
         guard !activeTagFilters.isEmpty else { return pool }
         let filters = activeTagFilters
