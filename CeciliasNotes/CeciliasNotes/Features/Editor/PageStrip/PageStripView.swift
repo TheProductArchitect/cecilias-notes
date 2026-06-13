@@ -88,9 +88,15 @@ struct PageStripView: View {
             }
             .onChange(of: viewModel.currentPageIndex) { _, newIndex in
                 guard newIndex < viewModel.pages.count else { return }
-                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
-                    proxy.scrollTo(viewModel.pages[newIndex].id, anchor: .center)
-                }
+                // Snap-scroll without animation. The canvas's
+                // continuous-scroll mode flips `currentPageIndex`
+                // many times per second; the previous
+                // `withAnimation` wrapper queued a spring animation
+                // on every flip, which compounded into a visible
+                // strobe across the thumbnail row. Instant scroll
+                // keeps the active thumbnail centred without that
+                // pile-up.
+                proxy.scrollTo(viewModel.pages[newIndex].id, anchor: .center)
             }
         }
     }

@@ -13,6 +13,7 @@ struct AboutSettingsView: View {
                 brandSection
                 yourNameSection
                 privacySection
+                privacyPolicyLink
                 actionsSection
                 shortcutsSection
             }
@@ -66,6 +67,32 @@ struct AboutSettingsView: View {
             .font(.system(size: 11).italic())
             .foregroundStyle(theme.foregroundSubtle)
             .padding(.top, 4)
+    }
+
+    // MARK: Privacy policy
+
+    /// Navigates to a dedicated privacy-policy screen rendered
+    /// in-app. The full version is hosted at the URL in the screen
+    /// itself; we also surface the short, plain-language version
+    /// up front so a user who lands here for App Store compliance
+    /// can see the gist without leaving the app.
+    private var privacyPolicyLink: some View {
+        NavigationLink {
+            PrivacyPolicyView()
+        } label: {
+            HStack {
+                Text("privacy policy")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.accent)
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Send feedback / Rate

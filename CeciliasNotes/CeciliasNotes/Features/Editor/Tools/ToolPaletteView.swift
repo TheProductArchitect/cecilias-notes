@@ -144,14 +144,15 @@ struct ToolPaletteView: View {
         )) { wrapper in
             PDFPagePickerSheet(
                 sourceURL: wrapper.url,
-                onConfirm: { indices in
+                onConfirm: { indices, destination in
                     let url = wrapper.url
                     pdfPickerSourceURL = nil
                     Task {
                         await PDFReferenceImporter.importPages(
                             from: url,
                             pageIndices: indices,
-                            into: viewModel
+                            into: viewModel,
+                            destination: destination
                         )
                     }
                 },

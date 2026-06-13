@@ -108,9 +108,13 @@ struct TextElementView: View {
                 context: nil
             ).height)
         }
-        // Small bottom padding so the caret doesn't sit flush
-        // against the edge of the selection chrome.
-        let padded = measured + 6
+        // Trim the bottom buffer to a single point — earlier we
+        // padded by 6pt to keep the caret off the chrome edge, but
+        // it left a visible band of empty space below the last
+        // line so the selection box always read as "much bigger
+        // than the text." 2pt is enough for the caret without
+        // creating that perception.
+        let padded = measured + 2
         let maxH = pageSize.height - originY
         return max(24, min(padded, maxH))
     }
@@ -155,7 +159,10 @@ struct TextElementView: View {
                                 theme.accent,
                                 style: StrokeStyle(lineWidth: 1, dash: [4, 3])
                             )
-                            .padding(-2)
+                            // Chrome hugs the editor's content frame.
+                            // The earlier -2pt outset made the box
+                            // read as "padded around the text" even
+                            // for short single-line blocks.
                     }
                 }
             )

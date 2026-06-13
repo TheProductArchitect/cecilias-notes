@@ -16,8 +16,9 @@ struct PDFPagePickerSheet: View {
 
     let sourceURL: URL
     /// Called when the user confirms with at least one page picked.
-    /// Carries the 0-indexed page indices in click order.
-    let onConfirm: ([Int]) -> Void
+    /// Carries the 0-indexed page indices in click order plus the
+    /// chosen import destination.
+    let onConfirm: ([Int], PDFReferenceImporter.Destination) -> Void
     let onCancel: () -> Void
 
     @Environment(\.theme) private var theme
@@ -29,6 +30,10 @@ struct PDFPagePickerSheet: View {
     @State private var jumpToInput: String = "1"
     @State private var thumbnailCache: [Int: UIImage] = [:]
     @State private var scrollTargetPage: Int?
+    /// Destination chooser — defaults to `.afterCurrentPage` so a
+    /// fresh multi-page PDF expands into its own readable pages
+    /// instead of stacking on the current canvas.
+    @State private var destination: PDFReferenceImporter.Destination = .afterCurrentPage
 
     private let thumbnailSize = CGSize(width: 110, height: 140)
     private let columns: [GridItem] = Array(
@@ -41,6 +46,8 @@ struct PDFPagePickerSheet: View {
             topBar
             CeciliasNotesDivider()
             if document != nil, pageCount > 0 {
+                destinationPicker
+                CeciliasNotesDivider()
                 jumpField
                 CeciliasNotesDivider()
                 thumbnailGrid
@@ -68,13 +75,71 @@ struct PDFPagePickerSheet: View {
                 .truncationMode(.middle)
             Spacer()
             Button("Done") {
-                onConfirm(selectedPages)
+                onConfirm(selectedPages, destination)
             }
             .foregroundStyle(selectedPages.isEmpty ? theme.foregroundSubtle : theme.accent)
             .disabled(selectedPages.isEmpty)
         }
         .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .padding(.vertical, CeciliasNotes.Spacing.md)
+    }
+
+    // MARK: - Destination picker
+
+    /// Two-segment "where do these land" chooser. Default
+    /// (`afterCurrentPage`) creates a new notebook page per PDF
+    /// page so multi-page imports stay readable; the legacy
+    /// `onCurrentPage` mode is preserved for users who want a
+    /// PDF page embedded inside an existing canvas (annotations,
+    /// margin notes around the page).
+    private var destinationPicker: some View {
+        HStack(spacing: 8) {
+            destinationChip(
+                title: "after this page",
+                subtitle: "one new page per PDF page",
+                value: .afterCurrentPage
+            )
+            destinationChip(
+                title: "on this page",
+                subtitle: "embed as elements",
+                value: .onCurrentPage
+            )
+        }
+        .padding(.horizontal, CeciliasNotes.Spacing.lg)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
+    }
+
+    private func destinationChip(
+        title: String,
+        subtitle: String,
+        value: PDFReferenceImporter.Destination
+    ) -> some View {
+        let isSelected = destination == value
+        return Button {
+            destination = value
+            HapticManager.shared.toolSwitched()
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? theme.accent : theme.foreground)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(theme.foregroundSubtle)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? theme.accent : theme.borderSubtle,
+                        lineWidth: isSelected ? 1.5 : 0.5
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Jump field
@@ -206,7 +271,21 @@ struct PDFPagePickerSheet: View {
                 .font(.ceciliasNotesCaption)
                 .foregroundStyle(theme.foregroundSubtle)
             Spacer()
-            if !selectedPages.isEmpty {
+            // Select all toggles between "select every page" and
+            // "deselect every page" so a power user can flip the
+            // entire selection without scrolling and tapping each
+            // thumbnail individually.
+            Button(selectedPages.count == pageCount ? "Deselect All" : "Select All") {
+                if selectedPages.count == pageCount {
+                    selectedPages.removeAll()
+                } else {
+                    selectedPages = Array(0..<pageCount)
+                }
+                HapticManager.shared.toolSwitched()
+            }
+            .font(.ceciliasNotesCaption)
+            .foregroundStyle(theme.accent)
+            if !selectedPages.isEmpty && selectedPages.count != pageCount {
                 Button("Clear") {
                     selectedPages.removeAll()
                     HapticManager.shared.toolSwitched()
