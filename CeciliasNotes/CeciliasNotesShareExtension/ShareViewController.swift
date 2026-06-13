@@ -21,6 +21,16 @@ final class ShareViewController: UIViewController {
     private static let appGroupID = "group.app.ceciliasnotes"
     private static let inboxFolderName = "ShareInbox"
 
+    private let statusLabel: UILabel = {
+        let l = UILabel()
+        l.text = "Cecilia's Notes"
+        l.font = .systemFont(ofSize: 13, weight: .medium)
+        l.textColor = .secondaryLabel
+        l.textAlignment = .center
+        l.translatesAutoresizingMaskIntoConstraints = false
+        return l
+    }()
+
     private let spinner: UIActivityIndicatorView = {
         let s = UIActivityIndicatorView(style: .medium)
         s.translatesAutoresizingMaskIntoConstraints = false
@@ -30,20 +40,24 @@ final class ShareViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Minimal-but-visible surface. Earlier we tried rendering
-        // nothing at all to make the extension feel instant, but
-        // iOS appears to treat a content-less extension view as
-        // broken and silently aborts the request — no
-        // `completeRequest` log, no `open` callback, the share
-        // sheet just hangs. A bare centred spinner is enough for
-        // the system to consider the UI "real," and it dismisses
-        // fast enough that the user perceives the share as
-        // instant.
+        // Visible content matters here. Earlier "silent" attempts
+        // (no subviews at all) caused iOS to suspend the extension
+        // after 2 minutes without ever firing `completeRequest` —
+        // the share sheet hung. A spinner + brand label is the
+        // minimum surface the share-extension framework considers
+        // "real UI," and the user only sees it for a fraction of a
+        // second before the deep link transitions them into the
+        // main app.
         view.backgroundColor = .systemBackground
-        view.addSubview(spinner)
+        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 10
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
         NSLayoutConstraint.activate([
-            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            spinner.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
     }
 
@@ -56,21 +70,30 @@ final class ShareViewController: UIViewController {
 
     private func ingestAndComplete() async {
         // Save the file to the app-group inbox, then deep-link into
-        // the main app. `completeRequest` runs unconditionally
-        // right after the open call — we used to chain it inside
-        // `open`'s completion handler, but iOS doesn't always fire
-        // that callback (especially when the open is queued or
-        // partially rejected), leaving the extension stuck.
-        // Calling both in sequence dismisses the share sheet
-        // reliably regardless of whether the deep link landed.
+        // the main app. `completeRequest` MUST run inside `open`'s
+        // completion handler — calling them back-to-back without
+        // the chain caused iOS to suspend the extension before the
+        // URL was actually dispatched, leaving the share sheet
+        // hung for ~2 minutes before the system reaped it.
         await ingestAttachments()
         await MainActor.run {
+            spinner.stopAnimating()
+        }
+        // Brief settle so iOS has time to flush the view update
+        // before the deep-link transition. Without this the
+        // extension's view never gets a chance to repaint, which
+        // historically broke the open call on some iOS versions.
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        await MainActor.run {
             let deepLink = URL(string: "ceciliasnotes://library")!
-            self.extensionContext?.open(deepLink, completionHandler: nil)
-            self.extensionContext?.completeRequest(
-                returningItems: nil,
-                completionHandler: nil
-            )
+            self.extensionContext?.open(deepLink) { [weak self] _ in
+                Task { @MainActor in
+                    self?.extensionContext?.completeRequest(
+                        returningItems: nil,
+                        completionHandler: nil
+                    )
+                }
+            }
         }
     }
 
