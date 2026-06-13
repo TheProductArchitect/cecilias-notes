@@ -17,6 +17,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-a</string>
+					<string>Icon-a-60</string>
+					<string>Icon-a-76</string>
+					<string>Icon-a-120</string>
+					<string>Icon-a-152</string>
+					<string>Icon-a-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -26,6 +31,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-b</string>
+					<string>Icon-b-60</string>
+					<string>Icon-b-76</string>
+					<string>Icon-b-120</string>
+					<string>Icon-b-152</string>
+					<string>Icon-b-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -35,6 +45,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-c</string>
+					<string>Icon-c-60</string>
+					<string>Icon-c-76</string>
+					<string>Icon-c-120</string>
+					<string>Icon-c-152</string>
+					<string>Icon-c-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -44,6 +59,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-d</string>
+					<string>Icon-d-60</string>
+					<string>Icon-d-76</string>
+					<string>Icon-d-120</string>
+					<string>Icon-d-152</string>
+					<string>Icon-d-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -53,6 +73,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-e</string>
+					<string>Icon-e-60</string>
+					<string>Icon-e-76</string>
+					<string>Icon-e-120</string>
+					<string>Icon-e-152</string>
+					<string>Icon-e-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -62,6 +87,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-f</string>
+					<string>Icon-f-60</string>
+					<string>Icon-f-76</string>
+					<string>Icon-f-120</string>
+					<string>Icon-f-152</string>
+					<string>Icon-f-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -71,6 +101,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-g</string>
+					<string>Icon-g-60</string>
+					<string>Icon-g-76</string>
+					<string>Icon-g-120</string>
+					<string>Icon-g-152</string>
+					<string>Icon-g-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -80,6 +115,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-h</string>
+					<string>Icon-h-60</string>
+					<string>Icon-h-76</string>
+					<string>Icon-h-120</string>
+					<string>Icon-h-152</string>
+					<string>Icon-h-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -89,6 +129,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-i</string>
+					<string>Icon-i-60</string>
+					<string>Icon-i-76</string>
+					<string>Icon-i-120</string>
+					<string>Icon-i-152</string>
+					<string>Icon-i-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -98,6 +143,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-j</string>
+					<string>Icon-j-60</string>
+					<string>Icon-j-76</string>
+					<string>Icon-j-120</string>
+					<string>Icon-j-152</string>
+					<string>Icon-j-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -107,6 +157,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-k</string>
+					<string>Icon-k-60</string>
+					<string>Icon-k-76</string>
+					<string>Icon-k-120</string>
+					<string>Icon-k-152</string>
+					<string>Icon-k-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -116,6 +171,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-l</string>
+					<string>Icon-l-60</string>
+					<string>Icon-l-76</string>
+					<string>Icon-l-120</string>
+					<string>Icon-l-152</string>
+					<string>Icon-l-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -125,6 +185,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-m</string>
+					<string>Icon-m-60</string>
+					<string>Icon-m-76</string>
+					<string>Icon-m-120</string>
+					<string>Icon-m-152</string>
+					<string>Icon-m-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -134,6 +199,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-n</string>
+					<string>Icon-n-60</string>
+					<string>Icon-n-76</string>
+					<string>Icon-n-120</string>
+					<string>Icon-n-152</string>
+					<string>Icon-n-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -143,6 +213,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-o</string>
+					<string>Icon-o-60</string>
+					<string>Icon-o-76</string>
+					<string>Icon-o-120</string>
+					<string>Icon-o-152</string>
+					<string>Icon-o-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -152,6 +227,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-p</string>
+					<string>Icon-p-60</string>
+					<string>Icon-p-76</string>
+					<string>Icon-p-120</string>
+					<string>Icon-p-152</string>
+					<string>Icon-p-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -161,6 +241,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-q</string>
+					<string>Icon-q-60</string>
+					<string>Icon-q-76</string>
+					<string>Icon-q-120</string>
+					<string>Icon-q-152</string>
+					<string>Icon-q-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -170,6 +255,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-r</string>
+					<string>Icon-r-60</string>
+					<string>Icon-r-76</string>
+					<string>Icon-r-120</string>
+					<string>Icon-r-152</string>
+					<string>Icon-r-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -179,6 +269,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-s</string>
+					<string>Icon-s-60</string>
+					<string>Icon-s-76</string>
+					<string>Icon-s-120</string>
+					<string>Icon-s-152</string>
+					<string>Icon-s-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -188,6 +283,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-t</string>
+					<string>Icon-t-60</string>
+					<string>Icon-t-76</string>
+					<string>Icon-t-120</string>
+					<string>Icon-t-152</string>
+					<string>Icon-t-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -197,6 +297,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-u</string>
+					<string>Icon-u-60</string>
+					<string>Icon-u-76</string>
+					<string>Icon-u-120</string>
+					<string>Icon-u-152</string>
+					<string>Icon-u-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -206,6 +311,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-v</string>
+					<string>Icon-v-60</string>
+					<string>Icon-v-76</string>
+					<string>Icon-v-120</string>
+					<string>Icon-v-152</string>
+					<string>Icon-v-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -215,6 +325,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-w</string>
+					<string>Icon-w-60</string>
+					<string>Icon-w-76</string>
+					<string>Icon-w-120</string>
+					<string>Icon-w-152</string>
+					<string>Icon-w-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -224,6 +339,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-x</string>
+					<string>Icon-x-60</string>
+					<string>Icon-x-76</string>
+					<string>Icon-x-120</string>
+					<string>Icon-x-152</string>
+					<string>Icon-x-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -233,6 +353,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-y</string>
+					<string>Icon-y-60</string>
+					<string>Icon-y-76</string>
+					<string>Icon-y-120</string>
+					<string>Icon-y-152</string>
+					<string>Icon-y-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -242,6 +367,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-z</string>
+					<string>Icon-z-60</string>
+					<string>Icon-z-76</string>
+					<string>Icon-z-120</string>
+					<string>Icon-z-152</string>
+					<string>Icon-z-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -264,6 +394,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-a</string>
+					<string>Icon-a-60</string>
+					<string>Icon-a-76</string>
+					<string>Icon-a-120</string>
+					<string>Icon-a-152</string>
+					<string>Icon-a-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -273,6 +408,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-b</string>
+					<string>Icon-b-60</string>
+					<string>Icon-b-76</string>
+					<string>Icon-b-120</string>
+					<string>Icon-b-152</string>
+					<string>Icon-b-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -282,6 +422,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-c</string>
+					<string>Icon-c-60</string>
+					<string>Icon-c-76</string>
+					<string>Icon-c-120</string>
+					<string>Icon-c-152</string>
+					<string>Icon-c-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -291,6 +436,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-d</string>
+					<string>Icon-d-60</string>
+					<string>Icon-d-76</string>
+					<string>Icon-d-120</string>
+					<string>Icon-d-152</string>
+					<string>Icon-d-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -300,6 +450,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-e</string>
+					<string>Icon-e-60</string>
+					<string>Icon-e-76</string>
+					<string>Icon-e-120</string>
+					<string>Icon-e-152</string>
+					<string>Icon-e-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -309,6 +464,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-f</string>
+					<string>Icon-f-60</string>
+					<string>Icon-f-76</string>
+					<string>Icon-f-120</string>
+					<string>Icon-f-152</string>
+					<string>Icon-f-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -318,6 +478,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-g</string>
+					<string>Icon-g-60</string>
+					<string>Icon-g-76</string>
+					<string>Icon-g-120</string>
+					<string>Icon-g-152</string>
+					<string>Icon-g-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -327,6 +492,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-h</string>
+					<string>Icon-h-60</string>
+					<string>Icon-h-76</string>
+					<string>Icon-h-120</string>
+					<string>Icon-h-152</string>
+					<string>Icon-h-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -336,6 +506,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-i</string>
+					<string>Icon-i-60</string>
+					<string>Icon-i-76</string>
+					<string>Icon-i-120</string>
+					<string>Icon-i-152</string>
+					<string>Icon-i-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -345,6 +520,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-j</string>
+					<string>Icon-j-60</string>
+					<string>Icon-j-76</string>
+					<string>Icon-j-120</string>
+					<string>Icon-j-152</string>
+					<string>Icon-j-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -354,6 +534,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-k</string>
+					<string>Icon-k-60</string>
+					<string>Icon-k-76</string>
+					<string>Icon-k-120</string>
+					<string>Icon-k-152</string>
+					<string>Icon-k-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -363,6 +548,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-l</string>
+					<string>Icon-l-60</string>
+					<string>Icon-l-76</string>
+					<string>Icon-l-120</string>
+					<string>Icon-l-152</string>
+					<string>Icon-l-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -372,6 +562,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-m</string>
+					<string>Icon-m-60</string>
+					<string>Icon-m-76</string>
+					<string>Icon-m-120</string>
+					<string>Icon-m-152</string>
+					<string>Icon-m-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -381,6 +576,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-n</string>
+					<string>Icon-n-60</string>
+					<string>Icon-n-76</string>
+					<string>Icon-n-120</string>
+					<string>Icon-n-152</string>
+					<string>Icon-n-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -390,6 +590,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-o</string>
+					<string>Icon-o-60</string>
+					<string>Icon-o-76</string>
+					<string>Icon-o-120</string>
+					<string>Icon-o-152</string>
+					<string>Icon-o-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -399,6 +604,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-p</string>
+					<string>Icon-p-60</string>
+					<string>Icon-p-76</string>
+					<string>Icon-p-120</string>
+					<string>Icon-p-152</string>
+					<string>Icon-p-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -408,6 +618,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-q</string>
+					<string>Icon-q-60</string>
+					<string>Icon-q-76</string>
+					<string>Icon-q-120</string>
+					<string>Icon-q-152</string>
+					<string>Icon-q-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -417,6 +632,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-r</string>
+					<string>Icon-r-60</string>
+					<string>Icon-r-76</string>
+					<string>Icon-r-120</string>
+					<string>Icon-r-152</string>
+					<string>Icon-r-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -426,6 +646,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-s</string>
+					<string>Icon-s-60</string>
+					<string>Icon-s-76</string>
+					<string>Icon-s-120</string>
+					<string>Icon-s-152</string>
+					<string>Icon-s-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -435,6 +660,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-t</string>
+					<string>Icon-t-60</string>
+					<string>Icon-t-76</string>
+					<string>Icon-t-120</string>
+					<string>Icon-t-152</string>
+					<string>Icon-t-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -444,6 +674,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-u</string>
+					<string>Icon-u-60</string>
+					<string>Icon-u-76</string>
+					<string>Icon-u-120</string>
+					<string>Icon-u-152</string>
+					<string>Icon-u-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -453,6 +688,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-v</string>
+					<string>Icon-v-60</string>
+					<string>Icon-v-76</string>
+					<string>Icon-v-120</string>
+					<string>Icon-v-152</string>
+					<string>Icon-v-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -462,6 +702,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-w</string>
+					<string>Icon-w-60</string>
+					<string>Icon-w-76</string>
+					<string>Icon-w-120</string>
+					<string>Icon-w-152</string>
+					<string>Icon-w-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -471,6 +716,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-x</string>
+					<string>Icon-x-60</string>
+					<string>Icon-x-76</string>
+					<string>Icon-x-120</string>
+					<string>Icon-x-152</string>
+					<string>Icon-x-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -480,6 +730,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-y</string>
+					<string>Icon-y-60</string>
+					<string>Icon-y-76</string>
+					<string>Icon-y-120</string>
+					<string>Icon-y-152</string>
+					<string>Icon-y-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
@@ -489,6 +744,11 @@
 				<key>CFBundleIconFiles</key>
 				<array>
 					<string>Icon-z</string>
+					<string>Icon-z-60</string>
+					<string>Icon-z-76</string>
+					<string>Icon-z-120</string>
+					<string>Icon-z-152</string>
+					<string>Icon-z-167</string>
 				</array>
 				<key>UIPrerenderedIcon</key>
 				<false/>
