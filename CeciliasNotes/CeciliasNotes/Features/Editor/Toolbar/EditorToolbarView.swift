@@ -244,29 +244,13 @@ struct EditorToolbarView: View {
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }.mutationOnly()
             iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }.mutationOnly()
 
-            // Tool palette show/hide — mutation-only since the
-            // palette itself doesn't mount on read-only devices.
-            iconButton(
-                viewModel.isToolPaletteHidden
-                    ? "pencil.tip.crop.circle.badge.plus"
-                    : "pencil.tip.crop.circle.badge.minus"
-            ) {
-                viewModel.isToolPaletteHidden.toggle()
-            }
-            .mutationOnly()
-
-            // Focus mode toggle — same semantics as the more-menu
-            // entry but reachable in one tap. Mutation-only because
-            // focus mode exists to make writing feel calmer; a
-            // read-only device has no writing surface to calm.
-            iconButton(
-                viewModel.isFocusMode
-                    ? "rectangle.portrait.inset.filled"
-                    : "rectangle.portrait"
-            ) {
-                viewModel.toggleFocusMode()
-            }
-            .mutationOnly()
+            // Palette show/hide and focus mode used to live here as
+            // standalone buttons, but with mic + undo/redo + pin +
+            // share + ellipsis the row was visually noisy and the
+            // focus-mode glyph (`rectangle.portrait`) read like a
+            // share button — easy to fat-finger. Both actions stay
+            // accessible from the More menu below; promoting them
+            // to the action cluster wasn't pulling its weight.
 
             // Auto-hide pin toggle. A single 32×32 icon button —
             // tapping flips the per-notebook `autoHideHeader`. On the
