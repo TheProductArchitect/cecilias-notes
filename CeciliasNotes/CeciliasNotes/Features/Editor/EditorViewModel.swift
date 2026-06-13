@@ -556,8 +556,11 @@ final class EditorViewModel: ObservableObject {
 
         let fetched = resolvedStorage.fetchPages(in: notebook)
         // SwiftData should always return at least one page (createNotebook seeds one),
-        // but guard for safety.
-        self.pages            = fetched.isEmpty ? [] : fetched
+        // but guard for safety. Also dedupe by id — duplicate Page rows
+        // (CloudKit echo / stale local replica) make `ForEach` on iOS 26
+        // hard-crash with "NativeDictionary.swift:792: Fatal error:
+        // Duplicate values for key…" the moment the editor mounts.
+        self.pages            = fetched.isEmpty ? [] : Self.dedupedById(fetched)
 
         // Restore the last viewed page if the resume feature is on AND the page
         // is still in range. The check happens once at init; subsequent changes
@@ -1636,9 +1639,23 @@ final class EditorViewModel: ObservableObject {
     func refreshPages() {
         let fetched = storage.fetchPages(in: notebook)
         guard !fetched.isEmpty else { return }
-        pages = fetched
+        pages = Self.dedupedById(fetched)
         currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
         refreshCurrentPageTextBlocks()
+    }
+
+    /// First-wins dedupe by id. Same shape as
+    /// `LibraryViewModel.dedupedById` — kept local rather than
+    /// extracted into a shared helper so this fragile-class
+    /// defensive code is visible at each consumer site.
+    static func dedupedById<T: Identifiable>(_ items: [T]) -> [T] where T.ID: Hashable {
+        var seen: Set<T.ID> = []
+        var out: [T] = []
+        out.reserveCapacity(items.count)
+        for item in items where seen.insert(item.id).inserted {
+            out.append(item)
+        }
+        return out
     }
 
     func refreshCurrentPageTextBlocks() {
