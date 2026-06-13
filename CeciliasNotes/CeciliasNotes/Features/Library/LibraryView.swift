@@ -286,6 +286,41 @@ struct LibraryView: View {
                 }
             }
         }
+        // Share extension dropped a PDF in the app-group inbox.
+        // Create a fresh notebook (one notebook page per PDF page,
+        // each filling the page edge-to-edge), then open it. The
+        // source file is deleted from the inbox once the notebook
+        // is created so a relaunch doesn't re-ingest it.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .shareInboxPDFArrived)
+        ) { note in
+            guard let url = note.userInfo?["fileURL"] as? URL else { return }
+            Task { @MainActor in
+                if let notebook = await PDFReferenceImporter
+                    .importAllPagesIntoNewNotebook(from: url) {
+                    ShareInboxWatcher.shared.consume(url)
+                    viewModel.refresh()
+                    editingNotebook = notebook
+                }
+            }
+        }
+        // Image-from-share path is intentionally deferred to a
+        // follow-up — ingesting an image into a fresh notebook
+        // touches three SwiftData models and the MediaStorage write
+        // pipeline, more than I want to land in the PDF-MVP commit.
+        // The file is left in the inbox so a future build can pick
+        // it up without losing the user's content. The watcher will
+        // re-emit the notification on each foreground until the
+        // file is consumed; that's intentional.
+        .onReceive(
+            NotificationCenter.default.publisher(for: .shareInboxImageArrived)
+        ) { note in
+            #if DEBUG
+            if let url = note.userInfo?["fileURL"] as? URL {
+                print("[ShareInbox] image arrived but ingestion not yet wired: \(url.lastPathComponent)")
+            }
+            #endif
+        }
         .fullScreenCover(item: $editingNotebook) { notebook in
             EditorView(
                 notebook: notebook,

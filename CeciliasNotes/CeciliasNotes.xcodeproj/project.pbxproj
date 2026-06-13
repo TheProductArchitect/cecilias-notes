@@ -110,15 +110,11 @@
 		};
 		ABB82E302FAD01B400EAEC50 /* CeciliasNotesTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = CeciliasNotesTests;
 			sourceTree = "<group>";
 		};
 		ABB82E3A2FAD01B400EAEC50 /* CeciliasNotesUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = CeciliasNotesUITests;
 			sourceTree = "<group>";
 		};
@@ -224,7 +220,6 @@
 				87A6CA5DEAB7A58C80DD5E3F /* Info.plist */,
 				BEBD418F864F793079F7B293 /* CeciliasNotesShareExtension.entitlements */,
 			);
-			name = CeciliasNotesShareExtension;
 			path = CeciliasNotesShareExtension;
 			sourceTree = "<group>";
 		};
