@@ -1,54 +1,83 @@
-import Social
 import UIKit
 import UniformTypeIdentifiers
 
 /// Cecilia's Notes share-extension entry point. Accepts PDFs and
 /// images from any host app (Files, Photos, Safari, Mail) and drops
-/// them into the shared app-group ShareInbox folder. The main app
+/// them into the shared app-group `ShareInbox` folder. The main app
 /// watches that folder on foreground / launch and ingests anything
-/// it finds — same mental model as the MCP inbox, just sourced from
-/// the system share sheet.
+/// it finds.
+///
+/// Design: this is intentionally a plain `UIViewController` rather
+/// than `SLComposeServiceViewController`. The compose-style sheet
+/// is for share targets that take user input (a tweet, a message);
+/// our flow has no input — we just save and exit. Showing a
+/// "saving…" label for a moment and dismissing automatically reads
+/// better than an empty compose form.
 ///
 /// Storage location:
 ///   `<app-group-container>/ShareInbox/<uuid>.<ext>`
-///
-/// The main app must:
-///   1. Subscribe to `UIApplication.didBecomeActiveNotification` (or
-///      the equivalent in `RootView.task`).
-///   2. List the ShareInbox directory.
-///   3. For each file, decide: PDF → present the PDF page picker,
-///      image → add as PageElement on the current notebook page (or
-///      ask the user where).
-///   4. Delete the file after successful ingest.
-final class ShareViewController: SLComposeServiceViewController {
+final class ShareViewController: UIViewController {
 
     private static let appGroupID = "group.app.ceciliasnotes"
     private static let inboxFolderName = "ShareInbox"
 
-    override func isContentValid() -> Bool {
-        // The share sheet always knows what type the source is; we
-        // accept any attachment up front and reject only when no
-        // file-bearing item is attached at all.
-        guard let items = extensionContext?.inputItems as? [NSExtensionItem]
-        else { return false }
-        return items.contains { ($0.attachments ?? []).isEmpty == false }
+    private let statusLabel: UILabel = {
+        let l = UILabel()
+        l.text = "Saving to Cecilia's Notes…"
+        l.font = .systemFont(ofSize: 15, weight: .medium)
+        l.textColor = .label
+        l.textAlignment = .center
+        l.translatesAutoresizingMaskIntoConstraints = false
+        return l
+    }()
+
+    private let spinner: UIActivityIndicatorView = {
+        let s = UIActivityIndicatorView(style: .medium)
+        s.translatesAutoresizingMaskIntoConstraints = false
+        s.startAnimating()
+        return s
+    }()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+
+        let stack = UIStackView(arrangedSubviews: [spinner, statusLabel])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
     }
 
-    override func didSelectPost() {
-        Task { await ingestAttachments() }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        Task { await ingestAndComplete() }
     }
-
-    override func configurationItems() -> [Any]! { [] }
 
     // MARK: - Ingest
 
-    private func ingestAttachments() async {
-        defer {
-            extensionContext?.completeRequest(
-                returningItems: [],
+    private func ingestAndComplete() async {
+        await ingestAttachments()
+        await MainActor.run {
+            statusLabel.text = "Saved."
+            spinner.stopAnimating()
+        }
+        // Give the user a beat to see the confirmation, then dismiss.
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        await MainActor.run {
+            self.extensionContext?.completeRequest(
+                returningItems: nil,
                 completionHandler: nil
             )
         }
+    }
+
+    private func ingestAttachments() async {
         guard let inboxURL = inboxURL() else { return }
 
         let attachments = (extensionContext?.inputItems as? [NSExtensionItem])?
@@ -92,7 +121,6 @@ final class ShareViewController: SLComposeServiceViewController {
         )
 
         if let url = item as? URL {
-            // File-URL attachments (Files app, Mail): copy into inbox.
             try? FileManager.default.copyItem(at: url, to: destination)
         } else if let data = item as? Data {
             try? data.write(to: destination, options: .atomic)
