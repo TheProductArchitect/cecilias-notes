@@ -69,9 +69,19 @@ struct ColorPickerView: View {
                 Divider()
                 opacitySlider
             }
+
+            // Width — shown for any tool that supports a width
+            // setting. Used to live in a separate popover wrapper
+            // that fought ColorPickerView's own width and clipped
+            // every label; folding it in here means one popover,
+            // one source of truth, no clipping.
+            if viewModel.selectedTool.hasWidth {
+                Divider()
+                widthSlider
+            }
         }
         .padding(CeciliasNotes.Spacing.md)
-        .frame(width: 300)
+        .frame(width: 320)
         .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
         .sheet(isPresented: $showCustomColorPicker) {
@@ -147,6 +157,40 @@ struct ColorPickerView: View {
             )
             .tint(theme.accent)
         }
+    }
+
+    // MARK: Width slider
+
+    private var widthSlider: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Width")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundSubtle)
+                Spacer()
+                Text(widthLabel(viewModel.selectedTool.currentWidth))
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundMuted)
+                    .monospacedDigit()
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(viewModel.selectedTool.currentWidth) },
+                    set: { viewModel.setWidth(CGFloat($0)) }
+                ),
+                in: 0.5...20,
+                step: 0.5
+            )
+            .tint(theme.accent)
+        }
+    }
+
+    private func widthLabel(_ width: CGFloat) -> String {
+        if width == 0 { return "—" }
+        if width.truncatingRemainder(dividingBy: 1) == 0 {
+            return "\(Int(width))"
+        }
+        return String(format: "%.1f", width)
     }
 }
 

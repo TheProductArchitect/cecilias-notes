@@ -814,43 +814,15 @@ struct ToolPaletteView: View {
         }
     }
 
-    /// Color swatch + width slider for pen / pencil / brush /
-    /// highlighter. Replaces the always-visible colour-dot + size
-    /// strip that used to live in the pill itself.
+    /// Color swatch + opacity + width for pen / pencil / brush /
+    /// highlighter. The popover wraps `ColorPickerView`, which now
+    /// owns the colour swatches, opacity and width sections in one
+    /// 320pt-wide panel — fixes the earlier "outer wrapper at 260pt
+    /// + inner ColorPickerView at 300pt clipped every label" bug.
     private var inkingCustomizePopover: some View {
-        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.md) {
-            if viewModel.selectedTool.hasColour {
-                Text("Colour")
-                    .font(.ceciliasNotesCaption)
-                    .foregroundColor(theme.foregroundSubtle)
-                ColorPickerView(viewModel: viewModel) {
-                    openCustomizeTool = nil
-                }
-            }
-            if viewModel.selectedTool.hasWidth {
-                Text("Width")
-                    .font(.ceciliasNotesCaption)
-                    .foregroundColor(theme.foregroundSubtle)
-                HStack {
-                    Slider(
-                        value: Binding(
-                            get: { Double(viewModel.selectedTool.currentWidth) },
-                            set: { viewModel.setWidth(CGFloat($0)) }
-                        ),
-                        in: 0.5...20,
-                        step: 0.5
-                    )
-                    .tint(theme.accent)
-                    Text(formatWidth(viewModel.selectedTool.currentWidth))
-                        .font(.ceciliasNotesSubhead)
-                        .foregroundColor(theme.foreground)
-                        .monospacedDigit()
-                        .frame(width: 36, alignment: .trailing)
-                }
-            }
+        ColorPickerView(viewModel: viewModel) {
+            openCustomizeTool = nil
         }
-        .padding(CeciliasNotes.Spacing.md)
-        .frame(width: 260)
     }
 
     // identity.systemImage / identity.displayName replaced the old

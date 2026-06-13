@@ -261,13 +261,32 @@ struct EditorToolbarView: View {
             autoHidePinButton.mutationOnly()
 
             // Share is read-only friendly (export, send PDF) and
-            // stays visible everywhere.
-            iconButton("square.and.arrow.up") {
+            // stays visible everywhere. Bumped to a labelled pill
+            // so it's easier to find when the action cluster has a
+            // few similar-looking glyphs next to it — the icon-only
+            // version was getting fat-fingered with the pin.
+            Button {
                 #if DEBUG
                 print("[Share] toolbar share button tapped")
                 #endif
                 onShare()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 13, weight: .regular))
+                    Text("share")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundStyle(recessive(0.55))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(
+                    Capsule().strokeBorder(recessive(0.22), lineWidth: 0.5)
+                )
+                .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Share or export")
 
             // The ellipsis menu surfaces several mutation actions
             // (customise notebook, etc.); on read-only devices
