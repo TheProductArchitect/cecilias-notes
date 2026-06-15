@@ -178,7 +178,7 @@ struct ImageDataView: View {
     /// the rect is missing, degenerate, or fully covers the image
     /// (no-op crop) — keeping the renderer behaviour identical to
     /// pre-crop for uncropped rows.
-    static func applyCrop(
+    nonisolated static func applyCrop(
         to raw: UIImage,
         x: Double?, y: Double?, w: Double?, h: Double?
     ) -> UIImage {

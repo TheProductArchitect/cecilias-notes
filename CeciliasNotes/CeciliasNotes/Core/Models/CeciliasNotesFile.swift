@@ -11,7 +11,10 @@ import Foundation
 // Field names match the schema verbatim (snake_case) so the JSON maps
 // straight onto these structs without a custom keyDecodingStrategy.
 
-struct CeciliasNotesFile: Codable {
+// Marked nonisolated so the parser can decode this off the main
+// actor without inheriting an isolated Codable conformance under
+// SWIFT_APPROACHABLE_CONCURRENCY's default-isolation inference.
+nonisolated struct CeciliasNotesFile: Codable {
     let schema: String?
     let version: String
     let id: String

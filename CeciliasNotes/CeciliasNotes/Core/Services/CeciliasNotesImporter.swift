@@ -42,11 +42,30 @@ final class CeciliasNotesImporter {
         Task.detached(priority: .utility) {
             do {
                 let file = try CeciliasNotesParser.parse(url: url)
-                let pageRichText = file.pages
+                // Archive each page's rendered string to `Data` here on
+                // the detached task. `NSAttributedString` isn't Sendable
+                // (NSObject-backed), so capturing it in the `MainActor`
+                // hop fails under Swift 6 strict concurrency. `Data` is
+                // trivially Sendable and unarchiving on the main actor
+                // is cheap (~microseconds for a few KB of text).
+                let pageRichTextData: [Data] = file.pages
                     .sorted { $0.index < $1.index }
                     .map { CeciliasNotesParser.renderBlocks($0.blocks) }
+                    .map {
+                        (try? NSKeyedArchiver.archivedData(
+                            withRootObject: $0,
+                            requiringSecureCoding: false
+                        )) ?? Data()
+                    }
 
-                await MainActor.run { [pageRichText] in
+                await MainActor.run {
+                    let pageRichText: [NSAttributedString] = pageRichTextData.map { data in
+                        guard !data.isEmpty,
+                              let unarchived = try? NSKeyedUnarchiver
+                                .unarchivedObject(ofClass: NSAttributedString.self, from: data)
+                        else { return NSAttributedString() }
+                        return unarchived
+                    }
                     do {
                         try CeciliasNotesImporter.shared.persist(
                             file: file,

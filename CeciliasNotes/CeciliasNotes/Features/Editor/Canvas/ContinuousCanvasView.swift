@@ -552,7 +552,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         func rebuildPageHosts() {
-            guard let contentView else { return }
+            guard contentView != nil else { return }
             tearDownAllHosts()
             var y: CGFloat = 0
             // Use the widest page as the content width so a mixed-size

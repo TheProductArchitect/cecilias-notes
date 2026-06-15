@@ -272,6 +272,7 @@ struct LassoOverlayView: View {
     private var selectionChrome: some View {
         let base = selection.selectionBounds
         let displayed = chromeDisplayRect(base: base)
+        let locked = selectionIsLocked()
 
         ZStack {
             // Background tap-outside-to-clear. Covers the whole
@@ -282,16 +283,37 @@ struct LassoOverlayView: View {
                 .frame(width: pageSize.width, height: pageSize.height)
                 .onTapGesture { selection.clear() }
 
-            // Bbox + body drag.
-            Rectangle()
-                .strokeBorder(theme.accent,
-                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                .background(theme.accent.opacity(0.05))
-                .frame(width: displayed.width, height: displayed.height)
-                .contentShape(Rectangle())
-                .position(x: displayed.midX, y: displayed.midY)
-                .rotationEffect(.radians(rotateAngle))
-                .gesture(bodyDragGesture)
+            // Bbox. For unlocked selections it carries the body
+            // drag gesture; for locked selections (e.g. PDF page
+            // elements that fill the page) it's tap-to-clear
+            // instead — dragging the box would create a false
+            // promise of movement that the model rejects, leaving
+            // the chrome stranded mid-air while the element snaps
+            // back. Tap-to-clear also gives the user a way out
+            // when the chrome covers the whole page and the
+            // background-clear layer is fully occluded.
+            Group {
+                if locked {
+                    Rectangle()
+                        .strokeBorder(theme.accent,
+                                      style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .background(theme.accent.opacity(0.05))
+                        .frame(width: displayed.width, height: displayed.height)
+                        .contentShape(Rectangle())
+                        .position(x: displayed.midX, y: displayed.midY)
+                        .onTapGesture { selection.clear() }
+                } else {
+                    Rectangle()
+                        .strokeBorder(theme.accent,
+                                      style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                        .background(theme.accent.opacity(0.05))
+                        .frame(width: displayed.width, height: displayed.height)
+                        .contentShape(Rectangle())
+                        .position(x: displayed.midX, y: displayed.midY)
+                        .rotationEffect(.radians(rotateAngle))
+                        .gesture(bodyDragGesture)
+                }
+            }
 
             // Delete badge — bottom-right of the displayed rect.
             Button {
@@ -306,16 +328,40 @@ struct LassoOverlayView: View {
             .buttonStyle(.plain)
             .position(x: displayed.maxX - 14, y: displayed.maxY - 14)
 
-            // Corner-resize handles (4). Snap-on-release.
-            cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.minY))
-            cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.minY))
-            cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.maxY))
-            cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.maxY))
-
-            // Rotation handle — 18pt above the top-centre of the
-            // displayed rect, with a 1pt tether line.
-            rotationHandle(displayed: displayed)
+            // Resize + rotation chrome — hidden for locked
+            // selections (their dimensions are pinned, the handles
+            // would either no-op or lie about the result).
+            if !locked {
+                cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.minY))
+                cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.minY))
+                cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.maxY))
+                cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.maxY))
+                rotationHandle(displayed: displayed)
+            }
         }
+    }
+
+    /// True when the selection contains any element whose
+    /// dimensions are pinned (currently: `.pdfPage` filling the
+    /// full page). Locked selections can't be translated, scaled,
+    /// or rotated — every move would clamp back, so we hide the
+    /// manipulation chrome and switch the bbox tap action from
+    /// "drag" to "clear selection."
+    private func selectionIsLocked() -> Bool {
+        let ids = selection.selectedElementIds
+        guard !ids.isEmpty, selection.partialStrokeSelections.isEmpty else { return false }
+        for id in ids {
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> { $0.id == id }
+            )
+            guard let el = (try? modelContext.fetch(descriptor))?.first else { continue }
+            if el.kind == .pdfPage,
+               el.normalizedWidth >= 0.999,
+               el.normalizedHeight >= 0.999 {
+                return true
+            }
+        }
+        return false
     }
 
     private func chromeDisplayRect(base: CGRect) -> CGRect {

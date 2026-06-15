@@ -9,7 +9,12 @@ import UIKit
 /// The parser does NOT touch SwiftData — that lives in
 /// `CeciliasNotesImporter`. Keeping the two split means file I/O is
 /// callable off the main actor while persistence stays on it.
-enum CeciliasNotesParser {
+/// Pure value work — explicitly nonisolated so detached parser
+/// tasks can invoke every entry point without crossing the main
+/// actor. Under `SWIFT_APPROACHABLE_CONCURRENCY`, types default
+/// to main-actor isolation; the marker below opts the whole
+/// namespace back out.
+nonisolated enum CeciliasNotesParser {
 
     enum ParseError: Error {
         case invalidUTF8
@@ -19,8 +24,9 @@ enum CeciliasNotesParser {
     }
 
     /// Reads + decodes the file. Pure value work — safe to call from
-    /// any thread.
-    static func parse(url: URL) throws -> CeciliasNotesFile {
+    /// any thread. Explicitly nonisolated so detached parser tasks
+    /// can invoke it without crossing the main actor.
+    nonisolated static func parse(url: URL) throws -> CeciliasNotesFile {
         // Use NSFileCoordinator: the file may live in an iCloud
         // ubiquity container and could be mid-download. Coordinated
         // reads block until the file is materialised.
@@ -57,7 +63,7 @@ enum CeciliasNotesParser {
     /// heading sizes scale with `level`, bullets/numbers are inlined
     /// into list items, dividers use a horizontal-rule glyph row,
     /// callouts use a leading emoji per kind.
-    static func renderBlocks(_ blocks: [CeciliasNotesFile.Block]) -> NSAttributedString {
+    nonisolated static func renderBlocks(_ blocks: [CeciliasNotesFile.Block]) -> NSAttributedString {
         let out = NSMutableAttributedString()
         let separator = NSAttributedString(string: "\n\n")
 
