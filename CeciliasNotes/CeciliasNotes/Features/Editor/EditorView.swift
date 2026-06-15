@@ -73,24 +73,6 @@ struct EditorView: View {
             FloatingRecordingControls()
                 .allowsHitTesting(RecordingSession.shared.state.isRecording)
                 .zIndex(150)
-
-            // Agent-attribution banner — shown once per notebook the
-            // first time the user opens an agent-written `.inkbook`.
-            // Anchored to the top safe-area edge so it sits under the
-            // toolbar without blocking canvas hit-testing.
-            if isShowingAgentBanner {
-                VStack {
-                    AgentBannerView(notebook: viewModel.notebook) {
-                        isShowingAgentBanner = false
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    Spacer(minLength: 0)
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .zIndex(160)
-                .allowsHitTesting(true)
-            }
         }
         .onAppear {
             if viewModel.notebook.isAgentWritten,
@@ -334,6 +316,24 @@ struct EditorView: View {
                         Spacer()
                     }
                     .zIndex(74)
+                }
+
+                // Agent-attribution banner — shown once per notebook the
+                // first time the user opens an agent-written `.inkbook`.
+                // Sits BELOW the toolbar so it doesn't cover the back
+                // chevron or other toolbar buttons. Its background fill
+                // would otherwise absorb every tap in its rect.
+                if isShowingAgentBanner {
+                    VStack {
+                        AgentBannerView(notebook: viewModel.notebook) {
+                            isShowingAgentBanner = false
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, proxy.safeAreaInsets.top + 60)
+                        Spacer(minLength: 0)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .zIndex(76)
                 }
 
                 // 5z. Shape recognition "Undo Shape" pill — floats at the
