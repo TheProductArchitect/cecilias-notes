@@ -142,6 +142,73 @@ final class StorageService: ObservableObject {
 
         defaults.set(true, forKey: Self.pageCountBackfillKey)
     }
+
+    // MARK: - Duplicate-row cleanup
+
+    /// CloudKit echo + stale-local-replica bugs occasionally leave
+    /// SwiftData with two (or more) rows sharing the same primary
+    /// key. iOS 26 SwiftUI's `ForEach` now hard-crashes on this with
+    /// `NativeDictionary.swift:792: Fatal error: Duplicate values
+    /// for key`, so any view that iterates a duplicated table —
+    /// the library grid, the editor's per-page element overlays,
+    /// the page strip — refuses to mount.
+    ///
+    /// This sweep runs on every launch (cheap: one fetch + a Set
+    /// per entity). For each duplicate group we keep the row with
+    /// the latest `updatedAt` and hard-delete the others. The
+    /// deletes cascade through the SwiftData relationships, so a
+    /// duplicate Notebook row also drops its duplicate Page rows,
+    /// duplicate Pages drop their PageElements, etc.
+    func purgeDuplicateRows() {
+        purgeDuplicates(
+            type: Notebook.self,
+            keyedBy: { $0.id },
+            updatedAt: { $0.updatedAt }
+        )
+        purgeDuplicates(
+            type: Page.self,
+            keyedBy: { $0.id },
+            updatedAt: { $0.updatedAt }
+        )
+        purgeDuplicates(
+            type: PageElement.self,
+            keyedBy: { $0.id },
+            updatedAt: { $0.updatedAt }
+        )
+        purgeDuplicates(
+            type: Subject.self,
+            keyedBy: { $0.id },
+            updatedAt: { $0.updatedAt }
+        )
+        purgeDuplicates(
+            type: Folder.self,
+            keyedBy: { $0.id },
+            updatedAt: { $0.updatedAt }
+        )
+        try? context.save()
+    }
+
+    private func purgeDuplicates<Model: PersistentModel>(
+        type: Model.Type,
+        keyedBy key: (Model) -> UUID,
+        updatedAt: (Model) -> Date
+    ) {
+        let descriptor = FetchDescriptor<Model>()
+        guard let rows = try? context.fetch(descriptor) else { return }
+        let grouped = Dictionary(grouping: rows, by: key)
+        for (_, copies) in grouped where copies.count > 1 {
+            // Sort newest-first; keep the freshest copy, delete the
+            // rest. We can't rely on insertion order across
+            // CloudKit syncs.
+            let sorted = copies.sorted { updatedAt($0) > updatedAt($1) }
+            for stale in sorted.dropFirst() {
+                context.delete(stale)
+            }
+            #if DEBUG
+            print("[Storage] purged \(copies.count - 1) duplicate(s) of \(type) id=\(key(copies[0]))")
+            #endif
+        }
+    }
 }
 
 // MARK: - File helpers

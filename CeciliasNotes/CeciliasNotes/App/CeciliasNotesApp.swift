@@ -178,6 +178,16 @@ struct CeciliasNotesApp: App {
                     // UserDefaults flag — subsequent launches no-op.
                     storageService.runOneTimePageCountBackfillIfNeeded()
 
+                    // CloudKit echo + stale-local-replica bugs
+                    // occasionally leave SwiftData with two rows
+                    // sharing the same primary key. iOS 26 SwiftUI
+                    // ForEach hard-crashes on this — see
+                    // `purgeDuplicateRows` for the full story.
+                    // Sweep runs on every cold launch; it's a few
+                    // fetches and a Dictionary group, sub-ms in
+                    // practice.
+                    storageService.purgeDuplicateRows()
+
                     // Quiz auto-update: grow any `autoUpdateEnabled`
                     // quizzes from new note content on a weekly cadence.
                     // Detached + silent — never blocks the first frame.
