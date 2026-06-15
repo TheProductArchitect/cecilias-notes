@@ -2225,17 +2225,12 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Apply a page template.
-    ///
-    /// Existing pages that already have strokes are NEVER re-templated
-    /// — the user can change the default mid-notebook to give the
-    /// next page a different template without losing the look of the
-    /// pages they've already written on.
-    ///
-    /// Existing pages that are *empty* (no strokes) DO inherit the
-    /// new template. This is what makes "create a notebook, change
-    /// the template in customise" feel right: page 1 of a brand-new
-    /// notebook is empty, so it updates live to the new look.
+    /// Apply a page template. Forward-only: only pages added after
+    /// this call inherit the new template. Existing pages — including
+    /// an empty page 1 — keep whatever template they were created
+    /// with, so the user can change the default mid-notebook to give
+    /// the next added page a different template without altering
+    /// any page already on screen.
     func applyCustomTemplate(_ template: PageTemplate) {
         do {
             try storage.updateNotebook(
@@ -2246,12 +2241,6 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
-            for page in (notebook.pages ?? []) where !page.isDeleted {
-                if (storage.strokeData(for: page)?.isEmpty ?? true) {
-                    page.backgroundTemplate = template
-                    page.updatedAt          = Date()
-                }
-            }
             userDefaults.set(template.jsonString, forKey: "ceciliasnotes.lastUsed.template")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph

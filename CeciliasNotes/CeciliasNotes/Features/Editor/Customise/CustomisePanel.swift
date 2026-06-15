@@ -604,22 +604,16 @@ struct CustomisePanel: View {
 
     // MARK: Template
 
-    /// Template is a creation-time decision: once any page has strokes
-    /// the selector becomes read-only. Step 8: the byte-counter
-    /// short-cut (`page.strokeDataSize`) is gone with the
-    /// `Page.strokeData` field. Read each page's stroke blob via
-    /// the V6 storage helper — still cheap (no PKDrawing decode,
-    /// just a SwiftData fetch + byte-emptiness check per page).
-    private var canChangeTemplate: Bool {
-        let pages = viewModel.notebook.pages ?? []
-        return pages.allSatisfy {
-            (StorageService.shared.strokeData(for: $0)?.isEmpty ?? true)
-        }
-    }
+    /// Template is always editable now that `applyCustomTemplate` is
+    /// forward-only: existing pages keep the template they were
+    /// created with, and the user's pick only affects the next page
+    /// added. The previous "lock once any page has strokes" rule
+    /// existed because the apply path used to re-template page 1;
+    /// with that behaviour gone, locking the selector just blocked
+    /// users from setting up a different look for the next page.
 
     private var templateSection: some View {
-        let locked = !canChangeTemplate
-        return VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             sectionLabel("page template")
 
             // Categorised picker: each category gets its own
@@ -637,7 +631,7 @@ struct CustomisePanel: View {
                         HStack(spacing: 10) {
                             ForEach(PageTemplate.allCases.filter { $0.category == category },
                                     id: \.self) { template in
-                                templateThumbnail(template, locked: locked)
+                                templateThumbnail(template, locked: false)
                             }
                         }
                         .padding(.vertical, 2)
@@ -645,11 +639,9 @@ struct CustomisePanel: View {
                 }
             }
 
-            if locked {
-                Text("set when you started writing")
-                    .font(.system(size: 9, weight: .regular).italic())
-                    .foregroundStyle(theme.recessiveQuaternary)
-            }
+            Text("applies to pages added after this")
+                .font(.system(size: 9, weight: .regular).italic())
+                .foregroundStyle(theme.recessiveQuaternary)
         }
     }
 
