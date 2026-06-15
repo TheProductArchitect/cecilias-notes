@@ -254,7 +254,18 @@ struct LibraryView: View {
         .background(theme.background)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
-        .ignoresSafeArea(.keyboard, edges: keyboardObserver.isFloatingKeyboard ? .bottom : [])
+        // Always ignore the keyboard's safe-area inset. The library
+        // has no text fields whose visibility depends on
+        // keyboard-avoiding reflow (the only typing surface — the
+        // subject rename — lives in the sidebar, which already
+        // ignores). The previous conditional `.isFloatingKeyboard ?
+        // .bottom : []` lost the race against `KeyboardObserver`'s
+        // `Task { @MainActor }` defer: SwiftUI had already reflowed
+        // around the docked-keyboard height (leaving a white band
+        // sized to the full keyboard) by the time `isFloatingKeyboard`
+        // became true. Unconditional ignore matches what the editor
+        // does and removes that reservation entirely.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .animation(reduceMotion ? nil : .ceciliasNotesSpring(CeciliasNotesSpring.snappy), value: isSidebarVisible)
         .sheet(isPresented: $isShowingRecentExports) {
             RecentExportsView { notebookId in

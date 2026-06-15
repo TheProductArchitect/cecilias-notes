@@ -713,7 +713,19 @@ private struct SubjectInlineRename: View {
                 let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty { onCancel() } else { onCommit(trimmed) }
             }
-            .onAppear { focused = true }
+            .onAppear {
+                focused = true
+                // Select the existing name so the user can type a
+                // replacement without first having to delete it.
+                // Matches the title-field behaviour in CustomisePanel
+                // — same selectAll(_:) responder-chain dispatch.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.selectAll(_:)),
+                        to: nil, from: nil, for: nil
+                    )
+                }
+            }
             .onChange(of: focused) { _, isFocused in
                 // Focus-loss commits if there is content; cancels otherwise.
                 guard !isFocused else { return }
