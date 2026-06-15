@@ -33,7 +33,18 @@ final class EditorViewModel: ObservableObject {
     @Published private(set) var pages: [Page]
     @Published var currentPageIndex: Int
 
-    var currentPage: Page { pages[currentPageIndex] }
+    /// Safe accessor — clamps a stale `currentPageIndex` (out of
+    /// range after a page delete / SwiftData echo) to the last
+    /// valid index instead of crashing on an out-of-bounds subscript.
+    /// Pages is guaranteed non-empty across the editor lifecycle
+    /// (the load path inserts a blank if storage returns zero);
+    /// the assert catches the should-be-impossible empty case in
+    /// debug without crashing release.
+    var currentPage: Page {
+        assert(!pages.isEmpty, "EditorViewModel pages should never be empty")
+        let safe = max(0, min(currentPageIndex, pages.count - 1))
+        return pages[safe]
+    }
 
     /// Direction of the most-recent page navigation. Read by
     /// `CanvasContainerView` to drive the slide transition.
@@ -2214,11 +2225,17 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Apply a page template. Forward-only: only pages added after
-    /// this call inherit the new template. Existing pages — including
-    /// page 1 — keep whatever template they were created with, so the
-    /// user can mix templates within a notebook by changing the
-    /// default before adding each new page.
+    /// Apply a page template.
+    ///
+    /// Existing pages that already have strokes are NEVER re-templated
+    /// — the user can change the default mid-notebook to give the
+    /// next page a different template without losing the look of the
+    /// pages they've already written on.
+    ///
+    /// Existing pages that are *empty* (no strokes) DO inherit the
+    /// new template. This is what makes "create a notebook, change
+    /// the template in customise" feel right: page 1 of a brand-new
+    /// notebook is empty, so it updates live to the new look.
     func applyCustomTemplate(_ template: PageTemplate) {
         do {
             try storage.updateNotebook(
@@ -2229,6 +2246,12 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
+            for page in (notebook.pages ?? []) where !page.isDeleted {
+                if (storage.strokeData(for: page)?.isEmpty ?? true) {
+                    page.backgroundTemplate = template
+                    page.updatedAt          = Date()
+                }
+            }
             userDefaults.set(template.jsonString, forKey: "ceciliasnotes.lastUsed.template")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph

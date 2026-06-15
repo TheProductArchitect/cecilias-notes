@@ -93,7 +93,7 @@ struct PageStripView: View {
                 .padding(.vertical, CeciliasNotes.Spacing.md)
             }
             .onChange(of: viewModel.currentPageIndex) { _, newIndex in
-                guard newIndex < viewModel.pages.count else { return }
+                guard newIndex >= 0, newIndex < viewModel.pages.count else { return }
                 // Snap-scroll without animation. The canvas's
                 // continuous-scroll mode flips `currentPageIndex`
                 // many times per second; the previous

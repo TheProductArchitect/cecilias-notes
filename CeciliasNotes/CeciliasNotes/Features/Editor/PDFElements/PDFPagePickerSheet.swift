@@ -43,6 +43,7 @@ struct PDFPagePickerSheet: View {
     @State private var pageCount: Int = 0
     @State private var selectedPages: [Int] = []
     @State private var jumpToInput: String = "1"
+    @State private var jumpError: String?
     @State private var thumbnailCache: [Int: UIImage] = [:]
     @State private var scrollTargetPage: Int?
     /// Destination chooser — defaults to `.afterCurrentPage` for
@@ -78,6 +79,19 @@ struct PDFPagePickerSheet: View {
             }
         }
         .background(theme.surface.ignoresSafeArea())
+        // Defensive keyboard dismiss when the sheet goes away. The
+        // jump field's numberPad has no return key, so users can
+        // tap Cancel / Done with the keyboard still up. If iOS is
+        // mid-animation when the sheet's view hierarchy tears down
+        // the keyboard's accessory placeholder can end up orphaned
+        // and crash on a constraint activation. Resigning here
+        // closes that race.
+        .onDisappear {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
+        }
         .task { await loadDocument() }
         .onAppear {
             // Seed library-mode defaults from the mode payload so
@@ -303,44 +317,71 @@ struct PDFPagePickerSheet: View {
     // MARK: - Jump field
 
     private var jumpField: some View {
-        HStack(spacing: CeciliasNotes.Spacing.sm) {
-            Text("Go to page")
-                .font(.ceciliasNotesBody)
-                .foregroundStyle(theme.foregroundMuted)
-            TextField("1", text: $jumpToInput)
-                .keyboardType(.numberPad)
-                .multilineTextAlignment(.center)
-                .frame(width: 56)
-                .padding(.vertical, 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(theme.recessiveQuinary)
-                )
-                .onSubmit { handleJump() }
-            Text("of \(pageCount)")
-                .font(.ceciliasNotesBody)
-                .foregroundStyle(theme.foregroundMuted)
-            Spacer()
-            Button("Go") { handleJump() }
-                .foregroundStyle(theme.accent)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: CeciliasNotes.Spacing.sm) {
+                Text("Go to page")
+                    .font(.ceciliasNotesBody)
+                    .foregroundStyle(theme.foregroundMuted)
+                TextField("1", text: $jumpToInput)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 56)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(theme.recessiveQuinary)
+                    )
+                    .onSubmit { handleJump() }
+                    .onChange(of: jumpToInput) { _, _ in
+                        // Typing clears a previous error so the inline
+                        // feedback doesn't linger after the user starts
+                        // correcting the value.
+                        if jumpError != nil { jumpError = nil }
+                    }
+                Text("of \(pageCount)")
+                    .font(.ceciliasNotesBody)
+                    .foregroundStyle(theme.foregroundMuted)
+                Spacer()
+                Button("Go") { handleJump() }
+                    .foregroundStyle(theme.accent)
+            }
+            if let jumpError {
+                Text(jumpError)
+                    .font(.ceciliasNotesCaption)
+                    .foregroundStyle(theme.danger)
+                    .transition(.opacity)
+            }
         }
         .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
 
     private func handleJump() {
-        guard let raw = Int(jumpToInput.trimmingCharacters(in: .whitespaces)),
-              raw >= 1, raw <= pageCount else { return }
-        // Resign the keyboard before the scroll fires. The numberPad
-        // has no return key, so without this the keyboard stays up
-        // through the scroll animation — and on iOS 26 a still-active
-        // first responder during the scroll triggered a UIScrollView
-        // animation crash. The scroll itself runs in the onChange
-        // handler via async dispatch, after the keyboard is gone.
+        // Always dismiss the keyboard, even on invalid input. The
+        // numberPad has no return key, so leaving it up when the
+        // user taps Go with a bad value strands them with no
+        // visible way out — that's the "stuck" symptom. Resigning
+        // first responder unconditionally also closes the iOS 26
+        // window where a still-active TextField first responder
+        // could crash the scroll-view animation.
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
             to: nil, from: nil, for: nil
         )
+        let trimmed = jumpToInput.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else {
+            jumpError = "Enter a page number"
+            return
+        }
+        guard let raw = Int(trimmed) else {
+            jumpError = "Numbers only"
+            return
+        }
+        guard raw >= 1, raw <= pageCount else {
+            jumpError = "Page must be 1–\(pageCount)"
+            return
+        }
+        jumpError = nil
         scrollTargetPage = raw - 1
     }
 

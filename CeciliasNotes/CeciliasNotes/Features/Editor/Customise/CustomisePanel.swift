@@ -170,6 +170,23 @@ struct CustomisePanel: View {
                 }
             }
         }
+        // Belt-and-braces keyboard dismiss. The title field uses a
+        // `.toolbar { ToolbarItemGroup(placement: .keyboard) }` Done
+        // button, and if the panel is dismissed by any path that
+        // doesn't go through the explicit "done" overlay button
+        // (back gesture, parent hiding the panel programmatically,
+        // tag-field commit causing a layout shuffle), the
+        // `_UIRemoteKeyboardPlaceholderView` can be re-parented while
+        // its constraints still reference the old hierarchy. iOS
+        // then crashes with `NSGenericException` "Unable to activate
+        // constraint with anchors ... no common ancestor." Resigning
+        // first responder on disappear closes that window.
+        .onDisappear {
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
+        }
     }
 
     // Header strip retired — the empty band of theme.surface above
