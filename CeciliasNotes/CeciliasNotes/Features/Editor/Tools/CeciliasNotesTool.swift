@@ -430,13 +430,14 @@ enum CeciliasNotesTool: Equatable {
             // visible mark.
             return PKInkingTool(.marker, color: c.withAlphaComponent(0.4), width: w)
         case .eraser(.pixel):
-            // Fixed default width — the Settings slider that used
-            // to drive this is gone, and the floating palette's
-            // size buttons no longer report `hasWidth` for the
-            // pixel eraser, so there's nothing else to consult.
-            // 24pt matches PencilKit's typical bitmap-eraser
-            // default and the value the legacy keys defaulted to.
-            return PKEraserTool(.bitmap, width: 24)
+            // Width is configurable again — driven by the slider
+            // in the eraser popover, persisted under the shared
+            // `ceciliasnotes.eraser.pixelSize` key. Defaults to
+            // 24pt (PencilKit's bitmap-eraser convention) when
+            // the key is absent or zero.
+            let raw = UserDefaults.standard.double(forKey: "ceciliasnotes.eraser.pixelSize")
+            let width = raw > 0 ? CGFloat(raw) : 24
+            return PKEraserTool(.bitmap, width: width)
         case .eraser(.wholeStroke):
             return PKEraserTool(.vector)
         case .eraser(.page):

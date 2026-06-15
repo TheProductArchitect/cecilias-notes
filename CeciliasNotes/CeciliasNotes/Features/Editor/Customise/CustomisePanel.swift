@@ -157,6 +157,17 @@ struct CustomisePanel: View {
             viewModel.pendingCustomiseNameFocus = false
             DispatchQueue.main.async {
                 nameFieldFocused = true
+                // Select all text so the user can type a replacement
+                // title without first tapping/dragging to clear the
+                // existing one. The selectAll(_:) action walks the
+                // responder chain to the first responder (which the
+                // focus assignment above just made the title field).
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.selectAll(_:)),
+                        to: nil, from: nil, for: nil
+                    )
+                }
             }
         }
     }

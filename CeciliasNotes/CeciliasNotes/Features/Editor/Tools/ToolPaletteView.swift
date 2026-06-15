@@ -950,12 +950,41 @@ struct ToolPaletteView: View {
             .background(theme.surface)
             .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
 
-            // Pixel-eraser size is no longer user-configurable —
-            // the "Adjust size in the toolbar" caption that used
-            // to live here is gone with the slider.
+            if activeMode == .pixel {
+                pixelEraserSizeRow
+            }
         }
         .padding(CeciliasNotes.Spacing.md)
         .frame(width: 260)
+    }
+
+    /// Tip-size slider for the pixel (bitmap) eraser. Backed by
+    /// `EditorViewModel.pixelEraserWidth`, which persists to the
+    /// shared UserDefaults key `CeciliasNotesTool.makePKTool` reads.
+    private var pixelEraserSizeRow: some View {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.xs) {
+            HStack {
+                Text("Size")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundSubtle)
+                Spacer()
+                Text("\(Int(viewModel.pixelEraserWidth))")
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foreground)
+                    .monospacedDigit()
+            }
+            Slider(
+                value: Binding(
+                    get: { Double(viewModel.pixelEraserWidth) },
+                    set: { viewModel.pixelEraserWidth = CGFloat($0) }
+                ),
+                in: 4...80,
+                step: 1
+            )
+            .tint(theme.accent)
+        }
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
 
     private func eraserModeRow(_ mode: EraserMode, isSelected: Bool) -> some View {

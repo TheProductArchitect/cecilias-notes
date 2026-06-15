@@ -331,6 +331,16 @@ struct PDFPagePickerSheet: View {
     private func handleJump() {
         guard let raw = Int(jumpToInput.trimmingCharacters(in: .whitespaces)),
               raw >= 1, raw <= pageCount else { return }
+        // Resign the keyboard before the scroll fires. The numberPad
+        // has no return key, so without this the keyboard stays up
+        // through the scroll animation — and on iOS 26 a still-active
+        // first responder during the scroll triggered a UIScrollView
+        // animation crash. The scroll itself runs in the onChange
+        // handler via async dispatch, after the keyboard is gone.
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil, from: nil, for: nil
+        )
         scrollTargetPage = raw - 1
     }
 
@@ -348,11 +358,26 @@ struct PDFPagePickerSheet: View {
                 .padding(CeciliasNotes.Spacing.lg)
             }
             .onChange(of: scrollTargetPage) { _, newValue in
-                guard let target = newValue else { return }
-                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
-                    proxy.scrollTo(target, anchor: .top)
+                guard let target = newValue, target >= 0, target < pageCount else { return }
+                // Defer the scroll + state reset out of the onChange
+                // handler. Calling `proxy.scrollTo` synchronously from
+                // inside `onChange` while the keyboard is dismissing
+                // (Go button submission resigns the numberPad's first
+                // responder) raced the layout pass on iOS 26 and
+                // crashed in `_UIScrollViewScrollAnimation`. Pushing
+                // the scroll to the next runloop tick lets the
+                // keyboard teardown complete before SwiftUI touches
+                // the scroll view, and async-resetting the trigger
+                // avoids the re-entrant state write that the
+                // previous synchronous reset hit.
+                DispatchQueue.main.async {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                        proxy.scrollTo(target, anchor: .top)
+                    }
+                    DispatchQueue.main.async {
+                        scrollTargetPage = nil
+                    }
                 }
-                scrollTargetPage = nil
             }
         }
     }

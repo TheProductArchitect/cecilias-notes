@@ -579,6 +579,16 @@ final class DeepLinkRouter: ObservableObject {
     /// Set on cold launch (via the launch URL), checked once by `LibraryView`.
     @Published var pendingQuickCapture: Bool = false
 
+    /// Pulsed when an inbound deep link explicitly targets
+    /// `ceciliasnotes://library`. The Library observes this and
+    /// dismisses any active editor cover so the user lands on the
+    /// home surface, irrespective of which notebook they had open
+    /// before backgrounding. Drives the share-extension redirect
+    /// (the extension's deep link uses `://library`) so a share
+    /// always surfaces the import picker on home rather than
+    /// stranding the user inside an editor.
+    @Published var forceLibraryHome: Bool = false
+
     /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://library`,
     /// `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
     func handle(_ url: URL) {
@@ -594,6 +604,7 @@ final class DeepLinkRouter: ObservableObject {
         case "library":
             openNotebookId = nil
             openSettings   = false
+            forceLibraryHome = true
         case "quick-capture":
             pendingQuickCapture = true
         default:

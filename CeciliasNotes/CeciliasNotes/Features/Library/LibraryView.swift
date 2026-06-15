@@ -106,6 +106,19 @@ struct LibraryView: View {
                 DispatchQueue.main.async { deepLink.openSettings = false }
                 isShowingSettings = true
             }
+            // `ceciliasnotes://library` (used by the share extension's
+            // deep link) forces the editor cover down so the user
+            // lands on the home surface. The share-inbox watcher's
+            // notification then presents the import picker on top
+            // of library — not on top of whatever notebook happened
+            // to be open when the share was triggered.
+            .onChange(of: deepLink.forceLibraryHome) { _, flag in
+                guard flag else { return }
+                DispatchQueue.main.async { deepLink.forceLibraryHome = false }
+                if editingNotebook != nil {
+                    editingNotebook = nil
+                }
+            }
             // Every `viewModel.*` mutation inside `.onReceive` is
             // deferred to the next runloop tick via `Task { @MainActor
             // in }`. Notification publishers can fire synchronously
@@ -396,15 +409,17 @@ struct LibraryView: View {
             NotificationCenter.default.publisher(for: .shareInboxPDFArrived)
         ) { note in
             guard let url = note.userInfo?["fileURL"] as? URL else { return }
-            // Only present when the editor cover isn't already up —
-            // otherwise the .sheet/.fullScreenCover collision jams
-            // the entire presentation stack and kills touch input.
-            // The pending stash + onChange handler below picks it up
-            // once the cover dismisses.
+            // If the editor cover is up, force-dismiss it back to the
+            // library so the import picker sits on the home surface
+            // instead of stranding the user inside whatever notebook
+            // they last had open. The pending stash is drained by
+            // the `.onChange(of: editingNotebook)` handler below once
+            // the cover finishes dismissing.
             if editingNotebook == nil {
                 sharedPDFURL = SharedPDFURL(url: url)
             } else {
                 pendingSharedPDFURL = SharedPDFURL(url: url)
+                editingNotebook = nil
             }
         }
         .onReceive(
@@ -415,6 +430,7 @@ struct LibraryView: View {
                 sharedImageURL = SharedImageURL(url: url)
             } else {
                 pendingSharedImageURL = SharedImageURL(url: url)
+                editingNotebook = nil
             }
         }
         // When the editor cover dismisses, drain any inbox arrival

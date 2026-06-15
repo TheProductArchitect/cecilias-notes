@@ -1469,10 +1469,27 @@ final class EditorViewModel: ObservableObject {
         persistCurrentToolSettings()
     }
 
-    // Pixel-eraser size mutator removed — the Settings slider
-    // that drove the legacy `ceciliasnotes.eraser.pixelSize` /
-    // `ceciliasnotes.eraser.pixelSize.session` keys is gone; the eraser
-    // uses a fixed 24pt width baked into `CeciliasNotesTool.makePKTool`.
+    /// Pixel-eraser tip size in points. Reads from / writes to the
+    /// shared UserDefaults key that `CeciliasNotesTool.makePKTool` also
+    /// reads, so the slider in the eraser popover and the live PKTool
+    /// stay in sync. Clamped to the same range the inking-tool width
+    /// slider uses for consistency.
+    var pixelEraserWidth: CGFloat {
+        get {
+            let raw = userDefaults.double(forKey: "ceciliasnotes.eraser.pixelSize")
+            return raw > 0 ? CGFloat(raw) : 24
+        }
+        set {
+            let clamped = max(4, min(80, newValue))
+            userDefaults.set(Double(clamped), forKey: "ceciliasnotes.eraser.pixelSize")
+            // Re-emit the tool so the canvas rebuilds the PKTool with
+            // the new width on the next stroke.
+            if case .eraser(let mode) = selectedTool, mode == .pixel {
+                selectedTool = .eraser(mode: .pixel)
+            }
+            objectWillChange.send()
+        }
+    }
 
     func setOpacity(_ opacity: CGFloat) {
         selectedTool = selectedTool.withOpacity(opacity)
@@ -2197,7 +2214,11 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Apply a page template. Same empty-page rule as `applyCustomPageSize`.
+    /// Apply a page template. Forward-only: only pages added after
+    /// this call inherit the new template. Existing pages — including
+    /// page 1 — keep whatever template they were created with, so the
+    /// user can mix templates within a notebook by changing the
+    /// default before adding each new page.
     func applyCustomTemplate(_ template: PageTemplate) {
         do {
             try storage.updateNotebook(
@@ -2208,11 +2229,6 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
-            if let first = (notebook.pages ?? []).first(where: { $0.pageNumber == 1 && !$0.isDeleted }),
-               (storage.strokeData(for: first)?.isEmpty ?? true) {
-                first.backgroundTemplate = template
-                first.updatedAt          = Date()
-            }
             userDefaults.set(template.jsonString, forKey: "ceciliasnotes.lastUsed.template")
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph
