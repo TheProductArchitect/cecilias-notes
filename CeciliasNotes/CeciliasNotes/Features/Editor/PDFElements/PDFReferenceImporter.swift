@@ -94,7 +94,7 @@ enum PDFReferenceImporter {
         case .newNotebook(let subjectId):
             do {
                 targetNotebook = try StorageService.shared.createNotebook(
-                    title: defaultNotebookTitle(from: sourceURL),
+                    title: uniqueImportedNotebookTitle(from: sourceURL),
                     subjectId: subjectId,
                     coverColorHex: "#FAFAF8",
                     coverTexture: .none,
@@ -105,6 +105,12 @@ enum PDFReferenceImporter {
                 // not ask to customise covers / page size. Suppress
                 // the floating Customise pill for this notebook.
                 EditorViewModel.suppressCustomisePill(for: targetNotebook.id)
+                // `createNotebook` seeds a blank page 1. For a PDF
+                // import the user expects "PDF page 1 → notebook
+                // page 1," not "blank → PDF page 1 → PDF page 2 …"
+                // Drop the seeded blank so the first PDF page
+                // becomes the first page of the notebook.
+                removeSeededBlankPage(from: targetNotebook, context: context)
             } catch {
                 #if DEBUG
                 print("[PDFImport-Library] createNotebook failed: \(error)")
@@ -218,7 +224,7 @@ enum PDFReferenceImporter {
         }.value
 
         let context = StorageService.shared.context
-        let title = defaultNotebookTitle(from: sourceURL)
+        let title = uniqueImportedNotebookTitle(from: sourceURL)
         let notebook: Notebook
         do {
             notebook = try StorageService.shared.createNotebook(
@@ -230,6 +236,7 @@ enum PDFReferenceImporter {
                 template: .blank
             )
             EditorViewModel.suppressCustomisePill(for: notebook.id)
+            removeSeededBlankPage(from: notebook, context: context)
         } catch {
             return nil
         }
@@ -538,6 +545,48 @@ enum PDFReferenceImporter {
         let trimmed = url.deletingPathExtension().lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Imported PDF" : trimmed
+    }
+
+    /// Wraps `defaultNotebookTitle` with a duplicate-aware suffix so
+    /// re-importing the same PDF produces "Foo", then "Foo Copy",
+    /// then "Foo Copy 2", etc. — instead of multiple notebooks
+    /// sharing the same display name. Reads the current notebook
+    /// list once per import; the storage layer is already warm
+    /// from earlier in the flow.
+    @MainActor
+    private static func uniqueImportedNotebookTitle(from url: URL) -> String {
+        let base = defaultNotebookTitle(from: url)
+        let existingTitles = Set(
+            StorageService.shared.fetchAllNotebooks().map(\.title)
+        )
+        if !existingTitles.contains(base) { return base }
+        let copyOne = "\(base) Copy"
+        if !existingTitles.contains(copyOne) { return copyOne }
+        var n = 2
+        while existingTitles.contains("\(base) Copy \(n)") { n += 1 }
+        return "\(base) Copy \(n)"
+    }
+
+    /// Removes the blank starter page that `StorageService
+    /// .createNotebook` inserts on every notebook. PDF imports
+    /// want the first PDF page to be page 1, not page 2.
+    /// Safe-by-default: only drops the page if it has no text
+    /// blocks — the notebook is brand-new so there shouldn't be
+    /// any other content, but the guard keeps us from accidentally
+    /// wiping a user-touched page if this is ever called later.
+    @MainActor
+    private static func removeSeededBlankPage(
+        from notebook: Notebook,
+        context: ModelContext
+    ) {
+        guard let pages = notebook.pages, pages.count == 1,
+              let seed = pages.first,
+              (seed.textBlocks ?? []).isEmpty
+        else { return }
+        context.delete(seed)
+        notebook.pages = []
+        notebook.totalPageCount = 0
+        try? context.save()
     }
 
     // MARK: - Helpers

@@ -1681,6 +1681,24 @@ final class EditorViewModel: ObservableObject {
         refreshPages()
     }
 
+    /// Move `page` to a new 1-based position in its notebook,
+    /// renumbering the rows between source and target. Used by the
+    /// page-strip's "Move Left / Move Right" context menu actions.
+    /// Out-of-range targets are clamped to the current page count.
+    func movePage(_ page: Page, to targetPageNumber: Int) {
+        let clamped = max(1, min(pages.count, targetPageNumber))
+        guard clamped != page.pageNumber else { return }
+        let movedId = page.id
+        try? storage.movePage(page, to: clamped)
+        refreshPages()
+        // Keep the user looking at the page they just moved — the
+        // currentPageIndex is index-based, so it would otherwise
+        // stay anchored to whichever page slid into the old slot.
+        if let newIndex = pages.firstIndex(where: { $0.id == movedId }) {
+            currentPageIndex = newIndex
+        }
+    }
+
     func refreshPages() {
         let fetched = storage.fetchPages(in: notebook)
         guard !fetched.isEmpty else { return }

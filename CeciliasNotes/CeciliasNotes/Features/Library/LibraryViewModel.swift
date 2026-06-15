@@ -1061,7 +1061,19 @@ final class LibraryViewModel: ObservableObject {
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = cleanTitle.isEmpty ? "Imported PDF" : cleanTitle
+        let baseTitle = cleanTitle.isEmpty ? "Imported PDF" : cleanTitle
+        // Disambiguate re-imports of the same PDF with " Copy",
+        // " Copy 2", etc. so the library doesn't show multiple
+        // entries with identical titles.
+        let existingTitles = Set(storage.fetchAllNotebooks().map(\.title))
+        let title: String = {
+            if !existingTitles.contains(baseTitle) { return baseTitle }
+            let copyOne = "\(baseTitle) Copy"
+            if !existingTitles.contains(copyOne) { return copyOne }
+            var n = 2
+            while existingTitles.contains("\(baseTitle) Copy \(n)") { n += 1 }
+            return "\(baseTitle) Copy \(n)"
+        }()
 
         let cover = NotebookCover.from(rawValue:
             UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.cover"))

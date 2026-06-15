@@ -43,7 +43,9 @@ struct PageStripView: View {
                             page: page,
                             pageNumber: index + 1,
                             size: CGSize(width: thumbWidth, height: thumbHeight),
-                            isCurrent: index == viewModel.currentPageIndex
+                            isCurrent: index == viewModel.currentPageIndex,
+                            canMoveLeft:  index > 0,
+                            canMoveRight: index < viewModel.pages.count - 1
                         ) {
                             viewModel.goToPage(index: index)
                         } onContextMenuDuplicate: {
@@ -54,6 +56,10 @@ struct PageStripView: View {
                             viewModel.addPage(after: page.pageNumber)
                         } onContextMenuAddBefore: {
                             viewModel.addPage(before: page.pageNumber)
+                        } onContextMenuMoveLeft: {
+                            viewModel.movePage(page, to: page.pageNumber - 1)
+                        } onContextMenuMoveRight: {
+                            viewModel.movePage(page, to: page.pageNumber + 1)
                         }
                         .id(page.id)
                     }
@@ -110,12 +116,16 @@ private struct PageStripThumbnail: View {
     let pageNumber: Int
     let size: CGSize
     let isCurrent: Bool
+    let canMoveLeft: Bool
+    let canMoveRight: Bool
 
     let onTap: () -> Void
     let onContextMenuDuplicate: () -> Void
     let onContextMenuDelete: () -> Void
     let onContextMenuAddAfter: () -> Void
     let onContextMenuAddBefore: () -> Void
+    let onContextMenuMoveLeft: () -> Void
+    let onContextMenuMoveRight: () -> Void
 
     @State private var image: UIImage?
 
@@ -160,6 +170,20 @@ private struct PageStripThumbnail: View {
                 Label("Duplicate", systemImage: "doc.on.doc")
             }
             Divider()
+            // Reorder — swap this page with its left or right
+            // neighbour. Hidden at the ends so the menu doesn't
+            // surface no-op actions.
+            if canMoveLeft {
+                Button { onContextMenuMoveLeft() } label: {
+                    Label("Move Left", systemImage: "arrow.left")
+                }
+            }
+            if canMoveRight {
+                Button { onContextMenuMoveRight() } label: {
+                    Label("Move Right", systemImage: "arrow.right")
+                }
+            }
+            if canMoveLeft || canMoveRight { Divider() }
             Button(role: .destructive) { onContextMenuDelete() } label: {
                 Label("Delete Page", systemImage: "trash")
             }
