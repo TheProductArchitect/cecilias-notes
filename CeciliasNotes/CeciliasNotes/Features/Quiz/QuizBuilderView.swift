@@ -29,7 +29,7 @@ struct QuizBuilderView: View {
     @State private var format: QuizFormat = .multipleChoice
     @State private var questionCount: Int = 10
     @State private var autoAdd: Bool = false
-    @State private var tier: AITier = .onDevice
+    @State private var tier: AITier = .appleIntelligence
 
     private var aiAvailable: Bool { IntelligenceService.shared.canRun }
     private var mcpAvailable: Bool { MCPStatusMonitor.shared.hasEverConnected }
@@ -222,6 +222,11 @@ struct QuizBuilderView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            } else if availableTiers.isEmpty {
+                Text("quiz generation needs apple intelligence or mcp. turn on apple intelligence in settings → intelligence, or connect mcp on your mac.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -290,7 +295,11 @@ struct QuizBuilderView: View {
                     step = .format
                 }
             } else {
-                primaryButton("generate quiz →", fill: theme.accent, enabled: scopeIsValid) {
+                primaryButton(
+                    "generate quiz →",
+                    fill: theme.accent,
+                    enabled: scopeIsValid && !availableTiers.isEmpty
+                ) {
                     generate()
                 }
             }
@@ -318,8 +327,16 @@ struct QuizBuilderView: View {
         let defaults = UserDefaults.standard
         includeTranscriptions = defaults.object(forKey: "ceciliasnotes.quiz.includeTranscriptions") as? Bool ?? true
         autoAdd = defaults.bool(forKey: "ceciliasnotes.quiz.autoAdd")
-        tier = AITier(rawValue: defaults.string(forKey: "ceciliasnotes.quiz.engine") ?? "") ?? .onDevice
-        if !availableTiers.contains(tier) { tier = .onDevice }
+        // Apple Intelligence is the preferred default; fall back
+        // to whatever tier is currently available. On-device was
+        // retired so a persisted ".onDevice" choice from older
+        // installs is silently upgraded.
+        let persisted = AITier(rawValue: defaults.string(forKey: "ceciliasnotes.quiz.engine") ?? "")
+        if let persisted, availableTiers.contains(persisted), persisted != .onDevice {
+            tier = persisted
+        } else {
+            tier = availableTiers.first ?? .appleIntelligence
+        }
         // Pre-scope to the currently selected subject if any.
         if case .subject(let id) = viewModel.selectedContext {
             scopeType = .subject
@@ -392,7 +409,7 @@ struct QuizBuilderView: View {
 
     private func tierLabel(_ t: AITier) -> String {
         switch t {
-        case .onDevice:          return "on-device"
+        case .onDevice:          return "on-device"   // legacy — never shown via availableTiers
         case .appleIntelligence: return "apple intel."
         case .mcp:               return "mcp"
         }

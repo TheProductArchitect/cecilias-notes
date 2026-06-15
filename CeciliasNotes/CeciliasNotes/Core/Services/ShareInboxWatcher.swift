@@ -44,9 +44,39 @@ final class ShareInboxWatcher {
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
+        // Purge anything left over from a previous run that's
+        // older than the freshness window. Earlier versions of
+        // this watcher kept cancelled files around so the user
+        // could "try again next launch", which in practice meant
+        // the picker re-popped every cold start with the same
+        // stale PDF forever. The picker's cancel handler now
+        // consumes the file too; this sweep covers historical
+        // accumulation.
+        purgeStaleFiles()
         // First sweep on start so a launch-from-share-extension
         // lands without waiting for the next foreground event.
         sweepNow()
+    }
+
+    /// Files older than 24h are treated as orphaned (interrupted
+    /// import, cancelled flow that didn't consume, etc.) and
+    /// deleted. Anything fresher is left for the upcoming sweep
+    /// to dispatch.
+    private func purgeStaleFiles() {
+        guard let inbox = inboxURL() else { return }
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: inbox,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        let cutoff = Date().addingTimeInterval(-86_400)  // 24h
+        for file in contents {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+            guard modified < cutoff else { continue }
+            try? fm.removeItem(at: file)
+        }
     }
 
     @objc private func handleDidBecomeActive() {

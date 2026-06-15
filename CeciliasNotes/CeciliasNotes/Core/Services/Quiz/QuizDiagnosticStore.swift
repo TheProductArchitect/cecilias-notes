@@ -23,9 +23,19 @@ enum QuizGenerationDiagnostic: String, Codable {
     case noStructuredPatterns
 
     /// Requested format requires a cloud/Apple-Intelligence tier
-    /// the device doesn't have access to (currently: short-answer
-    /// on Tier 1 only).
+    /// the device doesn't have access to.
     case formatNeedsCloud
+
+    /// No generation tier is available on this device (Apple
+    /// Intelligence off + MCP never connected). Quiz generation
+    /// is gated on at least one of these — the legacy on-device
+    /// generator was retired.
+    case noTierAvailable
+
+    /// Apple Intelligence was selected but produced no questions
+    /// despite having text — model returned empty, parse failed,
+    /// availability lost mid-flight, etc.
+    case aiReturnedEmpty
 
     /// Catch-all when the generator returns empty but the inputs
     /// looked OK — surfaces a softer copy than the structured
@@ -37,13 +47,17 @@ enum QuizGenerationDiagnostic: String, Codable {
         case .noScopeContent:
             return "this quiz's scope has no notebooks. open the quiz builder and pick a subject or notebook that contains typed notes."
         case .noTextInScope:
-            return "the selected notes don't have any typed text yet — handwritten pages, sketches, and PDF page rasters aren't readable by the on-device engine. type a few notes or add transcribed audio, then regenerate."
+            return "the selected notes don't have any typed text yet — handwritten pages, sketches, and image-only PDFs aren't readable. type a few notes, add transcribed audio, or import a digital pdf, then regenerate."
         case .noStructuredPatterns:
-            return "the on-device engine looks for clear concept → definition patterns (\u{201C}X: …\u{201D}, \u{201C}X is …\u{201D}, headings + bullets) and couldn't find any. conversational prose works better via apple intelligence or mcp — switch the generator in quiz builder."
+            return "the generator couldn't find concept-definition patterns in these notes. try a different scope, or rely on apple intelligence / mcp which handle free-form prose better."
         case .formatNeedsCloud:
-            return "short-answer questions need apple intelligence or mcp — the on-device engine can only build multiple-choice and flashcards. switch the generator in quiz builder, or change the format."
+            return "this format requires apple intelligence or mcp — switch the generator in quiz builder, or change the format."
+        case .noTierAvailable:
+            return "quiz generation needs apple intelligence or mcp. turn on apple intelligence in settings → intelligence, or connect mcp on your mac."
+        case .aiReturnedEmpty:
+            return "apple intelligence couldn't build questions from these notes — the model returned nothing. try a different scope or add more content, then regenerate."
         case .unknown:
-            return "couldn't build any questions from these notes. try adding more structured content or switch the generator to apple intelligence / mcp in quiz builder."
+            return "couldn't build any questions from these notes. try a different scope or add more content."
         }
     }
 }

@@ -294,9 +294,15 @@ struct LibraryView: View {
                     }
                 },
                 onCancel: {
-                    // Cancel leaves the file in the inbox so the
-                    // user can try again on the next foreground.
+                    // Consume on cancel too — leaving the file in
+                    // the inbox made it pop up again on every
+                    // foreground sweep, which read as "the app
+                    // keeps nagging me about a PDF I already
+                    // dismissed." If the user wants to import it
+                    // they can re-share from the source app.
+                    let url = wrapper.url
                     sharedPDFURL = nil
+                    ShareInboxWatcher.shared.consume(url)
                 },
                 mode: .library(
                     subjects: viewModel.subjects,
@@ -330,7 +336,11 @@ struct LibraryView: View {
                         }
                     }
                 },
-                onCancel: { sharedImageURL = nil }
+                onCancel: {
+                    let url = wrapper.url
+                    sharedImageURL = nil
+                    ShareInboxWatcher.shared.consume(url)
+                }
             )
         }
         .onChange(of: reExportNotebookId) { _, id in

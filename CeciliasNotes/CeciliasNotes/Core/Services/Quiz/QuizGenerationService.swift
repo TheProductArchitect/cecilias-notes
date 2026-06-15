@@ -22,20 +22,32 @@ final class QuizGenerationService: ObservableObject {
 
     // MARK: - Tier resolution
 
-    /// Tiers available on this device/configuration, best last.
+    /// Tiers available on this device/configuration, best first.
+    /// On-device generation was dropped — its strict pattern matcher
+    /// only produced questions on a narrow slice of structured notes
+    /// and most users hit an empty result. We now require either
+    /// Apple Intelligence or MCP; if neither is available the quiz
+    /// builder surfaces a "quiz generation unavailable" state instead
+    /// of letting the user create empty quizzes.
     func availableTiers() -> [AITier] {
-        var tiers: [AITier] = [.onDevice]
+        var tiers: [AITier] = []
         if IntelligenceService.shared.canRun { tiers.append(.appleIntelligence) }
         if MCPStatusMonitor.shared.hasEverConnected { tiers.append(.mcp) }
         return tiers
     }
 
+    /// True when at least one usable tier is present.
+    var canGenerate: Bool { !availableTiers().isEmpty }
+
     /// The tier actually used given a requested one, downgrading when
-    /// the request isn't available (e.g. Apple Intelligence off → on-device).
+    /// the request isn't available. Falls back to the best available
+    /// tier (Apple Intelligence first); returns `.appleIntelligence`
+    /// when nothing's available — the caller is expected to gate on
+    /// `canGenerate` so the request never runs in that state.
     func resolvedTier(requested: AITier) -> AITier {
         let available = availableTiers()
         if available.contains(requested) { return requested }
-        return available.last ?? .onDevice
+        return available.first ?? .appleIntelligence
     }
 
     // MARK: - Create + generate
@@ -129,7 +141,7 @@ final class QuizGenerationService: ObservableObject {
             // state so the user understands what's missing rather
             // than seeing a generic "nothing to quiz on" string.
             QuizDiagnosticStore.record(
-                diagnoseEmptyResult(documents: documents, format: format),
+                diagnoseEmptyResult(documents: documents, format: format, tier: tier),
                 for: quizID
             )
         } else {
@@ -147,12 +159,14 @@ final class QuizGenerationService: ObservableObject {
     /// without first fixing the shallower problem.
     private func diagnoseEmptyResult(
         documents: [QuizSourceDocument],
-        format: QuizFormat
+        format: QuizFormat,
+        tier: AITier
     ) -> QuizGenerationDiagnostic {
+        if !availableTiers().contains(tier) { return .noTierAvailable }
         if documents.isEmpty { return .noScopeContent }
         if documents.allSatisfy({ $0.isEmpty }) { return .noTextInScope }
-        if format == .shortAnswer { return .formatNeedsCloud }
-        return .noStructuredPatterns
+        if tier == .appleIntelligence { return .aiReturnedEmpty }
+        return .unknown
     }
 
     /// Hook for `QuizMCPImporter` to merge MCP-authored questions into
@@ -166,10 +180,12 @@ final class QuizGenerationService: ObservableObject {
         HapticManager.shared.exportCompleted()
     }
 
-    /// Run the right generator for the tier, falling back to on-device
-    /// if an AI tier yields nothing (availability lost mid-flight, parse
-    /// failure, etc.). MCP is handled out-of-band (async file exchange),
-    /// so here it also falls back to on-device for the synchronous path.
+    /// Run the right generator for the requested tier. On-device
+    /// generation has been retired — if Apple Intelligence is the
+    /// tier and the request fails (availability lost mid-flight,
+    /// parse failure), we return empty rather than silently
+    /// downgrading to a generator that nearly always produced
+    /// nothing. MCP is handled out-of-band via the file exchange.
     private func generateQuestions(
         documents: [QuizSourceDocument],
         format: QuizFormat,
@@ -180,13 +196,13 @@ final class QuizGenerationService: ObservableObject {
 
         if tier == .appleIntelligence {
             let ai = AppleIntelligenceQuizGenerator()
-            if ai.isAvailable {
-                let result = await ai.generate(from: documents, format: format, count: count)
-                if !result.isEmpty { return result }
-            }
+            guard ai.isAvailable else { return [] }
+            return await ai.generate(from: documents, format: format, count: count)
         }
-        // Tier 1 / fallback.
-        return OnDeviceQuizGenerator().generate(from: documents, format: format, count: count)
+        // MCP path is invoked from `runGeneration` ahead of this
+        // function. Anything else (including a stale `.onDevice`
+        // tier on a legacy persisted quiz) is unsupported now.
+        return []
     }
 
     private func persist(_ generated: [GeneratedQuestion], into quiz: Quiz, startingAt startIndex: Int) {
