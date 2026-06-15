@@ -55,26 +55,29 @@ struct CustomisePanel: View {
     // hairlines become marginally less prominent after migration. Phase G
     // can re-tune theme.hairline's alpha if the new rendering reads off.
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            // Stacked vertical layout — the earlier two-column band
-            // relied on a measured row width to split 55/45, and on
-            // narrower screens (iPad mini, split view) or before the
-            // first geometry pass the right column collapsed and
-            // hid its toggles. Single-column eliminates that whole
-            // class of layout failure and matches the way the panel
-            // actually reads (top → bottom: identity → cover →
-            // template → behaviour → tags → annotations).
+            // Two-column layout on regular widths (iPad), single
+            // column on compact widths (iPhone / narrow split-view).
+            // Both columns use equal-flex frames — no measured-width
+            // dependence — so the right column can never collapse
+            // before the first geometry pass, the failure mode that
+            // killed the previous two-column attempt.
+            //
+            // Layout (regular width):
+            //   suggested-tags banner  (full width)
+            //   name + done            (full width)
+            //   ─────────────────────────────────────
+            //   LEFT             │  RIGHT
+            //   cover            │  behaviour
+            //   page size        │  tags
+            //   page template    │  annotations
             VStack(alignment: .leading, spacing: 14) {
                 suggestedTagsBanner
                 nameSection
                     .overlay(alignment: .topTrailing) {
-                        // Inline "done" — sits in the same row band as
-                        // the name field so we don't need a dedicated
-                        // header strip above the panel content (which
-                        // was just an empty band of theme.surface
-                        // above the first section).
                         Button {
                             UIApplication.shared.sendAction(
                                 #selector(UIResponder.resignFirstResponder),
@@ -90,13 +93,32 @@ struct CustomisePanel: View {
                         .buttonStyle(.plain)
                         .keyboardShortcut(.defaultAction)
                     }
-                coverSection
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                templateSection
-                pageSizeSection
-                behaviourSection
-                tagsSection
-                annotationsSection
+
+                if hSizeClass == .compact {
+                    coverSection
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    pageSizeSection
+                    templateSection
+                    behaviourSection
+                    tagsSection
+                    annotationsSection
+                } else {
+                    HStack(alignment: .top, spacing: 24) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            coverSection
+                            pageSizeSection
+                            templateSection
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                        VStack(alignment: .leading, spacing: 14) {
+                            behaviourSection
+                            tagsSection
+                            annotationsSection
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)

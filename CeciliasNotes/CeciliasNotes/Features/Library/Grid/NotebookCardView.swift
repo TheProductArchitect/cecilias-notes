@@ -276,8 +276,16 @@ struct NotebookCardView: View {
     }
 
     private var lastOpenedLabel: String {
-        guard let date = RecentNotebooksTracker.lastOpened(notebook.id) else { return "" }
-        return relativeShort(for: date)
+        // Prefer the "last opened" timestamp — that's the most
+        // recently meaningful action for the user. Fall back to the
+        // notebook's `createdAt` for rows the user hasn't opened yet
+        // (notably MCP-imported notebooks that arrived via iCloud
+        // sync), so every card surfaces *some* date instead of
+        // showing a blank gap.
+        if let opened = RecentNotebooksTracker.lastOpened(notebook.id) {
+            return relativeShort(for: opened)
+        }
+        return "created \(relativeShort(for: notebook.createdAt))"
     }
 
     // MARK: Title (display-only)
