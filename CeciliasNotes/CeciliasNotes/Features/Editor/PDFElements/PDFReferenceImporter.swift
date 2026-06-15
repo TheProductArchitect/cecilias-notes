@@ -101,6 +101,10 @@ enum PDFReferenceImporter {
                     pageSize: .a4,
                     template: .blank
                 )
+                // The user already chose to import a PDF — they did
+                // not ask to customise covers / page size. Suppress
+                // the floating Customise pill for this notebook.
+                EditorViewModel.suppressCustomisePill(for: targetNotebook.id)
             } catch {
                 #if DEBUG
                 print("[PDFImport-Library] createNotebook failed: \(error)")
@@ -225,6 +229,7 @@ enum PDFReferenceImporter {
                 pageSize: .a4,
                 template: .blank
             )
+            EditorViewModel.suppressCustomisePill(for: notebook.id)
         } catch {
             return nil
         }

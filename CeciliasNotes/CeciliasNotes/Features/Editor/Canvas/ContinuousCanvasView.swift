@@ -205,7 +205,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
         scrollView.panGestureRecognizer.allowedTouchTypes = [
             NSNumber(value: UITouch.TouchType.direct.rawValue)
         ]
-        scrollView.panGestureRecognizer.minimumNumberOfTouches = resolvedFingerDrawingEnabled ? 2 : 1
+        // Two-finger pan only when both finger-drawing is on AND a
+        // drawing tool is selected. See updateUIView for the same gate.
+        let fingersDrawingNow0 = resolvedFingerDrawingEnabled && viewModel.selectedTool.isDrawingTool
+        scrollView.panGestureRecognizer.minimumNumberOfTouches = fingersDrawingNow0 ? 2 : 1
         host.addSubview(scrollView)
 
         // Single content view holds every page-host stacked vertically.
@@ -321,8 +324,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
         let fingerDraws = resolvedFingerDrawingEnabled
         coord.fingerDrawingEnabled = fingerDraws
 
-        // Pan gesture touch count tracks finger-drawing setting.
-        let desiredTouches = fingerDraws ? 2 : 1
+        // Pan gesture touch count: require two fingers only when a
+        // drawing tool is active and finger-drawing is on. In cursor
+        // mode (or any non-drawing tool) the canvas isn't consuming
+        // finger input, so single-finger pan must scroll the document
+        // — otherwise the user gets a frozen-looking page.
+        let fingersDrawingNow = fingerDraws && viewModel.selectedTool.isDrawingTool
+        let desiredTouches = fingersDrawingNow ? 2 : 1
         if scrollView.panGestureRecognizer.minimumNumberOfTouches != desiredTouches {
             scrollView.panGestureRecognizer.minimumNumberOfTouches = desiredTouches
         }

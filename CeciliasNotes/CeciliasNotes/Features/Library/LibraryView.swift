@@ -280,7 +280,15 @@ struct LibraryView: View {
                             ShareInboxWatcher.shared.consume(url)
                             viewModel.refresh()
                             if let notebook = viewModel.notebook(id: nbId) {
-                                editingNotebook = notebook
+                                // Wait one runloop tick before swapping
+                                // the cover so the picker sheet has fully
+                                // dismissed first. Presenting the editor
+                                // cover while a sheet is still dismissing
+                                // races UIKit's window-level gesture state
+                                // and freezes touch on the whole app.
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    editingNotebook = notebook
+                                }
                             }
                         }
                     }
@@ -315,7 +323,9 @@ struct LibraryView: View {
                             ShareInboxWatcher.shared.consume(url)
                             viewModel.refresh()
                             if let notebook = viewModel.notebook(id: nbId) {
-                                editingNotebook = notebook
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    editingNotebook = notebook
+                                }
                             }
                         }
                     }

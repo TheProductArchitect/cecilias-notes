@@ -1079,6 +1079,9 @@ final class LibraryViewModel: ObservableObject {
             pageSize:      pageSize,
             template:      .blank
         ) else { return nil }
+        // PDF-imported notebooks don't surface the floating Customise
+        // pill — the user picked a file, not a cover/template.
+        EditorViewModel.suppressCustomisePill(for: notebook.id)
 
         // Seed page 1's PDFPageContent + PageElement, then create
         // remaining pages and seed each one. The first canvas

@@ -320,12 +320,34 @@ final class EditorViewModel: ObservableObject {
     /// instances within a single app run.
     private static var pillShownIds: Set<UUID> = []
 
+    /// Notebook IDs that should never trigger the customise pill —
+    /// PDF / image imports stamp this so a freshly-created
+    /// import-target notebook doesn't surface the "Customise" pill
+    /// the user never asked for. Survives across editor view-model
+    /// instances within a single run.
+    private static var suppressedPillIds: Set<UUID> = []
+
+    /// Mark a notebook ID so `markCustomisePillIfFresh` will skip
+    /// it. Call from any non-user-initiated notebook-creation path
+    /// (PDF import, image import, etc.).
+    static func suppressCustomisePill(for id: UUID) {
+        suppressedPillIds.insert(id)
+    }
+
+    /// Tool the editor will swap to the moment a pencil touch is
+    /// observed this session. Resolved at init from the user's
+    /// persisted last-inking choice (or pen). Nilled after consumption
+    /// so a subsequent manual return to cursor doesn't re-swap on the
+    /// next pencil hover.
+    private var pendingInkingToolForPencil: CeciliasNotesTool?
+
     /// Called from `EditorView.onAppear`. Shows the pill iff the notebook
     /// was created within the last 30 seconds AND we haven't already shown
     /// the pill for it this session. The 5-second auto-dismiss is owned
     /// by the pill view itself (it has the timing context).
     func markCustomisePillIfFresh() {
         guard !Self.pillShownIds.contains(notebook.id) else { return }
+        guard !Self.suppressedPillIds.contains(notebook.id) else { return }
         let age = Date().timeIntervalSince(notebook.createdAt)
         guard age < 30 else { return }
         Self.pillShownIds.insert(notebook.id)
@@ -574,13 +596,16 @@ final class EditorViewModel: ObservableObject {
         } else {
             self.currentPageIndex = 0
         }
-        // The editor reopens on the last inking tool the user worked
-        // with (restored from `StorageKeys.lastInkingTool` with its
-        // persisted colour/width/opacity), falling back to the pen on
-        // first ever open. We never default to the neutral cursor — a
-        // handwriting app should land ready to write, and opening on a
-        // non-drawing tool was the reported regression.
-        self.selectedTool = Self.resolveInitialTool(
+        // Land on the neutral cursor so a one-finger drag scrolls the
+        // page out of the gate. The first pencil contact (observed via
+        // `pencilTouchObserved`) immediately swaps in the user's last
+        // inking tool — so the Pencil user is writing the moment they
+        // touch down, while the finger-first user can scroll without
+        // accidental ink.
+        self.selectedTool = .cursor
+        // Remember the inking tool we'll swap *to* on first pencil
+        // touch this session.
+        self.pendingInkingToolForPencil = Self.resolveInitialTool(
             userDefaults: userDefaults,
             toolSettings: toolSettings,
             theme: resolvedTheme
@@ -665,6 +690,26 @@ final class EditorViewModel: ObservableObject {
             name: .imageImportCompleted,
             object: nil
         )
+
+        // Pencil-touch auto-swap: the editor opens in `.cursor` so
+        // one-finger drag scrolls. The moment the user puts the
+        // Pencil down, swap in the persisted last-inking tool so
+        // they're writing immediately — no toolbar tap required.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePencilTouchObserved),
+            name: .pencilTouchObserved,
+            object: nil
+        )
+    }
+
+    @objc private func handlePencilTouchObserved() {
+        // Only swap if we're still on the neutral cursor — if the
+        // user has already explicitly picked a tool we respect that.
+        guard selectedTool.isCursorMode else { return }
+        guard let inking = pendingInkingToolForPencil else { return }
+        pendingInkingToolForPencil = nil
+        selectedTool = inking
     }
 
     deinit {

@@ -39,6 +39,15 @@ final class InputCapabilityDetector: @unchecked Sendable {
     /// the first.
     func recordTouch(_ touch: UITouch) {
         guard touch.type == .pencil else { return }
+        // Always post the active-touch signal so observers (e.g. the
+        // editor) can react to an in-session pencil contact even
+        // after the first-touch latch has already flipped.
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .pencilTouchObserved,
+                object: nil
+            )
+        }
         guard !hasPencil else { return }
         userDefaults.set(true, forKey: hasSeenPencilKey)
         #if DEBUG
@@ -54,7 +63,6 @@ final class InputCapabilityDetector: @unchecked Sendable {
 
     /// Bulk variant for `Set<UITouch>` from `touchesBegan(_:with:)`.
     func recordTouches(_ touches: Set<UITouch>) {
-        guard !hasPencil else { return }
         for touch in touches where touch.type == .pencil {
             recordTouch(touch)
             return  // first hit is enough
@@ -80,4 +88,12 @@ extension Notification.Name {
     /// re-apply its drawing policy without waiting for a settings
     /// change.
     static let inputCapabilityChanged = Notification.Name("input.capabilityChanged")
+
+    /// Posted on every observed pencil touch (not just the first).
+    /// The editor view-model listens to swap the active tool from
+    /// `.cursor` back to the user's last inking tool the moment the
+    /// pencil makes contact — so a fresh open lands in cursor mode
+    /// (one-finger scroll works) but switches to drawing the instant
+    /// the user picks up the Pencil.
+    static let pencilTouchObserved = Notification.Name("input.pencilTouchObserved")
 }
