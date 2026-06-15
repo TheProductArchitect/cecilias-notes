@@ -86,15 +86,15 @@ final class ShareViewController: UIViewController {
         try? await Task.sleep(nanoseconds: 250_000_000)
         await MainActor.run {
             let deepLink = URL(string: "ceciliasnotes://library")!
-            // `extensionContext?.open(_:)` is broken for share
-            // extensions on iOS 13+ — the call returns success but
-            // the host app never actually launches, leaving the user
-            // dumped back to the source app's home screen. The
-            // reliable workaround is to walk the responder chain
-            // until we hit something that handles `openURL:`. The
-            // share-host scene exposes a parent UIResponder that
-            // dispatches the URL to the system, which DOES launch
-            // the target app.
+            // `extensionContext?.open(_:)` is unreliable for share
+            // extensions on every iOS version we ship to (17.6+) —
+            // the call returns success but the host app never
+            // actually launches, leaving the user dumped back to
+            // the source app's home screen. The reliable workaround
+            // is to walk the responder chain until we hit something
+            // that handles `openURL:`. The share-host scene exposes
+            // a parent UIResponder that dispatches the URL to the
+            // system, which DOES launch the target app.
             openHostURL(deepLink)
             // Fire `completeRequest` after a brief delay so the
             // openURL: dispatch lands before the extension is torn
