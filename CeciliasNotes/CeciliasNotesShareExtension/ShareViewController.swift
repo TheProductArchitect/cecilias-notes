@@ -86,14 +86,50 @@ final class ShareViewController: UIViewController {
         try? await Task.sleep(nanoseconds: 250_000_000)
         await MainActor.run {
             let deepLink = URL(string: "ceciliasnotes://library")!
-            self.extensionContext?.open(deepLink) { [weak self] _ in
-                Task { @MainActor in
-                    self?.extensionContext?.completeRequest(
-                        returningItems: nil,
-                        completionHandler: nil
-                    )
-                }
+            // `extensionContext?.open(_:)` is broken for share
+            // extensions on iOS 13+ — the call returns success but
+            // the host app never actually launches, leaving the user
+            // dumped back to the source app's home screen. The
+            // reliable workaround is to walk the responder chain
+            // until we hit something that handles `openURL:`. The
+            // share-host scene exposes a parent UIResponder that
+            // dispatches the URL to the system, which DOES launch
+            // the target app.
+            openHostURL(deepLink)
+            // Fire `completeRequest` after a brief delay so the
+            // openURL: dispatch lands before the extension is torn
+            // down. Calling them back-to-back races the system —
+            // the extension exits before iOS has a chance to act
+            // on the URL.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.extensionContext?.completeRequest(
+                    returningItems: nil,
+                    completionHandler: nil
+                )
             }
+        }
+    }
+
+    /// Walks the responder chain looking for a responder that
+    /// implements `openURL:`. The share-host scene's parent
+    /// responder dispatches the URL through `LSApplicationWorkspace`,
+    /// which launches the registered app even from inside a share
+    /// extension. Used in place of the unreliable
+    /// `extensionContext.open(_:)`.
+    @MainActor
+    private func openHostURL(_ url: URL) {
+        var responder: UIResponder? = self
+        let selector = NSSelectorFromString("openURL:")
+        while let current = responder {
+            if let app = current as? UIApplication {
+                app.open(url, options: [:], completionHandler: nil)
+                return
+            }
+            if current.responds(to: selector) {
+                _ = current.perform(selector, with: url)
+                return
+            }
+            responder = current.next
         }
     }
 
