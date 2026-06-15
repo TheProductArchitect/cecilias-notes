@@ -62,7 +62,7 @@ extension ModelContainer {
             // CKContainer account-status check runs async; logs the
             // user's iCloud sign-in state so we know whether sync
             // even has the prerequisites to fire.
-            print("[CloudKit] container initialised on private database (iCloud.app.ceciliasnotes)")
+            dlog("[CloudKit] container initialised on private database (iCloud.app.ceciliasnotes)")
             CKContainer(identifier: "iCloud.app.ceciliasnotes").accountStatus { status, err in
                 let label: String
                 switch status {
@@ -73,7 +73,7 @@ extension ModelContainer {
                 case .temporarilyUnavailable: label = "temporarilyUnavailable"
                 @unknown default:          label = "unknown(\(status.rawValue))"
                 }
-                print("[CloudKit] account status: \(label) err=\(err?.localizedDescription ?? "nil")")
+                dlog("[CloudKit] account status: \(label) err=\(err?.localizedDescription ?? "nil")")
             }
             #endif
             return container
@@ -82,8 +82,8 @@ extension ModelContainer {
             // missing-entitlements regression is visible during
             // development; no user-facing error surface.
             #if DEBUG
-            print("[ModelContainer] CloudKit init failed, falling back to local: \(error)")
-            print("[CloudKit] *** SYNC DISABLED *** container ran on local-only path; verify (1) iCloud + CloudKit capabilities in app target, (2) iCloud container 'iCloud.app.ceciliasnotes' exists in Apple Dev portal, (3) user signed into iCloud on device, (4) Cecilia's Notes toggle ON in Settings → Apple ID → iCloud")
+            dlog("[ModelContainer] CloudKit init failed, falling back to local: \(error)")
+            dlog("[CloudKit] *** SYNC DISABLED *** container ran on local-only path; verify (1) iCloud + CloudKit capabilities in app target, (2) iCloud container 'iCloud.app.ceciliasnotes' exists in Apple Dev portal, (3) user signed into iCloud on device, (4) Cecilia's Notes toggle ON in Settings → Apple ID → iCloud")
             #endif
             let localConfig = ModelConfiguration(
                 schema: schema,
@@ -107,7 +107,7 @@ extension ModelContainer {
                 // retry. Any genuine corruption is also recovered
                 // by this path — the user gets a clean start.
                 #if DEBUG
-                print("[ModelContainer] Local init failed (schema mismatch?), wiping store and retrying: \(error)")
+                dlog("[ModelContainer] Local init failed (schema mismatch?), wiping store and retrying: \(error)")
                 #endif
                 try? FileManager.default.removeItem(at: storeURL)
                 // SQLite ships with sidecar journal/WAL files that

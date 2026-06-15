@@ -636,7 +636,7 @@ struct EditorView: View {
         // not in competition with it.
         .sheet(isPresented: $viewModel.isShowingExportSheet) {
             #if DEBUG
-            let _ = print("[Share] viewBuilder invoked — about to render ExportOptionsView")
+            let _ = dlog("[Share] viewBuilder invoked — about to render ExportOptionsView")
             #endif
             ExportOptionsView(
                 notebook: viewModel.notebook,
@@ -704,7 +704,7 @@ struct EditorView: View {
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.fade),   value: viewModel.isCustomisePillVisible)
         .onDisappear {
             #if DEBUG
-            print("[ImageInsert] 3. EditorView.onDisappear fired — editor is being torn down")
+            dlog("[ImageInsert] 3. EditorView.onDisappear fired — editor is being torn down")
             #endif
             undoTimer?.invalidate()
             undoTimer = nil
@@ -961,7 +961,7 @@ struct EditorView: View {
     /// (rather than sharing just the title string, which the previous stub did).
     private func shareNotebook() {
         #if DEBUG
-        print("[Share] shareNotebook() called; isShowingExportSheet was=\(viewModel.isShowingExportSheet)")
+        dlog("[Share] shareNotebook() called; isShowingExportSheet was=\(viewModel.isShowingExportSheet)")
         #endif
         viewModel.isShowingExportSheet = true
     }

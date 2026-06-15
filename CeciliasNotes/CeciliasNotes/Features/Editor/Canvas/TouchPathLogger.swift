@@ -56,7 +56,7 @@ enum TouchPathLogger {
 
         @objc func fire(_ g: UITapGestureRecognizer) {
             let loc = g.location(in: nil)   // window coordinates
-            print("[TouchPath] \(label) tap at \(loc)")
+            dlog("[TouchPath] \(label) tap at \(loc)")
         }
     }
 
@@ -78,7 +78,7 @@ enum TouchPathLogger {
             tap, &targetKey, target, .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
         view.addGestureRecognizer(tap)
-        print("[TouchPath] installed logger '\(label)' on \(type(of: view))")
+        dlog("[TouchPath] installed logger '\(label)' on \(type(of: view))")
     }
 }
 #endif

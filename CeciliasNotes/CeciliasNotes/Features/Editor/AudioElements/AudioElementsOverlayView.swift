@@ -64,7 +64,7 @@ struct AudioElementsOverlayView: View {
         let audioOnly = all.filter { $0.kind == .audio }
         #if DEBUG
         if !audioOnly.isEmpty {
-            print("[AudioPlayback] overlay elements fetch — pageId=\(pid) totalElements=\(all.count) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")
+            dlog("[AudioPlayback] overlay elements fetch — pageId=\(pid) totalElements=\(all.count) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")
         }
         #endif
         return audioOnly
@@ -135,7 +135,7 @@ struct AudioElementsOverlayView: View {
             try modelContext.save()
         } catch {
             #if DEBUG
-            print("[AudioElement] save failed on softDelete: \(error)")
+            dlog("[AudioElement] save failed on softDelete: \(error)")
             #endif
         }
         refreshTick &+= 1

@@ -51,7 +51,7 @@ final class InputCapabilityDetector: @unchecked Sendable {
         guard !hasPencil else { return }
         userDefaults.set(true, forKey: hasSeenPencilKey)
         #if DEBUG
-        print("[Input] first pencil touch observed — hasPencil flipped to true")
+        dlog("[Input] first pencil touch observed — hasPencil flipped to true")
         #endif
         DispatchQueue.main.async {
             NotificationCenter.default.post(

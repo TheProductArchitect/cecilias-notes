@@ -91,7 +91,7 @@ struct AudioElementView: View {
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onAppear {
             #if DEBUG
-            print("[AudioPlayback] AudioElementView.onAppear — elementId=\(element.id.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
+            dlog("[AudioPlayback] AudioElementView.onAppear — elementId=\(element.id.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
             #endif
             if !isRecording {
                 // Step 10: if the audio file is an iCloud stub
@@ -106,7 +106,7 @@ struct AudioElementView: View {
                 let exists = fm.fileExists(atPath: url.path)
                 let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
                 let ubi = UbiquitousFileStatus.currentState(at: url)
-                print("[AudioPlayback] AudioElementView file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
+                dlog("[AudioPlayback] AudioElementView file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
                 #endif
                 if case .downloading = UbiquitousFileStatus.currentState(at: url) {
                     _ = UbiquitousFileStatus.requestDownload(at: url)
@@ -218,7 +218,7 @@ struct AudioElementView: View {
     private var playPauseButton: some View {
         Button {
             #if DEBUG
-            print("[AudioPlay] 1. button tap received, elementId=\(element.id), contentId=\(content.id)")
+            dlog("[AudioPlay] 1. button tap received, elementId=\(element.id), contentId=\(content.id)")
             #endif
             player.togglePlayPause()
         } label: {
@@ -243,7 +243,7 @@ struct AudioElementView: View {
             LongPressGesture(minimumDuration: 0.6)
                 .onEnded { _ in
                     #if DEBUG
-                    print("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(element.id)")
+                    dlog("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(element.id)")
                     #endif
                     player.debugPlayDirectly(url: content.resolvedFileURL() ?? content.fileURL)
                 }

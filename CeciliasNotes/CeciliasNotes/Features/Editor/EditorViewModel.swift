@@ -269,7 +269,7 @@ final class EditorViewModel: ObservableObject {
                 try context.save()
             } catch {
                 #if DEBUG
-                print("[Image] save failed on commitImportedImage: \(error)")
+                dlog("[Image] save failed on commitImportedImage: \(error)")
                 #endif
             }
             NotificationCenter.default.post(
@@ -504,8 +504,8 @@ final class EditorViewModel: ObservableObject {
             guard recordingState != oldValue else { return }
             #if DEBUG
             let stack = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
-            print("[RecordingMirror] recordingState \(oldValue) → \(recordingState)")
-            print("[RecordingMirror]   stack:\n  \(stack)")
+            dlog("[RecordingMirror] recordingState \(oldValue) → \(recordingState)")
+            dlog("[RecordingMirror]   stack:\n  \(stack)")
             #endif
             switch recordingState {
             case .recording:
@@ -1067,7 +1067,7 @@ final class EditorViewModel: ObservableObject {
     func handlePencilSqueezeBegan() {
         let action = currentSqueezeAction()
         #if DEBUG
-        print("[Pencil] squeeze .began action=\(action.rawValue) currentTool=\(selectedTool.identity)")
+        dlog("[Pencil] squeeze .began action=\(action.rawValue) currentTool=\(selectedTool.identity)")
         #endif
         guard action == .tool else { return }
         let target = currentSqueezeToolChoice().identity
@@ -1087,7 +1087,7 @@ final class EditorViewModel: ObservableObject {
     func handlePencilSqueezeEnded() {
         let action = currentSqueezeAction()
         #if DEBUG
-        print("[Pencil] squeeze .ended/.cancelled action=\(action.rawValue) restoring=\(savedToolBeforeSqueeze?.identity.rawValue ?? "nil")")
+        dlog("[Pencil] squeeze .ended/.cancelled action=\(action.rawValue) restoring=\(savedToolBeforeSqueeze?.identity.rawValue ?? "nil")")
         #endif
         guard action == .tool, let saved = savedToolBeforeSqueeze else { return }
         // Restoring after squeeze must NOT poison `lastTool`. Otherwise
@@ -1800,7 +1800,7 @@ final class EditorViewModel: ObservableObject {
         let pageSize = currentPage.pageSize.pointSize
         let fromPageId = currentPage.id
         #if DEBUG
-        print("[Dictation] startDictationRecording — notebookId=\(notebookId) fromPageId=\(fromPageId) pageSize=\(pageSize)")
+        dlog("[Dictation] startDictationRecording — notebookId=\(notebookId) fromPageId=\(fromPageId) pageSize=\(pageSize)")
         #endif
         await RecordingSession.shared.startDictation(
             notebookId: notebookId,
@@ -1834,11 +1834,11 @@ final class EditorViewModel: ObservableObject {
                         self.currentPageIndex = idx
                         self.pendingScrollPageIndex = idx
                         #if DEBUG
-                        print("[Dictation] navigateToPage — newPageId=\(newPageId) idx=\(idx) currentPage.id now=\(self.currentPage.id)")
+                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) idx=\(idx) currentPage.id now=\(self.currentPage.id)")
                         #endif
                     } else {
                         #if DEBUG
-                        print("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
+                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
                         #endif
                     }
                 }
@@ -1911,12 +1911,12 @@ final class EditorViewModel: ObservableObject {
 
     func startRecording() async {
         #if DEBUG
-        print("[Audio] 0. EditorViewModel.startRecording() (quick-record path — AudioRecorder, NOT LectureRecorder)")
+        dlog("[Audio] 0. EditorViewModel.startRecording() (quick-record path — AudioRecorder, NOT LectureRecorder)")
         #endif
         do {
             try await audioRecorder.requestPermission()
             #if DEBUG
-            print("[Audio] 0a. mic permission granted")
+            dlog("[Audio] 0a. mic permission granted")
             #endif
             // New audio writes land in the unified `MediaStorage.audio/`
             // tree directly. The legacy `audioDirURL(notebookId:)`
@@ -1932,7 +1932,7 @@ final class EditorViewModel: ObservableObject {
             pendingRecordingId  = tempId
         } catch {
             #if DEBUG
-            print("[Audio] 0x. startRecording threw: \(error.localizedDescription)")
+            dlog("[Audio] 0x. startRecording threw: \(error.localizedDescription)")
             #endif
             mediaError = AppError.humanize(error)
         }
@@ -1940,14 +1940,14 @@ final class EditorViewModel: ObservableObject {
 
     func stopRecording() async {
         #if DEBUG
-        print("[Audio] stopRecording entry state=\(recordingState)")
+        dlog("[Audio] stopRecording entry state=\(recordingState)")
         #endif
         guard recordingState == .recording else { return }
         recordingState = .processing
         do {
             let result = try await audioRecorder.stop()
             #if DEBUG
-            print("[Audio] stopRecording audioRecorder.stop returned duration=\(result.duration)s bytes=\(result.fileSizeBytes)")
+            dlog("[Audio] stopRecording audioRecorder.stop returned duration=\(result.duration)s bytes=\(result.fileSizeBytes)")
             #endif
             guard let url = pendingRecordingURL, let id = pendingRecordingId else {
                 recordingState = .idle

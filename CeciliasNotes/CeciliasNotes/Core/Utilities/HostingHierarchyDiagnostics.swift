@@ -67,11 +67,11 @@ enum HostingHierarchyDiagnostics {
                   #selector(UIView.ink_diag_didAddSubview(_:))
               )
         else {
-            print("[CeciliasNotesDiag] Failed to install — selectors not found.")
+            dlog("[CeciliasNotesDiag] Failed to install — selectors not found.")
             return
         }
         method_exchangeImplementations(original, swizzled)
-        print("[CeciliasNotesDiag] Hosting hierarchy diagnostics installed (didAddSubview).")
+        dlog("[CeciliasNotesDiag] Hosting hierarchy diagnostics installed (didAddSubview).")
     }
 }
 
@@ -103,15 +103,15 @@ extension UIView {
         let ownerClass    = owningVC.map { NSStringFromClass(type(of: $0)) } ?? "<no VC>"
 
         HostingHierarchyDiagnostics.logQueue.async {
-            print("[CeciliasNotesDiag] FOUND _UIReparentingView add")
-            print("[CeciliasNotesDiag] parent view: \(parentClass)")
-            print("[CeciliasNotesDiag] parent VC:   \(ownerClass)")
-            print("[CeciliasNotesDiag] subview:     \(subviewClassName)")
-            print("[CeciliasNotesDiag] call stack:")
+            dlog("[CeciliasNotesDiag] FOUND _UIReparentingView add")
+            dlog("[CeciliasNotesDiag] parent view: \(parentClass)")
+            dlog("[CeciliasNotesDiag] parent VC:   \(ownerClass)")
+            dlog("[CeciliasNotesDiag] subview:     \(subviewClassName)")
+            dlog("[CeciliasNotesDiag] call stack:")
             for line in frames.prefix(25) {
-                print("[CeciliasNotesDiag]   \(line)")
+                dlog("[CeciliasNotesDiag]   \(line)")
             }
-            print("[CeciliasNotesDiag] ──")
+            dlog("[CeciliasNotesDiag] ──")
         }
     }
 }

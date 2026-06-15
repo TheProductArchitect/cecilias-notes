@@ -970,7 +970,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             pencilInteraction.delegate = self
             canvas.addInteraction(pencilInteraction)
             #if DEBUG
-            print("[Pencil-diag] mountCanvas registered UIPencilInteraction interaction=\(ObjectIdentifier(pencilInteraction).hashValue) on canvas page=\(hosts[i].pageId)")
+            dlog("[Pencil-diag] mountCanvas registered UIPencilInteraction interaction=\(ObjectIdentifier(pencilInteraction).hashValue) on canvas page=\(hosts[i].pageId)")
             #endif
 
             // Hover-recogniser rejection happens inside
@@ -1437,9 +1437,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // the system calls this legacy method on double-tap.
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
             #if DEBUG
-            print("[Pencil] double-tap fired (legacy API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
-            print("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
-            Thread.callStackSymbols.prefix(8).forEach { print("[Pencil-diag]   \($0)") }
+            dlog("[Pencil] double-tap fired (legacy API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
+            dlog("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
+            Thread.callStackSymbols.prefix(8).forEach { dlog("[Pencil-diag]   \($0)") }
             #endif
             viewModel.handlePencilDoubleTap()
         }
@@ -1459,9 +1459,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // `phase` member). One delegate call = one user-perceived
             // double-tap — fire the action once and exit.
             #if DEBUG
-            print("[Pencil] double-tap fired (Pencil Pro API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
-            print("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
-            Thread.callStackSymbols.prefix(8).forEach { print("[Pencil-diag]   \($0)") }
+            dlog("[Pencil] double-tap fired (Pencil Pro API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
+            dlog("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
+            Thread.callStackSymbols.prefix(8).forEach { dlog("[Pencil-diag]   \($0)") }
             #endif
             viewModel.handlePencilDoubleTap()
         }

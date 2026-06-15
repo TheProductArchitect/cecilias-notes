@@ -248,7 +248,7 @@ struct LibraryHeaderView: View {
             // committing to the editor.
             Button {
                 #if DEBUG
-                print("[Library] toolbar + tapped, opening notebook creation flow")
+                dlog("[Library] toolbar + tapped, opening notebook creation flow")
                 #endif
                 viewModel.createNotebookWithFallback()
             } label: {

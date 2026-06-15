@@ -83,7 +83,7 @@ enum StickyNoteCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[StickyNote] save failed on create: \(error)")
+            dlog("[StickyNote] save failed on create: \(error)")
             #endif
             return nil
         }

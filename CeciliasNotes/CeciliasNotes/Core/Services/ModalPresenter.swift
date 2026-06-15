@@ -45,7 +45,7 @@ final class ModalPresenter: ObservableObject {
     /// shows when the current modal dismisses.
     func present(_ modal: Modal) {
         #if DEBUG
-        print("[Modal] present id=\(modal.id) kind=\(modal.kind) active=\(String(describing: active?.id)) queued=\(queue.count)")
+        dlog("[Modal] present id=\(modal.id) kind=\(modal.kind) active=\(String(describing: active?.id)) queued=\(queue.count)")
         #endif
         guard active != nil else {
             active = modal
@@ -59,7 +59,7 @@ final class ModalPresenter: ObservableObject {
     /// callbacks so SwiftUI's user-driven dismiss also drains the queue.
     func dismiss() {
         #if DEBUG
-        print("[Modal] dismiss active=\(String(describing: active?.id)) queueCount=\(queue.count)")
+        dlog("[Modal] dismiss active=\(String(describing: active?.id)) queueCount=\(queue.count)")
         #endif
         let onDidDismiss = active?.onDidDismiss
         active = nil

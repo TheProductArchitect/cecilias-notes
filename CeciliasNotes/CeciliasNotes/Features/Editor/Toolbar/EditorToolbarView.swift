@@ -267,7 +267,7 @@ struct EditorToolbarView: View {
             // version was getting fat-fingered with the pin.
             Button {
                 #if DEBUG
-                print("[Share] toolbar share button tapped")
+                dlog("[Share] toolbar share button tapped")
                 #endif
                 onShare()
             } label: {

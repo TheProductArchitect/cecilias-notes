@@ -86,7 +86,7 @@ enum MediaPickerPresenter {
     ) {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
             #if DEBUG
-            print("[ImageInsert] camera presenter: source unavailable → onCancel")
+            dlog("[ImageInsert] camera presenter: source unavailable → onCancel")
             #endif
             onCancel()
             return
@@ -166,13 +166,13 @@ enum MediaPickerPresenter {
         DispatchQueue.main.async {
             guard let topVC = Self.topmostViewController() else {
                 #if DEBUG
-                print("[ImageInsert] presenter: no topmost VC reachable for \(debugTag) — cancelling")
+                dlog("[ImageInsert] presenter: no topmost VC reachable for \(debugTag) — cancelling")
                 #endif
                 onUnavailable()
                 return
             }
             #if DEBUG
-            print("[ImageInsert] presenter: presenting \(debugTag) on \(type(of: topVC))")
+            dlog("[ImageInsert] presenter: presenting \(debugTag) on \(type(of: topVC))")
             #endif
             topVC.present(picker, animated: true)
         }
@@ -254,7 +254,7 @@ private final class PhotoPickerDelegate: NSObject, PHPickerViewControllerDelegat
             // is the cancel path on PHPicker (there's no separate
             // delegate call for cancel).
             #if DEBUG
-            print("[ImageInsert] presenter: results empty → onCancel")
+            dlog("[ImageInsert] presenter: results empty → onCancel")
             #endif
             DispatchQueue.main.async { [onCancel] in onCancel() }
             return
@@ -281,7 +281,7 @@ private final class PhotoPickerDelegate: NSObject, PHPickerViewControllerDelegat
 
         group.notify(queue: .main) { [completion] in
             #if DEBUG
-            print("[ImageInsert] presenter: loaded \(picked.count) image(s), firing completion")
+            dlog("[ImageInsert] presenter: loaded \(picked.count) image(s), firing completion")
             #endif
             completion(picked)
         }

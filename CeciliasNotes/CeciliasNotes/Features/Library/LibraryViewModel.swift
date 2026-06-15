@@ -411,7 +411,7 @@ final class LibraryViewModel: ObservableObject {
                 let sourceRaw = note.userInfo?[ImageImportUserInfoKey.source] as? String
                 let source    = sourceRaw.flatMap(ImageImportSource.init(rawValue:)) ?? .photos
                 #if DEBUG
-                print("[ImagePicker] LibraryViewModel observed .imageImportRequested — about to present source=\(source.rawValue) at norm=(\(normX),\(normY))")
+                dlog("[ImagePicker] LibraryViewModel observed .imageImportRequested — about to present source=\(source.rawValue) at norm=(\(normX),\(normY))")
                 #endif
                 if source == .camera {
                     MediaPickerPresenter.presentCamera(
@@ -529,7 +529,7 @@ final class LibraryViewModel: ObservableObject {
         defer {
             let ms = (CFAbsoluteTimeGetCurrent() - __refreshStart) * 1000
             if ms > 50 {
-                print("[LibraryVM] refresh slow: \(String(format: "%.0f", ms)) ms ctx=\(selectedContext)")
+                dlog("[LibraryVM] refresh slow: \(String(format: "%.0f", ms)) ms ctx=\(selectedContext)")
             }
         }
         #endif

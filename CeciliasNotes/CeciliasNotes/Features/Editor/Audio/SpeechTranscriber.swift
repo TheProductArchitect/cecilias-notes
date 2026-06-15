@@ -24,7 +24,7 @@ actor SpeechTranscriber {
     /// Append PCM buffers via `appendBuffer(_:)`. Call `finishLive()` when recording stops.
     func startLive() async -> AsyncStream<String> {
         #if DEBUG
-        print("[Audio] 6. SpeechTranscriber.startLive() called")
+        dlog("[Audio] 6. SpeechTranscriber.startLive() called")
         #endif
         // Unconditional cleanup of any prior session. A leftover
         // `SFSpeechRecognitionTask` holds the recogniser and blocks
@@ -41,16 +41,16 @@ actor SpeechTranscriber {
 
         let permission = await requestSpeechPermission()
         #if DEBUG
-        print("[Audio] 7. speech permission granted=\(permission)")
+        dlog("[Audio] 7. speech permission granted=\(permission)")
         #endif
         guard permission, let recognizer = makeSupportedRecognizer() else {
             #if DEBUG
-            print("[Audio] 7b. no supported recognizer — bailing. permission=\(permission)")
+            dlog("[Audio] 7b. no supported recognizer — bailing. permission=\(permission)")
             #endif
             return AsyncStream { $0.finish() }
         }
         #if DEBUG
-        print("[Audio] 8. recognizer locale=\(recognizer.locale.identifier) isAvailable=\(recognizer.isAvailable) supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
+        dlog("[Audio] 8. recognizer locale=\(recognizer.locale.identifier) isAvailable=\(recognizer.isAvailable) supportsOnDevice=\(recognizer.supportsOnDeviceRecognition)")
         #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -69,14 +69,14 @@ actor SpeechTranscriber {
             guard let self else { return }
             #if DEBUG
             if let error {
-                print("[Audio] recognitionTask error: \(error.localizedDescription)")
+                dlog("[Audio] recognitionTask error: \(error.localizedDescription)")
             }
             if let result {
                 resultCount += 1
                 let isFinal = result.isFinal
                 let text = result.bestTranscription.formattedString
                 if resultCount == 1 || resultCount % 10 == 0 || isFinal {
-                    print("[Audio] result #\(resultCount) isFinal=\(isFinal) len=\(text.count) text=\"\(text.prefix(60))\"")
+                    dlog("[Audio] result #\(resultCount) isFinal=\(isFinal) len=\(text.count) text=\"\(text.prefix(60))\"")
                 }
             }
             #endif
@@ -89,7 +89,7 @@ actor SpeechTranscriber {
             }
         }
         #if DEBUG
-        print("[Audio] 9. recognitionTask started")
+        dlog("[Audio] 9. recognitionTask started")
         #endif
         return stream
     }

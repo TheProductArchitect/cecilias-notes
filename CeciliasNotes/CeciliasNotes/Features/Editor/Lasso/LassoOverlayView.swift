@@ -168,7 +168,7 @@ struct LassoOverlayView: View {
         let elements = (try? modelContext.fetch(descriptor)) ?? []
 
         #if DEBUG
-        print("[Lasso] commit mode=\(selection.mode) points=\(lassoPoints.count) bbox=\(lassoBBox) pageSize=\(pageSize) fetched=\(elements.count) elements")
+        dlog("[Lasso] commit mode=\(selection.mode) points=\(lassoPoints.count) bbox=\(lassoBBox) pageSize=\(pageSize) fetched=\(elements.count) elements")
         #endif
 
         for element in elements {
@@ -178,7 +178,7 @@ struct LassoOverlayView: View {
                       let drawing = try? PKDrawing(data: content.strokeData)
                 else {
                     #if DEBUG
-                    print("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) — no content/decode failed")
+                    dlog("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) — no content/decode failed")
                     #endif
                     continue
                 }
@@ -206,7 +206,7 @@ struct LassoOverlayView: View {
                 }
                 #if DEBUG
                 let firstBBox = strokes.first?.renderBounds ?? .zero
-                print("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) strokes=\(strokes.count) matched=\(matchedIndices.count) firstStrokeBBox=\(firstBBox)")
+                dlog("[Lasso]   stroke element \(element.id.uuidString.prefix(8)) strokes=\(strokes.count) matched=\(matchedIndices.count) firstStrokeBBox=\(firstBBox)")
                 #endif
                 if matchedIndices.isEmpty { continue }
                 if matchedIndices.count == strokes.count {
@@ -228,7 +228,7 @@ struct LassoOverlayView: View {
                 // loop, so the element was wrongly skipped.
                 let hit = LassoMath.rectSubstantiallyInside(rect, in: path)
                 #if DEBUG
-                print("[Lasso]   \(element.kind) element \(element.id.uuidString.prefix(8)) rect=\(rect) centre=\(centre) contained=\(hit)")
+                dlog("[Lasso]   \(element.kind) element \(element.id.uuidString.prefix(8)) rect=\(rect) centre=\(centre) contained=\(hit)")
                 #endif
                 if hit {
                     elementIds.insert(element.id)
@@ -238,7 +238,7 @@ struct LassoOverlayView: View {
         }
 
         #if DEBUG
-        print("[Lasso] result — wholeElements=\(elementIds.count) partialStrokeElements=\(partials.count)")
+        dlog("[Lasso] result — wholeElements=\(elementIds.count) partialStrokeElements=\(partials.count)")
         #endif
 
         selection.setSelection(

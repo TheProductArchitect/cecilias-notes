@@ -86,7 +86,7 @@ struct StickyNoteElementsOverlayView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { location in
                         #if DEBUG
-                        print("[StickyGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) location=\(location) allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
+                        dlog("[StickyGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) location=\(location) allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
                         #endif
                         handleBackgroundTap(at: location)
                     }

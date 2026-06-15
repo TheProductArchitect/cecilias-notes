@@ -231,11 +231,11 @@ final class LectureRecorder: ObservableObject {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             #if DEBUG
-            print("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
+            dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
+            dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
             #endif
         }
 
@@ -243,7 +243,7 @@ final class LectureRecorder: ObservableObject {
         let duration = elapsedSeconds
         guard duration >= 1.0 else {
             #if DEBUG
-            print("[LectureRecorder] stop → discarding sub-second recording (duration=\(duration)s)")
+            dlog("[LectureRecorder] stop → discarding sub-second recording (duration=\(duration)s)")
             #endif
             try? FileManager.default.removeItem(at: url)
             isRecording = false
@@ -322,11 +322,11 @@ final class LectureRecorder: ObservableObject {
         eng.prepare()
         try eng.start()
         #if DEBUG
-        print("[Lecture] engine.start() OK, isRunning=\(eng.isRunning)")
+        dlog("[Lecture] engine.start() OK, isRunning=\(eng.isRunning)")
         Task { [weak eng] in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard let eng else { return }
-            print("[Lecture] engine.isRunning after 500ms = \(eng.isRunning)")
+            dlog("[Lecture] engine.isRunning after 500ms = \(eng.isRunning)")
         }
         #endif
         engine = eng
@@ -359,7 +359,7 @@ final class LectureRecorder: ObservableObject {
         // delivers, so the tap always matches the running graph.
         let format = input.inputFormat(forBus: 0)
         #if DEBUG
-        print("[Lecture] installing tap — hw input format sr=\(format.sampleRate) ch=\(format.channelCount)")
+        dlog("[Lecture] installing tap — hw input format sr=\(format.sampleRate) ch=\(format.channelCount)")
         // Tap-fire counter mirroring AudioRecorder's diagnostic.
         // First call + every 50th thereafter print so we can confirm
         // the engine is actually delivering buffers. Resets per
@@ -371,7 +371,7 @@ final class LectureRecorder: ObservableObject {
         // config-change callback re-installs once the route settles.
         guard format.sampleRate > 0, format.channelCount > 0 else {
             #if DEBUG
-            print("[Lecture] installInputTap SKIP — hw format not ready (sr=\(format.sampleRate) ch=\(format.channelCount))")
+            dlog("[Lecture] installInputTap SKIP — hw format not ready (sr=\(format.sampleRate) ch=\(format.channelCount))")
             #endif
             return
         }
@@ -384,7 +384,7 @@ final class LectureRecorder: ObservableObject {
             tapFireCount += 1
             if tapFireCount == 1 || tapFireCount % 50 == 0 {
                 let frames = buffer.frameLength
-                print("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
+                dlog("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
             }
             #endif
             let rms = Self.rms(buffer: buffer)
@@ -421,11 +421,11 @@ final class LectureRecorder: ObservableObject {
             eng.prepare()
             try eng.start()
             #if DEBUG
-            print("[Lecture] engine restarted after configuration change, isRunning=\(eng.isRunning)")
+            dlog("[Lecture] engine restarted after configuration change, isRunning=\(eng.isRunning)")
             #endif
         } catch {
             #if DEBUG
-            print("[Lecture] engine restart after config change FAILED: \(error)")
+            dlog("[Lecture] engine restart after config change FAILED: \(error)")
             #endif
         }
     }
@@ -444,7 +444,7 @@ final class LectureRecorder: ObservableObject {
 
         #if DEBUG
         let authStatus = SFSpeechRecognizer.authorizationStatus()
-        print("[Dictation] startSpeechRecognition — speech auth status=\(authStatus.rawValue) (\(authStatusString(authStatus)))")
+        dlog("[Dictation] startSpeechRecognition — speech auth status=\(authStatus.rawValue) (\(authStatusString(authStatus)))")
         #endif
 
         // Pick a recogniser that supports on-device recognition.
@@ -456,12 +456,12 @@ final class LectureRecorder: ObservableObject {
         self.recogniser = recogniser
         guard let recogniser else {
             #if DEBUG
-            print("[Dictation] startSpeechRecognition ABORT — no recogniser available (on-device + server fallback both failed)")
+            dlog("[Dictation] startSpeechRecognition ABORT — no recogniser available (on-device + server fallback both failed)")
             #endif
             return
         }
         #if DEBUG
-        print("[Dictation] selected recogniser locale=\(recogniser.locale.identifier) supportsOnDevice=\(recogniser.supportsOnDeviceRecognition) wasOnDevice=\(wasOnDevice) isAvailable=\(recogniser.isAvailable)")
+        dlog("[Dictation] selected recogniser locale=\(recogniser.locale.identifier) supportsOnDevice=\(recogniser.supportsOnDeviceRecognition) wasOnDevice=\(wasOnDevice) isAvailable=\(recogniser.isAvailable)")
         #endif
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -478,7 +478,7 @@ final class LectureRecorder: ObservableObject {
         await capture.setRequest(request)
 
         #if DEBUG
-        print("[Dictation] startSpeechRecognition — installing recognitionTask (onDevice=\(request.requiresOnDeviceRecognition))")
+        dlog("[Dictation] startSpeechRecognition — installing recognitionTask (onDevice=\(request.requiresOnDeviceRecognition))")
         #endif
         // Fresh task → fresh partial baseline. The first partial of a
         // new task is never a "reset" relative to the previous task's
@@ -491,12 +491,12 @@ final class LectureRecorder: ObservableObject {
             // the @Published members on `self`, but the print
             // here doesn't need it.
             #if DEBUG
-            print("[Dictation] recognitionTask callback fired — hasResult=\(result != nil) hasError=\(error != nil)")
+            dlog("[Dictation] recognitionTask callback fired — hasResult=\(result != nil) hasError=\(error != nil)")
             #endif
             Task { @MainActor [weak self] in
                 guard let self else {
                     #if DEBUG
-                    print("[Dictation] recognitionTask Task DROP — self gone")
+                    dlog("[Dictation] recognitionTask Task DROP — self gone")
                     #endif
                     return
                 }
@@ -504,12 +504,12 @@ final class LectureRecorder: ObservableObject {
                     let partial = result.bestTranscription.formattedString
                     self.ingestPartial(partial)
                     #if DEBUG
-                    print("[Dictation] partial result, len=\(partial.count), isFinal=\(result.isFinal), preview=\(String(partial.prefix(40)))")
+                    dlog("[Dictation] partial result, len=\(partial.count), isFinal=\(result.isFinal), preview=\(String(partial.prefix(40)))")
                     #endif
                 }
                 if let error {
                     #if DEBUG
-                    print("[Dictation] recogniser error: \(error)")
+                    dlog("[Dictation] recogniser error: \(error)")
                     #endif
                 }
                 let didFinish = result?.isFinal == true || error != nil
@@ -522,7 +522,7 @@ final class LectureRecorder: ObservableObject {
         }
         #if DEBUG
         if currentTask == nil {
-            print("[Dictation] recognitionTask install returned nil")
+            dlog("[Dictation] recognitionTask install returned nil")
         }
         #endif
     }
@@ -579,7 +579,7 @@ final class LectureRecorder: ObservableObject {
         let trimmed = partial.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             #if DEBUG
-            print("[Dictation] ingestPartial — dropping empty partial; preserving liveTranscript=\(liveTranscript.count) chars")
+            dlog("[Dictation] ingestPartial — dropping empty partial; preserving liveTranscript=\(liveTranscript.count) chars")
             #endif
             return
         }
@@ -589,7 +589,7 @@ final class LectureRecorder: ObservableObject {
             // new one (the current partial) starts on its own line.
             committedTranscript = Self.joinLine(committedTranscript, lastSessionPartial)
             #if DEBUG
-            print("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
+            dlog("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
             #endif
         }
         lastSessionPartial = partial
@@ -671,7 +671,7 @@ final class LectureRecorder: ObservableObject {
             committedTranscript = liveTranscript
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             #if DEBUG
-            print("[Dictation] rotation without final result — promoted \(committedTranscript.count)-char liveTranscript to committed (partial would otherwise be lost)")
+            dlog("[Dictation] rotation without final result — promoted \(committedTranscript.count)-char liveTranscript to committed (partial would otherwise be lost)")
             #endif
         }
         // End the previous request's audio and finish the task.
@@ -740,13 +740,13 @@ final class LectureRecorder: ObservableObject {
         for locale in candidateLocales {
             guard let r = SFSpeechRecognizer(locale: locale) else {
                 #if DEBUG
-                print("[Dictation] makeRecogniser — no recogniser for locale=\(locale.identifier)")
+                dlog("[Dictation] makeRecogniser — no recogniser for locale=\(locale.identifier)")
                 #endif
                 continue
             }
             if r.supportsOnDeviceRecognition {
                 #if DEBUG
-                print("[Dictation] makeRecogniser — on-device match locale=\(locale.identifier)")
+                dlog("[Dictation] makeRecogniser — on-device match locale=\(locale.identifier)")
                 #endif
                 return (r, true)
             }
@@ -756,13 +756,13 @@ final class LectureRecorder: ObservableObject {
         for locale in candidateLocales {
             if let r = SFSpeechRecognizer(locale: locale), r.isAvailable {
                 #if DEBUG
-                print("[Dictation] makeRecogniser — server-fallback match locale=\(locale.identifier)")
+                dlog("[Dictation] makeRecogniser — server-fallback match locale=\(locale.identifier)")
                 #endif
                 return (r, false)
             }
         }
         #if DEBUG
-        print("[Dictation] makeRecogniser — no recogniser available, on-device or otherwise")
+        dlog("[Dictation] makeRecogniser — no recogniser available, on-device or otherwise")
         #endif
         return (nil, false)
     }

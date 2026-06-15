@@ -36,7 +36,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
 
     func load(url: URL) {
         #if DEBUG
-        print("[AudioPlayback] load() entered url=\(url.lastPathComponent) loadedURL=\(loadedURL?.lastPathComponent ?? "nil") hasPlayer=\(player != nil)")
+        dlog("[AudioPlayback] load() entered url=\(url.lastPathComponent) loadedURL=\(loadedURL?.lastPathComponent ?? "nil") hasPlayer=\(player != nil)")
         #endif
         // Idempotent for the same URL — calling `load` multiple
         // times on view re-render doesn't re-create the player or
@@ -46,7 +46,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         // allow re-creation so a later `load` recovers it.
         if loadedURL == url, let p = player, p.duration > 0 {
             #if DEBUG
-            print("[AudioPlayback] load() idempotent skip — same URL, player live, duration=\(duration)")
+            dlog("[AudioPlayback] load() idempotent skip — same URL, player live, duration=\(duration)")
             #endif
             return
         }
@@ -65,17 +65,17 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         let exists = fm.fileExists(atPath: url.path)
         let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
         #if DEBUG
-        print("[AudioPlayback] load() file check — exists=\(exists) size=\(size) path=\(url.path)")
+        dlog("[AudioPlayback] load() file check — exists=\(exists) size=\(size) path=\(url.path)")
         #endif
         guard exists else {
             #if DEBUG
-            print("[AudioPlayback] load() ABORT — file missing at \(url.path)")
+            dlog("[AudioPlayback] load() ABORT — file missing at \(url.path)")
             #endif
             return
         }
         if size == 0 {
             #if DEBUG
-            print("[AudioPlayback] load() WARN — file is 0 bytes; recording likely captured nothing")
+            dlog("[AudioPlayback] load() WARN — file is 0 bytes; recording likely captured nothing")
             #endif
         }
         do {
@@ -88,22 +88,22 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             self.currentTime = 0
             self.isPlaying = false
             #if DEBUG
-            print("[AudioPlayback] load() OK — prepared=\(prepared) duration=\(p.duration) numberOfChannels=\(p.numberOfChannels) format=\(String(describing: p.format))")
+            dlog("[AudioPlayback] load() OK — prepared=\(prepared) duration=\(p.duration) numberOfChannels=\(p.numberOfChannels) format=\(String(describing: p.format))")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlayback] load() THROW — failed to construct AVAudioPlayer for \(url.lastPathComponent): \(error)")
+            dlog("[AudioPlayback] load() THROW — failed to construct AVAudioPlayer for \(url.lastPathComponent): \(error)")
             #endif
         }
     }
 
     func togglePlayPause() {
         #if DEBUG
-        print("[AudioPlay] 2. togglePlayPause entered, isPlaying=\(isPlaying), playerExists=\(player != nil), currentUrl=\(player?.url?.lastPathComponent ?? "nil")")
+        dlog("[AudioPlay] 2. togglePlayPause entered, isPlaying=\(isPlaying), playerExists=\(player != nil), currentUrl=\(player?.url?.lastPathComponent ?? "nil")")
         #endif
         guard let player else {
             #if DEBUG
-            print("[AudioPlay] 2a. ABORT — no player loaded")
+            dlog("[AudioPlay] 2a. ABORT — no player loaded")
             #endif
             return
         }
@@ -112,11 +112,11 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             stopTimer()
             isPlaying = false
             #if DEBUG
-            print("[AudioPlay] 2b. paused (was playing)")
+            dlog("[AudioPlay] 2b. paused (was playing)")
             #endif
         } else {
             #if DEBUG
-            print("[AudioPlay] 3. play branch entered, spinning Task")
+            dlog("[AudioPlay] 3. play branch entered, spinning Task")
             #endif
             // Configure the session BEFORE play() so the recorder's
             // `.playAndRecord` residue can't outrace us. The Task is
@@ -124,32 +124,32 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             // same actor that owns `isPlaying` + the progress timer.
             Task { @MainActor [weak self] in
                 #if DEBUG
-                print("[AudioPlay] 4. Task started, calling configureAudioSession")
+                dlog("[AudioPlay] 4. Task started, calling configureAudioSession")
                 #endif
                 guard let self else {
                     #if DEBUG
-                    print("[AudioPlay] 4a. ABORT — self gone")
+                    dlog("[AudioPlay] 4a. ABORT — self gone")
                     #endif
                     return
                 }
                 await Self.configureAudioSession()
                 #if DEBUG
-                print("[AudioPlay] 5. configureAudioSession returned")
+                dlog("[AudioPlay] 5. configureAudioSession returned")
                 #endif
                 guard let player = self.player else {
                     #if DEBUG
-                    print("[AudioPlay] 6. ABORT — player is nil after session config")
+                    dlog("[AudioPlay] 6. ABORT — player is nil after session config")
                     #endif
                     return
                 }
                 let prepared = player.prepareToPlay()
                 #if DEBUG
-                print("[AudioPlay] 6. player exists, url=\(player.url?.lastPathComponent ?? "nil"), duration=\(player.duration), prepareToPlay=\(prepared)")
+                dlog("[AudioPlay] 6. player exists, url=\(player.url?.lastPathComponent ?? "nil"), duration=\(player.duration), prepareToPlay=\(prepared)")
                 #endif
                 let didPlay = player.play()
                 let cat = AVAudioSession.sharedInstance().category.rawValue
                 #if DEBUG
-                print("[AudioPlay] 7. player.play() returned \(didPlay), isPlaying=\(player.isPlaying), currentTime=\(player.currentTime), category=\(cat)")
+                dlog("[AudioPlay] 7. player.play() returned \(didPlay), isPlaying=\(player.isPlaying), currentTime=\(player.currentTime), category=\(cat)")
                 #endif
                 self.startTimer()
                 self.isPlaying = true
@@ -167,19 +167,19 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     /// the file / session / hardware layer.
     func debugPlayDirectly(url: URL) {
         #if DEBUG
-        print("[AudioPlayback] debugPlayDirectly entered, url=\(url.lastPathComponent)")
+        dlog("[AudioPlayback] debugPlayDirectly entered, url=\(url.lastPathComponent)")
         let exists = FileManager.default.fileExists(atPath: url.path)
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
-        print("[AudioPlayback] debugPlayDirectly file exists=\(exists), size=\(size)")
+        dlog("[AudioPlayback] debugPlayDirectly file exists=\(exists), size=\(size)")
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [])
             try AVAudioSession.sharedInstance().setActive(true)
-            print("[AudioPlayback] debugPlayDirectly session configured")
+            dlog("[AudioPlayback] debugPlayDirectly session configured")
             let p = try AVAudioPlayer(contentsOf: url)
             p.delegate = self
             p.prepareToPlay()
             let didPlay = p.play()
-            print("[AudioPlayback] debugPlayDirectly player.play() = \(didPlay), duration=\(p.duration)")
+            dlog("[AudioPlayback] debugPlayDirectly player.play() = \(didPlay), duration=\(p.duration)")
             // Hold a strong reference so the AVAudioPlayer survives.
             self.player = p
             self.loadedURL = url
@@ -188,7 +188,7 @@ final class AudioPlaybackController: NSObject, ObservableObject {
             self.isPlaying = didPlay
             if didPlay { startTimer() }
         } catch {
-            print("[AudioPlayback] debugPlayDirectly threw: \(error)")
+            dlog("[AudioPlayback] debugPlayDirectly threw: \(error)")
         }
         #endif
     }
@@ -254,33 +254,33 @@ final class AudioPlaybackController: NSObject, ObservableObject {
     private static func configureAudioSession() async {
         let session = AVAudioSession.sharedInstance()
         #if DEBUG
-        print("[AudioPlay] cas.1 configureAudioSession entered, sessionCategory before=\(session.category.rawValue), mode before=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
+        dlog("[AudioPlay] cas.1 configureAudioSession entered, sessionCategory before=\(session.category.rawValue), mode before=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
         #endif
         var firstCategoryOK = false
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             firstCategoryOK = true
             #if DEBUG
-            print("[AudioPlay] cas.2 first setCategory(.playback) attempt: OK")
+            dlog("[AudioPlay] cas.2 first setCategory(.playback) attempt: OK")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlay] cas.2 first setCategory(.playback) attempt: FAILED: \(error)")
+            dlog("[AudioPlay] cas.2 first setCategory(.playback) attempt: FAILED: \(error)")
             #endif
         }
         if firstCategoryOK {
             do {
                 try session.setActive(true)
                 #if DEBUG
-                print("[AudioPlay] cas.3 first setActive(true) attempt: OK")
+                dlog("[AudioPlay] cas.3 first setActive(true) attempt: OK")
                 #endif
                 #if DEBUG
-                print("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
+                dlog("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
                 #endif
                 return
             } catch {
                 #if DEBUG
-                print("[AudioPlay] cas.3 first setActive(true) attempt: FAILED: \(error)")
+                dlog("[AudioPlay] cas.3 first setActive(true) attempt: FAILED: \(error)")
                 #endif
             }
         }
@@ -291,25 +291,25 @@ final class AudioPlaybackController: NSObject, ObservableObject {
         do {
             try session.setCategory(.playback, mode: .default, options: [])
             #if DEBUG
-            print("[AudioPlay] cas.4 retry setCategory: OK")
+            dlog("[AudioPlay] cas.4 retry setCategory: OK")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlay] cas.4 retry setCategory: FAILED: \(error)")
+            dlog("[AudioPlay] cas.4 retry setCategory: FAILED: \(error)")
             #endif
         }
         do {
             try session.setActive(true)
             #if DEBUG
-            print("[AudioPlay] cas.5 retry setActive: OK")
+            dlog("[AudioPlay] cas.5 retry setActive: OK")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlay] cas.5 retry setActive: FAILED: \(error)")
+            dlog("[AudioPlay] cas.5 retry setActive: FAILED: \(error)")
             #endif
         }
         #if DEBUG
-        print("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
+        dlog("[AudioPlay] cas.6 final state: category=\(session.category.rawValue), mode=\(session.mode.rawValue), isOtherAudioPlaying=\(session.isOtherAudioPlaying)")
         #endif
     }
 }

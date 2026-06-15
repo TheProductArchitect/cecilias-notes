@@ -109,7 +109,7 @@ enum DictationFlowCommit {
                   let content = element.textContent
             else {
                 #if DEBUG
-                print("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
+                dlog("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
                 #endif
                 return
             }
@@ -128,11 +128,11 @@ enum DictationFlowCommit {
                 do {
                     try context.save()
                     #if DEBUG
-                    print("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
+                    dlog("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
                     #endif
                 } catch {
                     #if DEBUG
-                    print("[Dictation] updateText SAVE FAILED: \(error)")
+                    dlog("[Dictation] updateText SAVE FAILED: \(error)")
                     #endif
                 }
             }

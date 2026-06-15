@@ -211,7 +211,7 @@ final class RecordingSession: ObservableObject {
         // posture as `startVoiceNote`.
         guard DeviceCapabilities.canRecord else { return }
         #if DEBUG
-        print("[Dictation] RecordingSession.startDictation entered, state=\(state)")
+        dlog("[Dictation] RecordingSession.startDictation entered, state=\(state)")
         #endif
         if case .idle = state {
             // Normal path — proceed.
@@ -223,12 +223,12 @@ final class RecordingSession: ObservableObject {
             // refusing every subsequent dictation attempt for the
             // rest of the session.
             #if DEBUG
-            print("[Dictation] state not idle (\(state)) — forcing resetSession() before retry")
+            dlog("[Dictation] state not idle (\(state)) — forcing resetSession() before retry")
             #endif
             resetSession()
             guard case .idle = state else {
                 #if DEBUG
-                print("[Dictation] ABORT — resetSession() did not land in .idle (state=\(state))")
+                dlog("[Dictation] ABORT — resetSession() did not land in .idle (state=\(state))")
                 #endif
                 return
             }
@@ -237,24 +237,24 @@ final class RecordingSession: ObservableObject {
 
         guard let newPage = createNewPage() else {
             #if DEBUG
-            print("[Dictation] ABORT — createNewPage returned nil")
+            dlog("[Dictation] ABORT — createNewPage returned nil")
             #endif
             interruptionMessage = "Couldn't create a new page for dictation."
             return
         }
         #if DEBUG
-        print("[Dictation] new page created id=\(newPage.id) number=\(newPage.pageNumber)")
+        dlog("[Dictation] new page created id=\(newPage.id) number=\(newPage.pageNumber)")
         #endif
 
         let recorder = LectureRecorder()
         do {
             try await recorder.start(pageId: newPage.id, notebookId: notebookId)
             #if DEBUG
-            print("[Dictation] LectureRecorder.start succeeded")
+            dlog("[Dictation] LectureRecorder.start succeeded")
             #endif
         } catch {
             #if DEBUG
-            print("[Dictation] ABORT — LectureRecorder.start threw: \(error)")
+            dlog("[Dictation] ABORT — LectureRecorder.start threw: \(error)")
             #endif
             interruptionMessage = "Couldn't start dictation."
             return
@@ -270,7 +270,7 @@ final class RecordingSession: ObservableObject {
             pageSize: pageSize
         )
         #if DEBUG
-        print("[Dictation] initial text element id=\(firstTextId)")
+        dlog("[Dictation] initial text element id=\(firstTextId)")
         #endif
 
         let contentId = UUID()
@@ -288,7 +288,7 @@ final class RecordingSession: ObservableObject {
         startElapsedTimer()
         subscribeLiveTranscript(recorder)
         #if DEBUG
-        print("[Dictation] startDictation completed successfully, state=\(state)")
+        dlog("[Dictation] startDictation completed successfully, state=\(state)")
         #endif
     }
 
@@ -318,20 +318,20 @@ final class RecordingSession: ObservableObject {
     private func handleLiveTranscript(_ transcript: String) {
         guard case .dictation(var ctx) = state else {
             #if DEBUG
-            print("[Dictation] handleLiveTranscript dropped — state not dictation (\(state))")
+            dlog("[Dictation] handleLiveTranscript dropped — state not dictation (\(state))")
             #endif
             return
         }
         guard let currentTextId = ctx.textElementIds.last else {
             #if DEBUG
-            print("[Dictation] handleLiveTranscript dropped — no current text element id")
+            dlog("[Dictation] handleLiveTranscript dropped — no current text element id")
             #endif
             return
         }
 
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
-        print("[Dictation] handleLiveTranscript routing \(trimmed.count) chars → textElement=\(currentTextId)")
+        dlog("[Dictation] handleLiveTranscript routing \(trimmed.count) chars → textElement=\(currentTextId)")
         #endif
         DictationFlowCommit.updateText(elementId: currentTextId, text: trimmed)
 

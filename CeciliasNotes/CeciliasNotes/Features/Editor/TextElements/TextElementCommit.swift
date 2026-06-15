@@ -58,7 +58,7 @@ enum TextElementCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[TextElementCommit] save failed on create: \(error)")
+            dlog("[TextElementCommit] save failed on create: \(error)")
             #endif
             return nil
         }

@@ -330,7 +330,7 @@ struct AskMyNotesView: View {
         // dict.
         guard indexLoaded else { return }
         #if DEBUG
-        print("[Ask] submit query=\"\(trimmed)\" scope=\(notebookId?.uuidString ?? "global") " +
+        dlog("[Ask] submit query=\"\(trimmed)\" scope=\(notebookId?.uuidString ?? "global") " +
               "indexLoaded=\(indexLoaded) canRun=\(IntelligenceService.shared.canRun)")
         #endif
         hasSubmitted = true
@@ -349,7 +349,7 @@ struct AskMyNotesView: View {
             scopedTo: notebookId
         )
         #if DEBUG
-        print("[Ask] retrieval hits=\(retrieved.count)")
+        dlog("[Ask] retrieval hits=\(retrieved.count)")
         #endif
         guard !retrieved.isEmpty else {
             // No relevant notes — short-circuit before invoking the
@@ -401,7 +401,7 @@ struct AskMyNotesView: View {
             }
             isStreaming = false
             #if DEBUG
-            print("[Ask] response length=\(answer.count) chars scope=\(scopeTitle ?? "global")")
+            dlog("[Ask] response length=\(answer.count) chars scope=\(scopeTitle ?? "global")")
             #endif
         }
     }

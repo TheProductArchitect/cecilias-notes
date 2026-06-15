@@ -733,9 +733,9 @@ struct ToolPaletteView: View {
     /// tool-button tap and the long-press variant picker.
     private func requestImageImport(source: ImageImportSource) {
         #if DEBUG
-        print("[ImagePicker] presenting picker, reason=user explicit tap on image tool icon source=\(source.rawValue)")
+        dlog("[ImagePicker] presenting picker, reason=user explicit tap on image tool icon source=\(source.rawValue)")
         let stack = Thread.callStackSymbols.prefix(6).joined(separator: "\n  ")
-        print("[ImagePicker]   stack:\n  \(stack)")
+        dlog("[ImagePicker]   stack:\n  \(stack)")
         #endif
         NotificationCenter.default.post(
             name: .imageImportRequested,

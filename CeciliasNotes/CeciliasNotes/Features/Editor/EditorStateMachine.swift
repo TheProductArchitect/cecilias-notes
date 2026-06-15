@@ -100,7 +100,7 @@ final class EditorStateMachine: ObservableObject {
         case (.lectureRecording, .audioRecording),
              (.audioRecording, .lectureRecording):
             #if DEBUG
-            print("[StateMachine] rejected transition \(mode) → \(next)")
+            dlog("[StateMachine] rejected transition \(mode) → \(next)")
             #endif
             return
         default:
@@ -108,10 +108,10 @@ final class EditorStateMachine: ObservableObject {
         }
 
         #if DEBUG
-        print("[StateMachine] \(mode) → \(next)")
+        dlog("[StateMachine] \(mode) → \(next)")
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
-        print("[StateMachine-diag] entering mode \(next), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
-        print("[StateMachine-diag]   call stack:\n  \(stack)")
+        dlog("[StateMachine-diag] entering mode \(next), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
+        dlog("[StateMachine-diag]   call stack:\n  \(stack)")
         #endif
         mode = next
     }
@@ -120,10 +120,10 @@ final class EditorStateMachine: ObservableObject {
     func exitMode() {
         guard mode != .drawing else { return }
         #if DEBUG
-        print("[StateMachine] \(mode) → .drawing")
+        dlog("[StateMachine] \(mode) → .drawing")
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
-        print("[StateMachine-diag] exitMode (was \(mode)), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
-        print("[StateMachine-diag]   call stack:\n  \(stack)")
+        dlog("[StateMachine-diag] exitMode (was \(mode)), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
+        dlog("[StateMachine-diag]   call stack:\n  \(stack)")
         #endif
         mode = .drawing
     }

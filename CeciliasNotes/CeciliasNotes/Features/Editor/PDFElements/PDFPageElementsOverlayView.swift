@@ -130,7 +130,7 @@ struct PDFPageElementsOverlayView: View {
             try modelContext.save()
         } catch {
             #if DEBUG
-            print("[PDFElement] save failed on softDelete: \(error)")
+            dlog("[PDFElement] save failed on softDelete: \(error)")
             #endif
         }
         refreshTick &+= 1

@@ -148,7 +148,7 @@ struct TextElementsOverlayView: View {
         // if no `[TextCatcher v3]` line appears, the device is
         // running a stale build.
         .onAppear {
-            print("[TextCatcher v3] onAppear page=\(pageId.uuidString.prefix(8)) "
+            dlog("[TextCatcher v3] onAppear page=\(pageId.uuidString.prefix(8)) "
                 + "showsBackgroundCatcher=\(showsBackgroundCatcher) "
                 + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
                 + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
@@ -156,7 +156,7 @@ struct TextElementsOverlayView: View {
                 + "elementCount=\(elements.count)")
         }
         .onChange(of: showsBackgroundCatcher) { old, new in
-            print("[TextCatcher v3] page=\(pageId.uuidString.prefix(8)) "
+            dlog("[TextCatcher v3] page=\(pageId.uuidString.prefix(8)) "
                 + "showsBackgroundCatcher \(old) → \(new) "
                 + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
                 + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
@@ -450,7 +450,7 @@ struct TextElementsOverlayView: View {
             try modelContext.save()
         } catch {
             #if DEBUG
-            print("[TextElement] save failed on create: \(error)")
+            dlog("[TextElement] save failed on create: \(error)")
             #endif
         }
 

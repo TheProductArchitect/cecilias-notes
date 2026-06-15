@@ -381,7 +381,7 @@ final class CeciliasNotesImporter {
 
     private static func log(_ message: String) {
         #if DEBUG
-        print("[CeciliasNotesImporter] \(message)")
+        dlog("[CeciliasNotesImporter] \(message)")
         #endif
     }
     private static func logAsync(_ message: String) async {

@@ -69,7 +69,7 @@ final class QuizMCPImporter {
 
     private func log(_ message: String) {
         #if DEBUG
-        print("[QuizMCPImporter] \(message)")
+        dlog("[QuizMCPImporter] \(message)")
         #endif
     }
 

@@ -74,7 +74,7 @@ enum AudioElementCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[AudioCommit] save failed: \(error)")
+            dlog("[AudioCommit] save failed: \(error)")
             #endif
             return nil
         }

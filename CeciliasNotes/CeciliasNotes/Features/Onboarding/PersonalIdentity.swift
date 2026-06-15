@@ -39,7 +39,7 @@ enum PersonalIdentity {
         guard existing != resolved else { return }
         suite?.set(resolved, forKey: appGroupNameKey)
         #if DEBUG
-        print("[PersonalIdentity] mirror → \(appGroupSuite)/\(appGroupNameKey) = \"\(resolved)\"")
+        dlog("[PersonalIdentity] mirror → \(appGroupSuite)/\(appGroupNameKey) = \"\(resolved)\"")
         #endif
         // WidgetKit's natural refresh cadence is up to 15 minutes;
         // without an explicit reload the brand-mark possessive
@@ -203,14 +203,14 @@ func reconcileAppIcon(preferredName: String? = nil) {
     guard app.alternateIconName != desiredKey else { return }
     guard !iconReconcileInFlight else {
         #if DEBUG
-        print("[BrandIcon][diag] reconcile — swap already in flight, skipping")
+        dlog("[BrandIcon][diag] reconcile — swap already in flight, skipping")
         #endif
         return
     }
 
     iconReconcileInFlight = true
     #if DEBUG
-    print("[BrandIcon][diag] reconcile — current=\(app.alternateIconName ?? "primary") "
+    dlog("[BrandIcon][diag] reconcile — current=\(app.alternateIconName ?? "primary") "
         + "desired=\(desiredKey ?? "primary") — handing to gate")
     #endif
     IconUpdateGate.shared.whenReady {
@@ -237,7 +237,7 @@ func updateAppIcon(for name: String) {
 private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
     let app = UIApplication.shared
     #if DEBUG
-    print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) — attempt (\(attemptsLeft) left)")
+    dlog("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) — attempt (\(attemptsLeft) left)")
     #endif
     app.setAlternateIconName(key) { error in
         // `setAlternateIconName`'s completion is not guaranteed on
@@ -245,7 +245,7 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
         Task { @MainActor in
             if let error {
                 #if DEBUG
-                print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
+                dlog("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
                 #endif
                 if attemptsLeft > 1 {
                     try? await Task.sleep(for: .seconds(1))
@@ -257,7 +257,7 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
                 }
             } else {
                 #if DEBUG
-                print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
+                dlog("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
                 #endif
                 iconReconcileInFlight = false
             }

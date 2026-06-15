@@ -293,7 +293,7 @@ struct CeciliasNotesApp: App {
                            let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.resume.lastNotebookId"),
                            let lastId = UUID(uuidString: raw) {
                             #if DEBUG
-                            print("[Launch] clean shutdown + lastNotebookId=\(lastId) — routing to editor")
+                            dlog("[Launch] clean shutdown + lastNotebookId=\(lastId) — routing to editor")
                             #endif
                             // Defer one runloop tick so the library
                             // has a chance to mount its `.onChange`
@@ -415,7 +415,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
             defaults.removeObject(forKey: "ceciliasnotes.resume.lastNotebookId")
             defaults.removeObject(forKey: "ceciliasnotes.resume.lastPageIndex")
             #if DEBUG
-            print("[Launch] previous shutdown was DIRTY — forcing library home + clearing resume keys")
+            dlog("[Launch] previous shutdown was DIRTY — forcing library home + clearing resume keys")
             #endif
         }
         Self.runV5WipeIfNeeded(defaults: defaults)
@@ -461,7 +461,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
         defaults.set(true, forKey: v5WipeKey)
         #if DEBUG
-        print("[Launch] V5 wipe applied — UserDefaults media stores + V4 SwiftData store cleared")
+        dlog("[Launch] V5 wipe applied — UserDefaults media stores + V4 SwiftData store cleared")
         #endif
     }
 
@@ -523,7 +523,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
         defaults.set(true, forKey: v6WipeKey)
         #if DEBUG
-        print("[Launch] V6 wipe applied — V5 SwiftData store + Documents/MediaAttachments/ cleared")
+        dlog("[Launch] V6 wipe applied — V5 SwiftData store + Documents/MediaAttachments/ cleared")
         #endif
     }
 
@@ -540,7 +540,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
             CeciliasNotesExporter.shared.exportAll()
         }
         #if DEBUG
-        print("[Launch] applicationDidEnterBackground → marked shutdown clean + queued mirror refresh")
+        dlog("[Launch] applicationDidEnterBackground → marked shutdown clean + queued mirror refresh")
         #endif
     }
 
@@ -553,7 +553,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
             CeciliasNotesExporter.shared.exportAll()
         }
         #if DEBUG
-        print("[Launch] applicationWillTerminate → marked shutdown clean + queued mirror refresh")
+        dlog("[Launch] applicationWillTerminate → marked shutdown clean + queued mirror refresh")
         #endif
     }
 }

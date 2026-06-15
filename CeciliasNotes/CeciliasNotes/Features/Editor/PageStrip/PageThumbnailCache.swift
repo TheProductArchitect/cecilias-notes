@@ -101,7 +101,7 @@ final class PageThumbnailCache {
 
         if let cached = thumbnail(for: key) {
             #if DEBUG
-            print("[Thumb] cache hit pageId=\(page.id) fp=\(key.strokeFingerprint)")
+            dlog("[Thumb] cache hit pageId=\(page.id) fp=\(key.strokeFingerprint)")
             #endif
             return cached
         }
@@ -131,14 +131,14 @@ final class PageThumbnailCache {
             state[key]
         }) {
             #if DEBUG
-            print("[Thumb] await in-flight pageId=\(pageId) fp=\(key.strokeFingerprint)")
+            dlog("[Thumb] await in-flight pageId=\(pageId) fp=\(key.strokeFingerprint)")
             #endif
             return await existing.value
         }
 
         let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
             #if DEBUG
-            print("[Thumb] render begin pageId=\(pageId) fp=\(key.strokeFingerprint) strokes=\(strokeData?.count ?? 0)")
+            dlog("[Thumb] render begin pageId=\(pageId) fp=\(key.strokeFingerprint) strokes=\(strokeData?.count ?? 0)")
             #endif
             let image = await Self.render(
                 strokeData: strokeData,
@@ -154,7 +154,7 @@ final class PageThumbnailCache {
                 )
             }
             #if DEBUG
-            print("[Thumb] render end   pageId=\(pageId) fp=\(key.strokeFingerprint) success=\(image != nil)")
+            dlog("[Thumb] render end   pageId=\(pageId) fp=\(key.strokeFingerprint) success=\(image != nil)")
             #endif
             return image
         }

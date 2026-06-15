@@ -55,7 +55,7 @@ enum StrokeCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[StrokeCommit] ensureStrokeElement save failed: \(error)")
+            dlog("[StrokeCommit] ensureStrokeElement save failed: \(error)")
             #endif
             return nil
         }
@@ -110,7 +110,7 @@ enum StrokeCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[StrokeCommit] updateDrawing save failed: \(error)")
+            dlog("[StrokeCommit] updateDrawing save failed: \(error)")
             #endif
             return false
         }

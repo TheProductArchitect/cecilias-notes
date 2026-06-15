@@ -358,12 +358,12 @@ struct TextBlockOverlayView: View {
         )
         guard let block = viewModel.createTextBlock(onPageId: pageId, at: normRect) else {
             #if DEBUG
-            print("[TextTool] viewModel.createTextBlock returned nil — storage refused")
+            dlog("[TextTool] viewModel.createTextBlock returned nil — storage refused")
             #endif
             return
         }
         #if DEBUG
-        print("[TextTool] TextBlock created id=\(block.id) rect=\(normRect) — entering editing state")
+        dlog("[TextTool] TextBlock created id=\(block.id) rect=\(normRect) — entering editing state")
         #endif
         layouts[block.id] = TextBlockLayoutState(from: block)
         interactionStates[block.id] = .editing

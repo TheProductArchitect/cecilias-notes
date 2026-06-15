@@ -67,7 +67,7 @@ struct LibraryView: View {
         contentLayer
             .onAppear {
                 #if DEBUG
-                print("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
+                dlog("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
                 #endif
                 // Drain any icon update queued during onboarding completion.
                 // Idempotent + self-healing: no-ops when the icon
@@ -374,11 +374,11 @@ struct LibraryView: View {
         }
         .onChange(of: viewModel.selectedNotebookId) { _, id in
             #if DEBUG
-            print("[Library] onChange(selectedNotebookId) → \(id?.uuidString ?? "nil")")
+            dlog("[Library] onChange(selectedNotebookId) → \(id?.uuidString ?? "nil")")
             #endif
             guard let id, let notebook = viewModel.notebook(id: id) else {
                 #if DEBUG
-                if id != nil { print("[Library] notebook(id:) returned nil — id stale?") }
+                if id != nil { dlog("[Library] notebook(id:) returned nil — id stale?") }
                 #endif
                 return
             }

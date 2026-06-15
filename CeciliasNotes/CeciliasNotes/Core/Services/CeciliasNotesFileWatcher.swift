@@ -228,7 +228,7 @@ final class CeciliasNotesFileWatcher {
 
     private func log(_ message: String) {
         #if DEBUG
-        print("[CeciliasNotesFileWatcher] \(message)")
+        dlog("[CeciliasNotesFileWatcher] \(message)")
         #endif
     }
 }

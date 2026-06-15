@@ -119,7 +119,7 @@ enum PDFReferenceImporter {
                 removeSeededBlankPage(from: targetNotebook, context: context)
             } catch {
                 #if DEBUG
-                print("[PDFImport-Library] createNotebook failed: \(error)")
+                dlog("[PDFImport-Library] createNotebook failed: \(error)")
                 #endif
                 return nil
             }
@@ -129,7 +129,7 @@ enum PDFReferenceImporter {
             )
             guard let existing = (try? context.fetch(descriptor))?.first else {
                 #if DEBUG
-                print("[PDFImport-Library] existingNotebook(\(id)) not found")
+                dlog("[PDFImport-Library] existingNotebook(\(id)) not found")
                 #endif
                 return nil
             }
@@ -140,7 +140,7 @@ enum PDFReferenceImporter {
             // the two destinations above when launched from the
             // library). Defensive only.
             #if DEBUG
-            print("[PDFImport-Library] editor-only destination in library context")
+            dlog("[PDFImport-Library] editor-only destination in library context")
             #endif
             return nil
         }
@@ -315,7 +315,7 @@ enum PDFReferenceImporter {
 
         guard let data = try? Data(contentsOf: sourceURL) else {
             #if DEBUG
-            print("[PDFImport] couldn't read source bytes from \(sourceURL.lastPathComponent)")
+            dlog("[PDFImport] couldn't read source bytes from \(sourceURL.lastPathComponent)")
             #endif
             return
         }
@@ -325,7 +325,7 @@ enum PDFReferenceImporter {
 
         guard let document = PDFDocument(url: MediaStorage.url(forPDF: pdfDocumentId)) else {
             #if DEBUG
-            print("[PDFImport] PDFKit failed to load stored copy of \(sourceURL.lastPathComponent)")
+            dlog("[PDFImport] PDFKit failed to load stored copy of \(sourceURL.lastPathComponent)")
             #endif
             return
         }
@@ -408,7 +408,7 @@ enum PDFReferenceImporter {
                 createdNotebookId = created.id
             } catch {
                 #if DEBUG
-                print("[PDFImport] createNotebook failed: \(error)")
+                dlog("[PDFImport] createNotebook failed: \(error)")
                 #endif
                 return
             }
@@ -418,7 +418,7 @@ enum PDFReferenceImporter {
             )
             guard let existing = (try? context.fetch(descriptor))?.first else {
                 #if DEBUG
-                print("[PDFImport] existingNotebook(\(id)) not found")
+                dlog("[PDFImport] existingNotebook(\(id)) not found")
                 #endif
                 return
             }
@@ -526,7 +526,7 @@ enum PDFReferenceImporter {
             try context.save()
         } catch {
             #if DEBUG
-            print("[PDFImport] save failed: \(error)")
+            dlog("[PDFImport] save failed: \(error)")
             #endif
         }
         if case .afterCurrentPage = destination {

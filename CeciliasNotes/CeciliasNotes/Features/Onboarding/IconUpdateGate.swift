@@ -49,7 +49,7 @@ final class IconUpdateGate {
             MainActor.assumeIsolated {
                 self?.keyboardVisible = true
                 #if DEBUG
-                print("[BrandIcon][diag] gate — keyboardDidShow")
+                dlog("[BrandIcon][diag] gate — keyboardDidShow")
                 #endif
             }
         }
@@ -61,7 +61,7 @@ final class IconUpdateGate {
                 guard let self else { return }
                 self.keyboardVisible = false
                 #if DEBUG
-                print("[BrandIcon][diag] gate — keyboardDidHide")
+                dlog("[BrandIcon][diag] gate — keyboardDidHide")
                 #endif
                 self.checkAndFire()
             }
@@ -74,7 +74,7 @@ final class IconUpdateGate {
                 guard let self else { return }
                 self.sceneActive = true
                 #if DEBUG
-                print("[BrandIcon][diag] gate — scene didActivate")
+                dlog("[BrandIcon][diag] gate — scene didActivate")
                 #endif
                 self.checkAndFire()
             }
@@ -86,7 +86,7 @@ final class IconUpdateGate {
             MainActor.assumeIsolated {
                 self?.sceneActive = false
                 #if DEBUG
-                print("[BrandIcon][diag] gate — scene willDeactivate")
+                dlog("[BrandIcon][diag] gate — scene willDeactivate")
                 #endif
             }
         }
@@ -101,19 +101,19 @@ final class IconUpdateGate {
     func whenReady(_ completion: @escaping () -> Void) {
         if isReady {
             #if DEBUG
-            print("[BrandIcon][diag] gate ready immediately — firing")
+            dlog("[BrandIcon][diag] gate ready immediately — firing")
             #endif
             completion()
             return
         }
         #if DEBUG
-        print("[BrandIcon][diag] gate waiting — keyboardVisible=\(keyboardVisible) sceneActive=\(sceneActive)")
+        dlog("[BrandIcon][diag] gate waiting — keyboardVisible=\(keyboardVisible) sceneActive=\(sceneActive)")
         #endif
         pendingCompletion = completion
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
             guard let self, let pending = self.pendingCompletion else { return }
             #if DEBUG
-            print("[BrandIcon][diag] gate timeout (10s) — firing anyway")
+            dlog("[BrandIcon][diag] gate timeout (10s) — firing anyway")
             #endif
             self.pendingCompletion = nil
             pending()
@@ -125,7 +125,7 @@ final class IconUpdateGate {
     private func checkAndFire() {
         guard isReady, let pending = pendingCompletion else { return }
         #if DEBUG
-        print("[BrandIcon][diag] gate now ready — firing pending completion")
+        dlog("[BrandIcon][diag] gate now ready — firing pending completion")
         #endif
         pendingCompletion = nil
         pending()

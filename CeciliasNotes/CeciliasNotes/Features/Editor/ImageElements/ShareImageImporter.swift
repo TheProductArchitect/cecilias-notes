@@ -51,7 +51,7 @@ enum ShareImageImporter {
                 )
             } catch {
                 #if DEBUG
-                print("[ShareImage] createNotebook failed: \(error)")
+                dlog("[ShareImage] createNotebook failed: \(error)")
                 #endif
                 return nil
             }
@@ -61,7 +61,7 @@ enum ShareImageImporter {
             )
             guard let existing = (try? context.fetch(descriptor))?.first else {
                 #if DEBUG
-                print("[ShareImage] existingNotebook(\(id)) not found")
+                dlog("[ShareImage] existingNotebook(\(id)) not found")
                 #endif
                 return nil
             }
@@ -117,7 +117,7 @@ enum ShareImageImporter {
 
         do { try context.save() } catch {
             #if DEBUG
-            print("[ShareImage] save failed: \(error)")
+            dlog("[ShareImage] save failed: \(error)")
             #endif
             return nil
         }

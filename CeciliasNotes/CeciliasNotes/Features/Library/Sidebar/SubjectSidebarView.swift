@@ -471,7 +471,7 @@ private struct SubjectListRow: View {
             isSelected: isSelected,
             onTap: {
                 #if DEBUG
-                print("[Sidebar] subject tap id=\(subject.id) name=\(subject.name)")
+                dlog("[Sidebar] subject tap id=\(subject.id) name=\(subject.name)")
                 #endif
                 viewModel.selectedContext = .subject(subject.id)
             }

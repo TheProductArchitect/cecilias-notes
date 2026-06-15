@@ -36,7 +36,7 @@ final class MediaInsertCoordinator: ObservableObject {
 
     func insertPhotos() {
         #if DEBUG
-        print("[ImageInsert] 1. insertPhotos() called — posting imageImportRequested (centre coords)")
+        dlog("[ImageInsert] 1. insertPhotos() called — posting imageImportRequested (centre coords)")
         #endif
         // Photo picker is routed through `LibraryView`'s root-level
         // `.sheet(item: $viewModel.pendingImageImport)` rather than
@@ -78,11 +78,11 @@ final class MediaInsertCoordinator: ObservableObject {
     /// Called by photo picker with selected UIImages.
     func handlePickedImages(_ images: [UIImage]) async {
         #if DEBUG
-        print("[ImageInsert] 5. handlePickedImages called with \(images.count) image(s); first size=\(images.first?.size ?? .zero)")
+        dlog("[ImageInsert] 5. handlePickedImages called with \(images.count) image(s); first size=\(images.first?.size ?? .zero)")
         #endif
         guard let vm = viewModel else {
             #if DEBUG
-            print("[ImageInsert] 5b. handlePickedImages: viewModel is nil — editor was already dismissed before picker returned")
+            dlog("[ImageInsert] 5b. handlePickedImages: viewModel is nil — editor was already dismissed before picker returned")
             #endif
             return
         }
@@ -333,7 +333,7 @@ final class MediaInsertCoordinator: ObservableObject {
             try context.save()
         } catch {
             #if DEBUG
-            print("[Image] save failed in MediaInsertCoordinator: \(error)")
+            dlog("[Image] save failed in MediaInsertCoordinator: \(error)")
             #endif
         }
         NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)

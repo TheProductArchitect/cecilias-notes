@@ -74,7 +74,7 @@ enum HighlightCommit {
             try context.save()
         } catch {
             #if DEBUG
-            print("[HighlightCommit] save failed: \(error)")
+            dlog("[HighlightCommit] save failed: \(error)")
             #endif
         }
         NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)

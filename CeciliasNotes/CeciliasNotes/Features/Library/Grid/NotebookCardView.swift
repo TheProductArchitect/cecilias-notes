@@ -61,7 +61,7 @@ struct NotebookCardView: View {
         }
         .onTapGesture {
             #if DEBUG
-            print("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
+            dlog("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
             #endif
             if viewModel.isSelecting {
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {

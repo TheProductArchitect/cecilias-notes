@@ -85,7 +85,7 @@ struct ImageElementsOverlayView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { _ in
                         #if DEBUG
-                        print("[ImageGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) selectedBefore=\(selectedElementId?.uuidString.prefix(8) ?? "nil") allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
+                        dlog("[ImageGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) selectedBefore=\(selectedElementId?.uuidString.prefix(8) ?? "nil") allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
                         #endif
                         if selectedElementId != nil { selectedElementId = nil }
                     }
@@ -167,7 +167,7 @@ struct ImageElementsOverlayView: View {
             try modelContext.save()
         } catch {
             #if DEBUG
-            print("[ImageElement] save failed on softDelete: \(error)")
+            dlog("[ImageElement] save failed on softDelete: \(error)")
             #endif
         }
         refreshTick &+= 1

@@ -205,7 +205,7 @@ final class StorageService: ObservableObject {
                 context.delete(stale)
             }
             #if DEBUG
-            print("[Storage] purged \(copies.count - 1) duplicate(s) of \(type) id=\(key(copies[0]))")
+            dlog("[Storage] purged \(copies.count - 1) duplicate(s) of \(type) id=\(key(copies[0]))")
             #endif
         }
     }

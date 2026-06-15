@@ -58,7 +58,7 @@ final class AudioRecorder {
 
     #if DEBUG
     deinit {
-        print("[AudioLife] AudioRecorder deinit \(ObjectIdentifier(self))")
+        dlog("[AudioLife] AudioRecorder deinit \(ObjectIdentifier(self))")
     }
     #endif
 
@@ -73,8 +73,8 @@ final class AudioRecorder {
 
     func start(outputURL: URL) async throws {
         #if DEBUG
-        print("[Audio] 1. start() called, outputURL=\(outputURL.lastPathComponent)")
-        print("[AudioLife] start() entry on actor AudioRecorder, recorder=\(ObjectIdentifier(self))")
+        dlog("[Audio] 1. start() called, outputURL=\(outputURL.lastPathComponent)")
+        dlog("[AudioLife] start() entry on actor AudioRecorder, recorder=\(ObjectIdentifier(self))")
         #endif
         let session = AVAudioSession.sharedInstance()
         // Mode is `.voiceChat`, NOT `.default`. Empirically on
@@ -93,14 +93,14 @@ final class AudioRecorder {
         try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
         #if DEBUG
-        print("[Audio] 2. AVAudioSession active, category=\(session.category.rawValue) sampleRate=\(session.sampleRate)")
+        dlog("[Audio] 2. AVAudioSession active, category=\(session.category.rawValue) sampleRate=\(session.sampleRate)")
         #endif
 
         let eng = AVAudioEngine()
         let inputNode = eng.inputNode
         let nativeFormat = inputNode.outputFormat(forBus: 0)
         #if DEBUG
-        print("[Audio] 3. inputNode native format: sr=\(nativeFormat.sampleRate) channels=\(nativeFormat.channelCount)")
+        dlog("[Audio] 3. inputNode native format: sr=\(nativeFormat.sampleRate) channels=\(nativeFormat.channelCount)")
         #endif
 
         // AAC settings — must match the input node's actual channel
@@ -160,7 +160,7 @@ final class AudioRecorder {
             tapFireCount += 1
             if tapFireCount == 1 || tapFireCount % 50 == 0 {
                 let rmsValue = Self.rms(buffer: buffer)
-                print("[Audio] tap fired #\(tapFireCount), samples=\(buffer.frameLength), rms=\(String(format: "%.4f", rmsValue))")
+                dlog("[Audio] tap fired #\(tapFireCount), samples=\(buffer.frameLength), rms=\(String(format: "%.4f", rmsValue))")
                 cont?.yield(rmsValue)
             } else {
                 cont?.yield(Self.rms(buffer: buffer))
@@ -183,8 +183,8 @@ final class AudioRecorder {
             }
         }
         #if DEBUG
-        print("[Audio] 4. tap installed, bufferSize=\(Self.tapBufferSize)")
-        print("[Audio] 4a. inputNode numberOfInputs=\(inputNode.numberOfInputs) outputFormat(bus0)=\(inputNode.outputFormat(forBus: 0))")
+        dlog("[Audio] 4. tap installed, bufferSize=\(Self.tapBufferSize)")
+        dlog("[Audio] 4a. inputNode numberOfInputs=\(inputNode.numberOfInputs) outputFormat(bus0)=\(inputNode.outputFormat(forBus: 0))")
         #endif
 
         // `prepare()` pre-allocates the engine's internal buffers
@@ -222,7 +222,7 @@ final class AudioRecorder {
         do {
             try eng.start()
             #if DEBUG
-            print("[Audio] 5. engine.start() OK, isRunning=\(eng.isRunning)")
+            dlog("[Audio] 5. engine.start() OK, isRunning=\(eng.isRunning)")
             // Verify the engine stays running for at least a beat —
             // some session-state misconfigurations let `start()`
             // succeed but the engine pauses itself a few ms later.
@@ -231,16 +231,16 @@ final class AudioRecorder {
             Task { [weak eng] in
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 guard let eng else { return }
-                print("[Audio] 5b. engine.isRunning after 500ms = \(eng.isRunning)")
+                dlog("[Audio] 5b. engine.isRunning after 500ms = \(eng.isRunning)")
             }
-            print("[Audio] 5a. AudioRecorder uses POST-RECORDING file transcription, " +
+            dlog("[Audio] 5a. AudioRecorder uses POST-RECORDING file transcription, " +
                   "not live SpeechTranscriber.startLive(). For quick-record, transcription " +
                   "fires from EditorViewModel.stopRecording after the m4a file is saved " +
                   "(see `SpeechTranscriber.transcribe(url:annotationId:)`).")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioRecorder] engine.start() failed: \(error)")
+            dlog("[AudioRecorder] engine.start() failed: \(error)")
             #endif
             // Roll back the partial state so the recorder is in a
             // known-stopped condition. The thrown error surfaces
@@ -257,25 +257,25 @@ final class AudioRecorder {
         startTime = Date()
         self.outputURL = outputURL
         #if DEBUG
-        print("[AudioLife] start() exit — engine instance \(ObjectIdentifier(eng)) retained on actor")
+        dlog("[AudioLife] start() exit — engine instance \(ObjectIdentifier(eng)) retained on actor")
         #endif
     }
 
     func stop() async throws -> (duration: Double, fileSizeBytes: Int64) {
         #if DEBUG
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
-        print("[AudioLife] stop() called on actor AudioRecorder \(ObjectIdentifier(self))")
-        print("[AudioLife]   call stack:\n  \(stack)")
+        dlog("[AudioLife] stop() called on actor AudioRecorder \(ObjectIdentifier(self))")
+        dlog("[AudioLife]   call stack:\n  \(stack)")
         #endif
         guard let eng = engine, let start = startTime, let url = outputURL
         else {
             #if DEBUG
-            print("[AudioLife] stop() guard tripped — engine=\(engine == nil ? "nil" : "live") startTime=\(startTime == nil ? "nil" : "live") outputURL=\(outputURL == nil ? "nil" : "live")")
+            dlog("[AudioLife] stop() guard tripped — engine=\(engine == nil ? "nil" : "live") startTime=\(startTime == nil ? "nil" : "live") outputURL=\(outputURL == nil ? "nil" : "live")")
             #endif
             throw AudioRecorderError.notRecording
         }
         #if DEBUG
-        print("[AudioLife] tap removed, engine stopping (engine instance \(ObjectIdentifier(eng)) isRunning=\(eng.isRunning))")
+        dlog("[AudioLife] tap removed, engine stopping (engine instance \(ObjectIdentifier(eng)) isRunning=\(eng.isRunning))")
         #endif
 
         eng.inputNode.removeTap(onBus: 0)
@@ -295,11 +295,11 @@ final class AudioRecorder {
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             #if DEBUG
-            print("[AudioPlay] rec.stop session deactivated, success=true, error=nil")
+            dlog("[AudioPlay] rec.stop session deactivated, success=true, error=nil")
             #endif
         } catch {
             #if DEBUG
-            print("[AudioPlay] rec.stop session deactivated, success=false, error=\(error)")
+            dlog("[AudioPlay] rec.stop session deactivated, success=false, error=\(error)")
             #endif
         }
         return (duration: duration, fileSizeBytes: fileSize)
