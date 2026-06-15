@@ -1727,7 +1727,14 @@ extension StorageService {
     /// Bypasses the per-call save / Spotlight reindex / widget
     /// snapshot scheduling that `createNotebook(...)` performs —
     /// those overheads aren't part of what the perf test exercises.
-    func generateSyntheticNotebooks(count: Int) throws {
+    /// Yields between every batch so the main runloop can paint
+    /// progress, dispatch input, and stay touch-responsive. Synchronous
+    /// batch inserts on the main actor were freezing the UI for the
+    /// entire seeding run — at 1000 notebooks × up to 30 pages each
+    /// that's ~15k inserts before a single frame redraws. Posts
+    /// `.syntheticDataDidChange` on completion so the library refreshes
+    /// instead of leaving the user staring at an empty subject view.
+    func generateSyntheticNotebooks(count: Int) async throws {
         let subjectNames = ["University", "Personal", "Work", "Ideas", "Travel"]
         var subjects = fetchSubjects()
         let palette  = CeciliasNotesColorPresets.subjectColors
@@ -1746,6 +1753,7 @@ extension StorageService {
         let now = Date()
         let day = TimeInterval(86_400)
         var usedTitles = Set(fetchAllNotebooks().map(\.title))
+        let batchSize = 50
 
         for i in 0..<count {
             let subject = subjects[i % subjects.count]
@@ -1768,11 +1776,15 @@ extension StorageService {
             )
             nb.createdAt = createdAt
             nb.updatedAt = updatedAt
-            nb.sortOrder = ((subject.notebooks ?? []).last?.sortOrder ?? -1) + 1
+            nb.sortOrder = i
             nb.subject   = subject
 
             context.insert(nb)
-            subject.notebooks = (subject.notebooks ?? []) + [nb]
+            // Skip the materialized `subject.notebooks` array append —
+            // SwiftData maintains the inverse from `nb.subject`, and
+            // resolving the array every iteration walks the full
+            // accumulated list (O(N²) over the seed run, which was a
+            // multi-second main-actor stall on its own).
 
             let pageCount = Int.random(in: 1...30)
             for p in 0..<pageCount {
@@ -1784,32 +1796,51 @@ extension StorageService {
                 )
                 page.notebook = nb
                 context.insert(page)
-                nb.pages = (nb.pages ?? []) + [page]
             }
             nb.totalPageCount = pageCount
 
             let tone = CoverToneAssigner.tone(in: subject)
             CoverToneStore.setTone(tone, for: nb.id)
 
-            // Batch save — keeps memory steady at 1000-notebook scale.
-            if i % 100 == 99 {
+            if i % batchSize == batchSize - 1 {
                 try context.save()
+                // Hop off the actor so SwiftUI gets a frame and the
+                // user can see the progress indicator move. Without
+                // this the entire run is one synchronous main-actor
+                // block — the app appears hung even though work is
+                // making progress.
+                await Task.yield()
             }
         }
         try context.save()
+        NotificationCenter.default.post(name: .syntheticDataDidChange, object: nil)
     }
 
     /// Hard wipe of every notebook and subject in the store. Intended
     /// for clearing synthetic data between perf runs — destructive
     /// enough that the Settings entry is labelled accordingly.
-    func wipeAllSyntheticData() throws {
-        for nb in fetchAllNotebooks() {
+    func wipeAllSyntheticData() async throws {
+        let allNotebooks = fetchAllNotebooks()
+        let batchSize = 100
+        for (i, nb) in allNotebooks.enumerated() {
             context.delete(nb)
+            if i % batchSize == batchSize - 1 {
+                try context.save()
+                await Task.yield()
+            }
         }
         for s in fetchSubjects() {
             context.delete(s)
         }
         try context.save()
+        NotificationCenter.default.post(name: .syntheticDataDidChange, object: nil)
     }
+}
+
+extension Notification.Name {
+    /// Posted once the DEBUG synthetic-data generator / wiper finishes
+    /// so observers (e.g. `LibraryViewModel`) can refresh their
+    /// caches without waiting for a user-driven trigger.
+    static let syntheticDataDidChange = Notification.Name("ceciliasnotes.debug.syntheticDataDidChange")
 }
 #endif

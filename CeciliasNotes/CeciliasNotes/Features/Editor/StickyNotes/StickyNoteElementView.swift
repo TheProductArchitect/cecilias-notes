@@ -89,7 +89,9 @@ struct StickyNoteElementView: View {
                 // Quick tap → edit immediately.
                 .simultaneousGesture(
                     TapGesture().onEnded {
+                        #if DEBUG
                         print("[StickyGesture] 1. tap received on card body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected), isEditing=\(isEditing)")
+                        #endif
                         onRequestEdit()
                     }
                 )
@@ -142,10 +144,14 @@ struct StickyNoteElementView: View {
         .frame(width: pageSize.width, height: pageSize.height,
                alignment: .topLeading)
         .onChange(of: isSelected) { oldValue, newValue in
+            #if DEBUG
             print("[StickyGesture] isSelected changed elementId=\(element.id.uuidString.prefix(8)) old=\(oldValue) new=\(newValue)")
+            #endif
         }
         .onChange(of: isEditing) { oldValue, newValue in
+            #if DEBUG
             print("[StickyGesture] isEditing changed elementId=\(element.id.uuidString.prefix(8)) old=\(oldValue) new=\(newValue)")
+            #endif
         }
         .onChange(of: content.text) { _, _ in
             content.updatedAt = Date()
@@ -360,12 +366,16 @@ struct StickyNoteElementView: View {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if dragOffset == .zero {
+                    #if DEBUG
                     print("[StickyGesture] 2. drag onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) startLocation=\(value.startLocation)")
+                    #endif
                 }
                 dragOffset = value.translation
             }
             .onEnded { value in
+                #if DEBUG
                 print("[StickyGesture] 3. drag onEnded elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) predictedEnd=\(value.predictedEndTranslation)")
+                #endif
                 let dxNorm = value.translation.width  / pageSize.width
                 let dyNorm = value.translation.height / pageSize.height
                 let newX = element.normalizedX + Double(dxNorm)
@@ -377,7 +387,9 @@ struct StickyNoteElementView: View {
                 element.normalizedY = max(0, min(maxY, newY))
                 element.updatedAt   = Date()
                 dragOffset = .zero
+                #if DEBUG
                 print("[StickyGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
+                #endif
             }
     }
 
@@ -399,12 +411,16 @@ struct StickyNoteElementView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 if resizeDelta == nil {
+                    #if DEBUG
                     print("[StickyGesture] 4. resize handle onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation) startLocation=\(value.startLocation)")
+                    #endif
                 }
                 resizeDelta = ResizeDelta(corner: corner, translation: value.translation)
             }
             .onEnded { value in
+                #if DEBUG
                 print("[StickyGesture] 5. resize handle onEnded elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation)")
+                #endif
                 let new = resizedRect(
                     base: baseRect,
                     corner: corner,
@@ -420,7 +436,9 @@ struct StickyNoteElementView: View {
                 element.normalizedHeight = max(0.01, min(1, normH))
                 element.updatedAt        = Date()
                 resizeDelta = nil
+                #if DEBUG
                 print("[StickyGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")
+                #endif
             }
     }
 

@@ -325,13 +325,13 @@ final class SettingsViewModel: ObservableObject {
     /// shipped builds don't surface the entry point. Runs on the
     /// `@MainActor` since `StorageService` is main-isolated.
     func generateSyntheticData(notebookCount: Int) async {
-        try? StorageService.shared.generateSyntheticNotebooks(count: notebookCount)
+        try? await StorageService.shared.generateSyntheticNotebooks(count: notebookCount)
     }
 
     /// Hard wipe of every notebook and subject. Destructive — meant
     /// for clearing synthetic data after a perf run.
     func wipeAllSyntheticData() async {
-        try? StorageService.shared.wipeAllSyntheticData()
+        try? await StorageService.shared.wipeAllSyntheticData()
     }
     #endif
 

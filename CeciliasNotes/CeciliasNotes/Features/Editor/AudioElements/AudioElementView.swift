@@ -217,7 +217,9 @@ struct AudioElementView: View {
 
     private var playPauseButton: some View {
         Button {
+            #if DEBUG
             print("[AudioPlay] 1. button tap received, elementId=\(element.id), contentId=\(content.id)")
+            #endif
             player.togglePlayPause()
         } label: {
             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")

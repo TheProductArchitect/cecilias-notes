@@ -345,21 +345,26 @@ final class LibraryViewModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] context in
                 guard let self else { return }
-                #if DEBUG
-                print("[LibraryVM] selectedContext sink → \(context)")
-                #endif
                 self.isSelecting = false
                 self.selectedNotebookIds = []
                 self.folderPath = []
                 UserDefaults.standard.set(context.rawString, forKey: Self.contextKey)
                 DispatchQueue.main.async {
-                    #if DEBUG
-                    print("[LibraryVM] deferred refresh fires for ctx=\(self.selectedContext)")
-                    #endif
                     self.refresh()
                 }
             }
             .store(in: &cancellables)
+
+        #if DEBUG
+        // Refresh after the debug "generate N notebooks" / "wipe all"
+        // affordances complete — without this, the user sees a
+        // freshly-seeded library still rendering the pre-seed state
+        // and assumes the seeder hung.
+        NotificationCenter.default.publisher(for: .syntheticDataDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
+        #endif
 
         $sortOrder
             .dropFirst()

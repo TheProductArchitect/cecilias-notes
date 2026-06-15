@@ -294,9 +294,13 @@ final class AudioRecorder {
 
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            #if DEBUG
             print("[AudioPlay] rec.stop session deactivated, success=true, error=nil")
+            #endif
         } catch {
+            #if DEBUG
             print("[AudioPlay] rec.stop session deactivated, success=false, error=\(error)")
+            #endif
         }
         return (duration: duration, fileSizeBytes: fileSize)
     }

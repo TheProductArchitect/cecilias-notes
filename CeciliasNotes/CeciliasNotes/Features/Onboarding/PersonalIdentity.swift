@@ -202,13 +202,17 @@ func reconcileAppIcon(preferredName: String? = nil) {
     let desiredKey = BrandIcon.variantKey(forName: name)
     guard app.alternateIconName != desiredKey else { return }
     guard !iconReconcileInFlight else {
+        #if DEBUG
         print("[BrandIcon][diag] reconcile — swap already in flight, skipping")
+        #endif
         return
     }
 
     iconReconcileInFlight = true
+    #if DEBUG
     print("[BrandIcon][diag] reconcile — current=\(app.alternateIconName ?? "primary") "
         + "desired=\(desiredKey ?? "primary") — handing to gate")
+    #endif
     IconUpdateGate.shared.whenReady {
         setAlternateIconWithRetry(desiredKey, attemptsLeft: 3)
     }
@@ -232,13 +236,17 @@ func updateAppIcon(for name: String) {
 @MainActor
 private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
     let app = UIApplication.shared
+    #if DEBUG
     print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) — attempt (\(attemptsLeft) left)")
+    #endif
     app.setAlternateIconName(key) { error in
         // `setAlternateIconName`'s completion is not guaranteed on
         // the main thread — hop back before touching UIKit/state.
         Task { @MainActor in
             if let error {
+                #if DEBUG
                 print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) FAILED: \(error)")
+                #endif
                 if attemptsLeft > 1 {
                     try? await Task.sleep(for: .seconds(1))
                     setAlternateIconWithRetry(key, attemptsLeft: attemptsLeft - 1)
@@ -248,7 +256,9 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
                     iconReconcileInFlight = false
                 }
             } else {
+                #if DEBUG
                 print("[BrandIcon][diag] setAlternateIconName(\(key ?? "nil")) SUCCESS")
+                #endif
                 iconReconcileInFlight = false
             }
         }
