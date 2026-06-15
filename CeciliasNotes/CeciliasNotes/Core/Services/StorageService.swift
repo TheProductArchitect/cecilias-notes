@@ -1174,9 +1174,15 @@ extension StorageService {
         rect: CGRect?
     ) throws {
         block.content      = richText.string
+        // `requiringSecureCoding: true` silences the
+        // "NSKeyedUnarchiveFromData should not be used" deprecation
+        // warning the OS emits when an archive's secure-coding flag
+        // doesn't match the reader's. NSAttributedString conforms
+        // to NSSecureCoding so the archive format is unchanged; the
+        // flag only controls extra metadata used by secure decoders.
         block.richTextData = try NSKeyedArchiver.archivedData(
             withRootObject: richText,
-            requiringSecureCoding: false
+            requiringSecureCoding: true
         )
         if let rect {
             block.x      = rect.origin.x

@@ -54,7 +54,7 @@ final class CeciliasNotesImporter {
                     .map {
                         (try? NSKeyedArchiver.archivedData(
                             withRootObject: $0,
-                            requiringSecureCoding: false
+                            requiringSecureCoding: true
                         )) ?? Data()
                     }
 
@@ -235,7 +235,7 @@ final class CeciliasNotesImporter {
                 block.content      = rich.string
                 block.richTextData = try? NSKeyedArchiver.archivedData(
                     withRootObject: rich,
-                    requiringSecureCoding: false
+                    requiringSecureCoding: true
                 )
                 context.insert(block)
                 page.textBlocks = (page.textBlocks ?? []) + [block]
