@@ -124,9 +124,35 @@ final class QuizGenerationService: ObservableObject {
             generatingQuizIDs.remove(quizID)
             return
         }
+        if generated.isEmpty {
+            // Surface a specific reason in the detail view's empty
+            // state so the user understands what's missing rather
+            // than seeing a generic "nothing to quiz on" string.
+            QuizDiagnosticStore.record(
+                diagnoseEmptyResult(documents: documents, format: format),
+                for: quizID
+            )
+        } else {
+            QuizDiagnosticStore.clear(quizID)
+        }
         persist(generated, into: quiz, startingAt: 0)
         generatingQuizIDs.remove(quizID)
         HapticManager.shared.exportCompleted()
+    }
+
+    /// Classify why an on-device generation run produced zero
+    /// questions. Ordering matters: scope before content, content
+    /// before pattern recognition — we want the most actionable
+    /// reason surfaced, not a deeper one the user can't fix
+    /// without first fixing the shallower problem.
+    private func diagnoseEmptyResult(
+        documents: [QuizSourceDocument],
+        format: QuizFormat
+    ) -> QuizGenerationDiagnostic {
+        if documents.isEmpty { return .noScopeContent }
+        if documents.allSatisfy({ $0.isEmpty }) { return .noTextInScope }
+        if format == .shortAnswer { return .formatNeedsCloud }
+        return .noStructuredPatterns
     }
 
     /// Hook for `QuizMCPImporter` to merge MCP-authored questions into
@@ -136,6 +162,7 @@ final class QuizGenerationService: ObservableObject {
         guard let quiz = fetchQuiz(id: quizID) else { return }
         let startingAt = quiz.orderedQuestions.count
         persist(questions, into: quiz, startingAt: startingAt)
+        if !questions.isEmpty { QuizDiagnosticStore.clear(quizID) }
         HapticManager.shared.exportCompleted()
     }
 

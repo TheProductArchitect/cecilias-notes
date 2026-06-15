@@ -131,7 +131,10 @@ struct QuizDetailView: View {
             }
             .padding(.top, 8)
         } else if questions.isEmpty {
-            Text("nothing to quiz on here. the on-device engine looks for clear concept → definition patterns (\u{201C}X: ...\u{201D}, \u{201C}X is ...\u{201D}, headings + bullets). conversational notes won't yield questions — apple intelligence or mcp do a much better job with free-form text.")
+            // Surface the specific generation failure when one was
+            // recorded — far more actionable than the generic copy.
+            let diagnostic = QuizDiagnosticStore.diagnostic(for: quiz.id)
+            Text(diagnostic?.userMessage ?? "nothing to quiz on here. the on-device engine looks for clear concept → definition patterns (\u{201C}X: ...\u{201D}, \u{201C}X is ...\u{201D}, headings + bullets). conversational notes won't yield questions — apple intelligence or mcp do a much better job with free-form text.")
                 .font(.system(size: 13))
                 .foregroundStyle(theme.foregroundSubtle)
                 .fixedSize(horizontal: false, vertical: true)
