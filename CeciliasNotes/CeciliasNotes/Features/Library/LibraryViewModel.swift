@@ -1165,13 +1165,23 @@ final class LibraryViewModel: ObservableObject {
             normalizedHeight: 1,
             zIndex: 0
         )
+        // Pull the embedded text layer so quiz generation can read
+        // the PDF without an OCR pass at runtime. Returns nil for
+        // image-only / scanned PDFs — those drop through to the
+        // higher tiers.
+        let extracted: String? = {
+            guard let raw = pdfPage.string else { return nil }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }()
         let content = PDFPageContent(
             id: contentId,
             pdfDocumentId: pdfDocumentId,
             pageIndex: pageIndex,
             originalPageWidth: Double(bounds.width),
             originalPageHeight: Double(bounds.height),
-            previewImageFilename: previewName
+            previewImageFilename: previewName,
+            extractedText: extracted
         )
         element.pdfPageContent = content
         context.insert(element)

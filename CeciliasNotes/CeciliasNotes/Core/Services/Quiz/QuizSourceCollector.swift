@@ -61,11 +61,23 @@ enum QuizSourceCollector {
                 elements = elements.filter { $0.updatedAt > since }
             }
 
-            let typed: [String] = elements
+            var typed: [String] = elements
                 .filter { $0.kind == .text }
                 .compactMap { $0.textContent?.text }
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
+
+            // PDF-imported pages stash `PDFPage.string` on
+            // `PDFPageContent.extractedText` at import time. Fold
+            // those in so quiz generation can read digital PDFs
+            // (the embedded text layer is free; image-only /
+            // scanned PDFs have nil and drop through).
+            let pdfText: [String] = elements
+                .filter { $0.kind == .pdfPage }
+                .compactMap { $0.pdfPageContent?.extractedText }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            typed.append(contentsOf: pdfText)
 
             var transcripts: [String] = []
             if scope.includeTranscriptions {

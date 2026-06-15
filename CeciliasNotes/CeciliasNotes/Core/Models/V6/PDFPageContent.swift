@@ -47,6 +47,15 @@ final class PDFPageContent {
     /// `MediaStorage/pdf-previews/`. Nil = no preview cached yet.
     var previewImageFilename: String? = nil
 
+    /// Plain-text extracted from this PDF page at import time via
+    /// `PDFPage.string`. Populated for digital PDFs (Word/Pages
+    /// exports, web "Save as PDF") where the text layer is
+    /// embedded; nil for scanned/image-only PDFs. Read by quiz
+    /// generation so on-device pattern matching can run against
+    /// PDF content without a runtime OCR pass. Not user-visible —
+    /// the page still renders from the PDF file itself.
+    var extractedText: String? = nil
+
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
@@ -57,6 +66,7 @@ final class PDFPageContent {
         originalPageWidth: Double = 0,
         originalPageHeight: Double = 0,
         previewImageFilename: String? = nil,
+        extractedText: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -66,6 +76,7 @@ final class PDFPageContent {
         self.originalPageWidth    = originalPageWidth
         self.originalPageHeight   = originalPageHeight
         self.previewImageFilename = previewImageFilename
+        self.extractedText        = extractedText
         self.createdAt            = createdAt
         self.updatedAt            = updatedAt
     }

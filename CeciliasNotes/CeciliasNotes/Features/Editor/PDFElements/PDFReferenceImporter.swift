@@ -64,6 +64,11 @@ enum PDFReferenceImporter {
             let previewFilename: String?
             let originalSize: CGSize
             let aspect: Double
+            /// Plain text from `PDFPage.string` — populated for
+            /// digital PDFs, nil for scanned/image-only PDFs.
+            /// Stashed on `PDFPageContent.extractedText` so quiz
+            /// generation can read PDF content without OCR.
+            let extractedText: String?
         }
         let payloads: [PerPagePayload] = await Task.detached(priority: .userInitiated) {
             var out: [PerPagePayload] = []
@@ -82,7 +87,8 @@ enum PDFReferenceImporter {
                     pageIndex: index,
                     previewFilename: previewName,
                     originalSize: bounds.size,
-                    aspect: aspect
+                    aspect: aspect,
+                    extractedText: extractPageText(page)
                 ))
             }
             return out
@@ -169,7 +175,8 @@ enum PDFReferenceImporter {
                 pageIndex: payload.pageIndex,
                 originalPageWidth: Double(payload.originalSize.width),
                 originalPageHeight: Double(payload.originalSize.height),
-                previewImageFilename: payload.previewFilename
+                previewImageFilename: payload.previewFilename,
+                extractedText: payload.extractedText
             )
             element.pdfPageContent = content
             context.insert(element)
@@ -200,6 +207,7 @@ enum PDFReferenceImporter {
             let previewFilename: String?
             let originalSize: CGSize
             let aspect: Double
+            let extractedText: String?
         }
         let payloads: [PerPagePayload] = await Task.detached(priority: .userInitiated) {
             var out: [PerPagePayload] = []
@@ -217,7 +225,8 @@ enum PDFReferenceImporter {
                     pageIndex: index,
                     previewFilename: previewName,
                     originalSize: bounds.size,
-                    aspect: aspect
+                    aspect: aspect,
+                    extractedText: extractPageText(page)
                 ))
             }
             return out
@@ -268,7 +277,8 @@ enum PDFReferenceImporter {
                 pageIndex: payload.pageIndex,
                 originalPageWidth: Double(payload.originalSize.width),
                 originalPageHeight: Double(payload.originalSize.height),
-                previewImageFilename: payload.previewFilename
+                previewImageFilename: payload.previewFilename,
+                extractedText: payload.extractedText
             )
             element.pdfPageContent = content
             context.insert(element)
@@ -327,6 +337,7 @@ enum PDFReferenceImporter {
             let previewFilename: String?
             let originalSize: CGSize
             let aspect: Double  // height / width
+            let extractedText: String?
         }
         let payloads: [PerPagePayload] = await Task.detached(priority: .userInitiated) {
             var out: [PerPagePayload] = []
@@ -352,7 +363,8 @@ enum PDFReferenceImporter {
                     pageIndex: index,
                     previewFilename: previewName,
                     originalSize: bounds.size,
-                    aspect: aspect
+                    aspect: aspect,
+                    extractedText: extractPageText(page)
                 ))
             }
             return out
@@ -447,7 +459,8 @@ enum PDFReferenceImporter {
                     pageIndex: payload.pageIndex,
                     originalPageWidth: Double(payload.originalSize.width),
                     originalPageHeight: Double(payload.originalSize.height),
-                    previewImageFilename: payload.previewFilename
+                    previewImageFilename: payload.previewFilename,
+                    extractedText: payload.extractedText
                 )
                 element.pdfPageContent = content
                 context.insert(element)
@@ -501,7 +514,8 @@ enum PDFReferenceImporter {
                     pageIndex: payload.pageIndex,
                     originalPageWidth: Double(payload.originalSize.width),
                     originalPageHeight: Double(payload.originalSize.height),
-                    previewImageFilename: payload.previewFilename
+                    previewImageFilename: payload.previewFilename,
+                    extractedText: payload.extractedText
                 )
                 element.pdfPageContent = content
                 context.insert(element)
@@ -590,6 +604,18 @@ enum PDFReferenceImporter {
     }
 
     // MARK: - Helpers
+
+    /// Pulls the embedded text layer from a `PDFPage` and returns
+    /// it as a single string, or nil if the page has no text
+    /// (image-only / scanned PDF). Trimmed so a page whose text
+    /// layer is just whitespace doesn't masquerade as content
+    /// downstream. Runs on the detached payload-build task — pure
+    /// PDFKit I/O, no UI dependencies, safe off the main actor.
+    nonisolated static func extractPageText(_ page: PDFPage) -> String? {
+        guard let raw = page.string else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 
     private nonisolated static func renderPreviewImage(
         for page: PDFPage,
