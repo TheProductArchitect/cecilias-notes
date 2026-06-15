@@ -653,10 +653,15 @@ extension StorageService {
     }
 
     func fetchPinnedNotebooks() -> [Notebook] {
-        let descriptor = FetchDescriptor<Notebook>(
+        var descriptor = FetchDescriptor<Notebook>(
             predicate: #Predicate { $0.isPinned == true && $0.isDeleted == false },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
+        // Cap the fetch — the library sidebar surfaces a small
+        // strip of pins, not the whole pile. At library-scale this
+        // also prevents the descriptor from materialising every
+        // pinned row when only the head matters.
+        descriptor.fetchLimit = 50
         return (try? context.fetch(descriptor)) ?? []
     }
 
@@ -671,14 +676,18 @@ extension StorageService {
         let recentIds = RecentNotebooksTracker.recentIdsNewestFirst()
         guard !recentIds.isEmpty else { return [] }
 
-        // Single fetch of all live notebooks, then re-sorted in
-        // recent-access order. Cheaper than N predicate fetches and
-        // identical for any sane library size.
+        // Predicate-filter directly on the tracked id set instead of
+        // pulling every live notebook into memory and post-filtering.
+        // The tracker keeps at most 50 entries, so this materialises
+        // ~50 rows at most regardless of library size — the previous
+        // approach was a full-table scan that dominated subject-swap
+        // refresh time at 1000-notebook scale.
+        let idSet = Set(recentIds)
         let descriptor = FetchDescriptor<Notebook>(
-            predicate: #Predicate { $0.isDeleted == false }
+            predicate: #Predicate { !$0.isDeleted && idSet.contains($0.id) }
         )
-        let live = (try? context.fetch(descriptor)) ?? []
-        let byId = Dictionary(uniqueKeysWithValues: live.map { ($0.id, $0) })
+        let matched = (try? context.fetch(descriptor)) ?? []
+        let byId = Dictionary(uniqueKeysWithValues: matched.map { ($0.id, $0) })
 
         var out: [Notebook] = []
         for id in recentIds {

@@ -349,8 +349,13 @@ final class LibraryViewModel: ObservableObject {
                 self.selectedNotebookIds = []
                 self.folderPath = []
                 UserDefaults.standard.set(context.rawString, forKey: Self.contextKey)
+                // Subject swap only changes the grid — sidebar
+                // caches and the search index are independent of
+                // the active context, so this navigation event
+                // skips the heavy fetches. See `refresh()` for the
+                // full-fat path used on launch / mutations.
                 DispatchQueue.main.async {
-                    self.refresh()
+                    self.refreshNotebooksOnly()
                 }
             }
             .store(in: &cancellables)
@@ -379,7 +384,9 @@ final class LibraryViewModel: ObservableObject {
                 // changes from within view updates" warning.
                 DispatchQueue.main.async {
                     if order == .manual { self?.seedManualOrderIfNeeded() }
-                    self?.refresh()
+                    // Sort change is grid-only — sidebar caches
+                    // don't depend on the sort order.
+                    self?.refreshNotebooksOnly()
                 }
             }
             .store(in: &cancellables)
@@ -509,6 +516,13 @@ final class LibraryViewModel: ObservableObject {
 
     // MARK: Refresh
 
+    /// Full refresh — sidebar + notebooks + search index. Use this
+    /// for entry points where every cache may be stale (app launch,
+    /// mutation completion, sync-applied changes). For navigation
+    /// events where only the active grid changes (subject swap,
+    /// sort change), call `refreshNotebooksOnly()` instead — that
+    /// path skips the sidebar fetches and the search-index walk,
+    /// which dominate refresh time at library scale.
     func refresh() {
         #if DEBUG
         let __refreshStart = CFAbsoluteTimeGetCurrent()
@@ -519,34 +533,46 @@ final class LibraryViewModel: ObservableObject {
             }
         }
         #endif
-        // Kick off the search index refresh on every library refresh
-        // — it's idempotent and cheap for the synchronous metadata
-        // (title / TextBlock / transcript). Handwriting OCR is
-        // queued internally and runs on a detached Task, so this
-        // call never blocks the main actor for more than a fetch.
-        SearchIndexService.shared.refreshAll()
-        // Phase 4: one-shot embedding backfill on first launch with
-        // AI on. Idempotent — bails fast on subsequent launches via
-        // its UserDefaults flag.
-        SearchIndexService.shared.backfillEmbeddingsIfNeeded()
+        // Schedule the search-index refresh off the main runloop so
+        // it never blocks subject swaps or first paint. `refreshAll`
+        // is itself synchronous over SwiftData reads, but at
+        // 1000-notebook scale it's hundreds of ms; off-actor work
+        // doesn't apply here (the store is main-isolated), but a
+        // `DispatchQueue.main.async` lets the navigation paint
+        // first and runs the index walk in the next runloop tick.
+        DispatchQueue.main.async {
+            SearchIndexService.shared.refreshAll()
+            SearchIndexService.shared.backfillEmbeddingsIfNeeded()
+        }
 
-        // CloudKit and SwiftData occasionally surface duplicate rows
-        // (CloudKit echo, stale local replicas after a manual import,
-        // failed delete-propagation), and on iOS 26 SwiftUI's
-        // `ForEach` now hard-crashes — not just warns — when it sees
-        // two children with the same id ("NativeDictionary.swift:792:
-        // Fatal error: Duplicate values for key..."). Deduping every
-        // collection BEFORE it reaches the view layer turns that into
-        // a layout warning at worst.
+        refreshSidebar()
+        refreshNotebooksOnly()
+        refreshTrashCount()
+    }
+
+    /// Sidebar caches: subjects, folders, pinned, recents. Used by
+    /// the library sidebar and the recents rail — independent of
+    /// the active grid context, so navigation events don't need to
+    /// pay this cost.
+    func refreshSidebar() {
+        // CloudKit and SwiftData occasionally surface duplicate
+        // rows; ForEach on iOS 26 hard-crashes on dupe IDs, so
+        // every collection that reaches the view layer is deduped.
         subjects        = dedupedById(storage.fetchSubjects())
         folders         = dedupedById(storage.fetchAllFolders())
+        pinnedNotebooks = dedupedById(storage.fetchPinnedNotebooks())
+        recentNotebooks = dedupedById(storage.fetchRecentNotebooks(limit: 6))
+    }
+
+    /// Just the active grid — fetches for the current
+    /// `selectedContext`. Cheap regardless of total library size
+    /// when the context is `.subject` or `.recent` because each
+    /// uses a bounded predicate; `.allNotes` still loads every
+    /// row because that's its semantics.
+    func refreshNotebooksOnly() {
         let raw: [Notebook]
         switch selectedContext {
         case .recent:
-            // Last 12 opened — order is the tracker's ordering
-            // (lastAccessedAt desc); skip the user's sort to preserve
-            // recency. The grid uses `notebooks` directly so this is
-            // what shows up.
             raw = storage.fetchRecentNotebooks(limit: 12)
             notebooks = dedupedById(applyTagFilter(raw))
         case .allNotes:
@@ -556,9 +582,6 @@ final class LibraryViewModel: ObservableObject {
             raw = storage.fetchNotebooks(subjectId: id)
             notebooks = dedupedById(sorted(applyTagFilter(raw)))
         }
-        pinnedNotebooks = dedupedById(storage.fetchPinnedNotebooks())
-        recentNotebooks = dedupedById(storage.fetchRecentNotebooks(limit: 6))
-        refreshTrashCount()
     }
 
     /// Apply the active tag filter to a notebook pool. Returns
