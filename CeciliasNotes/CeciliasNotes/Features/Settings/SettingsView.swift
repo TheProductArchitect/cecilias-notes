@@ -30,21 +30,11 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            HStack(spacing: 0) {
-                rail
-                    .frame(width: Self.railWidth)
-                    .background(theme.surface)
-
-                Rectangle()
-                    .fill(theme.hairline)
-                    .frame(width: 0.5)
-
-                detailView
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(theme.surface)
+        Group {
+            if DeviceCapabilities.isPhoneIdiom {
+                phoneBody
+            } else {
+                tabletBody
             }
         }
         .background(theme.surface)
@@ -60,6 +50,82 @@ struct SettingsView: View {
             .opacity(0)
             .accessibilityHidden(true)
         )
+    }
+
+    /// iPad master-detail. 220pt rail + hairline + detail; the
+    /// composition that was here before iPhone support landed and
+    /// is left unchanged so the regression risk on iPad is zero.
+    private var tabletBody: some View {
+        VStack(spacing: 0) {
+            header
+            HStack(spacing: 0) {
+                rail
+                    .frame(width: Self.railWidth)
+                    .background(theme.surface)
+
+                Rectangle()
+                    .fill(theme.hairline)
+                    .frame(width: 0.5)
+
+                detailView
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.surface)
+            }
+        }
+    }
+
+    /// iPhone NavigationStack — sections render as a tappable list
+    /// at root, each push opens the detail full-width. The rail's
+    /// 220pt fixed width would leave only ~170pt for the detail on a
+    /// 390pt iPhone, which is what produced the clipped "ettings /
+    /// pearance / ple pencil" text you saw on the side-by-side
+    /// composition.
+    private var phoneBody: some View {
+        NavigationStack {
+            List {
+                ForEach(visibleSections) { section in
+                    NavigationLink(value: section) {
+                        Text(section.rawValue.lowercased())
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(theme.foreground)
+                            .padding(.vertical, 4)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(theme.surface)
+            .navigationTitle("settings")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("done") { onDismiss() }
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            .navigationDestination(for: SettingsSection.self) { section in
+                phoneDetail(for: section)
+                    .background(theme.surface)
+                    .navigationTitle(section.rawValue.lowercased())
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func phoneDetail(for section: SettingsSection) -> some View {
+        switch section {
+        case .appearance:   AppearanceSettingsView(viewModel: viewModel)
+        case .pencil:       PencilSettingsView(viewModel: viewModel)
+        case .audio:        AudioSettingsView(viewModel: viewModel)
+        case .cloud:        CloudSettingsView(viewModel: viewModel)
+        case .storage:      StorageSettingsView(viewModel: viewModel)
+        case .intelligence: IntelligenceSettingsView()
+        case .about:        AboutSettingsView(viewModel: viewModel)
+        #if DEBUG
+        case .debug:        DebugSettingsView(viewModel: viewModel)
+        #endif
+        }
     }
 
     // MARK: Header (editorial)
