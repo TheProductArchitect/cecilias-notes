@@ -31,6 +31,7 @@ struct BrandWordmark: View {
     }
 
     private let mode: Mode
+    private let compact: Bool
 
     /// Theme drives every colour the wordmark renders. Reads from
     /// `@Environment(\.theme)` so name/notes/accent flip automatically
@@ -42,8 +43,12 @@ struct BrandWordmark: View {
 
     /// The masthead inline composition: `[name]'s notes·` with the name
     /// auto-sized by length and "notes·" pinned at 18 pt.
-    init(userName: String) {
+    /// `compact` (default false) ratchets every size tier down so the
+    /// wordmark fits a 96pt iPhone masthead band — the iPad band
+    /// (180pt) still uses the full 72pt-down-to-38pt sequence.
+    init(userName: String, compact: Bool = false) {
         self.mode = .inline(userName: userName)
+        self.compact = compact
     }
 
     /// Single-letter preview used by the onboarding live preview and
@@ -52,6 +57,7 @@ struct BrandWordmark: View {
     /// is a typographic sketch rather than the full wordmark.
     init(letter: Character, size: CGFloat) {
         self.mode = .letter(letter, size)
+        self.compact = false
     }
 
     var body: some View {
@@ -88,7 +94,7 @@ struct BrandWordmark: View {
                 Text("·")  // U+00B7 MIDDLE DOT
                     .foregroundStyle(brandAccent)
             }
-            .font(.system(size: 18, weight: .regular))
+            .font(.system(size: compact ? 12 : 18, weight: .regular))
             .tracking(-0.2)
         }
         .accessibilityElement(children: .ignore)
@@ -114,6 +120,16 @@ struct BrandWordmark: View {
     // MARK: Sizing
 
     private func computedNameSize(for name: String) -> CGFloat {
+        if compact {
+            switch NameFormatter.normalised(name).count {
+            case 0...4:   return 38
+            case 5...6:   return 34
+            case 7...8:   return 30
+            case 9...10:  return 26
+            case 11...12: return 22
+            default:      return 20
+            }
+        }
         switch NameFormatter.normalised(name).count {
         case 0...4:   return 72
         case 5...6:   return 68

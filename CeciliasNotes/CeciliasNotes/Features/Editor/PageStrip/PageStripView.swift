@@ -10,9 +10,15 @@ struct PageStripView: View {
     @ObservedObject var viewModel: EditorViewModel
     @Environment(\.theme) private var theme
 
-    private let thumbWidth:  CGFloat = 80
-    private let thumbHeight: CGFloat = 104
-    private let stripHeight: CGFloat = 140
+    private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
+    /// 80×104pt thumbs on iPad; 56×72pt on iPhone so the strip
+    /// occupies a third of the screen instead of half. Page strip
+    /// is opt-in on iPhone — by default the user navigates by
+    /// tapping the page-number affordance in the toolbar — so when
+    /// shown it gets the smaller footprint.
+    private var thumbWidth:  CGFloat { isCompact ? 56 : 80 }
+    private var thumbHeight: CGFloat { isCompact ? 72 : 104 }
+    private var stripHeight: CGFloat { isCompact ? 96 : 140 }
 
     var body: some View {
         ZStack {

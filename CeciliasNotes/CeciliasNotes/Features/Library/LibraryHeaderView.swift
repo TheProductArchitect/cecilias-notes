@@ -40,18 +40,31 @@ struct LibraryHeaderView: View {
         return (normal.isEmpty ? "cecilia" : normal).first ?? "c"
     }
 
+    /// Compact form factor (iPhone) drops the masthead from 180pt to
+    /// 96pt, hides the bottom-right ghost letter (no room), drops
+    /// the date eyebrow (also no room), and stacks the right-zone
+    /// toolbar above the wordmark instead of beside it. Net: the
+    /// library home shows ~6 notebook rows above the fold on a
+    /// standard iPhone screen instead of ~2.
+    private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
+    private var bandHeight: CGFloat { isCompact ? 96 : 180 }
+
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Ghost letter behind both zones — bleeds bottom-right.
-            GhostLetter(
-                character: ghostCharacter,
-                size: 160,
-                onDarkBackground: false
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .offset(x: 24, y: 24)
-            .clipped()
-            .accessibilityHidden(true)
+            // Ghost letter — iPad only. On iPhone the band is too
+            // short for the 160pt glyph to read as anything but
+            // visual noise.
+            if !isCompact {
+                GhostLetter(
+                    character: ghostCharacter,
+                    size: 160,
+                    onDarkBackground: false
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .offset(x: 24, y: 24)
+                .clipped()
+                .accessibilityHidden(true)
+            }
 
             HStack(alignment: .bottom, spacing: 0) {
                 leftZone
@@ -62,10 +75,10 @@ struct LibraryHeaderView: View {
                 rightColumn
                     .frame(maxWidth: 320, maxHeight: .infinity, alignment: .trailing)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
+            .padding(.horizontal, isCompact ? 16 : 24)
+            .padding(.top, isCompact ? 8 : 16)
         }
-        .frame(height: 180)
+        .frame(height: bandHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.background)
         .overlay(alignment: .bottom) {
@@ -99,8 +112,13 @@ struct LibraryHeaderView: View {
 
     private var leftZone: some View {
         VStack(alignment: .leading, spacing: 4) {
-            DateEyebrow()
-            BrandWordmark(userName: userName)
+            // Date eyebrow drops on iPhone — the band is too short
+            // for the date + wordmark stack to read cleanly, and
+            // the iOS status bar already shows the date.
+            if !isCompact {
+                DateEyebrow()
+            }
+            BrandWordmark(userName: userName, compact: isCompact)
         }
     }
 
@@ -108,7 +126,9 @@ struct LibraryHeaderView: View {
 
     private var rightColumn: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            if shouldShowGreeting {
+            // Greeting card is iPad-only: it requires the 180pt
+            // band to sit above the toolbar without crowding it.
+            if shouldShowGreeting && !isCompact {
                 greetingCard
             }
             Spacer(minLength: 0)
