@@ -213,12 +213,23 @@ struct LibraryView: View {
                 }
         )
         .overlay(alignment: .top) {
-            if let message = viewModel.error?.errorDescription {
-                MediaErrorBanner(message: message) { viewModel.error = nil }
-                    .padding(.top, CeciliasNotes.Spacing.md)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(99)
+            VStack(spacing: 8) {
+                if let message = viewModel.error?.errorDescription {
+                    MediaErrorBanner(message: message) { viewModel.error = nil }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                // Surface CloudKit fall-back to the user — without
+                // this the iPhone install that can't reach iCloud
+                // looks like "the app has no data" with no
+                // explanation. Single-line, dismissable-via-Settings;
+                // no auto-dismiss so the user notices it.
+                if CloudKitContainerState.status == .localOnlyFallback {
+                    iCloudUnavailableBanner
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.top, CeciliasNotes.Spacing.md)
+            .zIndex(99)
         }
         .overlay(alignment: .bottom) {
             if viewModel.isImporting {
@@ -526,6 +537,47 @@ struct LibraryView: View {
             deepLink.pendingQuickCapture = false
             viewModel.createUntitledNotebookAndOpen()
         }
+    }
+
+    // MARK: iCloud unavailable banner
+
+    /// User-visible explanation when the SwiftData CloudKit container
+    /// failed to come up and the app is running on its local-only
+    /// fallback. Fixed an "empty library on new iPhone" mystery where
+    /// the user assumed the app had lost their iPad notebooks — they
+    /// were just not syncing because iCloud wasn't reachable. Tap
+    /// opens Settings so the user can verify iCloud sign-in.
+    private var iCloudUnavailableBanner: some View {
+        Button {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "icloud.slash")
+                    .font(.system(size: 13, weight: .medium))
+                Text("iCloud sync unavailable — notes from other devices won't appear here. Tap to open Settings.")
+                    .font(.system(size: 12, weight: .regular))
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(3)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(theme.foreground)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(theme.danger.opacity(0.4), lineWidth: 1)
+                    )
+            )
+            .padding(.horizontal, CeciliasNotes.Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("iCloud sync unavailable. Tap to open Settings.")
     }
 
     // MARK: Action strip (replaces the system nav bar)

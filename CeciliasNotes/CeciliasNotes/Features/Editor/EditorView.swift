@@ -147,7 +147,7 @@ struct EditorView: View {
                 // do anything without mutation rights.
                 if !viewModel.isFullScreen
                     && !viewModel.isToolPaletteHidden
-                    && DeviceCapabilities.canMutate {
+                    && DeviceCapabilities.canDraw {
                     ToolPaletteView(
                         viewModel: viewModel,
                         parentSize: proxy.size,
