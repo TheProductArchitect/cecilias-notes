@@ -49,14 +49,23 @@ struct LibraryHeaderView: View {
     private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
     private var bandHeight: CGFloat { isCompact ? 96 : 180 }
 
-    /// Temporary diagnostic — bottom-left of the masthead band shows
-    /// the resolved idiom so we can see at a glance whether the
-    /// compact branches are firing. Remove once iPhone layout is
-    /// stable.
+    /// Temporary diagnostic — full-width coloured strip at the top
+    /// of the screen so it's impossible to miss whether the build
+    /// has the iPhone-support changes baked in.
+    ///   • green  → DeviceCapabilities.isPhoneIdiom == true, compact path live
+    ///   • orange → isPhoneIdiom == false (running as tablet idiom)
+    /// If you see NEITHER (just the old plain library), the running
+    /// binary is older than commit 314ec9e and Xcode is launching a
+    /// stale install.
     private var idiomDebugTag: some View {
-        Text("idiom=\(isCompact ? "phone" : "pad")")
-            .font(.system(size: 8, weight: .regular))
-            .foregroundStyle(.red)
+        Text(isCompact
+             ? "BUILD OK · idiom=phone · compact path live"
+             : "BUILD OK · idiom=pad · compact NOT firing")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity)
+            .background(isCompact ? Color.green : Color.orange)
     }
 
     var body: some View {
@@ -90,11 +99,7 @@ struct LibraryHeaderView: View {
         }
         .frame(height: bandHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .bottomLeading) {
-            idiomDebugTag
-                .padding(.leading, 4)
-                .padding(.bottom, 2)
-        }
+        .overlay(alignment: .top) { idiomDebugTag }
         .background(theme.background)
         .overlay(alignment: .bottom) {
             Rectangle()
