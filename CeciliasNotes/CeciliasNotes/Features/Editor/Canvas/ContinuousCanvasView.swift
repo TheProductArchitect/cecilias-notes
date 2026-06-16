@@ -187,7 +187,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         let scrollView = PalmRejectingScrollView(frame: host.bounds)
         scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         scrollView.backgroundColor = .clear
-        scrollView.minimumZoomScale = 0.5
+        // iPhone needs to be able to zoom further out than iPad —
+        // A4 at 1.0× is ~595pt wide, an iPhone is ~393pt, so the
+        // page only fits when zoomScale ≈ 0.66. 0.5× was too high
+        // a floor; lowering to 0.3× lets the user pinch to even
+        // smaller if they want. iPad keeps the original 0.5× floor.
+        scrollView.minimumZoomScale = DeviceCapabilities.isPhoneIdiom ? 0.3 : 0.5
         // Capped at 1.5× (+50% from native). Higher values were available
         // but caused stroke-rendering blur and made the active page hard
         // to keep on-screen; pinching to ~2× was nearly always followed
@@ -391,6 +396,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         let viewModel: EditorViewModel
         var fingerDrawingEnabled: Bool
+
+        /// iPhone-only — cached `scrollView.bounds.width` from the
+        /// last time we forced a fit-to-width zoom. Bounds change
+        /// (rotation, sheet present/dismiss, split-view resize) drop
+        /// us out of cache and re-fit; otherwise we leave the user's
+        /// in-flight zoom alone. iPad never reads this.
+        var phoneFitAppliedForWidth: CGFloat = -1
 
         private let pageGap: CGFloat
         private let warmBandPaddingFactor: CGFloat
@@ -809,6 +821,40 @@ struct ContinuousCanvasView: UIViewRepresentable {
             contentView.frame = CGRect(x: 0, y: 0, width: width, height: height)
             scrollView.contentSize = CGSize(width: width, height: height)
             applyContentInset()
+            applyPhoneFitToWidthIfNeeded()
+        }
+
+        /// iPhone-only: set the scroll view's zoom so the widest page
+        /// fits the visible width with a small safe-area margin. Page
+        /// sizes are stored as iPad-class point values (A4 ≈ 595pt,
+        /// Letter ≈ 612pt) so without this they overflow the iPhone
+        /// screen and text typed into elements lands off-screen.
+        ///
+        /// Runs once per scrollView bounds change — `phoneFitApplied`
+        /// caches the bounds.width we last fit against and is
+        /// invalidated by `refreshContentInsetForBounds` (which already
+        /// fires on every layout pass). This keeps the user's
+        /// subsequent manual zoom in place; we don't ratchet back to
+        /// fit-to-width after every page mount.
+        private func applyPhoneFitToWidthIfNeeded() {
+            guard DeviceCapabilities.isPhoneIdiom,
+                  let scrollView,
+                  scrollView.bounds.width > 0,
+                  scrollView.contentSize.width > 0
+            else { return }
+            // Already fit against the current bounds — don't override
+            // a user pinch.
+            if abs(phoneFitAppliedForWidth - scrollView.bounds.width) < 0.5 { return }
+
+            // Aim for 12pt of breathing room on each side so the page
+            // edge doesn't kiss the screen edge.
+            let target = (scrollView.bounds.width - 24) / scrollView.contentSize.width
+            let fit = max(scrollView.minimumZoomScale,
+                          min(1.0, target))
+            scrollView.setZoomScale(fit, animated: false)
+            phoneFitAppliedForWidth = scrollView.bounds.width
+            // Re-centre after zoom change.
+            applyContentInset()
         }
 
         /// Recompute the scroll view's content inset against its
@@ -823,6 +869,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// stays pinned to the scroll view's left edge.
         func refreshContentInsetForBounds() {
             applyContentInset()
+            // Bounds may have grown / shrunk (rotation, sheet
+            // dismiss). Reset the phone fit cache so the next
+            // updateContentSize re-fits against the new width.
+            // iPad path is a no-op — the function is gated on
+            // isPhoneIdiom.
+            phoneFitAppliedForWidth = -1
+            applyPhoneFitToWidthIfNeeded()
         }
 
         private func applyContentInset() {
