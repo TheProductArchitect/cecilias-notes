@@ -86,13 +86,34 @@ struct LibraryHeaderView: View {
             }
 
             HStack(alignment: .bottom, spacing: 0) {
-                leftZone
-                    .fixedSize(horizontal: true, vertical: false)
+                // `fixedSize(horizontal:)` on the leftZone forces the
+                // wordmark to its intrinsic width — fine on iPad
+                // where the rightColumn caps at 320pt and there's
+                // ~700pt left for the masthead, but on a 393pt
+                // iPhone the 320pt rightColumn would push the
+                // leftZone off the left edge. On compact width we
+                // skip the fixed-size constraint so the wordmark
+                // can sit at its 38pt intrinsic size (the compact
+                // BrandWordmark tier) without being shoved out.
+                if isCompact {
+                    leftZone
+                } else {
+                    leftZone
+                        .fixedSize(horizontal: true, vertical: false)
+                }
 
                 Spacer(minLength: 16)
 
+                // rightColumn cap drops on compact width — the
+                // toolbar strip naturally fits in ~200pt with the
+                // seven icons it carries, so no explicit cap is
+                // needed. The 320pt cap exists on iPad to keep the
+                // strip from eating into the greeting card column.
                 rightColumn
-                    .frame(maxWidth: 320, maxHeight: .infinity, alignment: .trailing)
+                    .frame(maxWidth: isCompact ? .infinity : 320,
+                           maxHeight: .infinity,
+                           alignment: .trailing)
+                    .layoutPriority(isCompact ? 0 : 1)
             }
             .padding(.horizontal, isCompact ? 16 : 24)
             .padding(.top, isCompact ? 8 : 16)
