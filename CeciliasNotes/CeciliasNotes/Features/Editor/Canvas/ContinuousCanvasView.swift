@@ -880,8 +880,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         private func applyContentInset() {
             guard let scrollView else { return }
-            let width  = scrollView.contentSize.width
-            let height = scrollView.contentSize.height
+            // `contentSize` is the UNSCALED content extent. The
+            // actually-displayed extent is contentSize × zoomScale —
+            // and centering needs to compare to the displayed extent,
+            // not the unscaled one. iPad has historically run at
+            // zoomScale == 1 so the bug never showed; iPhone fits
+            // A4 to screen by setting zoomScale ≈ 0.66, which made
+            // the previous "(bounds - contentSize) / 2" formula
+            // negative and clamped to 0 — page glued to the left
+            // edge instead of centred.
+            let scale  = scrollView.zoomScale
+            let width  = scrollView.contentSize.width  * scale
+            let height = scrollView.contentSize.height * scale
             // Skip when bounds aren't yet sized — the host's
             // `layoutSubviews` will re-fire once SwiftUI gives the
             // representable its real frame.
