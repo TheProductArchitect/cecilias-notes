@@ -49,6 +49,16 @@ struct LibraryHeaderView: View {
     private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
     private var bandHeight: CGFloat { isCompact ? 96 : 180 }
 
+    /// Temporary diagnostic — bottom-left of the masthead band shows
+    /// the resolved idiom so we can see at a glance whether the
+    /// compact branches are firing. Remove once iPhone layout is
+    /// stable.
+    private var idiomDebugTag: some View {
+        Text("idiom=\(isCompact ? "phone" : "pad")")
+            .font(.system(size: 8, weight: .regular))
+            .foregroundStyle(.red)
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             // Ghost letter — iPad only. On iPhone the band is too
@@ -80,6 +90,11 @@ struct LibraryHeaderView: View {
         }
         .frame(height: bandHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottomLeading) {
+            idiomDebugTag
+                .padding(.leading, 4)
+                .padding(.bottom, 2)
+        }
         .background(theme.background)
         .overlay(alignment: .bottom) {
             Rectangle()
