@@ -607,13 +607,16 @@ final class EditorViewModel: ObservableObject {
         } else {
             self.currentPageIndex = 0
         }
-        // Land on the neutral cursor so a one-finger drag scrolls the
-        // page out of the gate. The first pencil contact (observed via
-        // `pencilTouchObserved`) immediately swaps in the user's last
-        // inking tool — so the Pencil user is writing the moment they
-        // touch down, while the finger-first user can scroll without
-        // accidental ink.
-        self.selectedTool = .cursor
+        // iPhone defaults to text mode — no Pencil, no canvas drawing,
+        // so the meaningful interaction is "tap to start writing
+        // text." Cursor would just sit there inert.
+        //
+        // iPad defaults to the neutral cursor so a one-finger drag
+        // scrolls the page; the first pencil contact (observed via
+        // `pencilTouchObserved`) swaps in the user's last inking
+        // tool. Pencil users write the moment they touch down,
+        // finger-first users scroll without accidental ink.
+        self.selectedTool = DeviceCapabilities.canDraw ? .cursor : .text
         // Remember the inking tool we'll swap *to* on first pencil
         // touch this session.
         self.pendingInkingToolForPencil = Self.resolveInitialTool(
