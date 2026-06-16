@@ -59,8 +59,8 @@ struct LibraryHeaderView: View {
     /// stale install.
     private var idiomDebugTag: some View {
         Text(isCompact
-             ? "BUILD OK · idiom=phone · compact path live"
-             : "BUILD OK · idiom=pad · compact NOT firing")
+             ? "v3 STACKED · idiom=phone · this build has VStack masthead"
+             : "v3 · idiom=pad")
             .font(.system(size: 11, weight: .bold))
             .foregroundStyle(.white)
             .padding(.vertical, 4)
