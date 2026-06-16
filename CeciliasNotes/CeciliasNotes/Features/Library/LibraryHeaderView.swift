@@ -91,21 +91,23 @@ struct LibraryHeaderView: View {
             // which is what was pushing the wordmark off the left
             // edge under every previous attempt. iPad keeps the
             // side-by-side composition.
-            if isCompact {
-                VStack(alignment: .leading, spacing: 6) {
-                    leftZone
-                    toolbarStrip
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                HStack(alignment: .bottom, spacing: 0) {
-                    leftZone
-                        .fixedSize(horizontal: true, vertical: false)
+            Group {
+                if isCompact {
+                    VStack(alignment: .leading, spacing: 6) {
+                        leftZone
+                        toolbarStrip
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        leftZone
+                            .fixedSize(horizontal: true, vertical: false)
 
-                    Spacer(minLength: 16)
+                        Spacer(minLength: 16)
 
-                    rightColumn
-                        .frame(maxWidth: 320, maxHeight: .infinity, alignment: .trailing)
+                        rightColumn
+                            .frame(maxWidth: 320, maxHeight: .infinity, alignment: .trailing)
+                    }
                 }
             }
             .padding(.horizontal, isCompact ? 16 : 24)
