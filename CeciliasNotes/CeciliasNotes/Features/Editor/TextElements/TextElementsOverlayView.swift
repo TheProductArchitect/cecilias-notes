@@ -337,6 +337,17 @@ struct TextElementsOverlayView: View {
             selectedId = element.id
             return
         }
+        // iPhone: single tap goes straight to edit. The two-tap
+        // (select → edit) flow exists on iPad so Pencil users can
+        // adjust the size handle without raising the keyboard.
+        // iPhone has no Pencil and no handle picker that needs
+        // the intermediate state, so making the user tap twice
+        // just to start typing is friction. Tap once → keyboard.
+        if DeviceCapabilities.isPhoneIdiom {
+            selectedId = element.id
+            editingId  = element.id
+            return
+        }
         if selectedId == element.id {
             // Second tap on an already-selected element → enter
             // edit mode (keyboard appears).
