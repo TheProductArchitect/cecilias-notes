@@ -36,6 +36,69 @@ struct QuizBuilderView: View {
     private var shortAnswerAvailable: Bool { aiAvailable || mcpAvailable }
     private var availableTiers: [AITier] { QuizGenerationService.shared.availableTiers() }
 
+    /// Tracks which row's eligibility popover is open. Identity is
+    /// notebook / subject UUID (the source row's id) plus the
+    /// reason text — we only ever surface one popover at a time.
+    @State private var eligibilityPopoverFor: UUID?
+
+    /// Result of running the source-text pre-flight on a notebook or
+    /// a subject. `eligible` carries the rough size; `ineligible`
+    /// carries the user-facing reason rendered in the popover.
+    enum QuizEligibility {
+        case eligible(unitCount: Int)
+        case ineligible(reason: String)
+
+        var isEligible: Bool {
+            if case .eligible = self { return true }
+            return false
+        }
+    }
+
+    /// Pre-flights a notebook for quiz generation by checking how
+    /// much typed / transcribed / PDF text is on hand. Hand-drawn
+    /// ink is invisible to every tier (no OCR), so a notebook full
+    /// of strokes only is `.ineligible` with a clear explanation.
+    private func eligibility(for notebook: Notebook) -> QuizEligibility {
+        let context = StorageService.shared.context
+        let scope = QuizScope(
+            type: .notebook,
+            notebookIDs: [notebook.id],
+            includeTranscriptions: includeTranscriptions
+        )
+        let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
+        if count > 0 { return .eligible(unitCount: count) }
+        return .ineligible(reason: """
+            this notebook has no text the model can read. quiz \
+            generation needs typed text blocks, audio transcripts, \
+            or text extracted from imported PDFs. handwritten ink is \
+            not recognised yet.
+            """)
+    }
+
+    /// Pre-flights a subject by aggregating its notebooks. Ineligible
+    /// when *every* notebook in the subject is empty of usable text.
+    private func eligibility(for subject: Subject) -> QuizEligibility {
+        let context = StorageService.shared.context
+        let scope = QuizScope(
+            type: .subject,
+            subjectID: subject.id,
+            subjectName: subject.name,
+            includeTranscriptions: includeTranscriptions
+        )
+        let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
+        if count > 0 { return .eligible(unitCount: count) }
+        let notebookCount = notebooks.filter { $0.subjectId == subject.id }.count
+        if notebookCount == 0 {
+            return .ineligible(reason: "this subject has no notebooks yet.")
+        }
+        return .ineligible(reason: """
+            none of the notebooks in this subject have text the model \
+            can read. quiz generation needs typed text blocks, audio \
+            transcripts, or text extracted from imported PDFs. \
+            handwritten ink is not recognised yet.
+            """)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             titleBar
@@ -114,8 +177,11 @@ struct QuizBuilderView: View {
     private func notebookList(multi: Bool) -> some View {
         VStack(spacing: 0) {
             ForEach(notebooks) { nb in
+                let elig = eligibility(for: nb)
+                let isEligible = elig.isEligible
                 let isSelected = multi ? customSelected.contains(nb.id) : selectedNotebookID == nb.id
                 Button {
+                    guard isEligible else { return }
                     if multi {
                         if customSelected.contains(nb.id) { customSelected.remove(nb.id) }
                         else { customSelected.insert(nb.id) }
@@ -126,11 +192,15 @@ struct QuizBuilderView: View {
                     HStack {
                         Text(nb.title.isEmpty ? "untitled" : nb.title.lowercased())
                             .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? theme.accent : theme.foreground)
+                            .foregroundStyle(isSelected ? theme.accent
+                                            : (isEligible ? theme.foreground : theme.foregroundSubtle))
                         Spacer()
                         Text("\(nb.totalPageCount) pages")
                             .font(.system(size: 12))
                             .foregroundStyle(theme.foregroundSubtle)
+                        if !isEligible {
+                            eligibilityInfoButton(id: nb.id, reason: ineligibleReason(elig))
+                        }
                         if isSelected {
                             Image(systemName: multi ? "checkmark.square.fill" : "checkmark")
                                 .font(.system(size: 12, weight: .bold))
@@ -140,8 +210,10 @@ struct QuizBuilderView: View {
                     .padding(.vertical, 12)
                     .padding(.horizontal, 14)
                     .contentShape(Rectangle())
+                    .opacity(isEligible ? 1 : 0.55)
                 }
                 .buttonStyle(.plain)
+                .disabled(!isEligible)
                 Rectangle().fill(theme.recessiveQuinary).frame(height: 0.5)
             }
         }
@@ -154,15 +226,22 @@ struct QuizBuilderView: View {
     private var subjectList: some View {
         VStack(spacing: 0) {
             ForEach(subjects) { subject in
+                let elig = eligibility(for: subject)
+                let isEligible = elig.isEligible
                 let isSelected = selectedSubjectID == subject.id
                 Button {
+                    guard isEligible else { return }
                     selectedSubjectID = subject.id
                 } label: {
                     HStack {
                         Text(subject.name.lowercased())
                             .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? theme.accent : theme.foreground)
+                            .foregroundStyle(isSelected ? theme.accent
+                                            : (isEligible ? theme.foreground : theme.foregroundSubtle))
                         Spacer()
+                        if !isEligible {
+                            eligibilityInfoButton(id: subject.id, reason: ineligibleReason(elig))
+                        }
                         if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 12, weight: .bold))
@@ -172,8 +251,10 @@ struct QuizBuilderView: View {
                     .padding(.vertical, 12)
                     .padding(.horizontal, 14)
                     .contentShape(Rectangle())
+                    .opacity(isEligible ? 1 : 0.55)
                 }
                 .buttonStyle(.plain)
+                .disabled(!isEligible)
                 Rectangle().fill(theme.recessiveQuinary).frame(height: 0.5)
             }
         }
@@ -181,6 +262,46 @@ struct QuizBuilderView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .stroke(theme.recessiveQuinary, lineWidth: 0.5)
         )
+    }
+
+    /// (i) icon next to an ineligible row. Tap opens a popover with
+    /// the reason — same UI for notebooks and subjects.
+    @ViewBuilder
+    private func eligibilityInfoButton(id: UUID, reason: String) -> some View {
+        Button {
+            eligibilityPopoverFor = (eligibilityPopoverFor == id) ? nil : id
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(theme.foregroundSubtle)
+        }
+        .buttonStyle(.plain)
+        .popover(
+            isPresented: Binding(
+                get: { eligibilityPopoverFor == id },
+                set: { if !$0 { eligibilityPopoverFor = nil } }
+            ),
+            attachmentAnchor: .point(.center),
+            arrowEdge: .top
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("can't generate a quiz here")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.foreground)
+                Text(reason)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(14)
+            .frame(maxWidth: 280)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func ineligibleReason(_ elig: QuizEligibility) -> String {
+        if case .ineligible(let reason) = elig { return reason }
+        return ""
     }
 
     // MARK: Step 2 — Format
