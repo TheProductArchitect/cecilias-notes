@@ -25,13 +25,10 @@ struct PageStripView: View {
     @ObservedObject var viewModel: EditorViewModel
     @Environment(\.theme) private var theme
 
-    /// Popover anchor + intent for the template picker that opens
-    /// off the trailing "+" button. Tap = create a page with the
-    /// picked template, leave default unchanged. Long-press = open
-    /// the same picker but pin the choice as the notebook's default
-    /// without creating a page.
+    /// Popover anchor for the template picker that opens off the
+    /// trailing "+" button on long-press. Plain tap just adds a
+    /// page with the notebook's current default template.
     @State private var showAddPageTemplatePicker: Bool = false
-    @State private var addPageLongPressIntent: Bool = false
 
     private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
     /// 80×104pt thumbs on iPad; 56×72pt on iPhone so the strip
@@ -149,15 +146,15 @@ struct PageStripView: View {
                             }
                         }
                         .buttonStyle(.ceciliasNotesPressable)
-                        // Long-press opens the same template picker
-                        // but in "set default" mode — picking a
-                        // template updates `notebook.defaultTemplate`
-                        // without creating a new page. The next tap
-                        // on "+" then uses that as its default.
+                        // Long-press opens the template picker for a
+                        // one-off override. Picking a template always
+                        // inserts a new page using it; the "also set
+                        // as default" toggle on the picker pins the
+                        // choice to `notebook.defaultTemplate` so
+                        // subsequent taps on "+" pick it up.
                         .simultaneousGesture(
                             LongPressGesture(minimumDuration: 0.45)
                                 .onEnded { _ in
-                                    addPageLongPressIntent = true
                                     showAddPageTemplatePicker = true
                                     HapticManager.shared.toolSwitched()
                                 }
@@ -167,14 +164,11 @@ struct PageStripView: View {
                                  arrowEdge: .bottom) {
                             AddPageTemplatePicker(
                                 currentDefault: viewModel.notebook.defaultTemplate,
-                                isSetDefaultMode: addPageLongPressIntent,
                                 onPick: { template, makeDefault in
                                     if makeDefault {
                                         viewModel.applyCustomTemplate(template)
                                     }
-                                    if !addPageLongPressIntent {
-                                        viewModel.addPage(template: template)
-                                    }
+                                    viewModel.addPage(template: template)
                                     showAddPageTemplatePicker = false
                                 },
                                 onCancel: {
@@ -317,21 +311,18 @@ private struct PageStripThumbnail: View {
 
 // MARK: - AddPageTemplatePicker
 
-/// Compact popover surfaced off the page-strip's trailing "+" button.
+/// Compact popover surfaced off the page-strip's trailing "+" button
+/// via long-press. Picking a template always inserts a new page using
+/// that template; the "also set as default" toggle pre-loaded from
+/// whether the picked template already matches the notebook default
+/// pins the choice to `notebook.defaultTemplate` as a side-effect.
 ///
-/// Two modes, both share the same UI:
-///   • Tap "+" → `isSetDefaultMode == false`. Picking a template
-///     inserts a new page using that template. The "make this the
-///     default" toggle is offered so the user can commit the choice
-///     to the notebook's `defaultTemplate` as a side-effect.
-///   • Long-press "+" → `isSetDefaultMode == true`. Picking a
-///     template just updates `notebook.defaultTemplate` — no new
-///     page is created. Lets the user pre-set the default before
-///     adding several pages in a row without re-opening the picker
-///     each time.
+/// The toggle is visible regardless of how the picker was opened —
+/// users wanted explicit control over whether each long-press also
+/// commits the choice to the default, not a hidden behaviour based
+/// on which gesture opened the panel.
 private struct AddPageTemplatePicker: View {
     let currentDefault: PageTemplate
-    let isSetDefaultMode: Bool
     let onPick: (_ template: PageTemplate, _ makeDefault: Bool) -> Void
     let onCancel: () -> Void
 
@@ -342,9 +333,7 @@ private struct AddPageTemplatePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(isSetDefaultMode
-                 ? "set default template for new pages"
-                 : "pick a template for the new page")
+            Text("pick a template for the new page")
                 .font(.system(size: 11, weight: .regular).italic())
                 .foregroundStyle(theme.recessiveQuaternary)
 
@@ -358,8 +347,7 @@ private struct AddPageTemplatePicker: View {
                             ForEach(PageTemplate.allCases.filter { $0.category == category },
                                     id: \.self) { template in
                                 Button {
-                                    onPick(template,
-                                           isSetDefaultMode || makeDefaultToggle)
+                                    onPick(template, makeDefaultToggle)
                                 } label: {
                                     VStack(spacing: 4) {
                                         TemplateThumbView(
@@ -386,15 +374,13 @@ private struct AddPageTemplatePicker: View {
                 }
             }
 
-            if !isSetDefaultMode {
-                Toggle(isOn: $makeDefaultToggle) {
-                    Text("also set as default for future pages")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(theme.foreground)
-                }
-                .tint(theme.accent)
-                .padding(.top, 4)
+            Toggle(isOn: $makeDefaultToggle) {
+                Text("also set as default for future pages")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(theme.foreground)
             }
+            .tint(theme.accent)
+            .padding(.top, 4)
         }
         .padding(14)
         .frame(width: 380)
