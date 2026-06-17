@@ -172,8 +172,21 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        let destination = inbox.appendingPathComponent(
-            "\(UUID().uuidString).\(suggestedExt)"
+        // Preserve the original file basename when we have it — the
+        // import pipeline reads `url.lastPathComponent` to name the
+        // notebook, so writing as `<uuid>.pdf` would strip the user's
+        // PDF title. Fall back to the item provider's suggested name,
+        // then to a UUID for items that arrived as raw Data without
+        // any name attached (rare; mostly Mail / share-as-image).
+        let baseName = preservedBaseName(
+            from: item,
+            provider: provider,
+            extension: suggestedExt
+        )
+        let destination = uniqueDestination(
+            in: inbox,
+            baseName: baseName,
+            ext: suggestedExt
         )
 
         if let url = item as? URL {
@@ -183,6 +196,48 @@ final class ShareViewController: UIViewController {
         } else if let image = item as? UIImage,
                   let data = image.pngData() {
             try? data.write(to: destination, options: .atomic)
+        }
+    }
+
+    /// Best-effort original basename for the dropped item. URL items
+    /// expose the file's name directly; `NSItemProvider.suggestedName`
+    /// is also worth checking (some apps set it even when the item
+    /// arrives as Data).
+    private func preservedBaseName(
+        from item: NSSecureCoding?,
+        provider: NSItemProvider,
+        extension ext: String
+    ) -> String {
+        if let url = item as? URL {
+            let stem = url.deletingPathExtension().lastPathComponent
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !stem.isEmpty { return stem }
+        }
+        if let suggested = provider.suggestedName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !suggested.isEmpty {
+            // suggestedName may carry its own extension — strip it
+            // so we don't end up with "Foo.pdf.pdf" on disk.
+            let url = URL(fileURLWithPath: suggested)
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return UUID().uuidString
+    }
+
+    /// Avoid clobbering an inbox file with the same name. Walks
+    /// `Foo.pdf`, `Foo 2.pdf`, `Foo 3.pdf`, … until a free slot.
+    private func uniqueDestination(
+        in inbox: URL,
+        baseName: String,
+        ext: String
+    ) -> URL {
+        let primary = inbox.appendingPathComponent("\(baseName).\(ext)")
+        if !FileManager.default.fileExists(atPath: primary.path) { return primary }
+        var n = 2
+        while true {
+            let candidate = inbox.appendingPathComponent("\(baseName) \(n).\(ext)")
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            n += 1
         }
     }
 

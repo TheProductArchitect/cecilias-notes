@@ -46,6 +46,7 @@ struct PDFPagePickerSheet: View {
     @State private var jumpError: String?
     @State private var thumbnailCache: [Int: UIImage] = [:]
     @State private var scrollTargetPage: Int?
+    @FocusState private var jumpFieldFocused: Bool
     /// Destination chooser — defaults to `.afterCurrentPage` for
     /// editor mode, `.newNotebook(nil)` for library mode (see
     /// `.onAppear` initialiser below).
@@ -331,6 +332,7 @@ struct PDFPagePickerSheet: View {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(theme.recessiveQuinary)
                     )
+                    .focused($jumpFieldFocused)
                     .onSubmit { handleJump() }
                     .onChange(of: jumpToInput) { _, _ in
                         // Typing clears a previous error so the inline
@@ -338,12 +340,43 @@ struct PDFPagePickerSheet: View {
                         // correcting the value.
                         if jumpError != nil { jumpError = nil }
                     }
+                    .onChange(of: jumpFieldFocused) { _, focused in
+                        // Numberpad has no return key, so we treat
+                        // "user finished typing" (focus loss — they
+                        // tapped anywhere outside the field) as the
+                        // Go signal. This is the iOS-native pattern
+                        // for numeric input.
+                        if !focused { handleJump(silentOnEmpty: true) }
+                    }
+                    // Keyboard accessory "Done" so the user has an
+                    // explicit dismissal path that also commits the
+                    // jump — covers people who like an in-keyboard
+                    // confirmation over tapping into the grid.
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { handleJump() }
+                                .foregroundStyle(theme.accent)
+                        }
+                    }
                 Text("of \(pageCount)")
                     .font(.ceciliasNotesBody)
                     .foregroundStyle(theme.foregroundMuted)
                 Spacer()
-                Button("Go") { handleJump() }
-                    .foregroundStyle(theme.accent)
+                // Select-all toggle moves up from the footer so it
+                // sits where the old "Go" button lived. Single tap
+                // selects every page; tap again to clear. Footer
+                // becomes purely informational (selection count).
+                Button(selectedPages.count == pageCount ? "Deselect All" : "Select All") {
+                    if selectedPages.count == pageCount {
+                        selectedPages.removeAll()
+                    } else {
+                        selectedPages = Array(0..<pageCount)
+                    }
+                    HapticManager.shared.toolSwitched()
+                }
+                .font(.ceciliasNotesBody)
+                .foregroundStyle(theme.accent)
             }
             if let jumpError {
                 Text(jumpError)
@@ -356,7 +389,7 @@ struct PDFPagePickerSheet: View {
         .padding(.vertical, CeciliasNotes.Spacing.sm)
     }
 
-    private func handleJump() {
+    private func handleJump(silentOnEmpty: Bool = false) {
         // Always dismiss the keyboard, even on invalid input. The
         // numberPad has no return key, so leaving it up when the
         // user taps Go with a bad value strands them with no
@@ -370,7 +403,11 @@ struct PDFPagePickerSheet: View {
         )
         let trimmed = jumpToInput.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else {
-            jumpError = "Enter a page number"
+            // When jump fires from focus-loss with an empty field
+            // (user opened the keyboard then dismissed without
+            // typing anything), don't shout an error — they just
+            // tapped away.
+            if !silentOnEmpty { jumpError = "Enter a page number" }
             return
         }
         guard let raw = Int(trimmed) else {
@@ -495,20 +532,10 @@ struct PDFPagePickerSheet: View {
                 .font(.ceciliasNotesCaption)
                 .foregroundStyle(theme.foregroundSubtle)
             Spacer()
-            // Select all toggles between "select every page" and
-            // "deselect every page" so a power user can flip the
-            // entire selection without scrolling and tapping each
-            // thumbnail individually.
-            Button(selectedPages.count == pageCount ? "Deselect All" : "Select All") {
-                if selectedPages.count == pageCount {
-                    selectedPages.removeAll()
-                } else {
-                    selectedPages = Array(0..<pageCount)
-                }
-                HapticManager.shared.toolSwitched()
-            }
-            .font(.ceciliasNotesCaption)
-            .foregroundStyle(theme.accent)
+            // Select All / Deselect All has moved up next to the
+            // jump field — the footer now stays purely informational
+            // with just a Clear shortcut when a partial selection is
+            // in flight.
             if !selectedPages.isEmpty && selectedPages.count != pageCount {
                 Button("Clear") {
                     selectedPages.removeAll()
