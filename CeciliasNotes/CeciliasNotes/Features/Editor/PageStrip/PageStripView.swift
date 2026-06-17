@@ -123,8 +123,16 @@ struct PageStripView: View {
                     // useful as a "jump to page N" affordance.
                     if DeviceCapabilities.canMutate {
                         Button {
-                            addPageLongPressIntent = false
-                            showAddPageTemplatePicker = true
+                            // Tap +: insert a page using the notebook's
+                            // current default template — no popover.
+                            // Picker only appears when the user
+                            // explicitly long-presses to choose a
+                            // different template (or to change the
+                            // default). Matches the "set once, stay
+                            // out of the way" behaviour the page-strip
+                            // is meant to have.
+                            viewModel.addPage()
+                            HapticManager.shared.pageAdded()
                         } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "plus")

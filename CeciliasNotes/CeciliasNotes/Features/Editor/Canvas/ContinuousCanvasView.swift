@@ -868,10 +868,29 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let target = (scrollView.bounds.width - 24) / scrollView.contentSize.width
             let fit = max(scrollView.minimumZoomScale,
                           min(1.0, target))
+            // Suppress scrollViewDidZoom's `viewModel.zoomScale = z`
+            // assignment for the duration of the fit-to-width zoom.
+            // Without this the delegate fires synchronously during
+            // a SwiftUI layout pass (updateContentSize is reached
+            // via the host's layoutSubviews hook), the @Published
+            // write lands inside the view-update tick, and SwiftUI
+            // emits "Publishing changes from within view updates"
+            // a dozen times per page swap. The user-driven pinch
+            // path still publishes normally.
+            suppressZoomUpdate = true
             scrollView.setZoomScale(fit, animated: false)
+            suppressZoomUpdate = false
             phoneFitAppliedForWidth = scrollView.bounds.width
             // Re-centre after zoom change.
             applyContentInset()
+            // Catch up the view-model now that we're past the layout
+            // pass — but defer one runloop tick so the assignment
+            // lands outside SwiftUI's update cycle.
+            let z = scrollView.zoomScale
+            DispatchQueue.main.async { [weak viewModel] in
+                guard let vm = viewModel, abs(vm.zoomScale - z) > 0.001 else { return }
+                vm.zoomScale = z
+            }
         }
 
         /// Recompute the scroll view's content inset against its
