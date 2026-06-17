@@ -30,6 +30,16 @@ struct ToolPaletteView: View {
     /// Drives the long-press variant menu on the lasso tool
     /// (freeform vs marquee). Step 9.
     @State private var showLassoVariantPopover = false
+    /// Drives the shape picker popover anchored to the shape button.
+    @State private var showShapeVariantPopover = false
+    /// Persisted last-used `ShapeKind`. Re-tap of an already-active
+    /// shape tool opens the picker; selecting a kind activates the
+    /// tool with that kind AND writes the AppStorage so the next
+    /// activation lands on the same shape.
+    @AppStorage("ceciliasnotes.shape.lastKind") private var lastShapeKindRaw: String = ShapeKind.rectangle.rawValue
+    private var lastShapeKind: ShapeKind {
+        ShapeKind(rawValue: lastShapeKindRaw) ?? .rectangle
+    }
     /// Mirrored from `LassoSelectionState.shared.mode` so the
     /// popover's check-marks update without subscribing the whole
     /// palette to the singleton.
@@ -232,6 +242,11 @@ struct ToolPaletteView: View {
         // any page. Step 7 (sticky migration) can revisit
         // visibility heuristics if needed.
         toolButton(.stickyNote)
+        // Shape tool — drag-to-create parametric shapes (rectangle,
+        // ellipse, triangle, line, arrow, star, heart, callout). The
+        // active shape kind is persisted across launches and surfaced
+        // via the shape popover anchored to this button.
+        toolButton(.shape)
 
         // Per-tool customization (color / width / mode) used to live
         // here as an always-visible strip — it cluttered the pill for
@@ -599,6 +614,23 @@ struct ToolPaletteView: View {
                     imageVariantPopover
                         .presentationCompactAdaptation(.popover)
                 }
+        } else if identity == .shape {
+            // Long-press opens the shape kind picker (same UI as
+            // re-tap on the active button). Tap selects the shape
+            // tool using the last-used kind, persisted via
+            // @AppStorage("ceciliasnotes.shape.lastKind").
+            core
+                .highPriorityGesture(
+                    LongPressGesture(minimumDuration: 0.4)
+                        .onEnded { _ in
+                            HapticManager.shared.contextMenuOpened()
+                            showShapeVariantPopover = true
+                        }
+                )
+                .popover(isPresented: $showShapeVariantPopover) {
+                    shapeVariantPopover
+                        .presentationCompactAdaptation(.popover)
+                }
         } else {
             core
         }
@@ -609,6 +641,60 @@ struct ToolPaletteView: View {
     /// Freeform / marquee mode picker. Mirrors the eraser /
     /// image variant popovers — two rows, current selection shows
     /// a check-mark.
+    /// Shape kind picker. Grouped by category (primitive vs
+    /// decorative). Tapping a thumbnail activates the shape tool
+    /// with that kind AND persists it as the new last-used kind so
+    /// subsequent direct taps on the shape button land here.
+    private var shapeVariantPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Shape")
+                .font(.ceciliasNotesSubhead)
+                .foregroundColor(theme.foregroundMuted)
+            ForEach(ShapeKind.Category.allCases, id: \.self) { category in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(category == .primitive ? "primitive" : "decorative")
+                        .font(.system(size: 9, weight: .regular).italic())
+                        .foregroundStyle(theme.recessiveQuaternary)
+                    let kinds = ShapeKind.allCases.filter { $0.category == category }
+                    let columns = [GridItem(.adaptive(minimum: 56), spacing: 8)]
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(kinds, id: \.self) { kind in
+                            Button {
+                                lastShapeKindRaw = kind.rawValue
+                                viewModel.selectedTool = .shape(kind: kind)
+                                showShapeVariantPopover = false
+                                HapticManager.shared.toolSwitched()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: kind.systemImage)
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(
+                                            kind == lastShapeKind ? theme.accent : theme.foreground
+                                        )
+                                        .frame(width: 44, height: 44)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .strokeBorder(
+                                                    kind == lastShapeKind ? theme.accent : theme.borderSubtle,
+                                                    lineWidth: kind == lastShapeKind ? 1.5 : 0.5
+                                                )
+                                        )
+                                    Text(kind.displayName)
+                                        .font(.system(size: 9, weight: .regular))
+                                        .foregroundStyle(theme.foregroundMuted)
+                                        .lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(CeciliasNotes.Spacing.md)
+        .frame(width: 280)
+    }
+
     private var lassoVariantPopover: some View {
         VStack(spacing: 0) {
             ForEach(LassoMath.Mode.allCases, id: \.self) { mode in
@@ -749,6 +835,23 @@ struct ToolPaletteView: View {
     }
 
     private func handleToolTap(_ identity: CeciliasNotesTool.Identity) {
+        // The shape button selects the shape tool with the last-used
+        // shape kind; re-tapping opens the kind picker so the user
+        // can switch between rectangle / triangle / arrow / etc.
+        // without leaving the palette. Tools-with-variants pattern,
+        // same shape as the lasso freeform/marquee picker.
+        if identity == .shape {
+            if viewModel.selectedTool.identity == .shape {
+                showShapeVariantPopover = true
+                HapticManager.shared.contextMenuOpened()
+            } else {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
+                    viewModel.selectedTool = .shape(kind: lastShapeKind)
+                }
+                HapticManager.shared.toolSwitched()
+            }
+            return
+        }
         // The image button is special: every tap (active or not) fires
         // the picker matching the persisted variant in addition to
         // selecting the tool. This collapses the previous two-step

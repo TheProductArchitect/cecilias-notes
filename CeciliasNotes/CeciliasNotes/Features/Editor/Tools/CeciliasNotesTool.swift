@@ -39,11 +39,16 @@ enum CeciliasNotesTool: Equatable {
     /// resize / 90° rotate / soft-delete — switching to any other
     /// tool deselects and makes images inert again.
     case image
+    /// Shape tool. Drag on the canvas to create a parametric
+    /// `PageElement` of kind `.shape` with the chosen `ShapeKind`.
+    /// Selectable / resizable / recolourable like text & image
+    /// elements (post-creation interactions added incrementally).
+    case shape(kind: ShapeKind)
 
     enum Identity: String, CaseIterable, Codable {
         case cursor
         case pen, fountainPen, monoline, marker, brush, crayon, pencil, highlighter
-        case eraser, lasso, ruler, text, stickyNote, image
+        case eraser, lasso, ruler, text, stickyNote, image, shape
 
         var systemImage: String {
             switch self {
@@ -62,6 +67,7 @@ enum CeciliasNotesTool: Equatable {
             case .text:                     return "text.cursor"
             case .stickyNote:               return "note.text"
             case .image:                    return "photo.on.rectangle"
+            case .shape:                    return "square.on.circle"
             }
         }
 
@@ -82,6 +88,7 @@ enum CeciliasNotesTool: Equatable {
             case .text:                     return "Text"
             case .stickyNote:               return "Sticky Note"
             case .image:                    return "Image"
+            case .shape:                    return "Shape"
             }
         }
     }
@@ -103,6 +110,7 @@ enum CeciliasNotesTool: Equatable {
         case .text:                     return .text
         case .stickyNote:               return .stickyNote
         case .image:                    return .image
+        case .shape:                    return .shape
         }
     }
 
@@ -135,7 +143,7 @@ enum CeciliasNotesTool: Equatable {
         case .pen, .fountainPen, .monoline, .marker, .brush, .crayon, .pencil,
              .highlighter:
             return true
-        case .cursor, .eraser, .lasso, .ruler, .text, .stickyNote, .image:
+        case .cursor, .eraser, .lasso, .ruler, .text, .stickyNote, .image, .shape:
             return false
         }
     }
@@ -150,7 +158,7 @@ enum CeciliasNotesTool: Equatable {
         // floating palette; spec retired the configurability, so
         // every eraser mode now reports `hasWidth = false`.
         case .eraser:                                  return false
-        case .cursor, .lasso, .ruler, .text, .stickyNote, .image: return false
+        case .cursor, .lasso, .ruler, .text, .stickyNote, .image, .shape: return false
         }
     }
 
@@ -237,9 +245,25 @@ enum CeciliasNotesTool: Equatable {
     /// way `.cursor` does. None of these produce PencilKit strokes.
     var isDrawingTool: Bool {
         switch self {
-        case .cursor, .text, .stickyNote, .image, .lasso: return false
-        default:                                          return true
+        case .cursor, .text, .stickyNote, .image, .lasso, .shape: return false
+        default:                                                   return true
         }
+    }
+
+    /// True when the active tool is the parametric shape tool.
+    /// The canvas yields touches to the SwiftUI shape overlay so
+    /// the drag-to-create gesture can capture them.
+    var isShapeMode: Bool {
+        if case .shape = self { return true }
+        return false
+    }
+
+    /// Currently-selected `ShapeKind` when `isShapeMode` is true;
+    /// nil otherwise. Used by the overlay to know which shape to
+    /// instantiate on drag-release.
+    var currentShapeKind: ShapeKind? {
+        if case .shape(let kind) = self { return kind }
+        return nil
     }
 
     /// True when the active tool is the image-attachment placement
@@ -389,6 +413,10 @@ enum CeciliasNotesTool: Equatable {
             case .text:         return text
             case .stickyNote:   return stickyNote
             case .image:        return image
+            // No persisted-per-identity default for shapes — the
+            // last-used ShapeKind is restored from UserDefaults by
+            // the tool palette directly.
+            case .shape:        return .shape(kind: .rectangle)
             }
         }
     }
@@ -442,7 +470,7 @@ enum CeciliasNotesTool: Equatable {
             return PKEraserTool(.vector)
         case .eraser(.page):
             return PKInkingTool(.pen, color: .clear, width: 1)
-        case .cursor, .ruler, .text, .stickyNote, .image, .lasso:
+        case .cursor, .ruler, .text, .stickyNote, .image, .lasso, .shape:
             // `.cursor` and `.image` produce no strokes — same dummy
             // PKTool as the other finger-driven modes. The canvas-
             // overlay layer handles tap-to-place + selection above

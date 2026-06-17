@@ -8,6 +8,56 @@ enum ShapeKind: String, Codable, CaseIterable {
     case triangle
     case arrow
     case line
+    // Decorative shapes requested by test users alongside the
+    // primitives — useful for callout bubbles in margin notes,
+    // star ratings, heart bookmarks. Each renders from a parametric
+    // path; no asset dependencies.
+    case star
+    case heart
+    case callout
+
+    /// Category for the picker UI grouping.
+    enum Category: String, CaseIterable {
+        case primitive    // rectangle, ellipse, triangle, line, arrow
+        case decorative   // star, heart, callout
+    }
+
+    var category: Category {
+        switch self {
+        case .rectangle, .roundedRectangle, .ellipse, .triangle, .line, .arrow:
+            return .primitive
+        case .star, .heart, .callout:
+            return .decorative
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .rectangle:        return "rectangle"
+        case .roundedRectangle: return "rounded rect"
+        case .ellipse:          return "ellipse"
+        case .triangle:         return "triangle"
+        case .arrow:            return "arrow"
+        case .line:             return "line"
+        case .star:             return "star"
+        case .heart:            return "heart"
+        case .callout:          return "callout"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .rectangle:        return "rectangle"
+        case .roundedRectangle: return "rectangle.roundedtop"
+        case .ellipse:          return "oval"
+        case .triangle:         return "triangle"
+        case .arrow:            return "arrow.right"
+        case .line:             return "line.diagonal"
+        case .star:             return "star"
+        case .heart:            return "heart"
+        case .callout:          return "bubble.right"
+        }
+    }
 }
 
 enum ShapeStrokeStyle: String, Codable, CaseIterable {

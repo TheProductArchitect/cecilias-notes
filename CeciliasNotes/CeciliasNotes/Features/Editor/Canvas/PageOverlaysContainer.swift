@@ -101,6 +101,17 @@ struct PageOverlaysContainer: View {
                 coordinateSpace: coordinateSpace
             )
 
+            // Shape overlay sits above text so the shape-tool
+            // drag-capture surface gets priority while it's the
+            // active tool. When the shape tool is off the overlay
+            // only renders existing shapes and forwards taps down.
+            ShapeElementsOverlayView(
+                viewModel: viewModel,
+                pageId: pageId,
+                notebookId: notebookId,
+                coordinateSpace: coordinateSpace
+            )
+
             LassoOverlayView(
                 viewModel: viewModel,
                 pageId: pageId,
