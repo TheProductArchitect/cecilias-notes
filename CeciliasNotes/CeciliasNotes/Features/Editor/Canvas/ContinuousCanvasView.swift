@@ -469,6 +469,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// don't have to wait for the next SwiftUI tick to lock the
         /// canvas down to pencilOnly.
         private nonisolated(unsafe) var capabilityObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var pixelEraserObserver: NSObjectProtocol?
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
@@ -497,10 +498,26 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 self.fingerDrawingEnabled = fingerDraws
                 self.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
             }
+            // Pixel-eraser width slider rebuilds the PKEraserTool on
+            // every mounted canvas. Forced because the selectedTool
+            // case doesn't change (.eraser(.pixel) → .eraser(.pixel))
+            // — width lives in UserDefaults, which makePKTool reads
+            // on every rebuild.
+            self.pixelEraserObserver = NotificationCenter.default.addObserver(
+                forName: .pixelEraserWidthChanged,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                self.applyToolToAll(self.viewModel.selectedTool, force: true)
+            }
         }
 
         deinit {
             if let token = capabilityObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
+            if let token = pixelEraserObserver {
                 NotificationCenter.default.removeObserver(token)
             }
             // Detach the sticky-notes hosting controller from its
@@ -1147,8 +1164,8 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // MARK: Tool / drawing-policy propagation
 
-        func applyToolToAll(_ tool: CeciliasNotesTool) {
-            if appliedTool == tool { return }
+        func applyToolToAll(_ tool: CeciliasNotesTool, force: Bool = false) {
+            if !force, appliedTool == tool { return }
             appliedTool = tool
             for h in hosts {
                 if let canvas = h.canvasView { applyTool(tool, to: canvas) }

@@ -96,4 +96,12 @@ extension Notification.Name {
     /// (one-finger scroll works) but switches to drawing the instant
     /// the user picks up the Pencil.
     static let pencilTouchObserved = Notification.Name("input.pencilTouchObserved")
+
+    /// Fires when the user moves the pixel-eraser size slider. The
+    /// canvas listens and force-rebuilds the PKEraserTool with the
+    /// new bitmap width on every mounted PKCanvasView — the tool
+    /// case (`.eraser(.pixel)`) doesn't change so the
+    /// `applyToolToAll` equality short-circuit needs an explicit
+    /// override.
+    static let pixelEraserWidthChanged = Notification.Name("editor.pixelEraserWidthChanged")
 }

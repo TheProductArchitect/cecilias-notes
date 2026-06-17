@@ -1496,11 +1496,15 @@ final class EditorViewModel: ObservableObject {
         set {
             let clamped = max(4, min(80, newValue))
             userDefaults.set(Double(clamped), forKey: "ceciliasnotes.eraser.pixelSize")
-            // Re-emit the tool so the canvas rebuilds the PKTool with
-            // the new width on the next stroke.
-            if case .eraser(let mode) = selectedTool, mode == .pixel {
-                selectedTool = .eraser(mode: .pixel)
-            }
+            // The selectedTool case isn't changing (it's still
+            // .eraser(.pixel)); the width lives in UserDefaults. So
+            // we post a notification that ContinuousCanvasView
+            // listens for, and it force-rebuilds the PKTool on
+            // every mounted canvas with the new bitmap width.
+            // Without this the slider moved the persisted value
+            // but the PKEraserTool already bound to each canvas
+            // kept its old width — slider felt "dead."
+            NotificationCenter.default.post(name: .pixelEraserWidthChanged, object: nil)
             objectWillChange.send()
         }
     }
@@ -1643,13 +1647,19 @@ final class EditorViewModel: ObservableObject {
     /// Insert a page after `pageNumber` (or at the end if nil) and
     /// navigate to it. Powers the page-strip "+ add page" button and
     /// the context-menu "Add Page After" item.
-    func addPage(after pageNumber: Int? = nil) {
+    ///
+    /// `template` is an optional one-shot override — when provided
+    /// it's used for *this* new page only, the notebook's default
+    /// is left alone. The page-strip's tap-+-template-picker uses
+    /// this path so users can mix templates within a notebook
+    /// without committing the choice to the notebook default.
+    func addPage(after pageNumber: Int? = nil, template: PageTemplate? = nil) {
         let target = pageNumber ?? pages.last?.pageNumber
         guard (try? storage.createPage(
             in: notebook,
             after: target,
             pageSize: globalPageSize,
-            backgroundTemplate: globalTemplate
+            backgroundTemplate: template ?? globalTemplate
         )) != nil else { return }
         refreshPages()
         // Navigate to the freshly-inserted page. After `createPage`

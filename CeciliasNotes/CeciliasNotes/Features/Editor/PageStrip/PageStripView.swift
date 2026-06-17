@@ -10,6 +10,14 @@ struct PageStripView: View {
     @ObservedObject var viewModel: EditorViewModel
     @Environment(\.theme) private var theme
 
+    /// Popover anchor + intent for the template picker that opens
+    /// off the trailing "+" button. Tap = create a page with the
+    /// picked template, leave default unchanged. Long-press = open
+    /// the same picker but pin the choice as the notebook's default
+    /// without creating a page.
+    @State private var showAddPageTemplatePicker: Bool = false
+    @State private var addPageLongPressIntent: Bool = false
+
     private var isCompact: Bool { DeviceCapabilities.isPhoneIdiom }
     /// 80×104pt thumbs on iPad; 56×72pt on iPhone so the strip
     /// occupies a third of the screen instead of half. Page strip
@@ -76,7 +84,8 @@ struct PageStripView: View {
                     // useful as a "jump to page N" affordance.
                     if DeviceCapabilities.canMutate {
                         Button {
-                            viewModel.addPage()
+                            addPageLongPressIntent = false
+                            showAddPageTemplatePicker = true
                         } label: {
                             VStack(spacing: 4) {
                                 Image(systemName: "plus")
@@ -93,6 +102,40 @@ struct PageStripView: View {
                             }
                         }
                         .buttonStyle(.ceciliasNotesPressable)
+                        // Long-press opens the same template picker
+                        // but in "set default" mode — picking a
+                        // template updates `notebook.defaultTemplate`
+                        // without creating a new page. The next tap
+                        // on "+" then uses that as its default.
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.45)
+                                .onEnded { _ in
+                                    addPageLongPressIntent = true
+                                    showAddPageTemplatePicker = true
+                                    HapticManager.shared.toolSwitched()
+                                }
+                        )
+                        .popover(isPresented: $showAddPageTemplatePicker,
+                                 attachmentAnchor: .point(.top),
+                                 arrowEdge: .bottom) {
+                            AddPageTemplatePicker(
+                                currentDefault: viewModel.notebook.defaultTemplate,
+                                isSetDefaultMode: addPageLongPressIntent,
+                                onPick: { template, makeDefault in
+                                    if makeDefault {
+                                        viewModel.applyCustomTemplate(template)
+                                    }
+                                    if !addPageLongPressIntent {
+                                        viewModel.addPage(template: template)
+                                    }
+                                    showAddPageTemplatePicker = false
+                                },
+                                onCancel: {
+                                    showAddPageTemplatePicker = false
+                                }
+                            )
+                            .presentationCompactAdaptation(.popover)
+                        }
                     }
                 }
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
@@ -222,5 +265,91 @@ private struct PageStripThumbnail: View {
                 await MainActor.run { image = result }
             }
         }
+    }
+}
+
+// MARK: - AddPageTemplatePicker
+
+/// Compact popover surfaced off the page-strip's trailing "+" button.
+///
+/// Two modes, both share the same UI:
+///   • Tap "+" → `isSetDefaultMode == false`. Picking a template
+///     inserts a new page using that template. The "make this the
+///     default" toggle is offered so the user can commit the choice
+///     to the notebook's `defaultTemplate` as a side-effect.
+///   • Long-press "+" → `isSetDefaultMode == true`. Picking a
+///     template just updates `notebook.defaultTemplate` — no new
+///     page is created. Lets the user pre-set the default before
+///     adding several pages in a row without re-opening the picker
+///     each time.
+private struct AddPageTemplatePicker: View {
+    let currentDefault: PageTemplate
+    let isSetDefaultMode: Bool
+    let onPick: (_ template: PageTemplate, _ makeDefault: Bool) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.theme) private var theme
+    @State private var makeDefaultToggle: Bool = false
+
+    private let thumbSize = CGSize(width: 56, height: 74)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(isSetDefaultMode
+                 ? "set default template for new pages"
+                 : "pick a template for the new page")
+                .font(.system(size: 11, weight: .regular).italic())
+                .foregroundStyle(theme.recessiveQuaternary)
+
+            ForEach(TemplateCategory.allCases, id: \.self) { category in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(category.displayName)
+                        .font(.system(size: 9, weight: .regular).italic())
+                        .foregroundStyle(theme.recessiveQuaternary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(PageTemplate.allCases.filter { $0.category == category },
+                                    id: \.self) { template in
+                                Button {
+                                    onPick(template,
+                                           isSetDefaultMode || makeDefaultToggle)
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        TemplateThumbView(
+                                            template: template,
+                                            size: thumbSize
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .strokeBorder(
+                                                    template == currentDefault ? theme.accent : .clear,
+                                                    lineWidth: template == currentDefault ? 1.5 : 0
+                                                )
+                                        )
+                                        Text(template.displayName.lowercased())
+                                            .font(.system(size: 9, weight: .regular))
+                                            .foregroundStyle(theme.foregroundMuted)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !isSetDefaultMode {
+                Toggle(isOn: $makeDefaultToggle) {
+                    Text("also set as default for future pages")
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(theme.foreground)
+                }
+                .tint(theme.accent)
+                .padding(.top, 4)
+            }
+        }
+        .padding(14)
+        .frame(width: 380)
     }
 }
