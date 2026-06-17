@@ -1,5 +1,20 @@
+import CoreTransferable
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+/// Payload for page-strip drag-and-drop. Carries the source page's
+/// stable id so the drop handler can look it up in
+/// `viewModel.pages` without trusting an index that may have
+/// shifted under a concurrent edit.
+struct PageDragItem: Transferable, Codable {
+    let pageId: UUID
+    let fromPageNumber: Int
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .data)
+    }
+}
 
 /// Bottom slide-in strip of page thumbnails.
 ///   • Each thumbnail: 80×104pt
@@ -76,6 +91,30 @@ struct PageStripView: View {
                             viewModel.movePage(page, to: page.pageNumber + 1)
                         }
                         .id(page.id)
+                        // Drag-and-drop reorder. The user grabs a
+                        // thumbnail and drops it on any other
+                        // thumbnail; the source page slides into
+                        // the destination's position (multi-step
+                        // move, not just left/right by one). The
+                        // existing context-menu Move Left / Move
+                        // Right entries are kept for keyboard /
+                        // accessibility paths but are no longer
+                        // the only way to reorder.
+                        .draggable(
+                            PageDragItem(
+                                pageId: page.id,
+                                fromPageNumber: page.pageNumber
+                            )
+                        )
+                        .dropDestination(for: PageDragItem.self) { items, _ in
+                            guard let item = items.first,
+                                  item.pageId != page.id,
+                                  let source = viewModel.pages.first(where: { $0.id == item.pageId })
+                            else { return false }
+                            viewModel.movePage(source, to: page.pageNumber)
+                            HapticManager.shared.toolSwitched()
+                            return true
+                        }
                     }
 
                     // + add page button — hidden on read-only
