@@ -243,4 +243,15 @@ extension Notification.Name {
     /// Posted after a shape element is inserted/deleted so other
     /// overlays / state can refresh without polling SwiftData.
     static let shapeElementsChanged = Notification.Name("editor.shapeElementsChanged")
+
+    /// Fired by an image element's drag handler when the proposed
+    /// drop position lands above or below the current page bounds.
+    /// The canvas coordinator listens and rewrites the element's
+    /// pageId + normalizedY against the destination page's
+    /// coordinate space. userInfo carries:
+    ///   - elementId: UUID of the dragged element
+    ///   - currentPageId: UUID of the page the drag started on
+    ///   - proposedNormX: Double, the dragged X in source-page space
+    ///   - proposedNormY: Double, the dragged Y (may be < 0 or > 1)
+    static let imageElementCrossPageHandoffRequested = Notification.Name("editor.imageElementCrossPageHandoffRequested")
 }

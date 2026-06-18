@@ -347,10 +347,35 @@ struct ImageElementView: View {
                 #endif
                 let dxNorm = value.translation.width  / pageSize.width
                 let dyNorm = value.translation.height / pageSize.height
+                let proposedX = element.normalizedX + Double(dxNorm)
+                let proposedY = element.normalizedY + Double(dyNorm)
                 let maxX = max(0, 1 - element.normalizedWidth)
-                let maxY = max(0, 1 - element.normalizedHeight)
-                element.normalizedX = max(0, min(maxX, element.normalizedX + Double(dxNorm)))
-                element.normalizedY = max(0, min(maxY, element.normalizedY + Double(dyNorm)))
+                // Cross-page hand-off: if the drag's vertical component
+                // would carry the element past the top or bottom of
+                // this page, ask the canvas coordinator (via the
+                // shared notification) whether a sibling page can
+                // host it. The coordinator owns the global y of every
+                // mounted page host and is the only place that can
+                // make this decision. The element's pageId / page
+                // relationship + normalizedY are rewritten there;
+                // SwiftData refresh notifications repaint both the
+                // old and new page overlays.
+                if proposedY < 0 || proposedY > 1 - element.normalizedHeight {
+                    NotificationCenter.default.post(
+                        name: .imageElementCrossPageHandoffRequested,
+                        object: nil,
+                        userInfo: [
+                            "elementId": element.id,
+                            "currentPageId": element.pageId,
+                            "proposedNormX": proposedX,
+                            "proposedNormY": proposedY
+                        ]
+                    )
+                    dragOffset = .zero
+                    return
+                }
+                element.normalizedX = max(0, min(maxX, proposedX))
+                element.normalizedY = max(0, min(1 - element.normalizedHeight, proposedY))
                 element.updatedAt   = Date()
                 dragOffset = .zero
                 #if DEBUG

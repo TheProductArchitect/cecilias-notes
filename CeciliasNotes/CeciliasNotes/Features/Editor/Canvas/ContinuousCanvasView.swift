@@ -495,6 +495,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// canvas down to pencilOnly.
         private nonisolated(unsafe) var capabilityObserver: NSObjectProtocol?
         private nonisolated(unsafe) var pixelEraserObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var imageHandoffObserver: NSObjectProtocol?
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
@@ -536,6 +537,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 guard let self else { return }
                 self.applyToolToAll(self.viewModel.selectedTool, force: true)
             }
+            self.imageHandoffObserver = NotificationCenter.default.addObserver(
+                forName: .imageElementCrossPageHandoffRequested,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let self else { return }
+                self.handleImageCrossPageHandoff(note)
+            }
         }
 
         deinit {
@@ -543,6 +552,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(token)
             }
             if let token = pixelEraserObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
+            if let token = imageHandoffObserver {
                 NotificationCenter.default.removeObserver(token)
             }
             // Detach the sticky-notes hosting controller from its
@@ -971,6 +983,74 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if scrollView.contentInset != newInset {
                 scrollView.contentInset = newInset
             }
+        }
+
+        // MARK: Image cross-page hand-off
+
+        /// Called when an image element's drag carried it past the
+        /// top or bottom of its source page. We translate the
+        /// proposed coords into the source-page's coordinate frame,
+        /// find which mounted page host overlaps that point, and if
+        /// it's different from the source page, rewrite the
+        /// element's pageId + page relationship + normalizedY for
+        /// the destination page's frame. SwiftData change
+        /// notifications repaint both overlays automatically.
+        func handleImageCrossPageHandoff(_ note: Notification) {
+            guard let info = note.userInfo,
+                  let elementId   = info["elementId"] as? UUID,
+                  let sourcePageId = info["currentPageId"] as? UUID,
+                  let proposedX   = info["proposedNormX"] as? Double,
+                  let proposedY   = info["proposedNormY"] as? Double
+            else { return }
+
+            // 1. Resolve the source page host to translate proposed
+            //    normalised coords into content-view (continuous-
+            //    scroll) coordinates.
+            guard let source = hosts.first(where: { $0.pageId == sourcePageId }) else { return }
+            let pointInContent = CGPoint(
+                x: source.frame.minX + CGFloat(proposedX)  * source.frame.width,
+                y: source.frame.minY + CGFloat(proposedY)  * source.frame.height
+            )
+
+            // 2. Find the destination host whose frame contains the
+            //    projected content-view Y. Horizontal containment is
+            //    a softer match — page widths can differ in
+            //    mixed-size notebooks; we accept the host as long as
+            //    Y lands inside it.
+            let dest = hosts.first { host in
+                pointInContent.y >= host.frame.minY &&
+                pointInContent.y <  host.frame.maxY
+            }
+            guard let dest, dest.pageId != sourcePageId else { return }
+
+            // 3. Compute the destination-page normalised coords.
+            //    Clamp X within [0, 1 - elementW] and Y within
+            //    [0, 1 - elementH] once we know the element's size.
+            let ctx = StorageService.shared.context
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> { $0.id == elementId }
+            )
+            guard let element = (try? ctx.fetch(descriptor))?.first else { return }
+            let destNormX = max(
+                0,
+                min(
+                    1 - element.normalizedWidth,
+                    Double((pointInContent.x - dest.frame.minX) / dest.frame.width)
+                )
+            )
+            let destNormY = max(
+                0,
+                min(
+                    1 - element.normalizedHeight,
+                    Double((pointInContent.y - dest.frame.minY) / dest.frame.height)
+                )
+            )
+
+            element.pageId      = dest.pageId
+            element.normalizedX = destNormX
+            element.normalizedY = destNormY
+            element.updatedAt   = Date()
+            try? ctx.save()
         }
 
         // MARK: Canvas membership (lazy mount/unmount)
