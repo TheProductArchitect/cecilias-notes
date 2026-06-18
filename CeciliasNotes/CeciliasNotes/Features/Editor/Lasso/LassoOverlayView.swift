@@ -316,17 +316,23 @@ struct LassoOverlayView: View {
             }
 
             // Delete badge — bottom-right of the displayed rect.
+            // 44pt hit target (Apple HIG minimum) wrapping a 26pt
+            // glyph so the user doesn't have to pin-prick the icon
+            // exactly. Earlier the entire tappable region was the
+            // 22pt SF Symbol bounds — well under the minimum.
             Button {
                 LassoGroupOps.delete(selection: selection,
                                      context: modelContext)
             } label: {
                 Image(systemName: "trash.circle.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: 26))
                     .foregroundStyle(theme.accent)
                     .background(Circle().fill(theme.surfaceElevated))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .position(x: displayed.maxX - 14, y: displayed.maxY - 14)
+            .position(x: displayed.maxX, y: displayed.maxY)
 
             // Resize + rotation chrome — hidden for locked
             // selections (their dimensions are pinned, the handles

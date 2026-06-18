@@ -207,8 +207,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.delegate = context.coordinator
         scrollView.delaysContentTouches = false
+        // Allow both finger and pencil touches to drive the pan
+        // recognizer — when the active tool is the cursor (or any
+        // other non-drawing tool) the PKCanvasView yields its
+        // interaction, so Apple Pencil drags need to fall through
+        // to the scroll view. Without `.pencil` in this list the
+        // pencil silently did nothing in cursor mode.
         scrollView.panGestureRecognizer.allowedTouchTypes = [
-            NSNumber(value: UITouch.TouchType.direct.rawValue)
+            NSNumber(value: UITouch.TouchType.direct.rawValue),
+            NSNumber(value: UITouch.TouchType.pencil.rawValue)
         ]
         // Two-finger pan only when both finger-drawing is on AND a
         // drawing tool is selected. See updateUIView for the same gate.

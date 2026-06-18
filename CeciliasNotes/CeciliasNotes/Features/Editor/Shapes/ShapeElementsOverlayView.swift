@@ -68,26 +68,33 @@ struct ShapeElementsOverlayView: View {
             // drag freely without the overlays below it consuming
             // the gesture.
             if viewModel.selectedTool.isShapeMode {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 4, coordinateSpace: .local)
-                            .onChanged { value in
-                                if dragStart == nil { dragStart = value.startLocation }
-                                dragCurrent = value.location
-                            }
-                            .onEnded { value in
-                                defer {
-                                    dragStart = nil
-                                    dragCurrent = nil
-                                }
-                                guard let kind = viewModel.selectedTool.currentShapeKind,
-                                      let start = dragStart
-                                else { return }
-                                let rect = normalizedRect(from: start, to: value.location)
-                                createShape(kind: kind, in: rect)
-                            }
-                    )
+                // Pencil-only drag when a Pencil has been detected
+                // on the device; finger drags also create shapes
+                // when no Pencil has been seen (so users without a
+                // Pencil aren't locked out). Mirrors the
+                // FingerDrawingMode logic the PKCanvasView uses.
+                PencilFingerDragSurface(
+                    acceptsFinger: !InputCapabilityDetector.shared.hasPencil,
+                    onBegan: { location in
+                        dragStart = location
+                        dragCurrent = location
+                    },
+                    onChanged: { location in
+                        dragCurrent = location
+                    },
+                    onEnded: { location, cancelled in
+                        defer {
+                            dragStart = nil
+                            dragCurrent = nil
+                        }
+                        guard !cancelled,
+                              let kind = viewModel.selectedTool.currentShapeKind,
+                              let start = dragStart
+                        else { return }
+                        let rect = normalizedRect(from: start, to: location)
+                        createShape(kind: kind, in: rect)
+                    }
+                )
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)

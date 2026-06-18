@@ -236,8 +236,10 @@ enum LassoGroupOps {
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
+        var deletedAnyShape = false
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
+            if element.kind == .shape { deletedAnyShape = true }
             element.deletedAt = Date()
             element.updatedAt = Date()
         }
@@ -258,6 +260,14 @@ enum LassoGroupOps {
             StrokeCache.shared.cache(newDrawing, forPage: element.pageId)
         }
         try? context.save()
+        // Shape overlay listens on this notification to re-fetch its
+        // page-element list. Without it the shape stays painted on
+        // screen even though it's soft-deleted, and the lasso can't
+        // re-select what it visually still sees because the underlying
+        // record is filtered out by `deletedAt == nil`.
+        if deletedAnyShape {
+            NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        }
         selection.clear()
     }
 
