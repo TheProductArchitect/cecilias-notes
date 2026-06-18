@@ -389,18 +389,32 @@ struct QuizBuilderView: View {
         .disabled(!enabled)
     }
 
+    /// Hard ceiling on questions per quiz. Apple Intelligence's 3B
+    /// model caps the full prompt at 4096 tokens; per-format
+    /// instruction blocks add a fixed overhead per question slot,
+    /// and at ~30 questions the prompt template alone starts
+    /// crowding out the source-text room left after the
+    /// QuizGen corpus cap (~9.5k chars / ~2.4k tokens). 20 keeps a
+    /// comfortable margin under that ceiling for every format. The
+    /// user can always generate a second quiz from the same source
+    /// if they need more questions.
+    private static let maxQuestionsPerQuiz: Int = 20
+    private static let minQuestionsPerQuiz: Int = 5
+
     private var stepperRow: some View {
         HStack {
             Text("number of questions").font(.system(size: 14)).foregroundStyle(theme.foreground)
             Spacer()
-            Button { questionCount = max(5, questionCount - 1) } label: {
+            Button { questionCount = max(Self.minQuestionsPerQuiz, questionCount - 1) } label: {
                 Image(systemName: "minus").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.foregroundMuted)
             }.buttonStyle(.plain)
+            .disabled(questionCount <= Self.minQuestionsPerQuiz)
             Text("\(questionCount)").font(.system(size: 16, weight: .bold)).foregroundStyle(theme.foreground)
                 .frame(minWidth: 28)
-            Button { questionCount = min(50, questionCount + 1) } label: {
+            Button { questionCount = min(Self.maxQuestionsPerQuiz, questionCount + 1) } label: {
                 Image(systemName: "plus").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.accent)
             }.buttonStyle(.plain)
+            .disabled(questionCount >= Self.maxQuestionsPerQuiz)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)

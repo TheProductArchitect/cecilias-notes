@@ -54,6 +54,16 @@ final class QuizGenerationService: ObservableObject {
 
     /// Persist a new quiz immediately, then generate its questions in
     /// the background. Returns the quiz so the caller can select it.
+    /// Service-side ceiling that mirrors the UI stepper cap. Apple
+    /// Intelligence's 3B model is the binding constraint: per-format
+    /// prompt blocks grow ~linearly with question count, so even with
+    /// the corpus capped at ~9.5k chars the full prompt starts
+    /// busting 4096 tokens around 30+ questions. Capped service-side
+    /// so MCP / deep-link / future callers can't ask for unsafe
+    /// counts even if they bypass the UI clamp.
+    static let maxQuestionsPerGeneration: Int = 20
+    static let minQuestionsPerGeneration: Int = 1
+
     @discardableResult
     func createQuiz(
         title: String,
@@ -63,6 +73,10 @@ final class QuizGenerationService: ObservableObject {
         questionCount: Int,
         autoUpdate: Bool
     ) -> Quiz {
+        let clampedCount = max(
+            Self.minQuestionsPerGeneration,
+            min(Self.maxQuestionsPerGeneration, questionCount)
+        )
         let tier = resolvedTier(requested: requestedTier)
         let quiz = Quiz(title: title, sourceScope: scope, format: format, generationTier: tier)
         quiz.autoUpdateEnabled = autoUpdate
@@ -72,7 +86,7 @@ final class QuizGenerationService: ObservableObject {
         generatingQuizIDs.insert(quiz.id)
         let quizID = quiz.id
         Task { [weak self] in
-            await self?.runGeneration(quizID: quizID, scope: scope, format: format, tier: tier, count: questionCount)
+            await self?.runGeneration(quizID: quizID, scope: scope, format: format, tier: tier, count: clampedCount)
         }
         return quiz
     }
