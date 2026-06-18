@@ -234,7 +234,49 @@ struct AppleIntelligenceQuizGenerator {
     }
 
     private func corpusText(from documents: [QuizSourceDocument]) -> String {
-        documents.flatMap { doc in doc.allText }.joined(separator: "\n\n")
+        let raw = documents.flatMap { doc in doc.allText }.joined(separator: "\n\n")
+        return truncateForContextWindow(raw)
+    }
+
+    /// Apple Intelligence's 3B foundation model caps the full prompt
+    /// (instructions + user content + format spec) at 4096 tokens.
+    /// PDF-imported notebooks routinely overshoot this — the
+    /// extracted text from a single research paper can be 5–8k
+    /// tokens by itself. When that happens
+    /// `LanguageModelSession.respond(to:)` throws
+    /// `exceededContextWindowSize` and the user sees "couldn't
+    /// generate" with no clue why.
+    ///
+    /// Budget: cap the source at ~2400 tokens so the per-format
+    /// prompt template + 10 question allowance still fits under
+    /// 4096. At Apple Intelligence's actual character-to-token
+    /// ratio (~3.5–4.3 chars per token for English), that's
+    /// ~10,000 source characters. We cap at 9,500 to leave a
+    /// safety margin for non-English content or technical text
+    /// that tokenises denser.
+    ///
+    /// Truncation strategy: keep the head of the corpus rather
+    /// than middle / tail sampling. For a textbook chapter or
+    /// paper, the opening sections carry the questionable content;
+    /// late-chapter material is usually less self-contained.
+    private func truncateForContextWindow(_ raw: String) -> String {
+        let charBudget = 9500
+        guard raw.count > charBudget else { return raw }
+        let endIndex = raw.index(raw.startIndex, offsetBy: charBudget)
+        // Break on a paragraph boundary when possible so the model
+        // doesn't see a mid-sentence cut. Look back up to 400 chars
+        // for a "\n\n"; if none found, cut at the budget.
+        let backstop = raw.index(endIndex, offsetBy: -400, limitedBy: raw.startIndex) ?? raw.startIndex
+        if let lastBreak = raw[backstop..<endIndex].range(of: "\n\n", options: .backwards) {
+            #if DEBUG
+            dlog("[QuizGen] corpus truncated to paragraph boundary at \(raw.distance(from: raw.startIndex, to: lastBreak.lowerBound))/\(raw.count) chars (context-window cap)")
+            #endif
+            return String(raw[..<lastBreak.lowerBound])
+        }
+        #if DEBUG
+        dlog("[QuizGen] corpus hard-truncated to \(charBudget)/\(raw.count) chars (context-window cap; no paragraph break found)")
+        #endif
+        return String(raw[..<endIndex])
     }
 
     // MARK: - Model invocation
