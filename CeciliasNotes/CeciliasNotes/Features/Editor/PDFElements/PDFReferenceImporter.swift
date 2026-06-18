@@ -612,8 +612,22 @@ enum PDFReferenceImporter {
     /// downstream. Runs on the detached payload-build task — pure
     /// PDFKit I/O, no UI dependencies, safe off the main actor.
     nonisolated static func extractPageText(_ page: PDFPage) -> String? {
-        guard let raw = page.string else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = page.string
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        #if DEBUG
+        // Diagnostic for "imported PDF, quiz can't generate" reports.
+        // If you see `nil` or `0` for every page, the PDF is
+        // image-only / scanned — there's no embedded text layer
+        // for the quiz pipeline to read. OCR is on the roadmap but
+        // not in v1; the fix is a PDF whose source had a text layer
+        // (most digital PDFs do).
+        let pageLabel = page.label ?? "?"
+        if let raw, !trimmed.isEmpty {
+            dlog("[PDFExtract] page=\(pageLabel) chars=\(trimmed.count) rawChars=\(raw.count)")
+        } else {
+            dlog("[PDFExtract] page=\(pageLabel) NO TEXT LAYER (image-only or scanned PDF) — quiz generation will skip this page")
+        }
+        #endif
         return trimmed.isEmpty ? nil : trimmed
     }
 
