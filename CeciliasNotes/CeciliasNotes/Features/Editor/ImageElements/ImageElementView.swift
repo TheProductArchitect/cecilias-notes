@@ -53,6 +53,14 @@ struct ImageElementView: View {
     private enum Corner: Equatable { case topLeft, topRight, bottomLeft, bottomRight }
 
     var body: some View {
+        // Snap the persisted normalizedHeight to the image's actual
+        // aspect ratio on first render. Legacy insert paths sometimes
+        // wrote a height that didn't match the image's intrinsic
+        // shape — the selection chrome ended up boxier than the
+        // visible image, with white padding above/below as the image
+        // letterboxed inside via `.aspectRatio(.fit)`. The fix
+        // persists once and lets the box hug the image afterwards.
+        let _ = snapHeightToIntrinsicAspectIfNeeded()
         let base = CGRect(
             x: element.normalizedX * pageSize.width,
             y: element.normalizedY * pageSize.height,
@@ -123,6 +131,50 @@ struct ImageElementView: View {
                 onCancel: { isCropping = false }
             )
         }
+    }
+
+    /// Lazy aspect-ratio reconciliation. When the persisted box
+    /// height doesn't match the image's intrinsic pixel aspect
+    /// (`originalPixelHeight / originalPixelWidth`) within a small
+    /// tolerance, snap the height to the correct value and save.
+    /// One-shot per element: subsequent renders observe the corrected
+    /// data and the predicate goes false.
+    ///
+    /// Pre-requisites — we need pixel dimensions on the content row.
+    /// Older inserts didn't populate them; for those the function is
+    /// a no-op (returns false) and the box keeps whatever aspect was
+    /// stored. New inserts always set them, so any image touched
+    /// after this commit gets the corrected box once.
+    @discardableResult
+    private func snapHeightToIntrinsicAspectIfNeeded() -> Bool {
+        guard content.originalPixelWidth > 0,
+              content.originalPixelHeight > 0,
+              element.normalizedWidth > 0
+        else { return false }
+        let imageAspect = Double(content.originalPixelHeight) / Double(content.originalPixelWidth)
+        let pageAspect  = Double(pageSize.height) / Double(pageSize.width)
+        // Convert image aspect (height/width in pixels) to normalised
+        // space — page height in normalised units is 1, page width is
+        // 1, but pixel widths differ. We want
+        //   displayedH = displayedW * imageAspect
+        // where displayed* are in pt. Translating to normalised:
+        //   normH * pageH = (normW * pageW) * imageAspect
+        //   normH = normW * imageAspect / pageAspect
+        let correctNormH = element.normalizedWidth * imageAspect / pageAspect
+        // Tolerance: 1.5% — visible padding above ~2% is what the
+        // bug report described.
+        guard abs(correctNormH - element.normalizedHeight) > 0.015 else { return false }
+        let clamped = max(0.01, min(1, correctNormH))
+        // Defer the mutation a runloop tick — writing to SwiftData
+        // from inside a SwiftUI body evaluation is exactly the
+        // "Publishing changes from within view updates" trap.
+        let target = clamped
+        DispatchQueue.main.async {
+            element.normalizedHeight = target
+            element.updatedAt = Date()
+            try? StorageService.shared.context.save()
+        }
+        return true
     }
 
     // MARK: - Displayed rect (gesture-deltas applied to base)
