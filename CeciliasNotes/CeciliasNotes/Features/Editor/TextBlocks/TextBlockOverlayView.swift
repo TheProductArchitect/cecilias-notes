@@ -85,6 +85,21 @@ struct TextBlockOverlayView: View {
                     .gesture(dragCreateGesture(pageSize: pageSize))
             }
 
+            // Background tap-outside-to-clear. Only mounted when at
+            // least one block is selected or editing — without the
+            // guard this would absorb every tap on the page and
+            // starve the overlays below it. The previous version of
+            // the code documented this clear layer in a comment on
+            // line 191 but never actually added it; the result was
+            // a selected text block (often from an MCP-authored
+            // notebook) that the user couldn't deselect by tapping
+            // elsewhere on the page.
+            if hasInteractiveBlock {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { deselectAll() }
+            }
+
             ForEach(blocks, id: \.id) { block in
                 blockView(block: block, pageSize: pageSize)
             }
@@ -244,6 +259,14 @@ struct TextBlockOverlayView: View {
         for key in interactionStates.keys where key != id {
             interactionStates[key] = .idle
         }
+    }
+
+    /// True when at least one block is in a non-idle state
+    /// (selected or editing). Gates the full-page tap-outside
+    /// catcher so it's only mounted when there's a selection to
+    /// dismiss.
+    private var hasInteractiveBlock: Bool {
+        interactionStates.values.contains(where: { $0 != .idle })
     }
 
     // MARK: - Move gesture
