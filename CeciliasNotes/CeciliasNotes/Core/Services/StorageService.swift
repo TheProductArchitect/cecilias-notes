@@ -570,15 +570,33 @@ extension StorageService {
     ) throws -> Notebook {
         guard title.count <= 80 else { throw CeciliasNotesStorageError.fileSizeLimitExceeded }
 
+        // Every notebook must live in a subject — nil callers fall
+        // through to the first available subject, or an auto-created
+        // "Imports" bucket when no subjects exist yet. The user can
+        // move the notebook elsewhere afterwards.
+        let resolvedSubjectId: UUID = try {
+            if let supplied = subjectId { return supplied }
+            let active = fetchSubjects()
+            if let first = active.first { return first.id }
+            let imports = Subject(
+                name: "Imports",
+                colorHex: CeciliasNotesColorPresets.subjectColors.first ?? "#7F7F7F",
+                sortOrder: 0
+            )
+            context.insert(imports)
+            try context.save()
+            return imports.id
+        }()
+
         let notebook = Notebook(
             title: title,
-            subjectId: subjectId,
+            subjectId: resolvedSubjectId,
             coverColorHex: coverColorHex,
             coverTexture: coverTexture,
             pageSize: pageSize,
             defaultTemplate: template
         )
-        let nextOrder = (fetchNotebooks(subjectId: subjectId).map(\.sortOrder).max() ?? -1) + 1
+        let nextOrder = (fetchNotebooks(subjectId: resolvedSubjectId).map(\.sortOrder).max() ?? -1) + 1
         notebook.sortOrder = nextOrder
         context.insert(notebook)
 
@@ -586,7 +604,8 @@ extension StorageService {
         // subject's rotation. Computed *before* we insert into the
         // relationship so `existingNotebooks` doesn't already include
         // this row.
-        if let subjectId {
+        do {
+            let subjectId = resolvedSubjectId
             let pred = #Predicate<Subject> { $0.id == subjectId && $0.isDeleted == false }
             if let subject = (try? context.fetch(FetchDescriptor(predicate: pred)))?.first {
                 let assigned = CoverToneAssigner.tone(in: subject)
@@ -600,10 +619,6 @@ extension StorageService {
                 notebook.subject = subject
                 subject.notebooks = (subject.notebooks ?? []) + [notebook]
             }
-        } else {
-            let existing = fetchNotebooksWithoutFolder(subjectId: nil)
-            let assigned = CoverToneAssigner.toneForUncategorised(existingNotebooks: existing)
-            CoverToneStore.setTone(assigned, for: notebook.id)
         }
 
         // Create first page

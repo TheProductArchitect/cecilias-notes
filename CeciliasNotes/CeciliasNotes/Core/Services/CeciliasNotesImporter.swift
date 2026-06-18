@@ -340,10 +340,15 @@ final class CeciliasNotesImporter {
     /// Looks up a Subject by case-insensitive name; creates one if
     /// missing. Picks a colour from the curated preset list using a
     /// stable hash of the name so re-imports get the same colour.
-    /// Returns the subject id, or nil if name is empty.
+    ///
+    /// Notebooks must always live in a subject — when the agent
+    /// supplies an empty / whitespace-only name, fall back to a
+    /// dedicated "MCP" subject so the notebook still has a home.
+    /// The user can move it to a different subject from the library
+    /// any time.
     private func ensureSubject(named raw: String, context: ModelContext) throws -> UUID? {
-        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "MCP" : trimmed
 
         let lower = name.lowercased()
         let descriptor = FetchDescriptor<Subject>(
