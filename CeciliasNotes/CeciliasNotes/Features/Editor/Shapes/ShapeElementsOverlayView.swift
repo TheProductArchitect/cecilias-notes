@@ -46,11 +46,17 @@ struct ShapeElementsOverlayView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Persisted shapes — read-only render for now. Selection
-            // + handle dragging will land in a follow-up commit.
+            // Persisted shapes. In cursor mode each shape is tap-
+            // selectable — the tap populates LassoSelectionState
+            // with the shape's element id, which causes
+            // LassoOverlayView to draw its bounding-box chrome (4
+            // corner handles, rotation handle, body-drag area, 44pt
+            // delete button) over the shape. Reusing the lasso
+            // chrome avoids a parallel selection / handle / delete
+            // implementation just for shapes.
             ForEach(elements, id: \.id) { element in
                 if let content = element.shapeContent {
-                    renderShape(element: element, content: content)
+                    renderShapeFramed(element: element, content: content)
                 }
             }
 
@@ -103,11 +109,60 @@ struct ShapeElementsOverlayView: View {
         }
     }
 
+    /// Wraps `renderShape` in a frame anchored at the element's
+    /// bounding rect with cursor-mode tap-to-select. The framed
+    /// container is what catches the tap (thin outlines like a
+    /// line or open arrow are hard to hit-test directly).
     @ViewBuilder
-    private func renderShape(element: PageElement, content: ShapeContent) -> some View {
+    private func renderShapeFramed(element: PageElement, content: ShapeContent) -> some View {
         let rect = CGRect(
             x: CGFloat(element.normalizedX)      * pageSize.width,
             y: CGFloat(element.normalizedY)      * pageSize.height,
+            width:  CGFloat(element.normalizedWidth)  * pageSize.width,
+            height: CGFloat(element.normalizedHeight) * pageSize.height
+        )
+        renderShape(element: element, content: content)
+            .frame(width: rect.width, height: rect.height)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard viewModel.selectedTool.isCursorMode else { return }
+                selectViaLasso(element: element)
+            }
+            .allowsHitTesting(viewModel.selectedTool.isCursorMode)
+            .position(x: rect.midX, y: rect.midY)
+    }
+
+    /// Populate `LassoSelectionState` with this single shape so
+    /// `LassoOverlayView` renders its move + resize + delete
+    /// chrome. Single-element selection — the bounds are the
+    /// shape's normalised rect in page-pt.
+    private func selectViaLasso(element: PageElement) {
+        let bounds = CGRect(
+            x: element.normalizedX      * pageSize.width,
+            y: element.normalizedY      * pageSize.height,
+            width:  element.normalizedWidth  * pageSize.width,
+            height: element.normalizedHeight * pageSize.height
+        )
+        LassoSelectionState.shared.setSelection(
+            elementIds: [element.id],
+            partialStrokes: [:],
+            pageId: pageId,
+            bounds: bounds
+        )
+        HapticManager.shared.toolSwitched()
+    }
+
+    /// Renders the shape's path inside its own local (0,0,w,h)
+    /// coordinate space. Caller frames + positions this view at the
+    /// element's bbox via `renderShapeFramed`. Local coords let the
+    /// hit-test rectangle and the visible drawing share the same
+    /// frame so the cursor-mode tap region matches what the user
+    /// sees on screen.
+    @ViewBuilder
+    private func renderShape(element: PageElement, content: ShapeContent) -> some View {
+        let localRect = CGRect(
+            x: 0,
+            y: 0,
             width:  CGFloat(element.normalizedWidth)  * pageSize.width,
             height: CGFloat(element.normalizedHeight) * pageSize.height
         )
@@ -115,7 +170,7 @@ struct ShapeElementsOverlayView: View {
             ? theme.foreground
             : Color(uiColor: UIColor(hex: content.strokeColorHex))
         let lineWidth = max(1, CGFloat(content.strokeWidth > 0 ? content.strokeWidth : 2))
-        let path = ShapeKindPath.path(for: content.shapeKind, in: rect)
+        let path = ShapeKindPath.path(for: content.shapeKind, in: localRect)
 
         if let fillHex = content.fillColorHex, !fillHex.isEmpty {
             path
