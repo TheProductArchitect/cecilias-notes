@@ -152,7 +152,15 @@ struct PageStripView: View {
                         // as default" toggle on the picker pins the
                         // choice to `notebook.defaultTemplate` so
                         // subsequent taps on "+" pick it up.
-                        .simultaneousGesture(
+                        //
+                        // `highPriorityGesture` instead of
+                        // `simultaneousGesture` so the long-press
+                        // wins gesture arbitration against the
+                        // Button's internal tap — under
+                        // `simultaneousGesture` the tap also fired on
+                        // release, accidentally appending an extra
+                        // page every time the user long-pressed.
+                        .highPriorityGesture(
                             LongPressGesture(minimumDuration: 0.45)
                                 .onEnded { _ in
                                     showAddPageTemplatePicker = true
