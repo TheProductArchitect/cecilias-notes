@@ -140,57 +140,115 @@ struct QuizDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 8)
         } else {
-            sectionLabel("\(questions.count) questions")
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(Array(questions.enumerated()), id: \.element.id) { idx, q in
-                    questionRow(index: idx + 1, question: q)
-                }
-            }
+            // Don't surface the question + answer list before the user
+            // takes the quiz — it spoils every answer. Show the
+            // attempt history instead so the user has a sense of how
+            // they've done before re-attempting. Each row swipes to
+            // delete a single attempt if the user wants to drop a
+            // bad run from the record.
+            attemptHistorySection(quiz: quiz)
         }
     }
 
     @ViewBuilder
-    private func questionRow(index: Int, question q: QuizQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(index). \(q.question)")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.foreground)
-                .fixedSize(horizontal: false, vertical: true)
+    private func attemptHistorySection(quiz: Quiz) -> some View {
+        let completed = (quiz.attempts ?? [])
+            .filter { $0.completedAt != nil }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
 
-            switch q.type {
-            case .multipleChoice:
-                let letters = ["A", "B", "C", "D"]
-                ForEach(Array(q.options.enumerated()), id: \.offset) { i, opt in
-                    HStack(spacing: 8) {
-                        Text(i < letters.count ? letters[i] : "•")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(theme.foregroundSubtle)
-                        Text(opt)
-                            .font(.system(size: 13))
-                            .foregroundStyle(i == q.correctOptionIndex ? theme.accent : theme.recessivePrimary)
-                        if i == q.correctOptionIndex {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(theme.accent)
-                        }
-                    }
-                }
-            case .flashcard:
-                Text(q.backText ?? "")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.recessivePrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .shortAnswer:
-                if let sample = q.sampleAnswer {
-                    Text("sample: \(sample)")
-                        .font(.system(size: 13).italic())
-                        .foregroundStyle(theme.foregroundSubtle)
-                        .fixedSize(horizontal: false, vertical: true)
+        if completed.isEmpty {
+            sectionLabel("track record")
+            Text("no attempts yet. tap start quiz when you're ready.")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.foregroundSubtle)
+                .padding(.top, 4)
+        } else {
+            sectionLabel("track record")
+            VStack(spacing: 0) {
+                ForEach(completed, id: \.id) { attempt in
+                    attemptRow(attempt: attempt)
+                    Rectangle()
+                        .fill(theme.recessiveQuinary)
+                        .frame(height: 0.5)
                 }
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(theme.recessiveQuinary, lineWidth: 0.5)
+            )
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    @ViewBuilder
+    private func attemptRow(attempt: QuizAttempt) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.attemptDateFormatter.string(from: attempt.completedAt ?? attempt.startedAt))
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(theme.foreground)
+                if let started = attempt.completedAt {
+                    Text(Self.attemptRelativeFormatter.localizedString(for: started, relativeTo: Date()))
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.foregroundSubtle)
+                }
+            }
+            Spacer()
+            if let score = attempt.score {
+                Text("\(Int((score * 100).rounded()))%")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(scoreColor(for: score))
+                    .monospacedDigit()
+            }
+            Button {
+                deleteAttempt(attempt)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(theme.foregroundSubtle)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete attempt from \(Self.attemptDateFormatter.string(from: attempt.completedAt ?? attempt.startedAt))")
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+    }
+
+    private func scoreColor(for score: Double) -> Color {
+        switch score {
+        case 0.8...:        return theme.accent
+        case 0.5..<0.8:     return theme.foreground
+        default:            return theme.danger
+        }
+    }
+
+    private func deleteAttempt(_ attempt: QuizAttempt) {
+        let ctx = StorageService.shared.context
+        ctx.delete(attempt)
+        try? ctx.save()
+        HapticManager.shared.destructiveConfirmed()
+    }
+
+    private static let attemptDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    private static let attemptRelativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+
+    // questionRow used to surface the full question + answer list
+    // on this screen; it was removed so the detail view no longer
+    // spoils the answers before the user takes the quiz. The
+    // post-quiz review screen (`QuizResultsView`) still renders the
+    // full Q&A with the user's chosen answers, which is the correct
+    // place for that information.
 
     // MARK: Labels
 
