@@ -215,6 +215,57 @@ final class IntelligenceService: ObservableObject {
         return Array(candidates)
     }
 
+    // MARK: - Transcript structure (Phase 6 — headings + subheadings)
+
+    /// Post-processes a raw dictation transcript and returns a
+    /// markdown-formatted version with detected headings and
+    /// subheadings. Returns `nil` when AI is unavailable, the
+    /// transcript is too short to structure meaningfully, or
+    /// generation fails.
+    ///
+    /// Output format: GitHub-flavoured markdown with `#` and `##`
+    /// headings. Each paragraph between headings is one block. The
+    /// model is instructed to preserve the speaker's exact wording
+    /// in body content — only the structural overlay (where headings
+    /// sit, what gets promoted to a heading) is generated.
+    ///
+    /// Designed for transcripts of a single speaker dictating
+    /// structured material (lectures, notes, meeting recaps). For
+    /// multi-speaker recordings the heading detection will collapse
+    /// turn changes into structural breaks — diarisation is a
+    /// separate problem (no on-device iOS solution today).
+    func structureTranscript(_ transcript: String) async -> String? {
+        guard canRun else { return nil }
+        let words = transcript.split(whereSeparator: { $0.isWhitespace }).count
+        // Under ~80 words a single paragraph is the right answer —
+        // no headings to introduce.
+        guard words >= 80 else { return nil }
+
+        let prompt = """
+        You are post-processing a spoken-word transcript into \
+        structured markdown notes. Identify the natural topic and \
+        subtopic boundaries and add headings.
+
+        Rules:
+        - Use # for top-level headings (major topics) and ## for \
+          subheadings (sub-topics within a major topic).
+        - Body text under each heading must be the speaker's actual \
+          words. You may merge sentence fragments and remove filler \
+          words ("um", "uh", "you know") but do not paraphrase, \
+          summarise, or add new information.
+        - Do not invent content that isn't in the transcript.
+        - Aim for 1–4 top-level headings depending on transcript \
+          length. Use subheadings sparingly — only where the \
+          speaker clearly shifts to a sub-topic.
+        - Return ONLY the markdown. No preamble, no explanation, no \
+          closing remarks.
+
+        Transcript:
+        \(transcript)
+        """
+        return await respond(to: prompt)
+    }
+
     // MARK: - Lecture summary (Pass B)
 
     // Step 5: `generateLectureSummary(for: LectureRecord)` removed
