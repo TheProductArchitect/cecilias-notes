@@ -62,6 +62,8 @@ private struct QuizSidebarRow: View {
 
     private var isSelected: Bool { viewModel.selectedQuizID == quiz.id }
     @State private var confirmDelete = false
+    @State private var isRenaming = false
+    @State private var renameBuffer = ""
 
     /// Best completed-attempt score as 0–1, or nil if never attempted.
     private var bestScore: Double? {
@@ -117,11 +119,24 @@ private struct QuizSidebarRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button {
+                renameBuffer = quiz.title
+                isRenaming = true
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .alert("rename quiz", isPresented: $isRenaming) {
+            TextField("quiz name", text: $renameBuffer)
+            Button("rename") { commitRename() }
+            Button("cancel", role: .cancel) { renameBuffer = "" }
+        } message: {
+            Text("multiple quizzes for the same notebook share the same auto-generated title; rename to tell them apart.")
         }
         .alert("delete this quiz?", isPresented: $confirmDelete) {
             Button("delete", role: .destructive) { delete() }
@@ -129,6 +144,18 @@ private struct QuizSidebarRow: View {
         } message: {
             Text("\(quiz.title.isEmpty ? "this quiz" : quiz.title) and its questions and attempt history will be removed. this can't be undone.")
         }
+    }
+
+    private func commitRename() {
+        let trimmed = renameBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != quiz.title else {
+            renameBuffer = ""
+            return
+        }
+        quiz.title = trimmed
+        try? StorageService.shared.context.save()
+        renameBuffer = ""
+        HapticManager.shared.toolSwitched()
     }
 
     private func delete() {

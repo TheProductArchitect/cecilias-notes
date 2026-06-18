@@ -392,12 +392,6 @@ struct MoveNotebooksSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Button("Uncategorised") {
-                    viewModel.moveNotebooks(ids: viewModel.selectedNotebookIds, to: nil)
-                    dismiss()
-                }
-                .foregroundColor(theme.foreground)
-
                 ForEach(viewModel.subjects) { subject in
                     Button {
                         viewModel.moveNotebooks(ids: viewModel.selectedNotebookIds, to: subject.id)

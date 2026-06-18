@@ -403,9 +403,6 @@ struct NotebookCardView: View {
         }
 
         Menu("Move to Subject…") {
-            Button("Uncategorised") {
-                viewModel.moveNotebook(notebook, to: nil)
-            }
             ForEach(viewModel.subjects) { subject in
                 Button(subject.name) {
                     viewModel.moveNotebook(notebook, to: subject.id)

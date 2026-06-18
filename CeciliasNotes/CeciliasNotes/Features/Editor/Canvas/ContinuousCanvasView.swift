@@ -347,6 +347,24 @@ struct ContinuousCanvasView: UIViewRepresentable {
             scrollView.panGestureRecognizer.minimumNumberOfTouches = desiredTouches
         }
 
+        // Dynamic allowedTouchTypes on the scroll's pan recognizer.
+        // - Shape tool active: drop .pencil so Pencil drags belong to
+        //   the shape-overlay's PencilFingerDragSurface and don't
+        //   double-fire scroll + shape-create (this was producing a
+        //   page that scrolled while the user tried to draw).
+        // - Otherwise: both finger + Pencil scroll — the cursor-mode
+        //   Pencil-scroll fix from earlier in this branch.
+        let inShapeMode = viewModel.selectedTool.isShapeMode
+        let desiredTouchTypes: [NSNumber] = inShapeMode
+            ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            : [NSNumber(value: UITouch.TouchType.direct.rawValue),
+               NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        let currentTouchTypes = scrollView.panGestureRecognizer.allowedTouchTypes
+            .compactMap { $0 as? NSNumber }
+        if currentTouchTypes != desiredTouchTypes {
+            scrollView.panGestureRecognizer.allowedTouchTypes = desiredTouchTypes
+        }
+
         // Drawing policy + tool propagate to every mounted canvas. Cheap
         // — typically 3–5 canvases live at once.
         coord.applyDrawingPolicyToAll(fingerDraws: fingerDraws)

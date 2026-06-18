@@ -110,7 +110,11 @@ struct SyncStatusIndicator: View {
         switch cloudSync.syncStatus {
         case .disabled:
             Text("iCloud sync off")
-            Text("Enable in Settings → iCloud")
+            Button("Open Settings → iCloud") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
         case .upToDate:
             if let date = cloudSync.lastSyncedAt {
                 Text("Last synced \(Self.relative(date))")
