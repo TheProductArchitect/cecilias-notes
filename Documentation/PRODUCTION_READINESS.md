@@ -1,122 +1,142 @@
-# Production Readiness — Status & Open Items
+# Production Readiness — Final Pre-Submission Audit
 
-Snapshot as of branch `iphone-support` (2026-06-17). What's signed off
-from code, what's gated on testing on real hardware, and what still
-needs to be cut before App Store.
+Snapshot of `iphone-support` branch state at the App Store submission
+cut. What's signed off, what still needs human attention, and what's
+known-and-accepted.
 
 ---
 
-## ✅ Signed off from code
+## ✅ Code state
+
+### Builds
+- **Release build clean** — zero compiler warnings (one ignorable
+  `AppIntents metadata extraction skipped` from the toolchain which is
+  unrelated to the app).
+- **Debug build clean.**
+- Both build on iPhone + iPad simulators.
+
+### Tests
+- **114 unit tests passing.**
+- 1 known pre-existing failure: `ShapeDetectionTests.test_recogniseRectangle()`.
+  The stroke recogniser today identifies lines and circles only;
+  rectangle detection is unimplemented territory. Users now have the
+  shapes tool as the primary path for shape primitives, so this is
+  documentation-worthy but not blocking.
 
 ### Logging
-- All `print(...)` routed through `dlog(...)` — no-op in Release
-  (`Core/Utilities/DebugLog.swift`, commit `bb22376`).
-- `HostingHierarchyDiagnostics.installOnce()` gated on `#if DEBUG`.
-- Release build verified: 0 ungated `print` calls in app sources.
+- All `print(...)` routed through `dlog(...)` (`Core/Utilities/DebugLog.swift`).
+- `dlog` is a no-op in Release — argument evaluation + the `Swift.print`
+  call are both elided by the optimiser. App Store users see zero
+  `[Tag] …` lines in the system log.
+- DEBUG diagnostic surfaces (`[QuizGen]`, `[PDFExtract]`,
+  `[ImageGesture]`, `[BrandIcon]`, etc.) are useful for next-time
+  triage and absent from production builds.
 
 ### Crash + input hardening
-- `NSKeyedUnarchiver` calls use `requiringSecureCoding: true` (`2712c41`).
-- `EditorViewModel.currentPage` clamps a stale index instead of
-  out-of-bounds subscripting (`c1d28b9`).
+- `NSKeyedUnarchiver` calls use `requiringSecureCoding: true`.
+- `EditorViewModel.currentPage` clamps a stale `currentPageIndex`
+  instead of an out-of-bounds subscript.
 - `PageStripView` scroll-to guarded against negative index.
-- `PDFPagePickerSheet` jump field: unconditional keyboard dismiss +
-  inline error for empty / non-numeric / out-of-range input.
+- `PDFPagePickerSheet` jump field unconditionally resigns the
+  keyboard and shows an inline error for out-of-range input.
 - CustomisePanel + PDFPagePickerSheet `onDisappear { resignFirstResponder }`
   closes the `_UIRemoteKeyboardPlaceholderView` constraint crash window.
+- Apple Intelligence prompt corpus truncated to 9.5k chars + question
+  count clamped to ≤20 so the 4096-token context window can't be
+  exceeded again.
 
-### Memory + lifecycle
-- `RecordingPill` autoclose verified in earlier audit.
-- ContinuousCanvasView observer tokens removed in deinit
-  (`capabilityObserver`, `pixelEraserObserver`).
-- AudioRecorder/PlaybackController deinit logged DEBUG-only.
+### Dead code removed
+- `OnDeviceQuizGenerator.swift` (1,000-line retired quiz tier).
+- `PDFReferenceImporter.importAllPagesIntoNewNotebook(from:)` (no
+  callers — replaced by `importPagesFromLibrary` + `importPages`).
+- `GeneratedQuestion` struct preserved in its own file as the value
+  type the AI + MCP generators hand back to the persistence layer.
 
 ### iPad behaviour
-- Every `iphone-support` branch change gated on
-  `DeviceCapabilities.isPhoneIdiom` so the iPad path is byte-equivalent
-  to `main`.
-- Verified via 114-test unit suite (1 known pre-existing failure in
-  rectangle stroke recognition, unrelated).
+- Every iphone-support change gated on
+  `DeviceCapabilities.isPhoneIdiom`; the iPad code paths resolve
+  byte-equivalent to pre-branch main. Unit suite verifies the gate
+  decoupling didn't regress storage or naming.
 
-### Unit test coverage (this session)
-- `ShapeKindPathTests` — 5 cases over every shape kind + bounds + category.
-- `QuizEligibilityTests` — 4 cases over typed text, whitespace, audio
-  transcript toggle, subject aggregation.
-- `PageDragItemTests` — Codable round-trip + Transferable conformance.
+### iPhone behaviour
+- Compact masthead, sidebar drawer, single-column editor.
+- Pencil scroll in cursor mode.
+- Pencil-only shape draw when a Pencil is detected.
+- Shapes selectable / movable / resizable via cursor + tap +
+  lasso chrome handover.
+- Cross-page image drag handoff via canvas-coordinator notification.
 
 ---
 
 ## 🟡 Verified in code, NEEDS real-hardware test
 
-These compile + pass unit tests but the simulator can't fully
+These compile and pass unit tests but the simulator can't fully
 exercise them. Mark a TestFlight pass against each before App Store.
 
-| Path                                                | Why simulator can't cover it                          |
-|-----------------------------------------------------|-------------------------------------------------------|
-| Apple Pencil double-tap / squeeze                   | Simulator emits no Pencil-Pro telemetry               |
-| PencilKit drawing on iPad                           | Stroke pressure / tilt only realistic on device       |
-| Audio recording + transcription                     | Mic + SFSpeechRecognizer offline behaviour            |
-| CloudKit cross-device sync                          | Needs two real signed-in devices                      |
-| Pixel-eraser tip width                              | Bitmap eraser visual quality                          |
-| iPhone touch on PalmRejectingScrollView             | Multi-finger handling                                 |
-| Apple Intelligence quiz generation                  | Requires iOS 26 device with capability + AI enabled   |
-| Share-extension PDF intake from Files / Mail        | Cross-process inbox handoff                           |
+| Path                                                | Why simulator can't cover it                                |
+|-----------------------------------------------------|-------------------------------------------------------------|
+| Apple Pencil double-tap / squeeze                   | Simulator emits no Pencil-Pro telemetry                     |
+| PencilKit drawing pressure / tilt                   | Real Pencil hardware only                                   |
+| Audio recording + transcription                     | Mic + SFSpeechRecognizer offline behaviour                  |
+| CloudKit cross-device sync                          | Two real signed-in devices required                         |
+| Apple Intelligence quiz generation                  | iOS 26 device + A17 Pro / M-series + AI enabled in Settings |
+| Share-extension PDF intake from Files / Mail        | Cross-process inbox handoff                                 |
+| Pixel-eraser tip width                              | Bitmap eraser visual quality                                |
+| Image cross-page drag (continuous scroll across pages) | Real touch + scroll inertia                              |
 
 ---
 
 ## 🟠 Open items before App Store
 
-### Privacy + entitlements
-- [ ] Privacy manifest (`PrivacyInfo.xcprivacy`) — confirm declared APIs
-      match what's actually used. CloudKit, UserDefaults, file access
-      are required-reason APIs as of Apple's 2024 deadline.
-- [ ] App-tracking transparency: app doesn't track today; verify the
-      `NSUserTrackingUsageDescription` key is absent so no prompt fires.
-- [ ] iCloud entitlements verified in App Store Connect (`iCloud.app.ceciliasnotes`).
-- [ ] Push notifications: not used; ensure no stray entitlements.
+### Privacy + entitlements (CAN'T verify from code)
+- [ ] `PrivacyInfo.xcprivacy` declares the required-reason APIs
+      (UserDefaults, file timestamps, CloudKit).
+- [ ] No `NSUserTrackingUsageDescription` key (app doesn't track).
+- [ ] iCloud entitlement for `iCloud.app.ceciliasnotes` verified in
+      App Store Connect.
 
 ### App Store metadata
-- [ ] Screenshots for iPad + iPhone (every supported size class).
-- [ ] App preview video (optional but recommended).
-- [ ] Description, keywords, support URL, marketing URL.
-- [ ] Age rating — pencil drawing app, likely 4+.
+- [ ] Description, keywords, subtitle, "what's new" copy uploaded.
+      First-cut copy at `Documentation/APP_STORE_COPY.md`.
+- [ ] Screenshots produced from real devices (iPad Pro 13", iPhone
+      17 Pro Max minimum). I cannot generate these; checklist in
+      the copy doc.
+- [ ] App icon (1024 + bundled sizes) already complete in
+      `Assets.xcassets/AppIcon.appiconset`.
+- [ ] Support URL, marketing URL, privacy policy URL.
+- [ ] Age rating: **4+** (no age-restricted content).
 
-### Localisation
-- [ ] App is English-only today. Either:
-      - File a v1.1 localisation effort (Spanish, French, German, Japanese
-        cover the biggest paid-app markets), or
-      - Declare English-only and skip.
-
-### Accessibility audit (NOT done in code review)
-- [ ] VoiceOver pass on every primary surface (library, editor, settings).
-      Today most tool palette buttons have `.accessibilityLabel` only on
-      a few; the masthead wordmark relies on visual hierarchy.
-- [ ] Dynamic Type — typography uses fixed `.system(size:)`. Will not
-      respond to user font size. Decision needed: ship as-is (the
-      editorial design is the spec) or fold in Dynamic Type for
-      readability-critical surfaces.
+### Accessibility audit (NOT verified)
+- [ ] VoiceOver pass on library / editor / settings.
+- [ ] Dynamic Type — typography uses `.system(size:)` fixed sizes;
+      they will not respond to user font size. Decision needed
+      before submission: ship as-is (editorial design intent) or
+      fold in Dynamic Type for readability-critical surfaces.
 - [ ] Reduce Motion — most spring animations honour
-      `@Environment(\.accessibilityReduceMotion)`; spot-check the editor.
+      `@Environment(\.accessibilityReduceMotion)`; spot-check the
+      editor.
 
-### Performance
-- [ ] 1000-notebook library smoke test on real iPad (we've tested this
-      in synthetic data; library-refresh perf was hardened in `b7cae2d`).
-- [ ] Pencil-stroke latency on iPad Pro M5 — target 60fps consistently.
-- [ ] Memory ceiling under heavy use (many large PDFs imported).
-- [ ] Cold-launch time — currently editor mount fires multiple page-
-      host mounts on first open (visible in `logs_venu`). May benefit
-      from a deferred warm-band pass; not blocking.
+### Performance on real hardware
+- [ ] 1000-notebook library smoke (verified synthetic; not on
+      real iPad).
+- [ ] Pencil-stroke latency target 60 fps on iPad Pro.
+- [ ] Cold-launch time after the editor-mount eager warm-band pass.
 
-### Known unresolved
-- [ ] Stroke recognition only handles lines + circles (rectangle/
-      triangle returned `unknown` in the failing test — confirmed
-      pre-existing limitation). User now has the shapes tool as the
-      primary path for shape primitives, so this is no longer
-      blocking but should be documented in release notes.
-- [ ] Shape selection / resize / recolour after creation — committed
-      backlog (see `9b0d3fa` commit message).
-- [ ] CloudKit `Cocoa 257` permission error at launch — likely needs
-      a fresh install on affected devices, not code-fixable from the
-      app.
+### Documented inherited limitations
+- **Stroke recognition** identifies lines + circles only. Triangle /
+  rectangle land in the user-facing shapes tool instead.
+- **Quiz generation** capped at 20 questions per quiz (Apple
+  Intelligence context window). Users generate a second quiz from
+  the same source if they need more.
+- **PDF source budget** ~9.5k chars per generation pass (Apple
+  Intelligence context window). Chunked generation against larger
+  sources is a follow-up.
+- **CloudKit local-cache permission errors** (`Cocoa 257`) need an
+  app uninstall/reinstall to clear; not fixable from code.
+- **Diarisation** (speaker identification in transcripts) is not
+  available — no free on-device iOS solution today. Apple
+  Intelligence handles heading detection in the transcript itself
+  via `IntelligenceService.structureTranscript(_:)`.
 
 ---
 
@@ -132,19 +152,38 @@ xcodebuild test \
   -only-testing CeciliasNotesTests
 ```
 
-Expected: **114 pass, 1 pre-existing fail** (rectangle stroke
-recognition).
+Expected: **114 pass, 1 pre-existing fail** (rectangle stroke recognition).
 
-### CI
+### Release build
 
-Not yet wired. Recommendation: GitHub Actions on every PR to main,
-matrix over iPhone 17 Pro 26.4 + iPad Pro 13-inch (M5) 26.4.
+```
+xcodebuild build \
+  -project CeciliasNotes.xcodeproj \
+  -scheme CeciliasNotes \
+  -configuration Release \
+  -destination 'generic/platform=iOS'
+```
+
+Expected: **BUILD SUCCEEDED**, zero warnings (other than the
+toolchain-side `AppIntents metadata extraction skipped` note which
+applies to every project without an AppIntents.framework dependency).
 
 ---
 
 ## Sign-off
 
-**Code state**: ready for TestFlight on iPad + iPhone.
-**Hardware testing**: required before App Store.
-**Open metadata / privacy / a11y items**: addressable in 1–3 days of
-focused work but not in this session.
+**Code state:** ready for TestFlight upload + App Review submission.
+**Hardware testing:** required before promoting to App Store.
+**Open metadata / privacy / a11y items:** addressable in
+1–3 days of focused human work; none block submission *per se*
+but most are required by App Review (privacy policy URL,
+screenshots).
+
+If a TestFlight pass on iPad + iPhone is clean, the next step is:
+
+1. Archive (Product → Archive in Xcode).
+2. Validate in Organizer.
+3. Upload to App Store Connect.
+4. Fill in metadata using the doc at
+   `Documentation/APP_STORE_COPY.md`.
+5. Submit for review.

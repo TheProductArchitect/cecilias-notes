@@ -360,7 +360,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             : [NSNumber(value: UITouch.TouchType.direct.rawValue),
                NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         let currentTouchTypes = scrollView.panGestureRecognizer.allowedTouchTypes
-            .compactMap { $0 as? NSNumber }
         if currentTouchTypes != desiredTouchTypes {
             scrollView.panGestureRecognizer.allowedTouchTypes = desiredTouchTypes
         }
@@ -535,7 +534,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 queue: .main
             ) { [weak self] _ in
                 guard let self else { return }
-                self.applyToolToAll(self.viewModel.selectedTool, force: true)
+                MainActor.assumeIsolated {
+                    self.applyToolToAll(self.viewModel.selectedTool, force: true)
+                }
             }
             self.imageHandoffObserver = NotificationCenter.default.addObserver(
                 forName: .imageElementCrossPageHandoffRequested,
