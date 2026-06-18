@@ -139,7 +139,8 @@ struct AppleIntelligenceQuizGenerator {
     // MARK: - Parsing
 
     private func parseMultipleChoice(_ raw: String, notebookID: UUID?) -> [GeneratedQuestion] {
-        blocks(raw).compactMap { block in
+        let allBlocks = blocks(raw)
+        let parsed: [GeneratedQuestion] = allBlocks.compactMap { block in
             let fields = lineFields(block)
             guard let q = fields["Q"], !q.isEmpty else { return nil }
             let letters = ["A", "B", "C", "D"]
@@ -156,6 +157,16 @@ struct AppleIntelligenceQuizGenerator {
                 sourceNotebookID: notebookID
             )
         }
+        #if DEBUG
+        dlog("[QuizGen] parseMultipleChoice blocks=\(allBlocks.count) parsed=\(parsed.count)")
+        if !allBlocks.isEmpty && parsed.isEmpty {
+            // First block has fields that didn't yield a valid MCQ.
+            // Print so we can see exactly which Q/A/B/C/D/CORRECT
+            // line the model omitted or misformatted.
+            dlog("[QuizGen] parse FAILED — first block raw=\"\(allBlocks[0].prefix(300))\"")
+        }
+        #endif
+        return parsed
     }
 
     private func parseFlashcards(_ raw: String, notebookID: UUID?) -> [GeneratedQuestion] {
@@ -232,11 +243,26 @@ struct AppleIntelligenceQuizGenerator {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             do {
+                #if DEBUG
+                let promptPreview = prompt.prefix(200)
+                dlog("[QuizGen] AI prompt chars=\(prompt.count) preview=\"\(promptPreview)…\"")
+                #endif
                 let session = LanguageModelSession()
                 let response = try await session.respond(to: prompt)
                 let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                #if DEBUG
+                if text.isEmpty {
+                    dlog("[QuizGen] AI response EMPTY (model returned blank or whitespace-only content)")
+                } else {
+                    let preview = text.prefix(400)
+                    dlog("[QuizGen] AI response chars=\(text.count) preview=\"\(preview)\(text.count > 400 ? "…" : "")\"")
+                }
+                #endif
                 return text.isEmpty ? nil : text
             } catch {
+                #if DEBUG
+                dlog("[QuizGen] AI respond threw error: \(error)")
+                #endif
                 return nil
             }
         }
