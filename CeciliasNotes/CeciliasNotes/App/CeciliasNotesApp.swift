@@ -261,6 +261,15 @@ struct CeciliasNotesApp: App {
                     // Idempotent; safe to call on every cold launch.
                     CeciliasNotesFileWatcher.shared.start()
 
+                    // Multipeer-direct ingest: when the user has
+                    // opted in (Settings → cloud → "Receive from
+                    // Mac on this network"), advertise the
+                    // _ceciliasnotes-sync._tcp service so the Mac
+                    // MCP can ship a notebook directly over LAN /
+                    // Bluetooth PAN, much faster than iCloud sync.
+                    // No-op when the toggle is off.
+                    _ = MultipeerSyncService.shared
+
                     // Share-extension ingest: watch the app-group
                     // ShareInbox for files dropped by the iOS share
                     // sheet (Files → Cecilia's Notes, Safari → Cecilia's

@@ -48,6 +48,8 @@ struct CloudSettingsView: View {
         self.cloud     = viewModel.cloudSyncManager
     }
 
+    @ObservedObject private var multipeer = MultipeerSyncService.shared
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -57,6 +59,7 @@ struct CloudSettingsView: View {
                     statusSection
                     storageSection
                 }
+                multipeerSection
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
@@ -64,6 +67,21 @@ struct CloudSettingsView: View {
         }
         .background(theme.surface)
         .task { await loadiCloudUsage() }
+        .alert(
+            "Receive notebooks from \(multipeer.pendingInvite?.peerName ?? "Mac")?",
+            isPresented: Binding(
+                get: { multipeer.pendingInvite != nil },
+                set: { if !$0, let p = multipeer.pendingInvite {
+                    multipeer.respondToInvite(p, accept: false)
+                }}
+            ),
+            presenting: multipeer.pendingInvite
+        ) { invite in
+            Button("Allow") { multipeer.respondToInvite(invite, accept: true) }
+            Button("Block", role: .destructive) { multipeer.respondToInvite(invite, accept: false) }
+        } message: { invite in
+            Text("\(invite.peerName) wants to send notebooks directly to this device over your local network. Allow once, and this Mac will be trusted for future direct sends.")
+        }
         .alert("Enable iCloud sync?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
@@ -316,6 +334,62 @@ struct CloudSettingsView: View {
     /// **local data size** — sum of the SQLite store, media
     /// attachments, and the ubiquity Notebooks dir — alongside a
     /// count of what's syncing.
+    /// Direct device-to-device intake from a Mac running
+    /// `cecilias-notes-mcp` on the same network. Sidesteps iCloud's
+    /// 30 sec – 5 min sync latency. Opt-in: when off, the iPad
+    /// never advertises or listens.
+    private var multipeerSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("direct from mac")
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("receive on local network")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.foreground)
+                    Text(multipeerCaption)
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.foregroundSubtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { multipeer.isEnabled },
+                    set: { multipeer.setEnabled($0) }
+                ))
+                .labelsHidden()
+                .tint(theme.accent)
+            }
+            if multipeer.isEnabled {
+                Button {
+                    PairedPeerStore.shared.forgetAll()
+                    HapticManager.shared.toolSwitched()
+                } label: {
+                    Text("forget all paired devices")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.foregroundMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var multipeerCaption: String {
+        switch multipeer.status {
+        case .off:
+            return "when on, an instance of cecilias-notes-mcp running on a mac on the same wi-fi can ship notebooks directly to this device. faster than waiting for icloud."
+        case .idle:
+            return "advertising. waiting for a mac to connect."
+        case .connected(let name):
+            return "connected to \(name). ready to receive."
+        case .receiving(let name):
+            return "receiving from \(name)…"
+        case .received(let name, let filename):
+            return "received \(filename) from \(name)."
+        case .error(let msg):
+            return msg
+        }
+    }
+
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("storage")
