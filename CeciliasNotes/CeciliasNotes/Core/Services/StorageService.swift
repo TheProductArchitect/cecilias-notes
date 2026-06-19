@@ -1516,6 +1516,22 @@ extension StorageService {
         try context.save()
     }
 
+    /// Total count of soft-deleted top-level records (Subject /
+    /// Folder / Notebook). Used by the Storage settings to report
+    /// how many records the Purge action will hard-delete.
+    func softDeletedTotalCount() -> Int {
+        let subjects = (try? context.fetch(
+            FetchDescriptor<Subject>(predicate: #Predicate { $0.isDeleted == true })
+        ))?.count ?? 0
+        let folders = (try? context.fetch(
+            FetchDescriptor<Folder>(predicate: #Predicate { $0.isDeleted == true })
+        ))?.count ?? 0
+        let notebooks = (try? context.fetch(
+            FetchDescriptor<Notebook>(predicate: #Predicate { $0.isDeleted == true })
+        ))?.count ?? 0
+        return subjects + folders + notebooks
+    }
+
     func emptyTrash() throws {
         let allSubjects = (try? context.fetch(
             FetchDescriptor<Subject>(predicate: #Predicate { $0.isDeleted == true })

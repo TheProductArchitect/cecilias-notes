@@ -9,6 +9,11 @@ struct StorageSettingsView: View {
     @State private var isClearingExports       = false
     @State private var isClearingAudio         = false
     @State private var clearError:             String? = nil
+    @State private var showPurgeDeletedAlert   = false
+    @State private var isPurgingDeleted        = false
+    @State private var purgedCount: Int?       = nil
+    @State private var isPullingFromCloud      = false
+    @State private var pullFeedback: String?   = nil
 
     /// Latest unified-storage diagnostics. Populated on `.task`; nil
     /// until the first read completes (a few ms — no spinner needed).
@@ -59,6 +64,23 @@ struct StorageSettingsView: View {
             }
         } message: {
             Text("All audio recordings and their annotations will be deleted. Untranscribed recordings will be lost permanently.")
+        }
+        .alert("Purge Deleted Items from iCloud?", isPresented: $showPurgeDeletedAlert) {
+            Button("Cancel", role: .cancel) {}
+            Button("Purge", role: .destructive) {
+                HapticManager.shared.destructiveConfirmed()
+                Task { await purgeDeletedItems() }
+            }
+        } message: {
+            Text("Every notebook, subject, folder, or page you've already deleted will be permanently removed from iCloud across all your devices. This can't be undone.")
+        }
+        .alert("Pulled from iCloud", isPresented: Binding(
+            get: { pullFeedback != nil },
+            set: { if !$0 { pullFeedback = nil } }
+        ), presenting: pullFeedback) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { feedback in
+            Text(feedback)
         }
         .alert("Error", isPresented: Binding(
             get: { clearError != nil },
@@ -263,6 +285,47 @@ struct StorageSettingsView: View {
 
             CeciliasNotesDivider()
 
+            // Pull from iCloud — kicks the NSMetadataQuery to re-gather
+            // anything an external agent (cecilias-notes-mcp on Mac)
+            // dropped into iCloud Drive. Same code path as the
+            // app-launch watcher, but fires immediately so the user
+            // doesn't sit through iCloud's auto-sync latency.
+            actionRow(
+                title: "Pull from iCloud Now",
+                detail: nil,
+                icon: "arrow.down.to.line",
+                disabled: false,
+                disabledSubLabel: nil,
+                isLoading: isPullingFromCloud,
+                isDestructive: false
+            ) {
+                Task { await pullFromCloud() }
+            }
+
+            CeciliasNotesDivider()
+
+            // Purge — runs `emptyTrash()` which hard-deletes every
+            // soft-deleted record. SwiftData+CloudKit propagates the
+            // hard delete so iCloud actually drops the records too.
+            // Useful for power users (synthetic data sweeps, batch
+            // delete cleanup) where Trash → Empty isn't reachable.
+            let purgeDetail: String? = purgedCount.map { count in
+                "Purged \(count) item\(count == 1 ? "" : "s")"
+            }
+            actionRow(
+                title: "Purge Deleted Items from iCloud",
+                detail: purgeDetail,
+                icon: "icloud.slash",
+                disabled: false,
+                disabledSubLabel: nil,
+                isLoading: isPurgingDeleted,
+                isDestructive: true
+            ) {
+                showPurgeDeletedAlert = true
+            }
+
+            CeciliasNotesDivider()
+
             // View in Files
             Button {
                 openInFiles()
@@ -346,6 +409,46 @@ struct StorageSettingsView: View {
             clearError = error.localizedDescription
         }
         isClearingExports = false
+    }
+
+    /// Hard-delete every soft-deleted notebook / subject / folder /
+    /// page in the local store. SwiftData+CloudKit propagates the
+    /// hard delete to the user's CloudKit private database, so the
+    /// records actually leave iCloud rather than lingering with an
+    /// `isDeleted = true` flag forever.
+    private func purgeDeletedItems() async {
+        isPurgingDeleted = true
+        defer { isPurgingDeleted = false }
+        let storage = StorageService.shared
+        // Snapshot the soft-deleted counts before purging so we can
+        // report a number; the actual emptyTrash() does the work.
+        let countSnapshot = storage.softDeletedTotalCount()
+        do {
+            try storage.emptyTrash()
+            purgedCount = countSnapshot
+            await viewModel.loadStorageMetrics()
+        } catch {
+            clearError = error.localizedDescription
+        }
+    }
+
+    /// Kick the iCloud file watcher so any `.inkbook` / `.json` files
+    /// dropped by an external agent (e.g. cecilias-notes-mcp on Mac)
+    /// get imported immediately instead of after iCloud's own sync
+    /// cadence.
+    private func pullFromCloud() async {
+        isPullingFromCloud = true
+        defer { isPullingFromCloud = false }
+        await MainActor.run {
+            CeciliasNotesFileWatcher.shared.rescan()
+        }
+        // Give iCloud a moment to start materialising any files the
+        // metadata query just spotted, then surface a friendly
+        // acknowledgement. The actual import notifications still flow
+        // through the watcher → importer path; we just confirm the
+        // pull was triggered.
+        try? await Task.sleep(for: .seconds(1))
+        pullFeedback = "Checked iCloud for new files from connected agents. New notebooks will appear in your library momentarily."
     }
 
     private func clearAudio() async {
