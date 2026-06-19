@@ -1,67 +1,62 @@
 import Combine
+import CryptoKit
 import Foundation
 import MultipeerConnectivity
 import UIKit
 
 /// Direct device-to-device receiver for notebooks dropped by an
 /// external agent (currently `cecilias-notes-mcp` running on a Mac).
-/// Sits alongside `CeciliasNotesFileWatcher` as a second, faster
-/// arrival path: when both the iPad and the Mac are on the same
-/// Wi-Fi / Bluetooth-PAN, a freshly-written notebook can land in
-/// the inbox within a second instead of the 30 sec – 5 min that
-/// iCloud's sync typically takes.
+/// Sidesteps iCloud's 30 sec – 5 min sync latency when both sides
+/// are on the same network.
 ///
-/// ## Architecture
+/// # Security model (v2 — pairing + HMAC)
 ///
-/// - Service type: `_ceciliasnotes-sync._tcp` (must also be listed
-///   under `NSBonjourServices` in Info.plist for iOS 14+ to permit
-///   advertisement).
-/// - Discovery: MultipeerConnectivity's nearby-peer browser. The Mac
-///   side advertises; the iPad side accepts the auto-invitation.
-/// - Transport: MCSession's binary `Data` channel, TLS-encrypted by
-///   default.
-/// - Payload: a single `.inkbook` file's bytes plus an optional
-///   filename header (UTF-8 JSON envelope, then the file bytes).
-/// - On receipt: writes to the same iCloud inbox the file watcher
-///   polls, so the existing `CeciliasNotesImporter` import path
-///   runs unchanged. iCloud will eventually sync the same file
-///   anyway — the multipeer copy just gets there sooner; the
-///   importer is idempotent by content hash, so the duplicate is
-///   harmless.
+/// Peer-name trust is no longer enough — anyone on the same LAN can
+/// name their MCPeerID "John's MacBook" and try to push. v2 layers a
+/// pairing handshake + per-payload HMAC over MultipeerConnectivity's
+/// TLS:
 ///
-/// ## User flow
+/// 1. **First-time pairing**. iPad enters pairing mode via
+///    Settings → cloud → "show pairing code". A 6-digit code is
+///    generated and shown to the user; the user types the same code
+///    into the Mac MCP. Both sides run HKDF over the code (salted with
+///    the peer names) to land on the same 32-byte symmetric key.
+/// 2. **Pairing confirmation**. Mac sends a `pairing-hello` payload
+///    HMAC-signed with the derived key. iPad recomputes the HMAC with
+///    its own derived key; if they match the key is persisted in
+///    Keychain (`MultipeerPairingStore`) under the Mac's peer name.
+///    Pairing mode expires after 90 seconds.
+/// 3. **Per-payload authentication**. Every file payload carries an
+///    HMAC over header+body using the stored shared key. Unsigned
+///    payloads, bad HMACs, or payloads from peers without a stored
+///    key are dropped.
+/// 4. **Replay protection**. Header carries a timestamp + 16-byte
+///    nonce. Payloads older than 60 seconds or with a recently-seen
+///    nonce are dropped.
 ///
-/// 1. iPad app foregrounds → service starts advertising.
-/// 2. Mac MCP starts, browses for the service, finds the iPad.
-/// 3. Mac sends an invitation. iPad accepts automatically because
-///    the session-discoveryInfo carries a token the user has
-///    previously trusted (see `PairedPeerStore`). First-time peers
-///    get a prompt before acceptance — handled by the host view
-///    via `pendingInvite`.
-/// 4. Mac sends the `.inkbook` bytes. iPad writes to inbox.
-/// 5. `CeciliasNotesFileWatcher` notices the new file via its
-///    existing NSMetadataQuery, runs the importer.
-///
-/// ## Settings + toggles
-///
-/// The receiver is **off by default**. Users opt in via Settings →
-/// Cloud → "Receive from Mac on this network". When off, no
-/// advertising fires and the framework allocates nothing.
+/// Pre-pairing, the only payload the receiver accepts is
+/// `pairing-hello`, and only while pairing mode is active.
 @MainActor
 final class MultipeerSyncService: NSObject, ObservableObject {
 
     static let shared = MultipeerSyncService()
 
     /// Service identifier exchanged via Bonjour. Must match the
-    /// Info.plist `NSBonjourServices` entry exactly. Keep this
-    /// stable — every Mac MCP binary will look for this name.
+    /// Info.plist `NSBonjourServices` entry (`_ceciliasnotes-sync._tcp`).
     static let serviceType = "ceciliasnotes-sync"
 
-    /// User-visible status. Drives the Settings row's caption + the
-    /// transient toast we show after a successful direct receive.
+    /// How long a freshly-generated pairing code remains valid.
+    static let pairingModeWindow: TimeInterval = 90
+
+    /// Replay window — any payload with a timestamp older than this
+    /// is rejected even if the HMAC is valid.
+    private static let replayWindow: TimeInterval = 60
+
+    /// User-visible status. Drives Settings caption + status line.
     enum Status: Equatable {
         case off
         case idle                       // advertising, no peers
+        case pairing(code: String, expiresAt: Date)
         case connected(peerName: String)
         case receiving(peerName: String)
         case received(peerName: String, filename: String)
@@ -70,19 +65,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
 
     @Published private(set) var status: Status = .off
     @Published private(set) var isEnabled: Bool = false
-
-    /// Pending invitation the user must approve before the session
-    /// connects. nil when no peer is asking. SwiftUI surfaces this
-    /// as an alert; the user's response calls `respondToInvite`.
-    @Published var pendingInvite: PendingInvite?
-
-    struct PendingInvite: Identifiable, Equatable {
-        let id = UUID()
-        let peerName: String
-        fileprivate let handler: (Bool) -> Void
-
-        static func == (lhs: PendingInvite, rhs: PendingInvite) -> Bool { lhs.id == rhs.id }
-    }
+    @Published private(set) var pairedPeerNames: [String] = []
 
     // MARK: Storage keys
 
@@ -91,45 +74,75 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     // MARK: Private state
 
     private let localPeerId: MCPeerID = {
-        let name = UIDevice.current.name
-        // MCPeerID restricts displayName to 63 bytes; iPad names
-        // are short enough but we trim defensively.
-        let safe = String(name.prefix(60))
+        let safe = String(UIDevice.current.name.prefix(60))
         return MCPeerID(displayName: safe)
     }()
 
     private var session: MCSession?
     private var advertiser: MCNearbyServiceAdvertiser?
 
+    /// Active pairing window. nil unless the user has tapped
+    /// "show pairing code" within the last `pairingModeWindow`.
+    private var activePairingCode: String?
+    private var pairingExpiresAt: Date?
+
+    /// Nonces seen in the replay window. Trimmed on every receive.
+    private var recentNonces: [(nonce: String, seenAt: Date)] = []
+
     private override init() {
         super.init()
         self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        refreshPairedPeerNames()
         if isEnabled { start() }
     }
 
     // MARK: Public API
 
-    /// Persist user opt-in / opt-out. Off by default; the receiver
-    /// only allocates session + advertiser when the user enables.
     func setEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
         isEnabled = enabled
-        if enabled {
-            start()
-        } else {
-            stop()
-        }
+        if enabled { start() } else { stop() }
     }
 
-    /// Approve or decline an inbound invitation. Should only be
-    /// called from the UI surfacing `pendingInvite`. Clearing the
-    /// pending invite is the responsibility of this method.
-    func respondToInvite(_ invite: PendingInvite, accept: Bool) {
-        invite.handler(accept)
-        if pendingInvite == invite { pendingInvite = nil }
-        if accept {
-            PairedPeerStore.shared.remember(peerName: invite.peerName)
+    /// Enter pairing mode for the next `pairingModeWindow` seconds.
+    /// Returns the displayed 6-digit code so the UI can render it.
+    @discardableResult
+    func beginPairing() -> String {
+        let code = MultipeerPairingStore.generatePairingCode()
+        let expiry = Date().addingTimeInterval(Self.pairingModeWindow)
+        activePairingCode = code
+        pairingExpiresAt = expiry
+        status = .pairing(code: code, expiresAt: expiry)
+        // Auto-cancel after the window so the status reverts cleanly
+        // even if no Mac connects.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.pairingModeWindow))
+            await MainActor.run {
+                guard let self else { return }
+                if self.activePairingCode == code {
+                    self.activePairingCode = nil
+                    self.pairingExpiresAt = nil
+                    if case .pairing = self.status { self.status = .idle }
+                }
+            }
         }
+        return code
+    }
+
+    func cancelPairing() {
+        activePairingCode = nil
+        pairingExpiresAt = nil
+        if case .pairing = status { status = .idle }
+    }
+
+    func forgetPeer(_ name: String) {
+        MultipeerPairingStore.forget(peerName: name)
+        refreshPairedPeerNames()
+    }
+
+    func forgetAllPeers() {
+        MultipeerPairingStore.forgetAll()
+        refreshPairedPeerNames()
     }
 
     // MARK: Lifecycle
@@ -146,7 +159,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
 
         let advertiser = MCNearbyServiceAdvertiser(
             peer: localPeerId,
-            discoveryInfo: ["app": "ceciliasnotes", "platform": "ios"],
+            discoveryInfo: ["app": "ceciliasnotes", "platform": "ios", "v": "2"],
             serviceType: Self.serviceType
         )
         advertiser.delegate = self
@@ -161,58 +174,153 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         advertiser = nil
         session?.disconnect()
         session = nil
-        pendingInvite = nil
+        cancelPairing()
         status = .off
+    }
+
+    private func refreshPairedPeerNames() {
+        pairedPeerNames = MultipeerPairingStore.pairedPeerNames()
     }
 
     // MARK: Payload handling
 
+    /// Wire format (v2):
+    ///
+    /// ```
+    /// [4 byte BE header length][header JSON][32 byte HMAC-SHA256][body]
+    /// ```
+    ///
+    /// Header schema:
+    ///
+    /// ```json
+    /// {
+    ///   "type": "file" | "pairing-hello",
+    ///   "filename": "X.inkbook",      // file type only
+    ///   "timestamp": 1718817100,      // epoch seconds
+    ///   "nonce": "base64-16-bytes"
+    /// }
+    /// ```
+    ///
+    /// HMAC is computed over `headerJSON || body` using the shared
+    /// key derived during pairing.
     private func handlePayload(_ data: Data, from peer: MCPeerID) {
-        // Envelope: 4-byte big-endian uint32 = header length, then
-        // header (UTF-8 JSON with "filename": "<name>"), then file
-        // bytes. Keeps the protocol forward-extensible (additional
-        // header fields don't break readers).
-        guard data.count > 4 else {
-            status = .error("Received payload too small from \(peer.displayName)")
+        guard data.count > 4 + 32 else {
+            status = .error("Payload too small from \(peer.displayName)")
             return
         }
         let headerLen = Int(UInt32(bigEndian: data.prefix(4).withUnsafeBytes { $0.load(as: UInt32.self) }))
-        guard data.count >= 4 + headerLen else {
+        guard data.count >= 4 + headerLen + 32 else {
             status = .error("Malformed payload from \(peer.displayName)")
             return
         }
         let headerData = data.subdata(in: 4..<(4 + headerLen))
-        let bodyData   = data.subdata(in: (4 + headerLen)..<data.count)
+        let hmacBytes  = data.subdata(in: (4 + headerLen)..<(4 + headerLen + 32))
+        let bodyData   = data.subdata(in: (4 + headerLen + 32)..<data.count)
 
         struct Header: Decodable {
-            let filename: String
+            let type: String
+            let filename: String?
+            let timestamp: Int64
+            let nonce: String
         }
         guard let header = try? JSONDecoder().decode(Header.self, from: headerData) else {
             status = .error("Bad header from \(peer.displayName)")
             return
         }
-        let filename = sanitizedFilename(header.filename)
+
+        // Replay window — clock-skew tolerant on the negative side
+        // (Mac slightly ahead is fine), strict on the positive side.
+        let age = Date().timeIntervalSince1970 - TimeInterval(header.timestamp)
+        guard abs(age) < Self.replayWindow else {
+            status = .error("Stale payload from \(peer.displayName) (age \(Int(age))s)")
+            return
+        }
+        // Nonce de-dupe.
+        let nowMinusWindow = Date().addingTimeInterval(-Self.replayWindow)
+        recentNonces.removeAll { $0.seenAt < nowMinusWindow }
+        if recentNonces.contains(where: { $0.nonce == header.nonce }) {
+            status = .error("Replay detected from \(peer.displayName)")
+            return
+        }
+
+        // Resolve the key: paired peers use their stored key; pairing
+        // hellos derive a candidate key from the active pairing code.
+        let signedRange = headerData + bodyData
+        switch header.type {
+        case "file":
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else {
+                status = .error("Unpaired peer \(peer.displayName) — payload rejected")
+                return
+            }
+            guard verifyHMAC(hmacBytes, message: signedRange, key: key) else {
+                status = .error("HMAC mismatch from \(peer.displayName) — payload rejected")
+                return
+            }
+            recentNonces.append((header.nonce, Date()))
+            writeFileToInbox(filename: header.filename, body: bodyData, peer: peer)
+
+        case "pairing-hello":
+            guard let code = activePairingCode,
+                  let expiresAt = pairingExpiresAt,
+                  Date() < expiresAt
+            else {
+                status = .error("\(peer.displayName) tried to pair, but pairing mode isn't on")
+                return
+            }
+            let candidate = MultipeerPairingStore.derivedKey(
+                fromCode: code,
+                localPeerName: localPeerId.displayName,
+                remotePeerName: peer.displayName
+            )
+            guard verifyHMAC(hmacBytes, message: signedRange, key: candidate) else {
+                status = .error("Wrong pairing code from \(peer.displayName) — try again")
+                return
+            }
+            recentNonces.append((header.nonce, Date()))
+            MultipeerPairingStore.store(key: candidate, forPeerName: peer.displayName)
+            refreshPairedPeerNames()
+            // Pairing succeeded → exit pairing mode immediately so a
+            // second attacker on the LAN can't reuse the window.
+            activePairingCode = nil
+            pairingExpiresAt = nil
+            status = .connected(peerName: peer.displayName)
+
+        default:
+            status = .error("Unknown payload type from \(peer.displayName)")
+        }
+    }
+
+    private func verifyHMAC(_ tag: Data, message: Data, key: SymmetricKey) -> Bool {
+        let computed = HMAC<SHA256>.authenticationCode(for: message, using: key)
+        let computedData = Data(computed)
+        // Constant-time compare — short-circuit equality on a 32-byte
+        // value would leak information about the first-mismatched
+        // byte to a timing observer.
+        guard computedData.count == tag.count else { return false }
+        var diff: UInt8 = 0
+        for i in 0..<tag.count {
+            diff |= tag[i] ^ computedData[i]
+        }
+        return diff == 0
+    }
+
+    private func writeFileToInbox(filename: String?, body: Data, peer: MCPeerID) {
+        let safeName = sanitizedFilename(filename ?? "")
         guard let inbox = CeciliasNotesFileWatcher.sharedInboxURL() else {
             status = .error("iCloud inbox unavailable — can't write the file")
             return
         }
-        let dest = inbox.appendingPathComponent(filename)
+        let dest = inbox.appendingPathComponent(safeName)
         do {
             try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-            try bodyData.write(to: dest, options: .atomic)
-            status = .received(peerName: peer.displayName, filename: filename)
-            // Kick the file watcher so the import runs immediately
-            // — without this we'd wait for the NSMetadataQuery to
-            // notice (which can take seconds on a quiet device).
+            try body.write(to: dest, options: .atomic)
+            status = .received(peerName: peer.displayName, filename: safeName)
             CeciliasNotesFileWatcher.shared.rescan()
         } catch {
-            status = .error("Couldn't save \(filename): \(error.localizedDescription)")
+            status = .error("Couldn't save \(safeName): \(error.localizedDescription)")
         }
     }
 
-    /// Basic filename hardening: strip path separators, allow
-    /// `.inkbook` / `.json` extensions only, fall back to a UUID
-    /// when the supplied name is unusable.
     private func sanitizedFilename(_ raw: String) -> String {
         let stripped = raw
             .components(separatedBy: CharacterSet(charactersIn: "/\\"))
@@ -268,44 +376,12 @@ extension MultipeerSyncService: MCNearbyServiceAdvertiserDelegate {
                 invitationHandler(false, nil)
                 return
             }
-            // Auto-accept previously-trusted peers; surface a prompt
-            // for first-time peers.
-            if PairedPeerStore.shared.isTrusted(peerName: peerID.displayName) {
-                invitationHandler(true, session)
-                return
-            }
-            self.pendingInvite = PendingInvite(peerName: peerID.displayName) { accepted in
-                invitationHandler(accepted, accepted ? session : nil)
-            }
+            // Accept the MC-level invitation unconditionally — the
+            // HMAC layer above rejects anything not from a paired
+            // (or pairing-mode-authorised) peer. Refusing here would
+            // break the legitimate pairing handshake before the first
+            // payload arrives.
+            invitationHandler(true, session)
         }
-    }
-}
-
-// MARK: - PairedPeerStore
-
-/// Persists the set of peer display-names the user has accepted
-/// before. First-time peers always prompt; subsequent connections
-/// from the same peer are auto-accepted. The store can be cleared
-/// from Settings → Cloud → "Forget paired devices".
-@MainActor
-final class PairedPeerStore {
-    static let shared = PairedPeerStore()
-
-    private static let key = "ceciliasnotes.multipeer.trustedPeers"
-
-    private init() {}
-
-    func isTrusted(peerName: String) -> Bool {
-        Set(UserDefaults.standard.stringArray(forKey: Self.key) ?? []).contains(peerName)
-    }
-
-    func remember(peerName: String) {
-        var trusted = Set(UserDefaults.standard.stringArray(forKey: Self.key) ?? [])
-        trusted.insert(peerName)
-        UserDefaults.standard.set(Array(trusted), forKey: Self.key)
-    }
-
-    func forgetAll() {
-        UserDefaults.standard.removeObject(forKey: Self.key)
     }
 }

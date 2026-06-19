@@ -50,6 +50,8 @@ struct CloudSettingsView: View {
 
     @ObservedObject private var multipeer = MultipeerSyncService.shared
 
+    @State private var inboxEvents: [CeciliasNotesFileWatcher.InboxEvent] = []
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -59,6 +61,7 @@ struct CloudSettingsView: View {
                     statusSection
                     storageSection
                 }
+                inboxActivitySection
                 multipeerSection
             }
             .padding(.horizontal, 24)
@@ -67,21 +70,10 @@ struct CloudSettingsView: View {
         }
         .background(theme.surface)
         .task { await loadiCloudUsage() }
-        .alert(
-            "Receive notebooks from \(multipeer.pendingInvite?.peerName ?? "Mac")?",
-            isPresented: Binding(
-                get: { multipeer.pendingInvite != nil },
-                set: { if !$0, let p = multipeer.pendingInvite {
-                    multipeer.respondToInvite(p, accept: false)
-                }}
-            ),
-            presenting: multipeer.pendingInvite
-        ) { invite in
-            Button("Allow") { multipeer.respondToInvite(invite, accept: true) }
-            Button("Block", role: .destructive) { multipeer.respondToInvite(invite, accept: false) }
-        } message: { invite in
-            Text("\(invite.peerName) wants to send notebooks directly to this device over your local network. Allow once, and this Mac will be trusted for future direct sends.")
-        }
+        .onAppear { refreshInboxEvents() }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .ceciliasNotesInboxEventsChanged)
+        ) { _ in refreshInboxEvents() }
         .alert("Enable iCloud sync?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
@@ -334,10 +326,100 @@ struct CloudSettingsView: View {
     /// **local data size** — sum of the SQLite store, media
     /// attachments, and the ubiquity Notebooks dir — alongside a
     /// count of what's syncing.
+    /// Last few events from the iCloud inbox watcher. Built directly
+    /// for the "MCP wrote a notebook, why didn't it appear?" case:
+    /// the user can see in real time whether iCloud actually
+    /// delivered the file, whether it was downloaded, and whether
+    /// the importer ran.
+    private var inboxActivitySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                sectionLabel("inbox activity")
+                Spacer()
+                Button {
+                    CeciliasNotesFileWatcher.shared.rescan()
+                    HapticManager.shared.toolSwitched()
+                } label: {
+                    Text("pull")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            if inboxEvents.isEmpty {
+                Text("no files seen yet. when a connected agent (cecilias-notes-mcp on mac, share-extension drop, etc.) lands a file in the icloud inbox, it'll appear here.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.foregroundSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(inboxEvents.prefix(10)) { event in
+                        inboxEventRow(event)
+                        Rectangle().fill(theme.hairline).frame(height: 0.5)
+                    }
+                }
+            }
+        }
+    }
+
+    private func inboxEventRow(_ event: CeciliasNotesFileWatcher.InboxEvent) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(Self.inboxTimeFormatter.string(from: event.date))
+                .font(.system(size: 10, weight: .regular, design: .monospaced))
+                .foregroundStyle(theme.foregroundSubtle)
+                .frame(width: 64, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.filename)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foreground)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(inboxEventLabel(event.kind))
+                    .font(.system(size: 10).italic())
+                    .foregroundStyle(inboxEventColor(event.kind))
+            }
+            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func inboxEventLabel(_ kind: CeciliasNotesFileWatcher.InboxEvent.Kind) -> String {
+        switch kind {
+        case .detected:          return "detected (in iCloud)"
+        case .downloading:       return "downloading from iCloud…"
+        case .imported:          return "imported into library"
+        case .skippedDuplicate:  return "skipped — already imported"
+        case .unknownExtension:  return "skipped — unknown extension"
+        }
+    }
+
+    private func inboxEventColor(_ kind: CeciliasNotesFileWatcher.InboxEvent.Kind) -> Color {
+        switch kind {
+        case .imported:                              return theme.accent
+        case .downloading, .detected:                return theme.foregroundMuted
+        case .skippedDuplicate, .unknownExtension:   return theme.foregroundSubtle
+        }
+    }
+
+    private func refreshInboxEvents() {
+        inboxEvents = CeciliasNotesFileWatcher.shared.recentEvents
+    }
+
+    private static let inboxTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
     /// Direct device-to-device intake from a Mac running
     /// `cecilias-notes-mcp` on the same network. Sidesteps iCloud's
     /// 30 sec – 5 min sync latency. Opt-in: when off, the iPad
     /// never advertises or listens.
+    ///
+    /// Security: pairing-code-based handshake establishes a per-peer
+    /// shared secret (HKDF over the code); every payload after
+    /// pairing is HMAC-signed with that secret. Peer-name spoofing
+    /// on the local network is rejected at the HMAC layer.
     private var multipeerSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("direct from mac")
@@ -359,28 +441,113 @@ struct CloudSettingsView: View {
                 .labelsHidden()
                 .tint(theme.accent)
             }
+
             if multipeer.isEnabled {
-                Button {
-                    PairedPeerStore.shared.forgetAll()
-                    HapticManager.shared.toolSwitched()
-                } label: {
-                    Text("forget all paired devices")
-                        .font(.system(size: 12))
-                        .foregroundStyle(theme.foregroundMuted)
+                pairingControls
+                if !multipeer.pairedPeerNames.isEmpty {
+                    pairedDevicesList
                 }
-                .buttonStyle(.plain)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var pairingControls: some View {
+        if case .pairing(let code, _) = multipeer.status {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("enter this code on the mac:")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.foregroundSubtle)
+                HStack(spacing: 8) {
+                    Text(code)
+                        .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                        .tracking(4)
+                        .foregroundStyle(theme.foreground)
+                    Spacer()
+                    Button {
+                        multipeer.cancelPairing()
+                        HapticManager.shared.toolSwitched()
+                    } label: {
+                        Text("cancel")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.foregroundMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Text("expires in 90 seconds. only enter the code on a mac you trust.")
+                    .font(.system(size: 10).italic())
+                    .foregroundStyle(theme.foregroundSubtle)
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.accent.opacity(0.08))
+            )
+        } else {
+            Button {
+                _ = multipeer.beginPairing()
+                HapticManager.shared.toolSwitched()
+            } label: {
+                Text("show pairing code")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.accent)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private var pairedDevicesList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("paired devices")
+                .font(.system(size: 11))
+                .foregroundStyle(theme.foregroundSubtle)
+                .padding(.top, 8)
+            ForEach(multipeer.pairedPeerNames, id: \.self) { name in
+                HStack {
+                    Text(name)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.foreground)
+                    Spacer()
+                    Button {
+                        multipeer.forgetPeer(name)
+                        HapticManager.shared.toolSwitched()
+                    } label: {
+                        Text("forget")
+                            .font(.system(size: 11))
+                            .foregroundStyle(theme.danger)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.vertical, 6)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(theme.hairline).frame(height: 0.5)
+                }
+            }
+            Button {
+                multipeer.forgetAllPeers()
+                HapticManager.shared.toolSwitched()
+            } label: {
+                Text("forget all paired devices")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundMuted)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
         }
     }
 
     private var multipeerCaption: String {
         switch multipeer.status {
         case .off:
-            return "when on, an instance of cecilias-notes-mcp running on a mac on the same wi-fi can ship notebooks directly to this device. faster than waiting for icloud."
+            return "when on, an instance of cecilias-notes-mcp running on a mac on the same wi-fi can ship notebooks directly to this device. tap show pairing code and enter it on the mac to authorise a sender. all payloads are hmac-authenticated; unpaired peers can't send anything."
         case .idle:
-            return "advertising. waiting for a mac to connect."
+            return "advertising. tap show pairing code to authorise a mac for the first time."
+        case .pairing:
+            return "waiting for the mac to connect with the code below."
         case .connected(let name):
-            return "connected to \(name). ready to receive."
+            return "connected to \(name)."
         case .receiving(let name):
             return "receiving from \(name)…"
         case .received(let name, let filename):

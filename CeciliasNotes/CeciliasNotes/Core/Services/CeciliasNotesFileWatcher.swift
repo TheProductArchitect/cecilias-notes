@@ -34,6 +34,39 @@ final class CeciliasNotesFileWatcher {
     /// file (which it does every time it gathers).
     private var lastSeenModification: [URL: Date] = [:]
 
+    /// In-memory ring buffer of recent inbox events. Drives the
+    /// Settings → cloud diagnostic so the user can verify that
+    /// files dropped by an external agent actually reached the iPad
+    /// (vs failed to leave the Mac, failed to upload to iCloud, or
+    /// failed to download to this device).
+    struct InboxEvent: Identifiable {
+        let id = UUID()
+        let date: Date
+        let filename: String
+        let kind: Kind
+        enum Kind: String {
+            case detected            // metadata query saw it
+            case downloading         // waiting for iCloud to materialise
+            case imported            // handed to importer
+            case skippedDuplicate    // same mtime as last seen
+            case unknownExtension
+        }
+    }
+    /// Most-recent-first. Cap at 50 so the buffer stays light.
+    private(set) var recentEvents: [InboxEvent] = []
+    private static let eventBufferSize = 50
+
+    func recordEvent(filename: String, kind: InboxEvent.Kind) {
+        recentEvents.insert(
+            InboxEvent(date: Date(), filename: filename, kind: kind),
+            at: 0
+        )
+        if recentEvents.count > Self.eventBufferSize {
+            recentEvents.removeLast(recentEvents.count - Self.eventBufferSize)
+        }
+        NotificationCenter.default.post(name: .ceciliasNotesInboxEventsChanged, object: nil)
+    }
+
     /// Container identifier from the .entitlements file. Must match
     /// `com.apple.developer.ubiquity-container-identifiers` exactly.
     private static let containerIdentifier = "iCloud.app.ceciliasnotes"
@@ -131,6 +164,7 @@ final class CeciliasNotesFileWatcher {
             ).ubiquitousItemDownloadingStatus) ?? .notDownloaded
             if downloadStatus != .current {
                 try? fm.startDownloadingUbiquitousItem(at: url)
+                recordEvent(filename: url.lastPathComponent, kind: .downloading)
                 continue
             }
 
@@ -142,17 +176,26 @@ final class CeciliasNotesFileWatcher {
             if let prev = lastSeenModification[url], prev == mtime {
                 continue
             }
+            // First time we've seen this URL at this mtime.
+            let wasNew = lastSeenModification[url] == nil
             lastSeenModification[url] = mtime
+            if wasNew {
+                recordEvent(filename: url.lastPathComponent, kind: .detected)
+            }
 
             // Dispatch by extension and filename prefix.
             switch url.pathExtension.lowercased() {
             case "inkbook":
+                recordEvent(filename: url.lastPathComponent, kind: .imported)
                 CeciliasNotesImporter.shared.importFile(at: url)
             case "json" where url.lastPathComponent.hasPrefix("quiz_generation_response"):
+                recordEvent(filename: url.lastPathComponent, kind: .imported)
                 QuizMCPImporter.shared.importResponse(at: url)
             case "json" where url.lastPathComponent.hasPrefix("delete_notebook_request_"):
+                recordEvent(filename: url.lastPathComponent, kind: .imported)
                 handleDeleteRequest(at: url)
             default:
+                recordEvent(filename: url.lastPathComponent, kind: .unknownExtension)
                 continue
             }
         }
@@ -231,4 +274,11 @@ final class CeciliasNotesFileWatcher {
         dlog("[CeciliasNotesFileWatcher] \(message)")
         #endif
     }
+}
+
+extension Notification.Name {
+    /// Posted whenever the file watcher's `recentEvents` buffer
+    /// changes. The Settings → cloud diagnostic listens to refresh
+    /// its activity list without polling.
+    static let ceciliasNotesInboxEventsChanged = Notification.Name("ceciliasnotes.inbox.eventsChanged")
 }

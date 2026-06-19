@@ -1,82 +1,160 @@
-# Multipeer Sync — Wire Protocol
+# Multipeer Sync — Wire Protocol (v2 — authenticated)
 
-Spec the Mac MCP side needs to match for direct device-to-device
-notebook delivery, sidestepping iCloud's 30 sec – 5 min sync latency.
+Direct device-to-device notebook delivery from a Mac running
+`cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
+iCloud's sync latency. Mac and iPad must be on the same Wi-Fi or
+Bluetooth-PAN.
 
-Implemented on the iPad in
-`Core/Services/MultipeerSyncService.swift`. This doc captures the
-contract so the macOS sender can be built against it without
-re-reading Swift.
+**Security**: every payload is HMAC-SHA256 authenticated with a
+per-peer shared key derived from a one-time pairing code. Peer-name
+spoofing on the LAN is rejected at the HMAC layer.
+
+iPad implementation: `Core/Services/MultipeerSyncService.swift` +
+`Core/Services/MultipeerPairingStore.swift`.
 
 ---
 
 ## Transport
 
-Apple's MultipeerConnectivity framework over Wi-Fi peer-to-peer +
-Bluetooth PAN. Encryption is TLS, enforced by setting
-`MCSession.encryptionPreference = .required` on the iPad side.
+MultipeerConnectivity over Wi-Fi peer-to-peer + Bluetooth PAN. TLS
+enforced via `MCSession.encryptionPreference = .required` (handles
+link-layer encryption; the HMAC layer is what protects against a
+peer-name-spoofing attacker who *also* establishes a session).
 
 ## Discovery
 
 - **Service type**: `ceciliasnotes-sync`
-- **Bonjour name** (as listed in iPad's Info.plist NSBonjourServices):
-  `_ceciliasnotes-sync._tcp`
-- iPad **advertises** with `MCNearbyServiceAdvertiser`. discoveryInfo
-  is `{"app": "ceciliasnotes", "platform": "ios"}`.
+- **Bonjour name**: `_ceciliasnotes-sync._tcp` (listed in the iPad's
+  Info.plist `NSBonjourServices`).
+- iPad **advertises** with `MCNearbyServiceAdvertiser`,
+  `discoveryInfo = {"app": "ceciliasnotes", "platform": "ios", "v": "2"}`.
 - Mac MCP **browses** with `MCNearbyServiceBrowser` for the same
-  `serviceType`. Send `MCNearbyServiceBrowser.invitePeer(...)` to
-  connect.
+  service type, sends `invitePeer(...)` to start a session.
 
-## Pairing
+## Pairing flow
 
-- First connection from a given peer name surfaces an alert on the
-  iPad ("\<peer\> wants to send notebooks. Allow?").
-- The peer name (`MCPeerID.displayName` — typically the Mac's
-  hostname) is the trust key. Once accepted, the iPad remembers it
-  in UserDefaults under `ceciliasnotes.multipeer.trustedPeers` and
-  auto-accepts subsequent invitations from the same name.
-- User can clear all trusted peers via Settings → cloud → "forget
-  all paired devices".
+First-time pairing is a separate, human-authorised step before any
+file payloads are accepted.
 
-## Payload format
+### iPad side
 
-A single binary blob sent via `MCSession.send(_:toPeers:with:.reliable)`.
+1. User taps **Settings → cloud → show pairing code**.
+2. iPad generates a cryptographically-random 6-digit code, displays
+   it on screen, and enters "pairing mode" for **90 seconds**.
+
+### Mac side
+
+3. Mac prompts the user: "Enter the 6-digit code shown on the iPad".
+4. User types the code into the Mac MCP CLI / GUI.
+5. Mac derives a 32-byte shared key via HKDF (see below).
+6. Mac sends a `pairing-hello` payload HMAC-signed with the derived
+   key.
+
+### Both sides
+
+7. iPad recomputes the HMAC with its own derived key. If they match
+   → pairing succeeds, the iPad stores the key in Keychain under
+   the Mac's peer name, and pairing mode is exited. If they don't
+   match → payload is dropped and pairing mode stays open for a
+   second attempt within the 90s window.
+
+### Key derivation (HKDF-SHA256)
+
+Both sides MUST use identical inputs:
+
+- **Input key material**: the 6-digit code as raw UTF-8 bytes.
+- **Salt**: `"ceciliasnotes.multipeer.v1.salt"` as UTF-8.
+- **Info**: `"<localPeerName>|<remotePeerName>"` as UTF-8, where:
+  - On the iPad: `localPeerName` is the iPad's `MCPeerID.displayName`
+    (typically the iPad's name from Settings → General → About).
+    `remotePeerName` is the Mac's peer name.
+  - On the Mac: the roles flip — `localPeerName` is the Mac's peer
+    name, `remotePeerName` is the iPad's.
+- **Output**: 32 bytes.
+
+Because the info string includes both peer names, the same code
+typed for different device pairs produces different keys.
+
+## Payload format (v2)
+
+A single binary blob sent via
+`MCSession.send(_:toPeers:with:.reliable)`:
 
 ```
-+--------+------------------+---------------+
-| 4 byte | UTF-8 JSON header | file body    |
-| BE     | (header length)   | (rest of msg)|
-+--------+------------------+---------------+
++--------+----------+----------+----------+
+| 4 byte | header   | hmac     | body     |
+| BE u32 | JSON     | 32 bytes | rest     |
++--------+----------+----------+----------+
 ```
 
-- **Bytes 0–3**: 32-bit big-endian unsigned int = length of the
-  JSON header in bytes.
-- **Bytes 4 … 4+headerLen-1**: JSON object, UTF-8.
-- **Bytes 4+headerLen … end**: raw file bytes.
+- **Bytes 0–3**: big-endian uint32, length of the JSON header in
+  bytes.
+- **Bytes 4 .. 4+H-1**: UTF-8 JSON header (see schema below).
+- **Bytes 4+H .. 4+H+31**: HMAC-SHA256 tag.
+- **Bytes 4+H+32 ..**: payload body.
 
 ### Header schema
 
 ```json
 {
-  "filename": "Sketchbook.inkbook"
+  "type": "file" | "pairing-hello",
+  "filename": "Sketchbook.inkbook",
+  "timestamp": 1718817100,
+  "nonce": "<base64-16-bytes>"
 }
 ```
 
-The iPad sanitises the filename: strips path separators, validates
-the extension (`.inkbook` or `.json` only; other extensions are
-rejected and replaced with a UUID `.inkbook`). Pick clean names on
-the Mac side.
+- `type` is required; `"file"` for notebook delivery, `"pairing-hello"`
+  for the pairing handshake.
+- `filename` is required when `type == "file"`. iPad strips path
+  separators and rejects extensions other than `.inkbook` / `.json`.
+- `timestamp` is epoch seconds. Payloads outside a ±60 second window
+  from the iPad's current time are rejected (replay protection).
+- `nonce` is a 16-byte cryptographically-random value, base64-encoded.
+  iPad keeps a sliding window of seen nonces; a duplicate is rejected.
 
-## After delivery
+### HMAC
 
-iPad writes the body to the iCloud inbox folder (same path
-`CeciliasNotesFileWatcher` polls) and immediately calls
-`rescan()` so the importer runs in milliseconds rather than waiting
-for the next NSMetadataQuery DidUpdate.
+`HMAC-SHA256(key, headerJSON || body)`.
 
-iCloud will also propagate the same file via its usual mechanism;
-the importer is idempotent on content hash so the duplicate is a
-no-op.
+The key is whichever key applies:
+- For `type == "file"`: the stored key for the sender's peer name.
+  If no stored key exists, the payload is dropped — the peer must
+  pair first.
+- For `type == "pairing-hello"`: the candidate key derived from the
+  active pairing code. Only one payload at a time can succeed
+  here, and only while the iPad is in pairing mode.
+
+### Body
+
+- For `type == "file"`: raw file bytes (the `.inkbook` blob itself).
+- For `type == "pairing-hello"`: empty (zero bytes). Pairing
+  succeeds based on the HMAC match alone — no payload necessary.
+
+## What the iPad does on success
+
+iPad writes the body to the iCloud inbox folder (the same path
+`CeciliasNotesFileWatcher` polls) and immediately calls `rescan()`
+so the importer runs in milliseconds rather than waiting for the
+next NSMetadataQuery DidUpdate. The same file will also propagate
+via iCloud's usual sync; the importer is idempotent on content hash
+so the duplicate is a no-op.
+
+## Failure modes the Mac side should handle
+
+- **Pairing window expired** → user has to re-tap "show pairing
+  code" on the iPad and retry. iPad surface a transient error in
+  its status.
+- **HMAC mismatch** → iPad reports `"Wrong pairing code from <Mac>"`.
+  Mac should treat this as "wrong code typed; ask user again".
+- **Stale timestamp** → iPad reports `"Stale payload"`. Mac's
+  clock is more than 60 seconds off the iPad's; check NTP.
+- **Replay nonce** → iPad reports `"Replay detected"`. Mac should
+  never resend a payload with the same nonce; generate fresh
+  random per send.
+- **Unpaired peer** → iPad reports `"Unpaired peer X — payload
+  rejected"`. Mac is sending file payloads before completing
+  pairing. Run the pairing handshake first.
 
 ## Status states the iPad reports
 
@@ -84,49 +162,77 @@ no-op.
 
 - `.off` — toggle disabled
 - `.idle` — advertising, no peers connected
-- `.connected(peerName:)` — session up, awaiting payload
+- `.pairing(code:, expiresAt:)` — pairing window open
+- `.connected(peerName:)` — session up
 - `.receiving(peerName:)` — payload in flight
 - `.received(peerName:, filename:)` — success
-- `.error(String)` — transient failure (malformed payload,
-  inbox unreachable, etc.)
-
-## Error cases the sender should handle
-
-- Invitation declined → `MCNearbyServiceBrowser` reports the
-  decline; treat as "user said no, don't retry without user action".
-- Connection timeout → MultipeerConnectivity is opaque about why.
-  Re-discover after a short delay.
-- iPad runs out of disk → iPad will report `.error(...)` but
-  there's no in-band channel back to the Mac. Best-effort fall
-  back to iCloud-only writes after a fixed number of failures.
+- `.error(String)` — transient failure (see above)
 
 ## Example sender code (macOS, abridged)
 
 ```swift
+import CryptoKit
 import MultipeerConnectivity
 
 let peerID = MCPeerID(displayName: Host.current().localizedName ?? "Mac")
-let session = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
-let browser = MCNearbyServiceBrowser(peer: peerID, serviceType: "ceciliasnotes-sync")
+let session = MCSession(peer: peerID, securityIdentity: nil,
+                        encryptionPreference: .required)
+let browser = MCNearbyServiceBrowser(peer: peerID,
+                                     serviceType: "ceciliasnotes-sync")
+// browser.delegate, etc.
 
-browser.delegate = self  // implement foundPeer/lostPeer
-browser.startBrowsingForPeers()
+// ---- Pairing ----
+let code = readUserInput("Enter the 6-digit pairing code shown on the iPad: ")
+let salt = "ceciliasnotes.multipeer.v1.salt".data(using: .utf8)!
+let info = "\(peerID.displayName)|\(iPadPeer.displayName)".data(using: .utf8)!
+let inputKey = SymmetricKey(data: code.data(using: .utf8)!)
+let sharedKey = HKDF<SHA256>.deriveKey(
+    inputKeyMaterial: inputKey,
+    salt: salt,
+    info: info,
+    outputByteCount: 32
+)
 
-// In foundPeer:
-browser.invitePeer(foundPeer, to: session, withContext: nil, timeout: 10)
-
-// Once session.state == .connected:
-let header: [String: Any] = ["filename": "Sketchbook.inkbook"]
-let headerData = try JSONSerialization.data(withJSONObject: header)
-var lenBE = UInt32(headerData.count).bigEndian
-let lenBytes = Data(bytes: &lenBE, count: 4)
+let helloHeader: [String: Any] = [
+    "type": "pairing-hello",
+    "timestamp": Int(Date().timeIntervalSince1970),
+    "nonce": randomBase64(16)
+]
+let headerJSON = try JSONSerialization.data(withJSONObject: helloHeader)
+let tag = Data(HMAC<SHA256>.authenticationCode(for: headerJSON, using: sharedKey))
 
 var payload = Data()
-payload.append(lenBytes)
-payload.append(headerData)
-payload.append(fileBytes)
+var len = UInt32(headerJSON.count).bigEndian
+payload.append(Data(bytes: &len, count: 4))
+payload.append(headerJSON)
+payload.append(tag)
+// body is empty for pairing-hello
 
 try session.send(payload, toPeers: [iPadPeer], with: .reliable)
+
+// On success, persist `sharedKey` in macOS Keychain under iPadPeer.displayName
+// and use it for every subsequent file send.
+
+// ---- File send ----
+let fileHeader: [String: Any] = [
+    "type": "file",
+    "filename": "Sketchbook.inkbook",
+    "timestamp": Int(Date().timeIntervalSince1970),
+    "nonce": randomBase64(16)
+]
+let fhJSON = try JSONSerialization.data(withJSONObject: fileHeader)
+let fileBody = try Data(contentsOf: localInkbookURL)
+let fileTag = Data(HMAC<SHA256>.authenticationCode(
+    for: fhJSON + fileBody, using: sharedKey
+))
+
+var fpayload = Data()
+var flen = UInt32(fhJSON.count).bigEndian
+fpayload.append(Data(bytes: &flen, count: 4))
+fpayload.append(fhJSON)
+fpayload.append(fileTag)
+fpayload.append(fileBody)
+try session.send(fpayload, toPeers: [iPadPeer], with: .reliable)
 ```
 
 ---
@@ -134,9 +240,13 @@ try session.send(payload, toPeers: [iPadPeer], with: .reliable)
 ## Versioning
 
 - Header JSON is the extensibility point. Add new keys; the iPad
-  only reads `filename`. Adding `notebookId` / `checksum` / etc.
-  is forward-compatible.
-- Bumping the framing format (the 4-byte length prefix) would
-  break the iPad — if you ever need to, introduce a new
-  `serviceType` (`ceciliasnotes-sync-v2`) and have the iPad
-  advertise both for a transition window.
+  only requires `type`, `timestamp`, `nonce` (+ `filename` for file
+  type). Adding `notebookId`, `checksum`, `producer` is
+  forward-compatible.
+- Bumping the framing format (length prefix + HMAC layout) breaks
+  the iPad — to upgrade, introduce a new `serviceType`
+  (`ceciliasnotes-sync-v3`) and have the iPad advertise both for a
+  transition window.
+- Pairing-key versioning is folded into the HKDF salt
+  (`ceciliasnotes.multipeer.v1.salt`). Rotating the salt would
+  invalidate every existing pairing and force re-pairing.
