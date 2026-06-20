@@ -42,8 +42,15 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     static let shared = MultipeerSyncService()
 
     /// Service identifier exchanged via Bonjour. Must match the
-    /// Info.plist `NSBonjourServices` entry (`_ceciliasnotes-sync._tcp`).
-    static let serviceType = "ceciliasnotes-sync"
+    /// Info.plist `NSBonjourServices` entry (`_cn-sync._tcp`).
+    ///
+    /// MultipeerConnectivity enforces a 15-character ceiling on
+    /// `serviceType` — the earlier `ceciliasnotes-sync` (18 chars)
+    /// threw `NSInvalidArgumentException` on `MCNearbyServiceBrowser`
+    /// init on the Mac side. `cn-sync` is the renamed value;
+    /// safe because multipeer hadn't shipped to the Mac yet so
+    /// there's no transition window to maintain.
+    static let serviceType = "cn-sync"
 
     /// How long a freshly-generated pairing code remains valid.
     static let pairingModeWindow: TimeInterval = 90
@@ -278,10 +285,16 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             sendPong(to: peer, key: key)
 
         case "pairing-hello":
+            // Always reply with a `pairing-result` so the Mac can
+            // distinguish "wrong code" from "no pairing window
+            // open" from "peer crashed" — without an explicit
+            // typed result the Mac just times out and shows a
+            // generic error.
             guard let code = activePairingCode,
                   let expiresAt = pairingExpiresAt,
                   Date() < expiresAt
             else {
+                sendPairingResult(result: "no_pairing_window", to: peer, key: nil)
                 status = .error("\(peer.displayName) tried to pair, but pairing mode isn't on")
                 return
             }
@@ -291,6 +304,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
                 remotePeerName: peer.displayName
             )
             guard verifyHMAC(hmacBytes, message: signedRange, key: candidate) else {
+                sendPairingResult(result: "wrong_code", to: peer, key: nil)
                 status = .error("Wrong pairing code from \(peer.displayName) — try again")
                 return
             }
@@ -302,10 +316,47 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             activePairingCode = nil
             pairingExpiresAt = nil
             status = .connected(peerName: peer.displayName)
+            sendPairingResult(result: "ok", to: peer, key: candidate)
 
         default:
             status = .error("Unknown payload type from \(peer.displayName)")
         }
+    }
+
+    /// Reply to a `pairing-hello` with a typed result so the Mac
+    /// can show the user the right error message.
+    ///
+    /// - `key` non-nil → success path. Body carries
+    ///   `{"result": "ok"}`, HMAC computed with the derived key.
+    ///   Mac verifies → confirmed pairing.
+    /// - `key` nil → informational hint. Body carries
+    ///   `{"result": "wrong_code" | "no_pairing_window"}`, HMAC
+    ///   field is 32 zero bytes. Mac treats as a typed hint with
+    ///   no security guarantee — useful for UX feedback only.
+    ///   An attacker spoofing this reply only causes the user to
+    ///   retry, which is not a compromise.
+    private func sendPairingResult(result: String, to peer: MCPeerID, key: SymmetricKey?) {
+        guard let session else { return }
+        let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...UInt8.max) })
+        let header: [String: Any] = [
+            "type": "pairing-result",
+            "result": result,
+            "timestamp": Int(Date().timeIntervalSince1970),
+            "nonce": nonce.base64EncodedString()
+        ]
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header) else { return }
+        let tag: Data
+        if let key {
+            tag = Data(HMAC<SHA256>.authenticationCode(for: headerData, using: key))
+        } else {
+            tag = Data(count: 32) // all zeros — "unsigned hint"
+        }
+        var payload = Data()
+        var lenBE = UInt32(headerData.count).bigEndian
+        payload.append(Data(bytes: &lenBE, count: 4))
+        payload.append(headerData)
+        payload.append(tag)
+        try? session.send(payload, toPeers: [peer], with: .reliable)
     }
 
     /// Build and send a `pong` reply HMAC-signed with the same key

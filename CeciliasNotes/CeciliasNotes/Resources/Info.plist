@@ -799,7 +799,7 @@
 	<string>Cecilia's Notes uses the local network to receive notebooks dropped from a Mac running cecilias-notes-mcp on the same Wi-Fi — much faster than waiting for iCloud sync.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_ceciliasnotes-sync._tcp</string>
+		<string>_cn-sync._tcp</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array/>

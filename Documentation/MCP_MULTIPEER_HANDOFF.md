@@ -68,7 +68,9 @@ hash, so the iCloud arrival becomes a no-op if multipeer beat it.
     "fallback_reason": "no_peer_visible"     // icloud-fallback only
                      | "ping_timeout"
                      | "session_failed"
-                     | "user_not_paired",
+                     | "user_not_paired"
+                     | "sidecar_unavailable"  // added in Mac sender v1
+                     | "multipeer_disabled",  // added in Mac sender v1
     "estimated_latency_seconds": [30, 300]   // icloud-fallback only
   }
 }
@@ -120,10 +122,18 @@ The five message types you'll send / receive:
 | Type | Direction | Body | When |
 |---|---|---|---|
 | `pairing-hello` | Mac → iPad | empty | First-time pairing |
+| `pairing-result` | iPad → Mac | empty | iPad's typed reply to `pairing-hello` |
 | `ping` | Mac → iPad | empty | After session connect, before file |
 | `pong` | iPad → Mac | empty | iPad's reply to `ping` |
 | `file` | Mac → iPad | raw `.inkbook` bytes | The actual delivery |
 | (none) | iPad → Mac | n/a | iPad never sends `file` |
+
+`pairing-result` carries a `result` field in the header — one of
+`"ok"`, `"wrong_code"`, `"no_pairing_window"`. The `"ok"` case is
+HMAC-signed with the derived key (Mac MUST verify before treating
+the pairing as confirmed); the failure cases carry a 32-byte
+all-zero HMAC tag (the "unsigned hint" convention — UI signal only,
+no security guarantee). See the spec for details.
 
 Every payload: `[4 byte BE length][header JSON][32 byte HMAC][body]`.
 
@@ -137,9 +147,12 @@ HMAC-SHA256 over `headerJSON || body`. Key:
 
 ## Discovery details
 
-- Service type: `ceciliasnotes-sync` (without underscores or `._tcp`
+- Service type: `cn-sync` (without underscores or `._tcp`
   suffix — that's just how MC presents it; on the wire it becomes
-  `_ceciliasnotes-sync._tcp`).
+  `_cn-sync._tcp`). **Must stay ≤15 characters** —
+  `MCNearbyServiceBrowser` throws `NSInvalidArgumentException` on
+  anything longer. The earlier `ceciliasnotes-sync` value was
+  unusable and got swapped out synchronously on both sides.
 - Bonjour record on macOS works out of the box; no entitlement
   needed for browsing as a CLI tool.
 - iPad advertises `discoveryInfo = { app, platform, v }`. You can
@@ -174,7 +187,7 @@ cecilias-notes-multipeer send \
 # stdout (one JSON line):
 {"ok": true, "latency_ms": 847, "peer": "Venu's iPad"}
 # or:
-{"ok": false, "reason": "ping_timeout"}
+{"ok": false, "reason": "ping_timeout" | "peer_unreachable"}
 ```
 
 ```
@@ -184,8 +197,8 @@ cecilias-notes-multipeer pair \
 
 # stdout:
 {"ok": true, "paired": "Venu's iPad"}
-# or:
-{"ok": false, "reason": "wrong_code" | "pairing_window_expired"}
+# or — derived directly from the iPad's typed pairing-result reply:
+{"ok": false, "reason": "wrong_code" | "no_pairing_window" | "peer_unreachable"}
 ```
 
 ```
@@ -274,10 +287,11 @@ CLI directly. Document both flows in the MCP README.
 1. **Pairing happy path**: pair against a real iPad, verify
    subsequent sends succeed within 2s.
 2. **Pairing wrong code**: enter a wrong 6-digit code, verify
-   `{ ok: false, reason: "wrong_code" }`.
-3. **Pairing window expired**: wait 91 seconds after the iPad
-   showed the code; pair attempt should fail with
-   `pairing_window_expired`.
+   `{ ok: false, reason: "wrong_code" }` — sourced from the iPad's
+   `pairing-result` reply, not inferred from a ping timeout.
+3. **Pairing window expired / not open**: wait 91 seconds after
+   the iPad showed the code; pair attempt should fail with
+   `no_pairing_window`.
 4. **No iPad visible**: turn off the iPad's multipeer toggle;
    send should fall back with `no_peer_visible` within 1.5s.
 5. **Ping timeout**: kill the iPad app mid-session; second send
