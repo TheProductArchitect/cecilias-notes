@@ -61,6 +61,14 @@ final class Quiz {
     var autoUpdateEnabled: Bool = false
     var lastAutoUpdateAt: Date?
 
+    /// Optional folder name for organising the sidebar quiz list.
+    /// Stored as a plain string rather than a relationship — a Quiz
+    /// folder is just a label the user types, like a tag, not a
+    /// real entity that owns members. Nil / empty means "no folder"
+    /// and the quiz appears under the default "ungrouped" section.
+    /// CloudKit-safe: inline default, never required.
+    var folderName: String = ""
+
     // MARK: Relationships
     @Relationship(deleteRule: .cascade, inverse: \QuizQuestion.quiz)
     var questions: [QuizQuestion]?

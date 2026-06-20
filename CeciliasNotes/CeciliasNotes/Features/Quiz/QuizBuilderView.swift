@@ -180,24 +180,40 @@ struct QuizBuilderView: View {
                 let elig = eligibility(for: nb)
                 let isEligible = elig.isEligible
                 let isSelected = multi ? customSelected.contains(nb.id) : selectedNotebookID == nb.id
-                Button {
-                    guard isEligible else { return }
-                    if multi {
-                        if customSelected.contains(nb.id) { customSelected.remove(nb.id) }
-                        else { customSelected.insert(nb.id) }
-                    } else {
-                        selectedNotebookID = nb.id
+                // Row split into a tappable name column (disabled
+                // when ineligible) and an always-tappable trailing
+                // strip with the (i) icon. Disabling the outer
+                // Button used to disable the (i) too, so the user
+                // had no way to discover WHY a row was greyed out.
+                HStack(spacing: 0) {
+                    Button {
+                        guard isEligible else { return }
+                        if multi {
+                            if customSelected.contains(nb.id) { customSelected.remove(nb.id) }
+                            else { customSelected.insert(nb.id) }
+                        } else {
+                            selectedNotebookID = nb.id
+                        }
+                    } label: {
+                        HStack {
+                            Text(nb.title.isEmpty ? "untitled" : nb.title.lowercased())
+                                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? theme.accent
+                                                : (isEligible ? theme.foreground : theme.foregroundSubtle))
+                            Spacer()
+                            Text("\(nb.totalPageCount) pages")
+                                .font(.system(size: 12))
+                                .foregroundStyle(theme.foregroundSubtle)
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.leading, 14)
+                        .padding(.trailing, 8)
+                        .contentShape(Rectangle())
+                        .opacity(isEligible ? 1 : 0.55)
                     }
-                } label: {
-                    HStack {
-                        Text(nb.title.isEmpty ? "untitled" : nb.title.lowercased())
-                            .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? theme.accent
-                                            : (isEligible ? theme.foreground : theme.foregroundSubtle))
-                        Spacer()
-                        Text("\(nb.totalPageCount) pages")
-                            .font(.system(size: 12))
-                            .foregroundStyle(theme.foregroundSubtle)
+                    .buttonStyle(.plain)
+                    .disabled(!isEligible)
+                    HStack(spacing: 8) {
                         if !isEligible {
                             eligibilityInfoButton(id: nb.id, reason: ineligibleReason(elig))
                         }
@@ -208,12 +224,8 @@ struct QuizBuilderView: View {
                         }
                     }
                     .padding(.vertical, 12)
-                    .padding(.horizontal, 14)
-                    .contentShape(Rectangle())
-                    .opacity(isEligible ? 1 : 0.55)
+                    .padding(.trailing, 14)
                 }
-                .buttonStyle(.plain)
-                .disabled(!isEligible)
                 Rectangle().fill(theme.recessiveQuinary).frame(height: 0.5)
             }
         }
@@ -229,16 +241,27 @@ struct QuizBuilderView: View {
                 let elig = eligibility(for: subject)
                 let isEligible = elig.isEligible
                 let isSelected = selectedSubjectID == subject.id
-                Button {
-                    guard isEligible else { return }
-                    selectedSubjectID = subject.id
-                } label: {
-                    HStack {
-                        Text(subject.name.lowercased())
-                            .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? theme.accent
-                                            : (isEligible ? theme.foreground : theme.foregroundSubtle))
-                        Spacer()
+                HStack(spacing: 0) {
+                    Button {
+                        guard isEligible else { return }
+                        selectedSubjectID = subject.id
+                    } label: {
+                        HStack {
+                            Text(subject.name.lowercased())
+                                .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? theme.accent
+                                                : (isEligible ? theme.foreground : theme.foregroundSubtle))
+                            Spacer()
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.leading, 14)
+                        .padding(.trailing, 8)
+                        .contentShape(Rectangle())
+                        .opacity(isEligible ? 1 : 0.55)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isEligible)
+                    HStack(spacing: 8) {
                         if !isEligible {
                             eligibilityInfoButton(id: subject.id, reason: ineligibleReason(elig))
                         }
@@ -249,12 +272,8 @@ struct QuizBuilderView: View {
                         }
                     }
                     .padding(.vertical, 12)
-                    .padding(.horizontal, 14)
-                    .contentShape(Rectangle())
-                    .opacity(isEligible ? 1 : 0.55)
+                    .padding(.trailing, 14)
                 }
-                .buttonStyle(.plain)
-                .disabled(!isEligible)
                 Rectangle().fill(theme.recessiveQuinary).frame(height: 0.5)
             }
         }

@@ -432,6 +432,7 @@ private struct SubjectListRow: View {
 
     @Query private var notebooks: [Notebook]
     @Environment(\.theme) private var theme
+    @State private var confirmDelete = false
 
     init(
         subject: Subject,
@@ -483,8 +484,7 @@ private struct SubjectListRow: View {
                 // was active.
                 if isEditing {
                     Button {
-                        HapticManager.shared.destructiveConfirmed()
-                        viewModel.deleteSubject(subject)
+                        confirmDelete = true
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 14, weight: .regular))
@@ -573,10 +573,23 @@ private struct SubjectListRow: View {
                 Label("Rename", systemImage: "pencil")
             }
             Button(role: .destructive) {
-                HapticManager.shared.destructiveConfirmed()
-                viewModel.deleteSubject(subject)
+                confirmDelete = true
             } label: {
                 Label("Delete", systemImage: "trash")
+            }
+        }
+        .alert("Delete \(subject.name)?", isPresented: $confirmDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                HapticManager.shared.destructiveConfirmed()
+                viewModel.deleteSubject(subject)
+            }
+        } message: {
+            let count = notebooks.count
+            if count == 0 {
+                Text("This subject is empty. It will be moved to trash.")
+            } else {
+                Text("This will also delete \(count) notebook\(count == 1 ? "" : "s") in this subject. Everything moves to trash; empty Trash to remove from iCloud.")
             }
         }
     }

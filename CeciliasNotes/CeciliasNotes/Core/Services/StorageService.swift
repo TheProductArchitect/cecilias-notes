@@ -330,16 +330,39 @@ extension StorageService {
         try context.save()
     }
 
-    /// Soft-deletes the subject and moves its notebooks to Uncategorised (subjectId = nil).
+    /// Soft-deletes the subject AND every notebook that lived in
+    /// it. The previous behaviour orphaned notebooks (`subjectId = nil`)
+    /// which had three problems:
+    ///   1. Stand-alone notebooks contradict the "every notebook
+    ///      must live in a subject" rule the rest of the app now
+    ///      enforces.
+    ///   2. Orphans reappear when a new subject is created (the
+    ///      cover-tone assigner re-claims them), producing a
+    ///      "zombie notebooks coming back to life" UX bug.
+    ///   3. CloudKit re-syncs orphan records on other devices that
+    ///      then show notebooks the user thought they deleted.
+    ///
+    /// The new behaviour soft-deletes the children cascadingly. The
+    /// user is shown an explicit warning before this fires (see
+    /// `LibraryViewModel.deleteSubjectWithCascade`) so the blast
+    /// radius is opt-in.
     func deleteSubject(_ subject: Subject) throws {
         for notebook in (subject.notebooks ?? []) where !notebook.isDeleted {
-            notebook.subjectId = nil
+            notebook.isDeleted = true
+            notebook.deletedAt = Date()
             notebook.updatedAt = Date()
         }
         subject.isDeleted = true
         subject.deletedAt = Date()
         subject.updatedAt = Date()
         try context.save()
+    }
+
+    /// Count of non-deleted notebooks in a subject. Drives the
+    /// delete-subject confirmation alert so the user sees the blast
+    /// radius before tapping Delete.
+    func liveNotebookCount(in subject: Subject) -> Int {
+        (subject.notebooks ?? []).filter { !$0.isDeleted }.count
     }
 
     func reorderSubjects(_ subjects: [Subject]) throws {

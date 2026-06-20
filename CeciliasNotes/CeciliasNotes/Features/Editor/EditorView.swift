@@ -276,10 +276,15 @@ struct EditorView: View {
 
                 // 5y. Customise pill (Item 1) — surfaces top-right for ~5s
                 // after a fresh notebook is created. Tap → open the panel.
+                // Customise pill hidden on iPhone — the masthead is
+                // compact, the toolbar already has the customise
+                // button, and the floating pill overlaps the
+                // shorter compose surface.
                 if viewModel.isCustomisePillVisible
                     && !viewModel.isFullScreen
                     && !viewModel.isFocusMode
-                    && !viewModel.isCustomisePanelOpen {
+                    && !viewModel.isCustomisePanelOpen
+                    && !DeviceCapabilities.isPhoneIdiom {
                     VStack {
                         HStack {
                             Spacer()
