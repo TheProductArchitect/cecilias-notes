@@ -97,7 +97,14 @@ struct LibraryView: View {
                 NotificationCenter.default.publisher(for: .recordingPillReturnTapped)
             ) { note in
                 guard let id = note.userInfo?["notebookId"] as? UUID else { return }
+                // Pass through the recording's current page id so
+                // the editor scrolls to where dictation is actually
+                // writing — otherwise the user lands on the
+                // notebook's first page and has to hunt for the
+                // live transcript.
+                let pageId = note.userInfo?["pageId"] as? UUID
                 DispatchQueue.main.async {
+                    viewModel.deepLinkPageId = pageId
                     deepLink.openNotebookId = id
                 }
             }

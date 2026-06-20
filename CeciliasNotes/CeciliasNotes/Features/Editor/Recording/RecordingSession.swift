@@ -68,6 +68,20 @@ final class RecordingSession: ObservableObject {
             }
         }
 
+        /// The page id the active recording is currently writing to.
+        /// For dictation, this tracks `currentPageId` — updated as
+        /// the recorder rolls onto continuation pages — so tapping
+        /// "return to recording" lands on the page the live
+        /// transcript is actually appearing on, not just the
+        /// notebook root.
+        var pageId: UUID? {
+            switch self {
+            case .idle: return nil
+            case .voiceNote(let ctx): return ctx.pageId
+            case .dictation(let ctx): return ctx.currentPageId
+            }
+        }
+
         var startTime: Date? {
             switch self {
             case .idle: return nil

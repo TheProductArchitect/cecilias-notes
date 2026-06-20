@@ -38,23 +38,42 @@ struct FloatingRecordingControls: View {
     // MARK: - Timer pill
 
     private var timerPill: some View {
-        HStack(spacing: 8) {
-            recordingDot
-            Text(formatElapsed(session.elapsedSeconds))
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(theme.foreground)
+        // Tap the timer to jump back to the page the recording is
+        // writing to. Useful for dictation: the user may have
+        // scrolled away while the recorder rolled onto a
+        // continuation page, and the live transcript ends up out of
+        // sight. Stays a button even when the active page is the
+        // current one (no-op then) so the affordance is stable.
+        Button {
+            if let pageId = session.state.pageId {
+                NotificationCenter.default.post(
+                    name: .recordingScrollToActivePage,
+                    object: nil,
+                    userInfo: ["pageId": pageId]
+                )
+                HapticManager.shared.toolSwitched()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                recordingDot
+                Text(formatElapsed(session.elapsedSeconds))
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(theme.foreground)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                Capsule()
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule()
-                .fill(.ultraThinMaterial)
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Jump to active recording page")
     }
 
     private var recordingDot: some View {

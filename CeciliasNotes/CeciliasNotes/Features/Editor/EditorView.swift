@@ -74,6 +74,19 @@ struct EditorView: View {
                 .allowsHitTesting(RecordingSession.shared.state.isRecording)
                 .zIndex(150)
         }
+        // Tapping the floating recording timer scrolls the canvas
+        // to the page the recording is actively writing to (see
+        // `FloatingRecordingControls.timerPill`). Dictation rolls
+        // onto continuation pages mid-session, and the user can
+        // scroll away while it does — this is the "find where
+        // dictation is happening" hook.
+        .onReceive(NotificationCenter.default.publisher(for: .recordingScrollToActivePage)) { note in
+            guard let pageId = note.userInfo?["pageId"] as? UUID,
+                  let idx = viewModel.pages.firstIndex(where: { $0.id == pageId })
+            else { return }
+            viewModel.currentPageIndex = idx
+            viewModel.pendingScrollPageIndex = idx
+        }
         .onAppear {
             if viewModel.notebook.isAgentWritten,
                !AgentBannerState.hasSeen(notebookId: viewModel.notebook.id) {

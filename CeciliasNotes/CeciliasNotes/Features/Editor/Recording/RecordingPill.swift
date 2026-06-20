@@ -40,10 +40,14 @@ struct RecordingPill: View {
         HStack(spacing: 10) {
             Button {
                 if let notebookId = session.state.notebookId {
+                    var userInfo: [String: Any] = ["notebookId": notebookId]
+                    if let pageId = session.state.pageId {
+                        userInfo["pageId"] = pageId
+                    }
                     NotificationCenter.default.post(
                         name: .recordingPillReturnTapped,
                         object: nil,
-                        userInfo: ["notebookId": notebookId]
+                        userInfo: userInfo
                     )
                 }
             } label: {
@@ -97,4 +101,12 @@ extension Notification.Name {
     /// the notebook the recording belongs to; `LibraryViewModel`
     /// observes and drives navigation back.
     static let recordingPillReturnTapped = Notification.Name("recordingPillReturnTapped")
+
+    /// Posted when the user taps the floating recording timer
+    /// inside the editor. `userInfo["pageId"]` carries the
+    /// recording's currently-active page (dictation tracks the
+    /// rolling continuation page). Observed by `EditorView` to
+    /// scroll the canvas. Distinct from `recordingPillReturnTapped`
+    /// because the in-editor case doesn't need notebook routing.
+    static let recordingScrollToActivePage = Notification.Name("recordingScrollToActivePage")
 }
