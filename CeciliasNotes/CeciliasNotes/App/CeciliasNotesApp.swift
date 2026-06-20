@@ -29,6 +29,14 @@ struct CeciliasNotesApp: App {
     /// would re-open the editor cover the user just dismissed.
     @State private var didAttemptLaunchResume: Bool = false
 
+    /// Foreground-return belt-and-suspenders for the alternate-icon
+    /// swap. `LibraryView.onAppear` covers the normal "user returns
+    /// to library" path, but if iOS suspends the app with the editor
+    /// on screen the library never re-appears on the way back —
+    /// this scenePhase hook fires on every `.active` transition so
+    /// `reconcileAppIcon()` runs regardless of which view is visible.
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         // Crash-recovery gate is established by `CeciliasNotesAppDelegate`
         // BEFORE SwiftUI instantiates this struct — see
@@ -264,10 +272,10 @@ struct CeciliasNotesApp: App {
                     // Multipeer-direct ingest: when the user has
                     // opted in (Settings → cloud → "Receive from
                     // Mac on this network"), advertise the
-                    // _ceciliasnotes-sync._tcp service so the Mac
-                    // MCP can ship a notebook directly over LAN /
-                    // Bluetooth PAN, much faster than iCloud sync.
-                    // No-op when the toggle is off.
+                    // _cn-sync._tcp service so the Mac MCP can ship
+                    // a notebook directly over LAN / Bluetooth PAN,
+                    // much faster than iCloud sync. No-op when the
+                    // toggle is off.
                     _ = MultipeerSyncService.shared
 
                     // Share-extension ingest: watch the app-group
@@ -312,6 +320,19 @@ struct CeciliasNotesApp: App {
                                 deepLink.openNotebookId = lastId
                             }
                         }
+                    }
+                }
+                // Foreground-return icon reconcile. Idempotent —
+                // returns immediately if the live icon already
+                // matches the desired one. The reason this exists
+                // in addition to `LibraryView.onAppear`: if iOS
+                // suspends the app inside the editor, returning to
+                // foreground doesn't re-fire library's `.onAppear`,
+                // and a failed-during-onboarding swap would sit
+                // there until the user backed out to library.
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        reconcileAppIcon()
                     }
                 }
                 // Spotlight launch

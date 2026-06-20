@@ -11,78 +11,7 @@ the engineering effort.
 
 ---
 
-## 1. Alternate app-icon swap fails on iOS 26 — MEDIUM
-
-**Symptom.** `setAlternateIconName(_:)` fails when called near
-onboarding completion — `NSPOSIXErrorDomain` 35 (EAGAIN), then
-`NSCocoaErrorDomain` 3072 ("cancelled"). The home-screen icon
-silently doesn't change to the user's initial.
-
-**Cause (hypothesis, well-supported).** The onboarding name field's
-keyboard is mid-dismiss when the call fires; the keyboard layer's
-teardown blocks `LSIconAlertManager` from acquiring the presentation
-token for the mandatory (un-suppressable) icon-change alert. Device
-logs show `UIKeyboardImpl` snapshotting "not in visible window"
-between retry attempts.
-
-**Tried and failed.** (1) Moved the call onboarding → `LibraryView.onAppear`
-(`a7b6140`). (2) EAGAIN-aware retry with backoff (`16aeb92`).
-Neither helped — the keyboard is still mid-dismiss.
-
-**Ruled out — do not retry.**
-- *Plain retry loops.* Every retry hits the same EAGAIN → "cancelled"
-  condition. Retrying without changing the scene/keyboard state
-  changes nothing — this is exactly why the fix is a state *gate*,
-  not more retries.
-- *Relocating the call to another view's `onAppear`.* onboarding →
-  `LibraryView.onAppear` didn't help; the keyboard is still
-  tearing down wherever the call lands immediately after onboarding.
-- *Removing `.environment(\.theme)` / `.preferredColorScheme` from
-  the `WindowGroup`.* An A/B test suggested this lets the call land,
-  but those modifiers are load-bearing for the whole theme system
-  and cannot be removed. Not a usable fix.
-
-**Fixed — self-healing reconcile (`788e753`).** The deeper bug was
-that the swap was *one-shot*: `applyPendingIconUpdateIfNeeded()`
-removed its `pendingIconUpdateKey` flag **before** attempting the
-swap, so a single EAGAIN failure stranded the icon permanently — no
-retry path, no user-facing control to re-trigger it. Replaced with
-`reconcileAppIcon()`: idempotent and self-healing. It derives the
-desired icon from the stored user name and runs a gated swap
-whenever the live `alternateIconName` doesn't match; nothing is
-consumed, so a failed attempt is simply retried by the next
-reconcile. It runs from `LibraryView.onAppear` (every launch + every
-return to the library) and on theme apply, so a swap that loses the
-iOS 26 race during onboarding churn lands automatically on a later,
-settled pass — no user action. `IconUpdateGate` still holds each
-attempt until the scene is foreground-active and the keyboard
-dismissed; `iconReconcileInFlight` guards against overlapping
-attempts / duplicate system alerts. The previously ungated
-`ThemeManager.updateAppIcon()` second call site now routes through
-the same reconcile.
-
-**Logging.** `[BrandIcon][diag]` (survives in Release):
-`reconcile — current=… desired=… — handing to gate`,
-`gate — keyboardDidShow/keyboardDidHide`,
-`gate — scene didActivate/willDeactivate`, `gate ready immediately`,
-`gate waiting …`, `gate now ready …`, `gate timeout (10s) …`,
-`setAlternateIconName(<key>) — attempt (<n> left)`, `… SUCCESS` /
-`… FAILED: <error>`.
-
-**Next step — device-verify on iOS 26.4.** The one-shot trap is
-definitively fixed. What remains unverified is whether iOS 26.4 lets
-a settled-context attempt land at all. Reconcile now retries on
-every launch, so a normal launch straight into the library (no
-onboarding churn) is the settled context that should succeed —
-expect `[BrandIcon][diag] reconcile …` → `gate now ready` →
-`setAlternateIconName(…) SUCCESS`. If logs still show only `FAILED`
-across several launches, the root cause is a genuine iOS 26
-`LSIconAlertManager` regression — file Apple Feedback; the
-self-healing reconcile is the most that can be done app-side.
-
----
-
-## 2. Swift 6 language mode not adopted — LOW
+## 1. Swift 6 language mode not adopted — LOW
 
 **State.** The project builds in Swift 5 language mode
 (`SWIFT_VERSION = 5.0`). Building under `SWIFT_VERSION=6` succeeds
@@ -165,7 +94,7 @@ flip `SWIFT_VERSION` to `6.0` as a dedicated commit.
 
 ---
 
-## 3. "Publishing changes from within view updates" warnings — LOW
+## 2. "Publishing changes from within view updates" warnings — LOW
 
 **Symptom.** ~12 SwiftUI "Publishing changes from within view
 updates" warnings fire during dictation start.
@@ -195,7 +124,7 @@ defer only the genuinely-safe publish sites (never `state`).
 
 ---
 
-## 4. Magnetic page zoom — not built (deferred feature)
+## 3. Magnetic page zoom — not built (deferred feature)
 
 **State.** Requested as a feature: page always centred, zoom
 anchored to page centre, magnetic edges at 100%. **Not implemented.**

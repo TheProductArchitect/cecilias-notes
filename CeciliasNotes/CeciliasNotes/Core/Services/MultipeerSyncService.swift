@@ -58,6 +58,12 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     /// Replay window — any payload with a timestamp older than this
     /// is rejected even if the HMAC is valid.
     private static let replayWindow: TimeInterval = 60
+    /// Defence-in-depth cap on `recentNonces`. The window prune is
+    /// the primary mechanism; this guards against a flood of
+    /// fresh-nonce probes spiking memory inside a single 60-second
+    /// window. 2000 entries is comfortably above any legitimate
+    /// send rate (Mac MCP sends one payload per notebook write).
+    private static let maxRecentNonces: Int = 2000
 
     /// User-visible status. Drives Settings caption + status line.
     enum Status: Equatable {
@@ -242,9 +248,16 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             status = .error("Stale payload from \(peer.displayName) (age \(Int(age))s)")
             return
         }
-        // Nonce de-dupe.
+        // Nonce de-dupe. Primary defence is the time-window prune;
+        // the hard cap below is defence-in-depth so a flood of
+        // unique-nonce probes from a hostile peer (each within the
+        // replay window) can't grow the array without bound before
+        // the window prune catches them.
         let nowMinusWindow = Date().addingTimeInterval(-Self.replayWindow)
         recentNonces.removeAll { $0.seenAt < nowMinusWindow }
+        if recentNonces.count >= Self.maxRecentNonces {
+            recentNonces.removeFirst(recentNonces.count - Self.maxRecentNonces / 2)
+        }
         if recentNonces.contains(where: { $0.nonce == header.nonce }) {
             status = .error("Replay detected from \(peer.displayName)")
             return
