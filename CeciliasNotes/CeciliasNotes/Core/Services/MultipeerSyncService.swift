@@ -259,6 +259,24 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             recentNonces.append((header.nonce, Date()))
             writeFileToInbox(filename: header.filename, body: bodyData, peer: peer)
 
+        case "ping":
+            // Liveness probe — sender uses this to detect a
+            // half-broken session before committing to a full file
+            // transfer. We HMAC-verify the ping with the paired key
+            // (rejecting unpaired peers), then reply with a `pong`
+            // signed by the same key. Senders without the right
+            // key get nothing back and time out fast.
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else {
+                // Silent drop — don't leak "we don't know you" via
+                // a status string when an attacker is probing.
+                return
+            }
+            guard verifyHMAC(hmacBytes, message: signedRange, key: key) else {
+                return
+            }
+            recentNonces.append((header.nonce, Date()))
+            sendPong(to: peer, key: key)
+
         case "pairing-hello":
             guard let code = activePairingCode,
                   let expiresAt = pairingExpiresAt,
@@ -288,6 +306,28 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         default:
             status = .error("Unknown payload type from \(peer.displayName)")
         }
+    }
+
+    /// Build and send a `pong` reply HMAC-signed with the same key
+    /// the ping was verified against. Empty body. Errors are
+    /// swallowed — a failed pong just causes the sender to time
+    /// out and fall back to iCloud, which is the correct behaviour.
+    private func sendPong(to peer: MCPeerID, key: SymmetricKey) {
+        guard let session else { return }
+        let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...UInt8.max) })
+        let header: [String: Any] = [
+            "type": "pong",
+            "timestamp": Int(Date().timeIntervalSince1970),
+            "nonce": nonce.base64EncodedString()
+        ]
+        guard let headerData = try? JSONSerialization.data(withJSONObject: header) else { return }
+        let tag = Data(HMAC<SHA256>.authenticationCode(for: headerData, using: key))
+        var payload = Data()
+        var lenBE = UInt32(headerData.count).bigEndian
+        payload.append(Data(bytes: &lenBE, count: 4))
+        payload.append(headerData)
+        payload.append(tag)
+        try? session.send(payload, toPeers: [peer], with: .reliable)
     }
 
     private func verifyHMAC(_ tag: Data, message: Data, key: SymmetricKey) -> Bool {

@@ -97,15 +97,18 @@ A single binary blob sent via
 
 ```json
 {
-  "type": "file" | "pairing-hello",
+  "type": "file" | "pairing-hello" | "ping" | "pong",
   "filename": "Sketchbook.inkbook",
   "timestamp": 1718817100,
   "nonce": "<base64-16-bytes>"
 }
 ```
 
-- `type` is required; `"file"` for notebook delivery, `"pairing-hello"`
-  for the pairing handshake.
+- `type` is required:
+  - `"file"` — notebook delivery
+  - `"pairing-hello"` — pairing handshake
+  - `"ping"` — liveness probe sent by the Mac before a file payload
+  - `"pong"` — iPad's reply to a `ping`
 - `filename` is required when `type == "file"`. iPad strips path
   separators and rejects extensions other than `.inkbook` / `.json`.
 - `timestamp` is epoch seconds. Payloads outside a ±60 second window
@@ -130,6 +133,50 @@ The key is whichever key applies:
 - For `type == "file"`: raw file bytes (the `.inkbook` blob itself).
 - For `type == "pairing-hello"`: empty (zero bytes). Pairing
   succeeds based on the HMAC match alone — no payload necessary.
+- For `type == "ping"` and `type == "pong"`: empty (zero bytes).
+
+## Ping / pong (liveness probe)
+
+MultipeerConnectivity reports a session as `.connected` based on the
+underlying socket handshake, but it's slow to surface "the peer is
+connected but the link is dead" (radio went out of range, the iPad
+got force-quit mid-session, etc.). For multi-second file transfers
+that's a problem — the Mac sender will block on `session.send`
+until MC eventually times out.
+
+**Solution**: the Mac sender issues a `ping` immediately after the
+session reaches `.connected`. If a `pong` doesn't arrive within
+500ms, the sender aborts and falls back to iCloud Inbox writes. A
+healthy session round-trips in 20–80ms over Bluetooth-PAN and
+under 20ms over Wi-Fi peer-to-peer, so 500ms is comfortable
+headroom with zero false positives in practice.
+
+### Mac side
+
+1. Wait for `MCSession.state == .connected`.
+2. Build a `ping` payload (HMAC-signed with the stored shared key).
+3. Send it; start a 500ms timer.
+4. Wait for `session(_:didReceive:)` to deliver a `pong` HMAC-signed
+   with the same key. Cancel the timer.
+5. If the timer fires first, call `session.disconnect()` and fall
+   through to the iCloud-only path.
+
+### iPad side
+
+1. Receive `ping`, verify HMAC against the stored key for the
+   sender. Drop silently on miss (don't leak status info to an
+   attacker probing the network).
+2. Send a `pong` HMAC-signed with the same key. Empty body. Fresh
+   timestamp + nonce.
+
+### Failure modes
+
+- **`pong` never arrives**: peer is unreachable. Disconnect, log
+  reason, write to iCloud.
+- **`pong` arrives but HMAC fails**: someone else on the network
+  is impersonating the iPad. Disconnect, do NOT retry.
+- **`pong` arrives outside the timestamp window**: clocks are
+  drifting. Disconnect, surface the skew in the Mac's logs.
 
 ## What the iPad does on success
 
