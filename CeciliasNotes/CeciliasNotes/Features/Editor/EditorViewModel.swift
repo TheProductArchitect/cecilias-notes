@@ -110,6 +110,13 @@ final class EditorViewModel: ObservableObject {
     // MARK: Tool state
     @Published var selectedTool: CeciliasNotesTool
     @Published private(set) var lastTool: CeciliasNotesTool?         // for "switch between two tools"
+    /// Snapshot of the drawing tool active when the user last
+    /// switched to ruler. The canvas reads this to wire ruler-
+    /// guided strokes to the user's preferred ink settings — the
+    /// ruler itself carries no colour/width and would otherwise
+    /// leave the canvas painting with a stale tool the picker
+    /// can no longer touch.
+    @Published var lastDrawingToolBeforeRuler: CeciliasNotesTool?
 
     // MARK: State machine (Phase 5E)
     //
@@ -1168,6 +1175,16 @@ final class EditorViewModel: ObservableObject {
             if tracksLastTool {
                 lastTool = selectedTool
             }
+        }
+        // Remember the last real drawing tool right before we
+        // activate ruler so the ruler-guided stroke can inherit
+        // its colour/width/opacity. Captured here (not at every
+        // tool change) so the ruler reads the most recent ink
+        // settings even if the user adjusts colours after
+        // activating ruler — they update the stored variant via
+        // ToolSettings, which lastDrawingToolBeforeRuler re-reads.
+        if tool.identity == .ruler, selectedTool.isDrawingTool {
+            lastDrawingToolBeforeRuler = selectedTool
         }
         selectedTool = tool
         // Remember inking tools as the reopen default. Transient modes

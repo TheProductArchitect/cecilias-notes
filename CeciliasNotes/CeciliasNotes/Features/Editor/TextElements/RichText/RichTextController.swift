@@ -395,6 +395,11 @@ final class RichTextController: ObservableObject {
     ) -> [NSAttributedString.Key: Any] {
         let para = NSMutableParagraphStyle()
         para.alignment = .left
+        // Extra space after every hard return so user-pressed Enter
+        // visually separates paragraphs. Soft-wrap inside a paragraph
+        // stays tight — NSAttributedString defines a paragraph as a
+        // run ending in "\n", so only true Enter presses get the gap.
+        para.paragraphSpacing = 8
         return [
             .font: buildFont(
                 heading: heading,

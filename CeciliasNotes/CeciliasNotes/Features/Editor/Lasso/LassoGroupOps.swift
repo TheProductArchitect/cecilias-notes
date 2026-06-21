@@ -41,6 +41,40 @@ enum LassoGroupOps {
         let dxNorm = delta.width  / pageSize.width
         let dyNorm = delta.height / pageSize.height
 
+        // Cross-page handoff fast-path: a single non-stroke element
+        // being dragged past the top or bottom of the page hands off
+        // to the canvas coordinator (same path the per-image drag
+        // takes). Without this, the lasso translate clamps every
+        // element into the current page — the user could move an
+        // image freely between pages by dragging directly on it but
+        // not via the lasso chrome. Multi-element selections + any
+        // stroke-element selection still go through the in-page
+        // translate so partial drags don't accidentally rip a whole
+        // selection across pages.
+        if selection.selectedElementIds.count == 1,
+           selection.partialStrokeSelections.isEmpty,
+           let onlyId = selection.selectedElementIds.first,
+           let element = fetch(onlyId, context: context),
+           element.kind != .stroke,
+           element.kind != .pdfPage {
+            let proposedY = element.normalizedY + dyNorm
+            if proposedY < 0 || proposedY > 1 - element.normalizedHeight {
+                let proposedX = element.normalizedX + dxNorm
+                NotificationCenter.default.post(
+                    name: .imageElementCrossPageHandoffRequested,
+                    object: nil,
+                    userInfo: [
+                        "elementId": element.id,
+                        "currentPageId": element.pageId,
+                        "proposedNormX": proposedX,
+                        "proposedNormY": proposedY
+                    ]
+                )
+                selection.clear()
+                return
+            }
+        }
+
         // Whole-element members (includes whole stroke elements).
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
@@ -256,9 +290,11 @@ enum LassoGroupOps {
     ) {
         let context = context ?? StorageService.shared.context
         var deletedAnyShape = false
+        var deletedAnySticky = false
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             if element.kind == .shape { deletedAnyShape = true }
+            if element.kind == .stickyNote { deletedAnySticky = true }
             element.deletedAt = Date()
             element.updatedAt = Date()
         }
@@ -286,6 +322,9 @@ enum LassoGroupOps {
         // record is filtered out by `deletedAt == nil`.
         if deletedAnyShape {
             NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        }
+        if deletedAnySticky {
+            NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
         }
         selection.clear()
     }

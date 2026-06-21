@@ -178,6 +178,13 @@ struct LassoOverlayView: View {
     // MARK: - Commit selection
 
     private func commitSelection(from path: CGPath) {
+        // Flush any in-flight canvas drawings before the fetch.
+        // canvasViewDrawingDidChange debounces persistence by ~1.2s;
+        // a user who draws then immediately lassoes within that
+        // window would otherwise see no strokes selected because
+        // StrokeContent.strokeData hasn't been written yet.
+        viewModel.canvasFlushAllHandler?()
+
         let lassoBBox = LassoMath.boundingBox(of: path)
 
         var elementIds:   Set<UUID> = []

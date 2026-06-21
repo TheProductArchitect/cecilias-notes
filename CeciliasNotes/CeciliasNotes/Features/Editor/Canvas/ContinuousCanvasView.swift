@@ -1391,6 +1391,19 @@ struct ContinuousCanvasView: UIViewRepresentable {
             switch tool {
             case .ruler:
                 canvasView.isRulerActive = true
+                // Ruler is not a PKTool — it overlays a ruler edge
+                // on the canvas while the *active* ink tool draws
+                // along it. Without an inking tool set, the canvas
+                // keeps whatever PKTool it had before (often a stale
+                // pen colour the user can't reach with the picker
+                // since ruler is selected). Apply the last drawing
+                // tool so the colour swatches stay live: the user
+                // edits the pen settings via the secondary picker
+                // and the ruler-guided stroke inherits them.
+                let companion = viewModel.lastDrawingToolBeforeRuler ?? viewModel.selectedTool
+                if companion.isDrawingTool {
+                    canvasView.tool = companion.makePKTool()
+                }
             default:
                 canvasView.isRulerActive = false
                 canvasView.tool = tool.makePKTool()

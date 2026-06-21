@@ -236,6 +236,12 @@ struct ShapeElementsOverlayView: View {
         }
         refreshTick &+= 1
         NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        PageElementUndo.registerCreate(
+            elementId: element.id,
+            kind: .shape,
+            canvas: viewModel.canvasView,
+            actionName: "Create Shape"
+        )
     }
 }
 

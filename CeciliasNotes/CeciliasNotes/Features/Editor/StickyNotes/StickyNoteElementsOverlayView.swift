@@ -215,6 +215,12 @@ struct StickyNoteElementsOverlayView: View {
         selectedId = element.id
         editingId  = element.id
         viewModel.editingStickyNoteId = element.id
+        PageElementUndo.registerCreate(
+            elementId: element.id,
+            kind: .stickyNote,
+            canvas: viewModel.canvasView,
+            actionName: "Create Sticky"
+        )
     }
 
     private func delete(_ element: PageElement) {
