@@ -112,13 +112,19 @@ final class CeciliasNotesImporter {
             // For `.append` we keep the existing pages and let the
             // page-build loop below skip duplicates by id.
         } else {
+            // Agent-authored notebooks land on `.blank` (see the
+            // mutate-path comment below); other importers honour the
+            // requested template.
+            let createTemplate: PageTemplate = file.agent != nil
+                ? .blank
+                : CeciliasNotesFile.pageTemplate(from: file.page_template)
             notebook = Notebook(
                 title: file.title,
                 subjectId: try ensureSubject(named: file.subject, context: context),
                 coverColorHex: "",
                 coverTexture: .none,
                 pageSize: CeciliasNotesFile.pageSize(from: file.page_size),
-                defaultTemplate: CeciliasNotesFile.pageTemplate(from: file.page_template)
+                defaultTemplate: createTemplate
             )
             // Override the auto-assigned id with the schema-supplied one
             // so future re-imports dedupe correctly.
@@ -131,7 +137,18 @@ final class CeciliasNotesImporter {
         // changes from the agent.
         notebook.title    = file.title
         notebook.pageSize = CeciliasNotesFile.pageSize(from: file.page_size)
-        notebook.defaultTemplate = CeciliasNotesFile.pageTemplate(from: file.page_template)
+        // Agent-authored notebooks always land on the blank template
+        // regardless of the `page_template` field. Agents emit typed
+        // text — never strokes — and typed text on a ruled / dot-grid
+        // background never lines up with the rule spacing (typography
+        // metrics aren't a multiple of the 7-10mm rule lines), which
+        // makes every MCP-created page look broken. Blank gives the
+        // text a clean ground without arguing with the design intent.
+        // The field is preserved in the round-tripped mirror so the
+        // agent's choice isn't silently mutated on the next read.
+        let requestedTemplate = CeciliasNotesFile.pageTemplate(from: file.page_template)
+        let isAgentAuthored = file.agent != nil
+        notebook.defaultTemplate = isAgentAuthored ? .blank : requestedTemplate
         if let toneSubjectId = try? ensureSubject(named: file.subject, context: context) {
             notebook.subjectId = toneSubjectId
             if let s = try? context.fetch(

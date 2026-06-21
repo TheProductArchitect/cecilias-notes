@@ -342,11 +342,19 @@ struct EditorView: View {
                 // chevron or other toolbar buttons. Its background fill
                 // would otherwise absorb every tap in its rect.
                 if isShowingAgentBanner {
+                    // Compact capsule, top-trailing — hugs its content
+                    // and sits in the same pill vocabulary as the
+                    // recording / undo-shape pills above it. Earlier
+                    // this was a full-width strip that read like an
+                    // OS banner.
                     VStack {
-                        AgentBannerView(notebook: viewModel.notebook) {
-                            isShowingAgentBanner = false
+                        HStack {
+                            Spacer(minLength: 0)
+                            AgentBannerView(notebook: viewModel.notebook) {
+                                isShowingAgentBanner = false
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.trailing, 16)
                         .padding(.top, proxy.safeAreaInsets.top + 60)
                         Spacer(minLength: 0)
                     }
