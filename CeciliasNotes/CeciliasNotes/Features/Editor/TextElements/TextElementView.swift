@@ -44,11 +44,12 @@ struct TextElementView: View {
     /// content-width and can't translate horizontally, so only the
     /// height component is consumed.
     @ObservedObject private var lassoSelection = LassoSelectionState.shared
+    @ObservedObject private var lassoLiveDrag  = LassoLiveDrag.shared
     private var lassoDragOffsetY: CGFloat {
-        guard lassoSelection.isManipulating,
+        guard lassoLiveDrag.isManipulating,
               lassoSelection.selectedElementIds.contains(element.id)
         else { return 0 }
-        return lassoSelection.transientOffset.height
+        return lassoLiveDrag.transientOffset.height
     }
 
     @StateObject private var controller = RichTextController()

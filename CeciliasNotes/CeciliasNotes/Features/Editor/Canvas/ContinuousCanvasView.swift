@@ -278,6 +278,19 @@ struct ContinuousCanvasView: UIViewRepresentable {
         twoFingerDoubleTap.numberOfTouchesRequired = 2
         scrollView.addGestureRecognizer(twoFingerDoubleTap)
 
+        // Apple Pencil double-tap — single interaction attached to
+        // the stable scrollView so the gesture fires regardless of
+        // which page's PKCanvasView is mounted. Earlier the
+        // interaction was attached per-canvas inside `mountCanvas`,
+        // which meant 2–3 instances existed at any moment (one per
+        // warm-band canvas); only the most recently-mounted one
+        // received events from iOS in practice, and unmounting the
+        // active canvas during scroll silently broke double-tap
+        // until the user scrolled enough to remount it.
+        let pencilInteraction = UIPencilInteraction()
+        pencilInteraction.delegate = context.coordinator
+        scrollView.addInteraction(pencilInteraction)
+
         // Single-finger double tap → fit-to-width.
         let doubleTap = UITapGestureRecognizer(
             target: context.coordinator,
@@ -1168,15 +1181,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 )
             }
 
-            // Pencil double-tap forwarded to the view-model, so the user's
-            // configured action (toggle eraser / switch tool / colour
-            // picker) fires from any page's canvas.
-            let pencilInteraction = UIPencilInteraction()
-            pencilInteraction.delegate = self
-            canvas.addInteraction(pencilInteraction)
-            #if DEBUG
-            dlog("[Pencil-diag] mountCanvas registered UIPencilInteraction interaction=\(ObjectIdentifier(pencilInteraction).hashValue) on canvas page=\(hosts[i].pageId)")
-            #endif
+            // Pencil double-tap is now wired ONCE at the scrollView
+            // level during `makeUIView` — no per-canvas interaction
+            // here. Attaching one interaction per warm-band canvas
+            // produced silent dropouts when the active canvas
+            // unmounted during scroll.
 
             // Hover-recogniser rejection happens inside
             // `CeciliasNotesPKCanvasView.addGestureRecognizer`. No post-hoc walk

@@ -71,21 +71,11 @@ final class LassoSelectionState: ObservableObject {
     }
 
     // MARK: - Transient drag state
-
-    /// Live in-flight translation applied to the selection chrome
-    /// while the user is dragging the bounding box. Reset to .zero
-    /// on `.onEnded`; the commit then writes the model. Element
-    /// renderers can choose to read this for live-element preview;
-    /// the v1 chrome moves only the bbox.
-    @Published var transientOffset: CGSize = .zero
-
-    /// `true` while the user is mid-gesture inside the selection
-    /// chrome — drives "snap on release" behaviour for resize +
-    /// rotate (the elements snap to their new positions when the
-    /// gesture ends; only the bbox preview moves during the
-    /// gesture itself). v1 trade-off documented in the Step 9
-    /// report.
-    @Published var isManipulating: Bool = false
+    //
+    // Lives on `LassoLiveDrag.shared` — split off this object so
+    // 60 Hz gesture updates don't re-publish the selection state
+    // and force the overlay to re-render every tick. See the
+    // header on that file for the flicker-fix rationale.
 
     // MARK: - Mutators
 
@@ -107,8 +97,7 @@ final class LassoSelectionState: ObservableObject {
         self.partialStrokeSelections = partialStrokes
         self.pageId                  = pageId
         self.selectionBounds         = bounds
-        self.transientOffset         = .zero
-        self.isManipulating          = false
+        LassoLiveDrag.shared.reset()
     }
 
     /// Update the cached bounding box after a committed move /
@@ -126,8 +115,7 @@ final class LassoSelectionState: ObservableObject {
         partialStrokeSelections = [:]
         pageId                  = nil
         selectionBounds         = .zero
-        transientOffset         = .zero
-        isManipulating          = false
+        LassoLiveDrag.shared.reset()
     }
 
     /// `true` when the lasso has anything to show chrome for —

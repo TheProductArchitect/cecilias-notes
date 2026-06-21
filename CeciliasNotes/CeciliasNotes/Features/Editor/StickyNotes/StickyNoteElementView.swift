@@ -127,6 +127,29 @@ struct StickyNoteElementView: View {
                             dragOffset = .zero
                         }
                 )
+                // Once the sticky IS selected, a plain drag of the
+                // card body moves it. Without this, the only way to
+                // move a sticky was the press-hold-then-drag-in-one-
+                // motion path above — selecting first (via long
+                // press) and then dragging silently did nothing
+                // because the sequenced gesture wouldn't re-arm.
+                // `minimumDistance: 4` keeps a clean tap (→ edit)
+                // from being mistaken for a no-op drag.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                        .onChanged { value in
+                            guard isSelected, !isEditing else { return }
+                            dragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            guard isSelected, !isEditing else {
+                                dragOffset = .zero
+                                return
+                            }
+                            commitBodyDrag(value.translation)
+                            dragOffset = .zero
+                        }
+                )
                 .position(x: displayed.midX, y: displayed.midY)
 
             if isSelected && !isEditing {

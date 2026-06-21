@@ -354,20 +354,13 @@ enum PDFDerivedExport {
     /// Stand-alone here so the PDFKit pipeline above doesn't have
     /// to fork.
     private static func rasterisePage(_ page: Page) -> UIImage? {
-        let bounds = CGRect(origin: .zero, size: page.pageSize.pointSize)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 2.0
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: bounds.size, format: format)
-        return renderer.image { ctx in
-            UIColor(hex: "#FAFAF8").setFill()
-            ctx.fill(bounds)
-            if let data = StorageService.shared.strokeData(for: page),
-               let drawing = try? PKDrawing(data: data) {
-                let strokeImage = drawing.image(from: bounds, scale: 2.0)
-                strokeImage.draw(in: bounds)
-            }
-        }
+        // Non-PDF page spliced into a PDF-derived notebook (a blank
+        // page the user added). Route through the main exporter's
+        // fresh-page renderer so the rasterised output picks up V6
+        // text, sticky, shape, and highlight elements — the
+        // earlier version drew only paper + strokes, so anything
+        // the user added through the V6 surfaces silently dropped.
+        return ExportService.shared.rasterisePageForFallback(page)
     }
 }
 

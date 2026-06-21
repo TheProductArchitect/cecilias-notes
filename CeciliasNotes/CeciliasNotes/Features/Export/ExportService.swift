@@ -133,8 +133,12 @@ final class ExportService {
 
                 drawTemplate(page.backgroundTemplate, ctx: cgCtx, bounds: bounds)
                 drawMediaAttachments(page, ctx: cgCtx, bounds: bounds, notebook: notebook)
+                drawV6Highlights(page, ctx: cgCtx, bounds: bounds)
                 drawStrokes(page, ctx: cgCtx, bounds: bounds, quality: options.quality)
+                drawV6Shapes(page, ctx: cgCtx, bounds: bounds)
                 drawTextBlocks(page, ctx: cgCtx, bounds: bounds)
+                drawV6TextElements(page, ctx: cgCtx, bounds: bounds)
+                drawV6StickyNotes(page, ctx: cgCtx, bounds: bounds)
 
                 if options.includeTranscriptions {
                     drawAudioMarkers(page, ctx: cgCtx, bounds: bounds)
@@ -390,6 +394,31 @@ final class ExportService {
         return PDFDocument(data: data)?.page(at: 0)
     }
 
+    /// Fallback rasteriser shared with `PDFDerivedExport` for
+    /// non-PDF pages spliced into a PDF-derived notebook. Walks
+    /// the same V6 element kinds as the main export so a sticky
+    /// note / shape / typed text element on a blank page in a
+    /// PDF notebook actually shows up in the exported file.
+    func rasterisePageForFallback(_ page: Page) -> UIImage? {
+        guard let notebook = page.notebook else { return nil }
+        let bounds = CGRect(origin: .zero, size: page.pageSize.pointSize)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: bounds.size, format: format)
+        return renderer.image { ctx in
+            let cgCtx = ctx.cgContext
+            drawTemplate(page.backgroundTemplate, ctx: cgCtx, bounds: bounds)
+            drawMediaAttachments(page, ctx: cgCtx, bounds: bounds, notebook: notebook)
+            drawV6Highlights(page, ctx: cgCtx, bounds: bounds)
+            drawStrokes(page, ctx: cgCtx, bounds: bounds, quality: .standard)
+            drawV6Shapes(page, ctx: cgCtx, bounds: bounds)
+            drawTextBlocks(page, ctx: cgCtx, bounds: bounds)
+            drawV6TextElements(page, ctx: cgCtx, bounds: bounds)
+            drawV6StickyNotes(page, ctx: cgCtx, bounds: bounds)
+        }
+    }
+
     // MARK: - Thumbnail for live preview
 
     func renderPreviewThumbnail(
@@ -411,8 +440,12 @@ final class ExportService {
             let cgCtx = ctx.cgContext
             drawTemplate(page.backgroundTemplate, ctx: cgCtx, bounds: bounds)
             drawMediaAttachments(page, ctx: cgCtx, bounds: bounds, notebook: notebook)
+            drawV6Highlights(page, ctx: cgCtx, bounds: bounds)
             drawStrokes(page, ctx: cgCtx, bounds: bounds, quality: options.quality)
+            drawV6Shapes(page, ctx: cgCtx, bounds: bounds)
             drawTextBlocks(page, ctx: cgCtx, bounds: bounds)
+            drawV6TextElements(page, ctx: cgCtx, bounds: bounds)
+            drawV6StickyNotes(page, ctx: cgCtx, bounds: bounds)
         }
 
         guard let pdfDoc  = PDFDocument(data: data),
@@ -861,6 +894,227 @@ final class ExportService {
                              context: nil)
             }
             ctx.restoreGState()
+        }
+    }
+
+    // MARK: - V6 PageElement renderers
+    //
+    // The original `drawTextBlocks` / `drawMediaAttachments` only
+    // covered the legacy V5 surfaces. V6 added typed text via
+    // `PageElement(.text)` + `TextContent`, sticky notes via
+    // `PageElement(.stickyNote)` + `StickyNoteContent`, shapes
+    // via `PageElement(.shape)` + `ShapeContent`, and highlights
+    // via `PageElement(.highlight)`. The pre-fix export only saw
+    // strokes + images + V5 text blocks; everything the user
+    // added through the V6 surfaces silently dropped out of the
+    // exported PDF. These helpers walk the missing kinds.
+
+    private func fetchPageElements(forPageId pageId: UUID, kind: ElementKind) -> [PageElement] {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+        )
+        let all = (try? StorageService.shared.context.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == kind }
+    }
+
+    private func drawV6TextElements(_ page: Page, ctx: CGContext, bounds: CGRect) {
+        let elements = fetchPageElements(forPageId: page.id, kind: .text)
+        for element in elements {
+            guard let content = element.textContent else { continue }
+            let attrStr: NSAttributedString
+            if let data = content.attributedTextData,
+               let decoded = try? NSAttributedString(
+                   data: data,
+                   options: [.documentType: NSAttributedString.DocumentType.rtfd],
+                   documentAttributes: nil
+               ) {
+                attrStr = decoded
+            } else {
+                let font: UIFont
+                switch content.size {
+                case .heading: font = .systemFont(ofSize: 22, weight: .semibold)
+                case .small:   font = .systemFont(ofSize: 12, weight: .regular)
+                case .body:    font = .systemFont(ofSize: 16, weight: .regular)
+                }
+                attrStr = NSAttributedString(
+                    string: content.text,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: UIColor.label
+                    ]
+                )
+            }
+            let rect = CGRect(
+                x:      element.normalizedX      * bounds.width,
+                y:      element.normalizedY      * bounds.height,
+                width:  element.normalizedWidth  * bounds.width,
+                height: element.normalizedHeight * bounds.height
+            )
+            ctx.saveGState()
+            if element.rotation != 0 {
+                ctx.translateBy(x: rect.midX, y: rect.midY)
+                ctx.rotate(by: -CGFloat(element.rotation))
+                ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
+                attrStr.draw(with: CGRect(origin: .zero, size: rect.size),
+                             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                             context: nil)
+            } else {
+                attrStr.draw(with: rect,
+                             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                             context: nil)
+            }
+            ctx.restoreGState()
+        }
+    }
+
+    private func drawV6StickyNotes(_ page: Page, ctx: CGContext, bounds: CGRect) {
+        let elements = fetchPageElements(forPageId: page.id, kind: .stickyNote)
+        for element in elements {
+            guard let content = element.stickyNoteContent else { continue }
+            let rect = CGRect(
+                x:      element.normalizedX      * bounds.width,
+                y:      element.normalizedY      * bounds.height,
+                width:  element.normalizedWidth  * bounds.width,
+                height: element.normalizedHeight * bounds.height
+            )
+            let cardColor = uiColor(forStickyVariant: content.colorVariant)
+            ctx.saveGState()
+            if element.rotation != 0 {
+                ctx.translateBy(x: rect.midX, y: rect.midY)
+                ctx.rotate(by: -CGFloat(element.rotation))
+                ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
+            } else {
+                ctx.translateBy(x: rect.minX, y: rect.minY)
+            }
+            let cardRect = CGRect(origin: .zero, size: rect.size)
+            ctx.setFillColor(cardColor.cgColor)
+            ctx.fill(cardRect)
+            let bodyAttrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 13),
+                .foregroundColor: UIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
+            ]
+            let inset = cardRect.insetBy(dx: 8, dy: 8)
+            (content.text as NSString).draw(
+                with: inset,
+                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
+                attributes: bodyAttrs,
+                context: nil
+            )
+            ctx.restoreGState()
+        }
+    }
+
+    private func drawV6Shapes(_ page: Page, ctx: CGContext, bounds: CGRect) {
+        let elements = fetchPageElements(forPageId: page.id, kind: .shape)
+        for element in elements {
+            guard let content = element.shapeContent else { continue }
+            let rect = CGRect(
+                x:      element.normalizedX      * bounds.width,
+                y:      element.normalizedY      * bounds.height,
+                width:  element.normalizedWidth  * bounds.width,
+                height: element.normalizedHeight * bounds.height
+            )
+            ctx.saveGState()
+            if element.rotation != 0 {
+                ctx.translateBy(x: rect.midX, y: rect.midY)
+                ctx.rotate(by: -CGFloat(element.rotation))
+                ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
+            } else {
+                ctx.translateBy(x: rect.minX, y: rect.minY)
+            }
+            let shapeRect = CGRect(origin: .zero, size: rect.size)
+            let stroke = UIColor(hex: content.strokeColorHex)
+            let fill = content.fillColorHex.map(UIColor.init(hex:))
+            ctx.setStrokeColor(stroke.cgColor)
+            ctx.setLineWidth(CGFloat(content.strokeWidth))
+            if let fill {
+                ctx.setFillColor(fill.cgColor)
+            }
+            switch content.shapeKind {
+            case .rectangle:
+                if fill != nil { ctx.fill(shapeRect) }
+                ctx.stroke(shapeRect)
+            case .roundedRectangle:
+                let path = CGPath(roundedRect: shapeRect, cornerWidth: 8, cornerHeight: 8, transform: nil)
+                ctx.addPath(path)
+                if fill != nil { ctx.fillPath() }
+                ctx.addPath(path)
+                ctx.strokePath()
+            case .ellipse:
+                if fill != nil { ctx.fillEllipse(in: shapeRect) }
+                ctx.strokeEllipse(in: shapeRect)
+            case .triangle:
+                ctx.move(to: CGPoint(x: shapeRect.midX, y: 0))
+                ctx.addLine(to: CGPoint(x: 0, y: shapeRect.height))
+                ctx.addLine(to: CGPoint(x: shapeRect.width, y: shapeRect.height))
+                ctx.closePath()
+                if fill != nil { ctx.fillPath() }
+                ctx.move(to: CGPoint(x: shapeRect.midX, y: 0))
+                ctx.addLine(to: CGPoint(x: 0, y: shapeRect.height))
+                ctx.addLine(to: CGPoint(x: shapeRect.width, y: shapeRect.height))
+                ctx.closePath()
+                ctx.strokePath()
+            case .line, .arrow:
+                ctx.move(to: CGPoint(x: 0, y: shapeRect.height / 2))
+                ctx.addLine(to: CGPoint(x: shapeRect.width, y: shapeRect.height / 2))
+                ctx.strokePath()
+            case .star, .heart, .callout:
+                // Decorative shapes use parametric SwiftUI paths
+                // on screen; the export draws a bounding ellipse
+                // as a reasonable approximation rather than
+                // re-implementing each parametric path here.
+                if fill != nil { ctx.fillEllipse(in: shapeRect) }
+                ctx.strokeEllipse(in: shapeRect)
+            }
+            ctx.restoreGState()
+        }
+    }
+
+    private func drawV6Highlights(_ page: Page, ctx: CGContext, bounds: CGRect) {
+        let elements = fetchPageElements(forPageId: page.id, kind: .highlight)
+        for element in elements {
+            guard let content = element.highlightContent else { continue }
+            let rect = CGRect(
+                x:      CGFloat(content.rectOriginX) * bounds.width,
+                y:      CGFloat(content.rectOriginY) * bounds.height,
+                width:  CGFloat(content.rectWidth)   * bounds.width,
+                height: CGFloat(content.rectHeight)  * bounds.height
+            )
+            ctx.saveGState()
+            switch content.style {
+            case .highlight:
+                let colour = uiColor(forHighlightVariant: content.colorVariant)
+                ctx.setFillColor(colour.cgColor)
+                ctx.fill(rect)
+            case .underline:
+                ctx.setStrokeColor(UIColor.label.cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+                ctx.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+                ctx.strokePath()
+            case .strikethrough:
+                ctx.setStrokeColor(UIColor.label.cgColor)
+                ctx.setLineWidth(1.5)
+                ctx.move(to: CGPoint(x: rect.minX, y: rect.midY))
+                ctx.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+                ctx.strokePath()
+            }
+            ctx.restoreGState()
+        }
+    }
+
+    /// Same yellow-pink-blue-green palette used by the PDF
+    /// annotation pipeline, kept here so the rasterise path
+    /// doesn't have to depend on the highlight subsystem.
+    private func uiColor(forHighlightVariant key: String) -> UIColor {
+        switch key {
+        case "pink":  return UIColor(red: 1.00, green: 0.70, blue: 0.85, alpha: 0.4)
+        case "blue":  return UIColor(red: 0.70, green: 0.85, blue: 1.00, alpha: 0.4)
+        case "green": return UIColor(red: 0.75, green: 0.95, blue: 0.70, alpha: 0.4)
+        default:      return UIColor(red: 1.00, green: 0.95, blue: 0.40, alpha: 0.4)
         }
     }
 

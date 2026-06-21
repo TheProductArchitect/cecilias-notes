@@ -315,33 +315,50 @@ struct LassoOverlayView: View {
                 }
             }
 
-            // Delete badge — bottom-right of the displayed rect.
-            // 44pt hit target (Apple HIG minimum) wrapping a 26pt
-            // glyph so the user doesn't have to pin-prick the icon
-            // exactly. Earlier the entire tappable region was the
-            // 22pt SF Symbol bounds — well under the minimum.
-            Button {
-                LassoGroupOps.delete(selection: selection,
-                                     context: modelContext)
-            } label: {
-                Image(systemName: "trash.circle.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(theme.accent)
-                    .background(Circle().fill(theme.surfaceElevated))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            // Delete badge — anchored OUTSIDE the bbox at the
+            // top-right corner so it can't overlap with the
+            // bottom-right resize handle (it used to sit at
+            // `(maxX, maxY)`, same coordinate as the corner
+            // handle, and the 44pt hit target swallowed taps
+            // intended for the resize handle).
+            //
+            // Hidden during rotation because the rest of the
+            // chrome is hidden too — leaving just the delete
+            // floating at an unrotated corner would look broken.
+            if activeManipulation != .rotate {
+                Button {
+                    LassoGroupOps.delete(selection: selection,
+                                         context: modelContext)
+                } label: {
+                    Image(systemName: "trash.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(theme.accent)
+                        .background(Circle().fill(theme.surfaceElevated))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .position(x: displayed.maxX + 24, y: displayed.minY - 24)
             }
-            .buttonStyle(.plain)
-            .position(x: displayed.maxX, y: displayed.maxY)
 
             // Resize + rotation chrome — hidden for locked
             // selections (their dimensions are pinned, the handles
             // would either no-op or lie about the result).
-            if !locked {
+            // Also hidden mid-rotation: the corner handles are
+            // anchored to the unrotated bbox corners, so they
+            // visibly desync from the rotated dashed rectangle
+            // and confuse the user about where to grab next.
+            if !locked, activeManipulation != .rotate {
                 cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.minY))
                 cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.minY))
                 cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.maxY))
                 cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.maxY))
+            }
+            // Rotation knob stays visible — it follows the rotated
+            // bbox by computing the rotated "top of the box" point
+            // directly, so the user can keep dragging from the
+            // same conceptual handle as the rectangle spins.
+            if !locked {
                 rotationHandle(displayed: displayed)
             }
         }
@@ -410,11 +427,11 @@ struct LassoOverlayView: View {
                 let raw = value.translation
                 let constrained = constrainTranslation(raw)
                 dragOffset = constrained
-                selection.transientOffset = constrained
-                selection.isManipulating = true
+                LassoLiveDrag.shared.transientOffset = constrained
+                LassoLiveDrag.shared.isManipulating = true
             }
             .onEnded { value in
-                selection.isManipulating = false
+                LassoLiveDrag.shared.isManipulating = false
                 let delta = constrainTranslation(value.translation)
                 LassoGroupOps.translate(
                     selection: selection,
@@ -423,7 +440,7 @@ struct LassoOverlayView: View {
                     context: modelContext
                 )
                 dragOffset = .zero
-                selection.transientOffset = .zero
+                LassoLiveDrag.shared.transientOffset = .zero
                 activeManipulation = .none
             }
     }
@@ -475,7 +492,7 @@ struct LassoOverlayView: View {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 activeManipulation = .resize
-                selection.isManipulating = true
+                LassoLiveDrag.shared.isManipulating = true
                 resizeScale = computeScale(handle: handle, drag: value.translation)
                 let (sx, sy) = computeScaleXY(handle: handle, drag: value.translation)
                 resizeScaleX = sx
@@ -502,7 +519,7 @@ struct LassoOverlayView: View {
                 resizeScaleX = 1
                 resizeScaleY = 1
                 activeManipulation = .none
-                selection.isManipulating = false
+                LassoLiveDrag.shared.isManipulating = false
             }
     }
 
@@ -534,8 +551,25 @@ struct LassoOverlayView: View {
     // MARK: - Rotation handle
 
     private func rotationHandle(displayed: CGRect) -> some View {
-        let topCentre = CGPoint(x: displayed.midX, y: displayed.minY)
-        let knob      = CGPoint(x: displayed.midX, y: displayed.minY - 22)
+        // Compute the knob position in rotated bbox space so the
+        // handle visibly follows the dashed rectangle as the user
+        // drags. The bbox itself rotates around its centre via
+        // `.rotationEffect(.radians(rotateAngle))`; the knob has
+        // to track that same rotation by hand because it lives
+        // outside the bbox view in the ZStack.
+        let centre = CGPoint(x: displayed.midX, y: displayed.midY)
+        let knobOffset = displayed.height / 2 + 22
+        let topCentreOffset = displayed.height / 2
+        let cosA = cos(rotateAngle)
+        let sinA = sin(rotateAngle)
+        let topCentre = CGPoint(
+            x: centre.x + topCentreOffset * sinA,
+            y: centre.y - topCentreOffset * cosA
+        )
+        let knob = CGPoint(
+            x: centre.x + knobOffset * sinA,
+            y: centre.y - knobOffset * cosA
+        )
 
         return ZStack {
             Path { p in
@@ -550,18 +584,28 @@ struct LassoOverlayView: View {
                 .frame(width: 14, height: 14)
                 .contentShape(Rectangle().inset(by: -12))
                 .position(knob)
-                .gesture(rotateGesture(knob: knob))
+                .gesture(rotateGesture(centre: centre))
         }
     }
 
-    private func rotateGesture(knob: CGPoint) -> some Gesture {
-        let centre = CGPoint(x: selection.selectionBounds.midX,
-                             y: selection.selectionBounds.midY)
-        return DragGesture(minimumDistance: 0)
+    private func rotateGesture(centre: CGPoint) -> some Gesture {
+        // Track the angle from the gesture's `startLocation` →
+        // `value.location`, both relative to the bbox centre. The
+        // earlier implementation read the knob position at gesture
+        // creation time — but the knob position is captured in the
+        // view-builder closure once, and on the second rotation
+        // pass the captured "origin" was the already-rotated knob
+        // from the previous gesture. Using `startLocation` is
+        // gesture-local and immune to that staleness.
+        DragGesture(minimumDistance: 0)
             .onChanged { value in
                 activeManipulation = .rotate
-                selection.isManipulating = true
-                rotateAngle = angle(from: knob, to: value.location, around: centre)
+                LassoLiveDrag.shared.isManipulating = true
+                rotateAngle = angle(
+                    from: value.startLocation,
+                    to: value.location,
+                    around: centre
+                )
             }
             .onEnded { _ in
                 let θ = rotateAngle
@@ -573,7 +617,7 @@ struct LassoOverlayView: View {
                 )
                 rotateAngle = 0
                 activeManipulation = .none
-                selection.isManipulating = false
+                LassoLiveDrag.shared.isManipulating = false
             }
     }
 

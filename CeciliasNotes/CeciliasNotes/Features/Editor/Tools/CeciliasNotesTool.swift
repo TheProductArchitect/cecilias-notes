@@ -71,6 +71,29 @@ enum CeciliasNotesTool: Equatable {
             }
         }
 
+        /// Buckets tools that should share a colour memory. Picking
+        /// a colour for any ink tool (pen / fountain / monoline /
+        /// marker / brush / crayon / pencil) and then switching via
+        /// Apple Pencil squeeze should carry that colour over — the
+        /// user thinks of "ink colour" once, not seven times. The
+        /// highlighter has its own bucket because the typical use
+        /// case is a single highlight tint (usually yellow) that
+        /// shouldn't follow the ink-colour picker. Non-colour
+        /// tools (`cursor`, `lasso`, `eraser`, …) get a nil
+        /// bucket — they're never colour consumers.
+        var colourGroup: String? {
+            switch self {
+            case .pen, .fountainPen, .monoline, .marker,
+                 .brush, .crayon, .pencil:
+                return "ink"
+            case .highlighter:
+                return "highlighter"
+            case .cursor, .eraser, .lasso, .ruler,
+                 .text, .stickyNote, .image, .shape:
+                return nil
+            }
+        }
+
         var displayName: String {
             switch self {
             case .cursor:                   return "Cursor"

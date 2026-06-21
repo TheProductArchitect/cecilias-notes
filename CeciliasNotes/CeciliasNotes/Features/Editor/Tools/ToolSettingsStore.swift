@@ -33,6 +33,15 @@ struct ToolSettingsStore: Codable, Equatable {
     /// "use the default for that identity".
     var settings: [String: ToolSettings] = [:]
 
+    /// Per-colour-group remembered colour. Width / opacity stay
+    /// per-identity in `settings` (each ink type has its own
+    /// natural stroke weight), but colour is shared across the
+    /// "ink" group so squeeze-switching between pen / pencil /
+    /// crayon / etc. carries the user's last picked colour.
+    /// Highlighter has its own group key. Keyed by
+    /// `CeciliasNotesTool.Identity.colourGroup`.
+    var groupColourHex: [String: String] = [:]
+
     static let userDefaultsKey = "ceciliasnotes.tool.settings"
 
     // MARK: Load / save
@@ -64,6 +73,9 @@ struct ToolSettingsStore: Codable, Equatable {
 
     /// Snapshot the current associated values of an `CeciliasNotesTool` into a
     /// persisted entry. No-op for tools without colour/width/opacity.
+    /// Also writes the tool's colour to the shared colour-group
+    /// bucket so a squeeze-switch to a sibling tool in the same
+    /// group picks the same colour up.
     mutating func snapshot(_ tool: CeciliasNotesTool) {
         guard tool.hasColour || tool.hasWidth else { return }
         let entry = ToolSettings(
@@ -72,6 +84,9 @@ struct ToolSettingsStore: Codable, Equatable {
             opacity:   tool.currentOpacity
         )
         set(entry, for: tool.identity)
+        if tool.hasColour, let group = tool.identity.colourGroup {
+            groupColourHex[group] = tool.currentColour.hexString
+        }
     }
 
     // MARK: Apply
@@ -79,17 +94,24 @@ struct ToolSettingsStore: Codable, Equatable {
     /// Builds an `CeciliasNotesTool` for `identity`, restoring persisted settings if
     /// available. Falls back to `CeciliasNotesTool.Defaults.forIdentity(_:theme:)` for
     /// any field that isn't stored.
+    ///
+    /// Colour resolution prefers the colour-group bucket (so all
+    /// ink tools share the user's last picked colour) and falls
+    /// back to the per-identity stored colour, then the default.
     func tool(for identity: CeciliasNotesTool.Identity, theme: Theme) -> CeciliasNotesTool {
         let baseDefault = CeciliasNotesTool.Defaults.forIdentity(identity, theme: theme)
-        guard let stored = settings[identity.rawValue] else { return baseDefault }
-        let colour = UIColor(hex: stored.colourHex)
+        let stored = settings[identity.rawValue]
 
-        // Apply stored fields onto the default — any property that doesn't
-        // apply to this tool is a no-op via the corresponding `with…` helper.
         var t = baseDefault
-        if t.hasColour  { t = t.withColour(colour) }
-        if t.hasWidth   { t = t.withWidth(stored.width) }
-        if t.hasOpacity { t = t.withOpacity(stored.opacity) }
+        if t.hasColour {
+            if let group = identity.colourGroup, let hex = groupColourHex[group] {
+                t = t.withColour(UIColor(hex: hex))
+            } else if let hex = stored?.colourHex {
+                t = t.withColour(UIColor(hex: hex))
+            }
+        }
+        if t.hasWidth,   let w = stored?.width   { t = t.withWidth(w) }
+        if t.hasOpacity, let o = stored?.opacity { t = t.withOpacity(o) }
         return t
     }
 }
