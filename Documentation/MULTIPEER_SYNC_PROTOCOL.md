@@ -1,4 +1,4 @@
-# Multipeer Sync — Wire Protocol (v2.1 — authenticated + typed pairing result)
+# Multipeer Sync — Wire Protocol (v2.2 — auto-pair via iCloud Keychain)
 
 Direct device-to-device notebook delivery from a Mac running
 `cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
@@ -36,7 +36,49 @@ peer-name-spoofing attacker who *also* establishes a session).
 - Mac MCP **browses** with `MCNearbyServiceBrowser` for the same
   service type, sends `invitePeer(...)` to start a session.
 
-## Pairing flow
+## First-party auto-pairing (v2.2)
+
+When both devices are signed into the same Apple ID, pairing
+should be automatic — no 6-digit code dance for your own
+iPad / iPhone / Mac.
+
+**Mechanism.** Each device generates (or fetches) a 32-byte
+random "household key" stored under
+`app.ceciliasnotes.multipeer.householdKey` in **iCloud Keychain**
+(`kSecAttrSynchronizable = true`, end-to-end encrypted by Apple).
+Every device signed into the same Apple ID converges on the same
+key within a few seconds of first launch.
+
+The advertise step includes
+`discoveryInfo["householdHash"] = SHA256(householdKey)[0..8].hex` so
+a browser can spot a same-household peer without learning the key
+itself. When the hashes match, the sender derives its pairing
+key via:
+
+- IKM = household key (32 bytes from iCloud Keychain)
+- Salt = `"ceciliasnotes.multipeer.v1.firstparty.salt"` (UTF-8)
+- Info = `"<localPeerName>|<remotePeerName>"` (UTF-8)
+- Output = 32 bytes
+
+…and signs a `pairing-hello` with the result. The iPad receiver
+runs the same derivation and accepts the pairing without any
+pairing window being open (no 6-digit code required). The
+auto-paired key is stored under the peer name in the *local*
+Keychain (synchronizable: false) just like a manual pairing.
+
+**Why it's safe.** iCloud Keychain is end-to-end encrypted — the
+household key never leaves Apple's E2E envelope. The
+`householdHash` in the discovery info is only useful for spotting
+same-household peers; reversing it to the key is infeasible (8
+bytes of SHA-256 over 32 bytes of CSPRNG output). The HMAC layer
+still authenticates every payload, and the per-peer-pair HKDF
+binding prevents key reuse across different device pairs.
+
+A Mac MCP running outside the user's Apple-ID environment (or
+without iCloud Keychain enabled) won't have the household key →
+falls through to the manual code path.
+
+## Pairing flow (manual, for third-party senders)
 
 First-time pairing is a separate, human-authorised step before any
 file payloads are accepted.

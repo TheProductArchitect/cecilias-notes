@@ -394,16 +394,19 @@ struct LassoOverlayView: View {
         case .drag:
             return base.offsetBy(dx: dragOffset.width, dy: dragOffset.height)
         case .resize:
+            // Per-axis scale by default — gives 1:1 movement
+            // between the dragged corner and the user's finger.
+            // The earlier default used a center-to-corner diagonal
+            // distance ratio (`resizeScale`) which only gave the
+            // corner ~40% of finger motion on iPad (where Shift is
+            // never held). Shift-held still routes here too —
+            // the per-axis path is the right behaviour either way;
+            // a future aspect-lock option lives on the same gesture
+            // when we need it.
             let cx = base.midX
             let cy = base.midY
-            if modifierKeys.isShiftHeld {
-                let w = base.width  * resizeScaleX
-                let h = base.height * resizeScaleY
-                return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
-            }
-            let s = resizeScale
-            let w = base.width  * s
-            let h = base.height * s
+            let w = max(20, base.width  * resizeScaleX)
+            let h = max(20, base.height * resizeScaleY)
             return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
         case .rotate:
             return base
@@ -493,28 +496,22 @@ struct LassoOverlayView: View {
             .onChanged { value in
                 activeManipulation = .resize
                 LassoLiveDrag.shared.isManipulating = true
-                resizeScale = computeScale(handle: handle, drag: value.translation)
                 let (sx, sy) = computeScaleXY(handle: handle, drag: value.translation)
                 resizeScaleX = sx
                 resizeScaleY = sy
             }
             .onEnded { _ in
-                if modifierKeys.isShiftHeld {
-                    LassoGroupOps.scaleXY(
-                        selection: selection,
-                        scaleX: resizeScaleX,
-                        scaleY: resizeScaleY,
-                        pageSize: pageSize,
-                        context: modelContext
-                    )
-                } else {
-                    LassoGroupOps.scale(
-                        selection: selection,
-                        scale: resizeScale,
-                        pageSize: pageSize,
-                        context: modelContext
-                    )
-                }
+                // Always commit per-axis — matches the per-axis
+                // preview the user just saw. Earlier non-Shift path
+                // committed a single diagonal scale and the box
+                // visibly snapped on release.
+                LassoGroupOps.scaleXY(
+                    selection: selection,
+                    scaleX: resizeScaleX,
+                    scaleY: resizeScaleY,
+                    pageSize: pageSize,
+                    context: modelContext
+                )
                 resizeScale  = 1
                 resizeScaleX = 1
                 resizeScaleY = 1

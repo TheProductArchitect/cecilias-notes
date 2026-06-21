@@ -170,9 +170,23 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         session.delegate = self
         self.session = session
 
+        // Discovery info carries a `householdHash` when this
+        // device has an iCloud-Keychain-synced household key.
+        // Same-Apple-ID peers see a matching hash and skip the
+        // 6-digit code in the pairing-hello handler. Mac MCP
+        // (different Apple-ID hash, or no household key) still
+        // routes through the manual flow.
+        var discoveryInfo: [String: String] = [
+            "app": "ceciliasnotes",
+            "platform": "ios",
+            "v": "2"
+        ]
+        if let hash = MultipeerPairingStore.householdTokenHash() {
+            discoveryInfo["householdHash"] = hash
+        }
         let advertiser = MCNearbyServiceAdvertiser(
             peer: localPeerId,
-            discoveryInfo: ["app": "ceciliasnotes", "platform": "ios", "v": "2"],
+            discoveryInfo: discoveryInfo,
             serviceType: Self.serviceType
         )
         advertiser.delegate = self
@@ -298,11 +312,30 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             sendPong(to: peer, key: key)
 
         case "pairing-hello":
+            // Two acceptable paths:
+            //   1. First-party auto-pair: HMAC verifies against
+            //      the iCloud-Keychain-synced household key
+            //      (same Apple ID on both sides). No 6-digit code,
+            //      no pairing window required.
+            //   2. Manual code: HMAC verifies against the key
+            //      derived from the active pairing code. Pairing
+            //      mode must be open.
             // Always reply with a `pairing-result` so the Mac can
-            // distinguish "wrong code" from "no pairing window
-            // open" from "peer crashed" — without an explicit
-            // typed result the Mac just times out and shows a
-            // generic error.
+            // distinguish failure modes instead of timing out.
+
+            if let firstPartyKey = MultipeerPairingStore.derivedFirstPartyKey(
+                localPeerName: localPeerId.displayName,
+                remotePeerName: peer.displayName
+            ), verifyHMAC(hmacBytes, message: signedRange, key: firstPartyKey) {
+                // First-party auto-pair succeeded.
+                recentNonces.append((header.nonce, Date()))
+                MultipeerPairingStore.store(key: firstPartyKey, forPeerName: peer.displayName)
+                refreshPairedPeerNames()
+                status = .connected(peerName: peer.displayName)
+                sendPairingResult(result: "ok", to: peer, key: firstPartyKey)
+                return
+            }
+
             guard let code = activePairingCode,
                   let expiresAt = pairingExpiresAt,
                   Date() < expiresAt

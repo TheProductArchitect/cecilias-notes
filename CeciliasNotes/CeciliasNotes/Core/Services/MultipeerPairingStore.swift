@@ -35,6 +35,19 @@ enum MultipeerPairingStore {
 
     static let serviceName = "app.ceciliasnotes.multipeer.sharedKey"
 
+    /// iCloud-Keychain-synced household key — the foundation of
+    /// the first-party auto-pairing flow. Every device signed
+    /// into the same Apple ID gets the same 32-byte secret via
+    /// iCloud Keychain (end-to-end encrypted by Apple). Pairing-
+    /// hello payloads signed against an HKDF-derivation of this
+    /// key are accepted without the 6-digit code dance.
+    ///
+    /// Lives under a separate service name so the existing
+    /// per-peer keys (which MUST stay device-local) can't be
+    /// confused with the synced household secret.
+    static let householdServiceName = "app.ceciliasnotes.multipeer.householdKey"
+    static let householdAccount = "household"
+
     /// Look up the persisted shared key for a peer. Nil when never
     /// paired or after the user clears the trust store.
     static func sharedKey(forPeerName peerName: String) -> SymmetricKey? {
@@ -140,6 +153,104 @@ enum MultipeerPairingStore {
             info: info,
             outputByteCount: 32
         )
+    }
+
+    // MARK: - First-party household key (iCloud Keychain)
+
+    /// Fetch the household key, generating + persisting one on
+    /// the very first call. Subsequent calls on any device signed
+    /// into the same Apple ID return the same bytes via iCloud
+    /// Keychain sync (typically a few seconds after first sign-in).
+    ///
+    /// The household key NEVER appears on the wire. It's used
+    /// only as input key material for an HKDF that produces a
+    /// per-peer-pair derived key, just like the 6-digit code does
+    /// in the manual flow. Capturing the discoveryInfo
+    /// `tokenHash` doesn't reveal the household key (it's a
+    /// truncated SHA-256 with no rainbow-table angle for 32 bytes
+    /// of CSPRNG output).
+    static func householdKey() -> SymmetricKey? {
+        if let existing = fetchHouseholdKeyBytes() {
+            return SymmetricKey(data: existing)
+        }
+        // First launch on the first device of this Apple ID.
+        // Generate, store, and return. iCloud Keychain picks
+        // it up on its own cadence and propagates to peers.
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess
+        else { return nil }
+        let data = Data(bytes)
+        storeHouseholdKeyBytes(data)
+        return SymmetricKey(data: data)
+    }
+
+    /// Short, public identifier derived from the household key so
+    /// two devices can recognise each other as same-household
+    /// without exchanging the key itself. Goes into the Multipeer
+    /// `discoveryInfo` dictionary on advertise; the receiver
+    /// compares against its own hash and skips the 6-digit code
+    /// when they match.
+    static func householdTokenHash() -> String? {
+        guard let key = householdKey() else { return nil }
+        let hash = key.withUnsafeBytes { SHA256.hash(data: Data($0)) }
+        return hash.prefix(8).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// HKDF over the household key, info-bound to the two peer
+    /// names the same way `derivedKey(fromCode:)` is. The output
+    /// is the per-pair shared secret used to sign + verify
+    /// pairing-hello payloads in the first-party flow.
+    static func derivedFirstPartyKey(
+        localPeerName: String,
+        remotePeerName: String
+    ) -> SymmetricKey? {
+        guard let household = householdKey() else { return nil }
+        let salt = "ceciliasnotes.multipeer.v1.firstparty.salt".data(using: .utf8)!
+        let info = "\(localPeerName)|\(remotePeerName)".data(using: .utf8)!
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: household,
+            salt: salt,
+            info: info,
+            outputByteCount: 32
+        )
+    }
+
+    private static func fetchHouseholdKeyBytes() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: householdServiceName,
+            kSecAttrAccount as String: householdAccount,
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data, data.count == 32
+        else { return nil }
+        return data
+    }
+
+    private static func storeHouseholdKeyBytes(_ data: Data) {
+        // Synchronisable = true → propagates via iCloud Keychain.
+        // AfterFirstUnlock so background advertisers can read it
+        // without waiting for the user to open the app first.
+        let attributes: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: householdServiceName,
+            kSecAttrAccount as String: householdAccount,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrSynchronizable as String: true,
+            kSecValueData as String: data
+        ]
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: householdServiceName,
+            kSecAttrAccount as String: householdAccount,
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        SecItemAdd(attributes as CFDictionary, nil)
     }
 
     // MARK: - Pairing-mode code generation

@@ -83,7 +83,6 @@ struct StickyNoteElementView: View {
                 .frame(width: displayed.width, height: displayed.height)
                 .overlay(textLayer)
                 .overlay(borderOverlay)
-                .overlay(deleteBadge, alignment: .bottomTrailing)
                 .rotationEffect(.radians(element.rotation))
                 .contentShape(Rectangle())
                 // Quick tap → edit immediately.
@@ -162,6 +161,17 @@ struct StickyNoteElementView: View {
                              at: CGPoint(x: displayed.minX, y: displayed.maxY))
                 cornerHandle(.bottomRight,
                              at: CGPoint(x: displayed.maxX, y: displayed.maxY))
+                // Delete sits OUTSIDE the card, top-right offset.
+                // The earlier badge was an `.overlay(.bottomTrailing)`
+                // INSIDE the card frame — that placed it on top of
+                // the bottom-right resize handle's 32pt hit area and
+                // the simultaneous tap gestures on the card body
+                // swallowed the button tap before it could fire.
+                externalDeleteBadge
+                    .position(
+                        x: displayed.maxX + 24,
+                        y: displayed.minY - 24
+                    )
             }
         }
         .frame(width: pageSize.width, height: pageSize.height,
@@ -293,18 +303,19 @@ struct StickyNoteElementView: View {
         }
     }
 
-    @ViewBuilder
-    private var deleteBadge: some View {
-        if isSelected && !isEditing {
-            Button(action: onDelete) {
-                Image(systemName: "trash.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(theme.accent)
-                    .background(Circle().fill(theme.surfaceElevated))
-            }
-            .buttonStyle(.plain)
-            .padding(6)
+    /// External delete button — siblings the corner handles in the
+    /// chrome ZStack, positioned outside the card boundary so the
+    /// card's tap-to-edit gesture never sees the touch.
+    private var externalDeleteBadge: some View {
+        Button(action: onDelete) {
+            Image(systemName: "trash.circle.fill")
+                .font(.system(size: 26))
+                .foregroundStyle(theme.accent)
+                .background(Circle().fill(theme.surfaceElevated))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var cardColor: Color {
