@@ -150,6 +150,7 @@ struct StickyNoteElementView: View {
                         }
                 )
                 .position(x: displayed.midX, y: displayed.midY)
+                .lassoRotationPreview(elementId: element.id)
 
             if isSelected && !isEditing {
                 colorPickerStrip(displayed: displayed)

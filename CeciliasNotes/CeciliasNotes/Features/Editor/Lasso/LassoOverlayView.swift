@@ -49,10 +49,36 @@ struct LassoOverlayView: View {
     @State private var resizeScale:   CGFloat = 1
     @State private var resizeScaleX:  CGFloat = 1
     @State private var resizeScaleY:  CGFloat = 1
+    @State private var resizeTranslation: CGSize = .zero
+    @State private var activeCorner: Corner = .bottomRight
     @State private var rotateAngle:   CGFloat = 0
     @State private var activeManipulation: Manipulation = .none
 
     private enum Manipulation { case none, drag, resize, rotate }
+
+    /// Which corner of the selection bbox the user is grabbing.
+    /// Drives the resize gesture's anchor: the OPPOSITE corner
+    /// stays fixed while the grabbed corner follows the finger.
+    /// This matches every direct-manipulation tool the user
+    /// already knows (Photos / Pages / Notability) where dragging
+    /// the bottom-right corner outward grows the box rightward
+    /// and downward while the top-left edge stays put.
+    enum Corner: Equatable {
+        case topLeft, topRight, bottomLeft, bottomRight
+
+        /// The OPPOSITE-corner anchor point of `rect`, in `rect`'s
+        /// coordinate space. The element-scale commit pivots
+        /// around this point so the chrome preview and the
+        /// committed positions agree.
+        func anchor(in rect: CGRect) -> CGPoint {
+            switch self {
+            case .topLeft:     return CGPoint(x: rect.maxX, y: rect.maxY)
+            case .topRight:    return CGPoint(x: rect.minX, y: rect.maxY)
+            case .bottomLeft:  return CGPoint(x: rect.maxX, y: rect.minY)
+            case .bottomRight: return CGPoint(x: rect.minX, y: rect.minY)
+            }
+        }
+    }
 
     // MARK: - Body
 
@@ -349,10 +375,14 @@ struct LassoOverlayView: View {
             // visibly desync from the rotated dashed rectangle
             // and confuse the user about where to grab next.
             if !locked, activeManipulation != .rotate {
-                cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.minY))
-                cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.minY))
-                cornerHandle(at: CGPoint(x: displayed.minX, y: displayed.maxY))
-                cornerHandle(at: CGPoint(x: displayed.maxX, y: displayed.maxY))
+                cornerHandle(corner: .topLeft,
+                             at: CGPoint(x: displayed.minX, y: displayed.minY))
+                cornerHandle(corner: .topRight,
+                             at: CGPoint(x: displayed.maxX, y: displayed.minY))
+                cornerHandle(corner: .bottomLeft,
+                             at: CGPoint(x: displayed.minX, y: displayed.maxY))
+                cornerHandle(corner: .bottomRight,
+                             at: CGPoint(x: displayed.maxX, y: displayed.maxY))
             }
             // Rotation knob stays visible — it follows the rotated
             // bbox by computing the rotated "top of the box" point
@@ -394,20 +424,46 @@ struct LassoOverlayView: View {
         case .drag:
             return base.offsetBy(dx: dragOffset.width, dy: dragOffset.height)
         case .resize:
-            // Per-axis scale by default — gives 1:1 movement
-            // between the dragged corner and the user's finger.
-            // The earlier default used a center-to-corner diagonal
-            // distance ratio (`resizeScale`) which only gave the
-            // corner ~40% of finger motion on iPad (where Shift is
-            // never held). Shift-held still routes here too —
-            // the per-axis path is the right behaviour either way;
-            // a future aspect-lock option lives on the same gesture
-            // when we need it.
-            let cx = base.midX
-            let cy = base.midY
-            let w = max(20, base.width  * resizeScaleX)
-            let h = max(20, base.height * resizeScaleY)
-            return CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h)
+            // Opposite-corner anchor: the two edges that share the
+            // grabbed corner follow the finger; the other two
+            // stay fixed. Direct-manipulation behaviour every
+            // direct-manipulation tool (Photos, Pages, Notability)
+            // uses by default. The earlier center-anchored model
+            // moved every edge symmetrically — pulling the bottom-
+            // right corner outward also pushed the top-left edge
+            // outward, which the user explicitly called out as
+            // wrong: "expand the two edges the vertex is connected
+            // to, not the whole thing."
+            let dx = resizeTranslation.width
+            let dy = resizeTranslation.height
+            var x = base.minX, y = base.minY, w = base.width, h = base.height
+            switch activeCorner {
+            case .topLeft:
+                x += dx; y += dy; w -= dx; h -= dy
+            case .topRight:
+                y += dy; w += dx; h -= dy
+            case .bottomLeft:
+                x += dx; w -= dx; h += dy
+            case .bottomRight:
+                w += dx; h += dy
+            }
+            // Clamp to a sane minimum without breaking the anchor:
+            // if width / height would go below the minimum, pin
+            // the dragged corner so the anchor edge stays put.
+            let minSide: CGFloat = 20
+            if w < minSide {
+                if activeCorner == .topLeft || activeCorner == .bottomLeft {
+                    x = base.maxX - minSide
+                }
+                w = minSide
+            }
+            if h < minSide {
+                if activeCorner == .topLeft || activeCorner == .topRight {
+                    y = base.maxY - minSide
+                }
+                h = minSide
+            }
+            return CGRect(x: x, y: y, width: w, height: h)
         case .rotate:
             return base
         }
@@ -475,43 +531,44 @@ struct LassoOverlayView: View {
 
     // MARK: - Corner handle (resize)
 
-    private func cornerHandle(at point: CGPoint) -> some View {
+    private func cornerHandle(corner: Corner, at point: CGPoint) -> some View {
         Circle()
             .fill(theme.accent)
             .overlay(Circle().stroke(theme.surfaceElevated, lineWidth: 1.5))
             .frame(width: 12, height: 12)
             .contentShape(Rectangle().inset(by: -10))
             .position(point)
-            .gesture(resizeGesture(at: point))
+            .gesture(resizeGesture(corner: corner))
     }
 
-    private func resizeGesture(at handle: CGPoint) -> some Gesture {
-        // Aspect-locked (Shift not held): scale factor from the
-        // distance ratio between dragged and original corner
-        // position relative to the bbox centre.
-        //
-        // Free-axis (Shift held): scale X and Y independently
-        // from the per-axis distance ratio.
+    private func resizeGesture(corner: Corner) -> some Gesture {
+        // Live translation feeds `chromeDisplayRect` directly so
+        // the dragged corner stays under the finger and the
+        // opposite corner stays nailed in place. On release we
+        // compute the equivalent scale factors and commit through
+        // `LassoGroupOps.scaleXY(..., anchor:)`.
         DragGesture(minimumDistance: 0)
             .onChanged { value in
                 activeManipulation = .resize
+                activeCorner = corner
+                resizeTranslation = value.translation
                 LassoLiveDrag.shared.isManipulating = true
-                let (sx, sy) = computeScaleXY(handle: handle, drag: value.translation)
-                resizeScaleX = sx
-                resizeScaleY = sy
             }
-            .onEnded { _ in
-                // Always commit per-axis — matches the per-axis
-                // preview the user just saw. Earlier non-Shift path
-                // committed a single diagonal scale and the box
-                // visibly snapped on release.
+            .onEnded { value in
+                let base = selection.selectionBounds
+                let finalRect = chromeDisplayRect(base: base)
+                let scaleX = base.width  > 0.001 ? finalRect.width  / base.width  : 1
+                let scaleY = base.height > 0.001 ? finalRect.height / base.height : 1
+                let anchor = corner.anchor(in: base)
                 LassoGroupOps.scaleXY(
                     selection: selection,
-                    scaleX: resizeScaleX,
-                    scaleY: resizeScaleY,
+                    scaleX: scaleX,
+                    scaleY: scaleY,
                     pageSize: pageSize,
+                    anchor: anchor,
                     context: modelContext
                 )
+                resizeTranslation = .zero
                 resizeScale  = 1
                 resizeScaleX = 1
                 resizeScaleY = 1
@@ -598,11 +655,17 @@ struct LassoOverlayView: View {
             .onChanged { value in
                 activeManipulation = .rotate
                 LassoLiveDrag.shared.isManipulating = true
-                rotateAngle = angle(
+                LassoLiveDrag.shared.rotationCenter = centre
+                let a = angle(
                     from: value.startLocation,
                     to: value.location,
                     around: centre
                 )
+                rotateAngle = a
+                // Publish the live angle so every selected element
+                // can rotate with the bbox preview instead of
+                // standing still and snapping on release.
+                LassoLiveDrag.shared.rotationAngle = a
             }
             .onEnded { _ in
                 let θ = rotateAngle
@@ -615,6 +678,7 @@ struct LassoOverlayView: View {
                 rotateAngle = 0
                 activeManipulation = .none
                 LassoLiveDrag.shared.isManipulating = false
+                LassoLiveDrag.shared.rotationAngle = 0
             }
     }
 

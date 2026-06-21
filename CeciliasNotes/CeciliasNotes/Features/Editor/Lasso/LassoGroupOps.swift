@@ -137,13 +137,20 @@ enum LassoGroupOps {
         scaleX sx: CGFloat,
         scaleY sy: CGFloat,
         pageSize: CGSize,
+        anchor: CGPoint? = nil,
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
         guard pageSize.width > 0, pageSize.height > 0 else { return }
         guard sx > 0, sy > 0, !(sx == 1 && sy == 1) else { return }
-        let anchor = CGPoint(x: selection.selectionBounds.midX,
-                             y: selection.selectionBounds.midY)
+        // Default anchor (nil) keeps the legacy bbox-centre
+        // behaviour so existing callers don't change semantics;
+        // the lasso resize gesture now passes the OPPOSITE-corner
+        // point so the edge the user nailed stays nailed.
+        let anchor = anchor ?? CGPoint(
+            x: selection.selectionBounds.midX,
+            y: selection.selectionBounds.midY
+        )
         let strokeTransform = LassoMath.scale(sx: sx, sy: sy, around: anchor)
 
         for elementId in selection.selectedElementIds {
@@ -168,12 +175,24 @@ enum LassoGroupOps {
         }
         try? context.save()
 
+        // Recompute bbox by pivoting every corner around `anchor`.
+        // This generalises both the legacy bbox-centre anchor
+        // (dxFromAnchor / dyFromAnchor are 0, so the centre
+        // stays put) AND the new opposite-corner anchor (the
+        // centre shifts as the corners scale around the fixed
+        // anchor point).
         let oldBounds = selection.selectionBounds
+        let dxFromAnchor = oldBounds.midX - anchor.x
+        let dyFromAnchor = oldBounds.midY - anchor.y
+        let newMidX = anchor.x + dxFromAnchor * sx
+        let newMidY = anchor.y + dyFromAnchor * sy
+        let newWidth  = oldBounds.width  * sx
+        let newHeight = oldBounds.height * sy
         let newBounds = CGRect(
-            x: anchor.x - oldBounds.width  * sx / 2,
-            y: anchor.y - oldBounds.height * sy / 2,
-            width:  oldBounds.width  * sx,
-            height: oldBounds.height * sy
+            x: newMidX - newWidth  / 2,
+            y: newMidY - newHeight / 2,
+            width:  newWidth,
+            height: newHeight
         )
         selection.updateBounds(newBounds)
     }
