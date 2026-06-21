@@ -352,14 +352,99 @@ struct CloudSettingsView: View {
                     .foregroundStyle(theme.foregroundSubtle)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
+                // Stats strip — counts derived from the rolling
+                // 50-event buffer. Gives the user a one-line answer
+                // to "is the pipeline healthy?" without scanning
+                // the row list every time.
+                inboxStatsStrip
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
                 VStack(spacing: 0) {
-                    ForEach(inboxEvents.prefix(10)) { event in
+                    ForEach(inboxEvents.prefix(15)) { event in
                         inboxEventRow(event)
                         Rectangle().fill(theme.hairline).frame(height: 0.5)
                     }
                 }
+                if inboxEvents.count > 15 {
+                    Text("\(inboxEvents.count - 15) older event\(inboxEvents.count - 15 == 1 ? "" : "s") rolled off")
+                        .font(.system(size: 10).italic())
+                        .foregroundStyle(theme.foregroundSubtle)
+                        .padding(.top, 6)
+                }
+                // Inbox-path footnote — useful when the user wants
+                // to confirm WHERE on iCloud Drive the watcher is
+                // looking (the spot the Mac MCP / share extension
+                // write to). Truncates from the front so the
+                // notebooks-relative tail stays visible.
+                if let path = inboxPathDisplay() {
+                    Text(path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(theme.foregroundSubtle)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .padding(.top, 8)
+                }
             }
         }
+    }
+
+    /// One-line summary above the event list. Counts events in
+    /// the rolling buffer (the watcher caps at 50, so this is
+    /// "recent" not "lifetime"; reset on app launch).
+    private var inboxStatsStrip: some View {
+        let imported    = inboxEvents.filter { $0.kind == .imported }.count
+        let downloading = inboxEvents.filter { $0.kind == .downloading }.count
+        let skipped     = inboxEvents.filter {
+            $0.kind == .skippedDuplicate || $0.kind == .unknownExtension
+        }.count
+        let lastImport = inboxEvents.first { $0.kind == .imported }?.date
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 16) {
+                inboxStat(value: imported,    label: "imported")
+                inboxStat(value: downloading, label: "downloading")
+                inboxStat(value: skipped,     label: "skipped")
+            }
+            if let lastImport {
+                Text("last imported \(relativeTimeString(from: lastImport))")
+                    .font(.system(size: 10).italic())
+                    .foregroundStyle(theme.foregroundSubtle)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func inboxStat(value: Int, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("\(value)")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundStyle(theme.foreground)
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(theme.foregroundSubtle)
+        }
+    }
+
+    /// Human-readable "Nm ago" / "Nh ago" / "yesterday" string for
+    /// the last-import footnote.
+    private func relativeTimeString(from date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Resolved iCloud-inbox path, abbreviated with the
+    /// `~/Library/Mobile Documents/…/Inbox` tail. Nil when iCloud
+    /// isn't available (the watcher couldn't resolve a container).
+    private func inboxPathDisplay() -> String? {
+        guard let url = CeciliasNotesFileWatcher.sharedInboxURL() else { return nil }
+        let path = url.path
+        // Trim the device-specific prefix; keep the container-
+        // relative portion that's stable across devices.
+        if let range = path.range(of: "Mobile Documents/") {
+            return "📂 …/" + String(path[range.upperBound...])
+        }
+        return "📂 " + path
     }
 
     private func inboxEventRow(_ event: CeciliasNotesFileWatcher.InboxEvent) -> some View {

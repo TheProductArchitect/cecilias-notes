@@ -303,17 +303,20 @@ struct QuizBuilderView: View {
             attachmentAnchor: .point(.center),
             arrowEdge: .top
         ) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("can't generate a quiz here")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(reason)
                     .font(.system(size: 12))
                     .foregroundStyle(theme.foregroundMuted)
+                    .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
-            .frame(maxWidth: 280)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .frame(width: 300)
             .presentationCompactAdaptation(.popover)
         }
     }

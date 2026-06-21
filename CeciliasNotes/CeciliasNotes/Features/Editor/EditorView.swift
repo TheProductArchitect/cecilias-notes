@@ -104,6 +104,24 @@ struct EditorView: View {
                     .onAppear { canvasFrame = proxy.frame(in: .global) }
                     .accessibilityLabel(A11y.canvasLabel(strokeCount: viewModel.strokeCount))
                     .accessibilityHint(A11y.canvasHint)
+                    // Global lasso clear-on-tap: catches taps in the
+                    // grey area AROUND the page (the per-page tap-to-
+                    // clear inside `LassoOverlayView` only covers the
+                    // page itself, so PDF-locked selections that fill
+                    // the page have no in-page empty spot to dismiss
+                    // them). Simultaneous gesture runs alongside any
+                    // child view's own taps so element taps still
+                    // reach their handlers; this just adds a "deselect
+                    // the lasso" effect to every tap when a selection
+                    // is live.
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            let state = LassoSelectionState.shared
+                            if state.hasSelection {
+                                state.clear()
+                            }
+                        }
+                    )
 
                 // Tap-outside-to-dismiss while the title is being
                 // renamed. Active ONLY while editing — does not steal
