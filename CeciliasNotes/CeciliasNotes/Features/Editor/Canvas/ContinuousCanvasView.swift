@@ -983,13 +983,34 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // `layoutSubviews` will re-fire once SwiftUI gives the
             // representable its real frame.
             guard scrollView.bounds.width > 0, width > 0 else { return }
-            let hInset = max(0, (scrollView.bounds.width  - width)  / 2)
+
+            // Tool-palette overlay reservation. The vertical pill on
+            // a left- or right-edge palette covers ~68pt of the
+            // viewport; centering the page in the FULL scrollView
+            // bounds leaves it visually pushed under the palette.
+            // Subtract the palette-covered strip from the available
+            // width, centre the page in what's left, and add the
+            // palette strip back to the opposite-side inset.
+            let paletteStrip: CGFloat = 56 + 12   // matches ToolPaletteView
+            var reservedLeft:  CGFloat = 0
+            var reservedRight: CGFloat = 0
+            let paletteEdge = paletteEdgeForActiveNotebook(boundsSize: scrollView.bounds.size)
+            switch paletteEdge {
+            case .left:  reservedLeft  = paletteStrip
+            case .right: reservedRight = paletteStrip
+            case .top, .bottom: break
+            }
+            let availableWidth = scrollView.bounds.width - reservedLeft - reservedRight
+            let centeringInset = max(0, (availableWidth - width) / 2)
+            let leftInset  = centeringInset + reservedLeft
+            let rightInset = centeringInset + reservedRight
+
             let vInset = max(0, scrollView.bounds.height / 2 - height / 2)
             let newInset = UIEdgeInsets(
                 top:    Swift.max(scrollView.bounds.height * 0.10, vInset),
-                left:   hInset,
+                left:   leftInset,
                 bottom: Swift.max(scrollView.bounds.height * 0.10, vInset),
-                right:  hInset
+                right:  rightInset
             )
             // Only assign when actually different — setting the
             // inset always triggers a `setContentOffset` adjustment
@@ -997,6 +1018,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if scrollView.contentInset != newInset {
                 scrollView.contentInset = newInset
             }
+        }
+
+        /// Read the per-notebook palette edge from UserDefaults —
+        /// `ToolPaletteView` persists it under
+        /// `toolbar.position.<notebookId>` on every drag-end. Default
+        /// is `.right` to match the palette's own fallback.
+        private func paletteEdgeForActiveNotebook(boundsSize: CGSize) -> ToolbarEdge {
+            let key = "toolbar.position.\(viewModel.notebook.id.uuidString)"
+            if let raw = UserDefaults.standard.string(forKey: key),
+               let edge = ToolbarEdge(rawValue: raw) {
+                return edge
+            }
+            // No saved value → palette uses orientation-derived default.
+            return ToolbarEdgeBinding.isLandscape(boundsSize)
+                ? ToolbarEdgeBinding.landscapeDefault
+                : ToolbarEdgeBinding.portraitDefault
         }
 
         // MARK: Image cross-page hand-off
@@ -1501,20 +1538,40 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-            // Snap to 1.0× when the user releases the pinch within ~8%
-            // of native — pinch deceleration tends to land at 0.94 or
-            // 1.07 and feel "stuck" off-grid. The snap is animated so
-            // it reads as a magnetic click, and a selection-style haptic
-            // confirms the rest position.
-            let snapTolerance: CGFloat = 0.08
+            // Magnetic snap: native 1.0× AND the device-specific
+            // "fit the whole page" zoom both feel like rest points
+            // to the user. Pinch deceleration tends to land just
+            // off-grid (0.94 / 1.07 / 0.62) and feel "stuck"; an
+            // animated snap turns the off-grid landing into a
+            // click. Tolerance is 10% on each target so the snap
+            // is discoverable without fighting an intentional zoom.
+            let snapTolerance: CGFloat = 0.10
+            let fitTarget = currentFitZoom(scrollView)
+            var snapTo: CGFloat? = nil
+            // Prefer 1.0 when it's near the user's release zoom —
+            // it's the "everything at native size" rest point.
             if abs(scale - 1.0) > 0.001 && abs(scale - 1.0) < snapTolerance {
+                snapTo = 1.0
+            }
+            // …then the fit-to-viewport zoom (the value iPhone
+            // settles to on first open of a page). On iPad this is
+            // usually also 1.0 so it collapses to the same branch;
+            // on iPhone it sits around 0.66 and is the user's
+            // "show me the whole page" rest point.
+            if snapTo == nil,
+               let fit = fitTarget,
+               abs(scale - fit) > 0.001,
+               abs(scale - fit) < snapTolerance {
+                snapTo = fit
+            }
+            if let target = snapTo {
                 suppressZoomUpdate = true
                 UIView.animate(withDuration: 0.18, delay: 0,
                                options: [.curveEaseOut, .beginFromCurrentState]) {
-                    scrollView.zoomScale = 1.0
+                    scrollView.zoomScale = target
                 } completion: { _ in
                     self.suppressZoomUpdate = false
-                    self.viewModel.zoomScale = 1.0
+                    self.viewModel.zoomScale = target
                     self.applyContentInset()
                     self.snapToEdgesIfClose(scrollView)
                 }
@@ -1523,6 +1580,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
             applyContentInset()
             snapToEdgesIfClose(scrollView)
+        }
+
+        /// The zoom that fits the page width to the viewport,
+        /// minus a small breathing margin. Mirrors the formula in
+        /// `applyPhoneFitToWidthIfNeeded`. Returns `nil` when the
+        /// scrollView hasn't been laid out yet.
+        private func currentFitZoom(_ scrollView: UIScrollView) -> CGFloat? {
+            guard scrollView.bounds.width > 0,
+                  scrollView.contentSize.width > 0 else { return nil }
+            let target = (scrollView.bounds.width - 24) / scrollView.contentSize.width
+            return max(scrollView.minimumZoomScale, min(1.0, target))
         }
 
         /// Magnetically snap the document flush to a viewport edge
