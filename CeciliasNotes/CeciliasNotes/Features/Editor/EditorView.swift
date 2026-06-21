@@ -21,6 +21,18 @@ struct EditorView: View {
     @State private var canRedo: Bool = false
     @State private var undoTimer: Timer?
     @State private var isShowingCoverPicker: Bool = false
+    /// State for the "Summarize page" sheet. Earlier this routed
+    /// through `ModalPresenter.shared.present(.sheet(...))`, which
+    /// attaches at the LibraryView level — the cover-tone editor
+    /// `.fullScreenCover` outranks it in iPadOS's "only one sheet at
+    /// a time" arbitration, so the sheet only appeared AFTER the
+    /// editor dismissed back to home. Backing both this and
+    /// `isShowingCoverPicker` with local `.sheet(isPresented:)`
+    /// modifiers on `EditorView` puts the presentation INSIDE the
+    /// cover (same pattern as `isShowingExportSheet`) so the sheet
+    /// appears immediately, on top of the editor where the user
+    /// expects it.
+    @State private var isShowingSummarizeSheet: Bool = false
     /// Queued PDF URL passed in by Library "Import PDF…". Consumed
     /// once on first appear and cleared so a re-render doesn't double
     /// import.
@@ -537,17 +549,64 @@ struct EditorView: View {
                     .zIndex(75)
                 }
 
-                // Full-screen exit tap
+                // Full-screen exit pill
+                //
+                // Earlier this was a screen-filling `Color.clear` with
+                // an `.onTapGesture` — which absorbed every touch in
+                // the editor (the `.contentShape(Rectangle())` was
+                // hit-test-active everywhere, but the only gesture
+                // wired to it was `.onTapGesture`, so drags / strokes
+                // / pinches landed on a do-nothing view). Net effect:
+                // touch went completely dead in fullscreen.
+                //
+                // Replaced with a small top-trailing pill so:
+                //   1. canvas touches pass through everywhere except
+                //      the pill's bounds (Pencil + finger drawing
+                //      work in fullscreen again), and
+                //   2. the exit affordance is *visible* — the
+                //      two-finger-double-tap escape hatch was the
+                //      only way out, and there's no UI to surface it.
                 if viewModel.isFullScreen {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
-                                viewModel.isFullScreen = false
-                                viewModel.resetToolbarTimer()
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Button {
+                                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                                    viewModel.isFullScreen = false
+                                    viewModel.resetToolbarTimer()
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text("exit")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundStyle(theme.foreground)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .fill(.ultraThinMaterial)
+                                )
+                                .overlay(
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+                                )
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Exit fullscreen")
                         }
-                        .ignoresSafeArea()
+                        Spacer()
+                    }
+                    .padding(.top, 12)
+                    .padding(.trailing, 16)
+                    // The VStack itself stretches to fill its parent,
+                    // but `Color.clear` between the pill and the edges
+                    // is NOT hit-testable (only the Button is), so
+                    // canvas touches outside the pill pass through.
+                    .allowsHitTesting(true)
+                    .zIndex(78)
                 }
 
                 // Page swap loading indicator (only if swap > 100ms)
@@ -655,19 +714,26 @@ struct EditorView: View {
                 }
             })
         }
-        .onChange(of: isShowingCoverPicker) { _, newValue in
-            guard newValue else { return }
-            ModalPresenter.shared.present(.sheet(
-                id: "editor.coverPicker",
-                onDidDismiss: {
-                    Task { @MainActor in isShowingCoverPicker = false }
-                }
-            ) {
-                CoverTonePickerView(notebook: viewModel.notebook) {
-                    ModalPresenter.shared.dismiss()
-                }
-                .presentationDetents([.medium])
-            })
+        // Cover picker — local `.sheet` (NOT `ModalPresenter`) so it
+        // presents on top of the editor immediately. The previous
+        // `ModalPresenter` route attached at the LibraryView level
+        // behind the editor's `.fullScreenCover`, so the sheet only
+        // surfaced after the user dismissed back to home.
+        .sheet(isPresented: $isShowingCoverPicker) {
+            CoverTonePickerView(notebook: viewModel.notebook) {
+                isShowingCoverPicker = false
+            }
+            .presentationDetents([.medium])
+        }
+        // Summarize page — same in-editor presentation route as the
+        // cover picker, for the same reason.
+        .sheet(isPresented: $isShowingSummarizeSheet) {
+            SummarizePageView(
+                page: viewModel.currentPage,
+                notebookTitle: viewModel.notebook.title,
+                notebookId: viewModel.notebook.id,
+                onDismiss: { isShowingSummarizeSheet = false }
+            )
         }
         // Export sheet is presented LOCALLY off EditorView rather
         // than through `ModalPresenter`. `ModalPresenter`'s sheet is
@@ -954,16 +1020,7 @@ struct EditorView: View {
     /// the editor is itself a full-screen cover, so an inline
     /// `.sheet` from here would silently fail to present.
     private func summarizeCurrentPage() {
-        let page = viewModel.currentPage
-        let notebook = viewModel.notebook
-        ModalPresenter.shared.present(.sheet(id: "editor.summarizePage") {
-            SummarizePageView(
-                page: page,
-                notebookTitle: notebook.title,
-                notebookId: notebook.id,
-                onDismiss: { ModalPresenter.shared.dismiss() }
-            )
-        })
+        isShowingSummarizeSheet = true
     }
 
     // MARK: Top-edge gesture overlay (header reveal)
