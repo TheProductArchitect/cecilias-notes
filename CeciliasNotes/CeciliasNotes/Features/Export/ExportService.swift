@@ -515,8 +515,17 @@ final class ExportService {
         // full-page geometry so the PDF and the editor canvas line up.
         let mm: (CGFloat) -> CGFloat = { $0 * 2.83 }
 
+        // Centred and edge-flush layouts so the rendered PDF
+        // matches the editor's `TemplatePatternView`. The earlier
+        // loops started at `spacing` and stopped before the bottom
+        // edge, leaving a whole-spacing gap at the top and an
+        // irregular gap at the bottom; users called this out as
+        // visible "cream strips" above and below the grid.
         let drawHLines: (CGFloat) -> Void = { spacing in
-            var y = spacing
+            let lines = max(1, Int(bounds.height / spacing))
+            let usedHeight = CGFloat(lines) * spacing
+            let topOffset = max(0, (bounds.height - usedHeight) / 2)
+            var y = topOffset + spacing
             while y < bounds.height {
                 ctx.move(to:    CGPoint(x: 16,                y: y))
                 ctx.addLine(to: CGPoint(x: bounds.width - 16, y: y))
@@ -525,26 +534,35 @@ final class ExportService {
             ctx.strokePath()
         }
         let drawSquareGrid: (CGFloat) -> Void = { spacing in
-            var y = spacing
-            while y < bounds.height {
+            // Edge-to-edge: round the cell count, then scale the
+            // step so the first/last lines land exactly on the
+            // page edges.
+            let cellsY = max(1, Int((bounds.height / spacing).rounded()))
+            let cellsX = max(1, Int((bounds.width  / spacing).rounded()))
+            let stepY = bounds.height / CGFloat(cellsY)
+            let stepX = bounds.width  / CGFloat(cellsX)
+            for i in 0...cellsY {
+                let y = CGFloat(i) * stepY
                 ctx.move(to:    CGPoint(x: 0,            y: y))
                 ctx.addLine(to: CGPoint(x: bounds.width, y: y))
-                y += spacing
             }
-            var x = spacing
-            while x < bounds.width {
+            for i in 0...cellsX {
+                let x = CGFloat(i) * stepX
                 ctx.move(to:    CGPoint(x: x, y: 0))
                 ctx.addLine(to: CGPoint(x: x, y: bounds.height))
-                x += spacing
             }
             ctx.strokePath()
         }
         let drawDotGrid: (CGFloat) -> Void = { spacing in
             ctx.setFillColor(UIColor(ThemeManager.shared.current.foregroundSubtle).withAlphaComponent(0.30).cgColor)
             let r: CGFloat = 1.5
-            var y = spacing
+            let cellsY = max(1, Int(bounds.height / spacing))
+            let cellsX = max(1, Int(bounds.width  / spacing))
+            let topOffset  = max(0, (bounds.height - CGFloat(cellsY) * spacing) / 2)
+            let leftOffset = max(0, (bounds.width  - CGFloat(cellsX) * spacing) / 2)
+            var y = topOffset + spacing
             while y < bounds.height {
-                var x = spacing
+                var x = leftOffset + spacing
                 while x < bounds.width {
                     ctx.fillEllipse(in: CGRect(x: x - r/2, y: y - r/2, width: r, height: r))
                     x += spacing

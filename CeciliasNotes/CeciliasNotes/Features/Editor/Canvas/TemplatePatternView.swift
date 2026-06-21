@@ -69,14 +69,24 @@ struct TemplatePatternView: View {
     // MARK: - Lined
 
     private func drawHorizontalLines(_ ctx: GraphicsContext, size: CGSize, spacingMM: CGFloat) {
-        let spacing = mm(spacingMM)
-        var y = spacing
+        let nominal = mm(spacingMM)
+        // Distribute the remainder evenly so the top "gap" before the
+        // first rule and the bottom "gap" after the last rule are
+        // equal — earlier the loop started at y=spacing and stopped
+        // before the bottom edge, leaving one full spacing gap at
+        // the top and a partial gap at the bottom. Now the gap on
+        // each side is half the size.height % spacing remainder, so
+        // the rules read centred on the page.
+        let lines = max(1, Int(size.height / nominal))
+        let usedHeight = CGFloat(lines) * nominal
+        let topOffset = max(0, (size.height - usedHeight) / 2)
+        var y = topOffset + nominal
         while y < size.height {
             var p = Path()
             p.move(to:    CGPoint(x: hInset,                  y: y))
             p.addLine(to: CGPoint(x: size.width - hInset,     y: y))
             ctx.stroke(p, with: .color(lineColor), lineWidth: 0.5)
-            y += spacing
+            y += nominal
         }
     }
 
@@ -117,11 +127,18 @@ struct TemplatePatternView: View {
     // MARK: - Dotted
 
     private func drawDotGrid(_ ctx: GraphicsContext, size: CGSize, spacingMM: CGFloat) {
-        let spacing = mm(spacingMM)
+        let nominal = mm(spacingMM)
         let dotSize: CGFloat = isThumbnail ? 0.7 : 1.5
-        var y = spacing
+        // Centred-grid offsets so the dot field reads balanced top↔︎
+        // bottom and left↔︎right instead of one whole spacing gap at
+        // the top + an irregular gap at the bottom.
+        let cellsY = max(1, Int(size.height / nominal))
+        let cellsX = max(1, Int(size.width  / nominal))
+        let topOffset  = max(0, (size.height - CGFloat(cellsY) * nominal) / 2)
+        let leftOffset = max(0, (size.width  - CGFloat(cellsX) * nominal) / 2)
+        var y = topOffset + nominal
         while y < size.height {
-            var x = spacing
+            var x = leftOffset + nominal
             while x < size.width {
                 let r = CGRect(
                     x: x - dotSize / 2,
@@ -129,9 +146,9 @@ struct TemplatePatternView: View {
                     width: dotSize, height: dotSize
                 )
                 ctx.fill(Path(ellipseIn: r), with: .color(lineColor))
-                x += spacing
+                x += nominal
             }
-            y += spacing
+            y += nominal
         }
     }
 
@@ -167,21 +184,31 @@ struct TemplatePatternView: View {
     private func drawSquareGrid(
         _ ctx: GraphicsContext, size: CGSize, spacing: CGFloat, color: Color, lineWidth: CGFloat
     ) {
-        var y = spacing
-        while y < size.height {
+        // Edge-to-edge grid: round the cell count to the nearest
+        // whole number that fits, then scale the spacing so the
+        // first and last lines sit exactly on the page edges and
+        // the cells stay uniform. Earlier the loop started at
+        // y=spacing and stopped before the bottom edge, leaving a
+        // whole spacing gap at the top and an irregular gap at the
+        // bottom — visible in the screenshot as the cream strip
+        // above the grid.
+        let cellsY = max(1, Int((size.height / spacing).rounded()))
+        let cellsX = max(1, Int((size.width  / spacing).rounded()))
+        let stepY = size.height / CGFloat(cellsY)
+        let stepX = size.width  / CGFloat(cellsX)
+        for i in 0...cellsY {
+            let y = CGFloat(i) * stepY
             var p = Path()
             p.move(to:    CGPoint(x: 0,          y: y))
             p.addLine(to: CGPoint(x: size.width, y: y))
             ctx.stroke(p, with: .color(color), lineWidth: lineWidth)
-            y += spacing
         }
-        var x = spacing
-        while x < size.width {
+        for i in 0...cellsX {
+            let x = CGFloat(i) * stepX
             var p = Path()
             p.move(to:    CGPoint(x: x, y: 0))
             p.addLine(to: CGPoint(x: x, y: size.height))
             ctx.stroke(p, with: .color(color), lineWidth: lineWidth)
-            x += spacing
         }
     }
 
