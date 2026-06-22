@@ -86,7 +86,19 @@ enum PageElementUndo {
                 guard let element = (try? context.fetch(desc))?.first else { return }
                 element.deletedAt = willDelete ? Date() : nil
                 element.updatedAt = Date()
-                try? context.save()
+                do {
+                    try context.save()
+                } catch {
+                    // Undo/redo flips deletedAt on the element row.
+                    // A silent save failure here means the user
+                    // taps undo, sees nothing happen, and the
+                    // chrome state is out of sync with persistence
+                    // — exactly the "undo doesn't work for shapes"
+                    // class of report.
+                    #if DEBUG
+                    dlog("[Undo] toggle SAVE FAILED elementId=\(elementId) willDelete=\(willDelete): \(error)")
+                    #endif
+                }
                 postRefreshNotification(for: kind)
                 // Re-register the opposite intent for the next press.
                 registerToggle(
