@@ -325,6 +325,20 @@ private enum CloudSyncError: LocalizedError {
 // Release builds: the EarlyPerfInliner pass segfaulted while inlining
 // the synthesised deinit (Swift 6.3.2 / Xcode 26). Concrete classes
 // avoid that optimizer path entirely.
+//
+// **Queue contract.** Both boxes are accessed exclusively from main —
+// the query is started via `OperationQueue.main.addOperation` and its
+// `NSMetadataQueryDidFinishGathering` observer is registered with
+// `queue: .main`. The single token write happens immediately after
+// `addObserver` returns (same main-actor frame); the read happens
+// inside the observer callback (also main). The `@unchecked Sendable`
+// is therefore correct *as long as the surrounding call site stays
+// main-actor isolated*. If a future change starts the query from a
+// background queue or moves the observer to a non-main queue, the
+// `nonisolated(unsafe) var token` write/read would race — at that
+// point the box needs a proper lock or the access needs to move
+// inside an actor. Calling out the contract here so the next
+// audit doesn't flag the box without context.
 
 private final class _MetadataQueryBox: @unchecked Sendable {
     nonisolated(unsafe) let query: NSMetadataQuery
