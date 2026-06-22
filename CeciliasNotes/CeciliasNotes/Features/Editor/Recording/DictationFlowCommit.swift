@@ -58,8 +58,14 @@ enum DictationFlowCommit {
         notebookId: UUID,
         pageSize: CGSize
     ) -> UUID {
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=enter")
+        #endif
         let context = StorageService.shared.context
         let elementId = UUID()
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=ctxResolved")
+        #endif
         let element = PageElement(
             id: elementId,
             pageId: pageId,
@@ -71,13 +77,25 @@ enum DictationFlowCommit {
             normalizedHeight: textElementInitialHeight,
             zIndex: 1
         )
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=elementInit")
+        #endif
         let content = TextContent(
             text: "",
             source: .dictated,
             size: .body
         )
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=contentInit")
+        #endif
         element.textContent = content
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=textContentAttached")
+        #endif
         context.insert(element)
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=inserted")
+        #endif
         // Defer the disk save off the synchronous frame. Device log
         // 2026-06-22 showed the dictation start wedging here:
         // `context.save()` was the next blocking call on the main
@@ -103,6 +121,9 @@ enum DictationFlowCommit {
                 #endif
             }
         }
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=saveScheduled")
+        #endif
         return elementId
     }
 
