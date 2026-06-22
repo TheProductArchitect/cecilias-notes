@@ -6,6 +6,7 @@ import XCTest
 /// .dropDestination is exactly this encoder/decoder pair, so a
 /// successful JSON round-trip is a faithful proxy for the
 /// drag-drop wire format.
+@MainActor
 final class PageDragItemTests: XCTestCase {
 
     func test_codable_roundTrip_preservesFields() throws {

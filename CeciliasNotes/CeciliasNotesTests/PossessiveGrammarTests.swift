@@ -5,6 +5,7 @@ import XCTest
 /// (case-insensitive after lowercasing) take a trailing apostrophe
 /// only — `chris' notes` not `chris's notes`. Empty input returns an
 /// empty string so the greeting slot collapses cleanly.
+@MainActor
 final class PossessiveGrammarTests: XCTestCase {
 
     func test_simpleName_addsApostropheS() {

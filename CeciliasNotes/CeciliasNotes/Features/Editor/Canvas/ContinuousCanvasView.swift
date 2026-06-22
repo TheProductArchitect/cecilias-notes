@@ -523,18 +523,23 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                guard let self else { return }
-                // Re-read the mode from AppStorage at notification
-                // time. The resolved bool may flip from anyInput to
-                // pencilOnly (or vice versa) when hasPencil changes
-                // under `.auto` mode.
-                let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.canvas.fingerDrawingMode")
-                let mode = raw.flatMap(FingerDrawingMode.init(rawValue:)) ?? .auto
-                let fingerDraws = mode.fingerDrawingEnabled(
-                    hasPencil: InputCapabilityDetector.shared.hasPencil
-                )
-                self.fingerDrawingEnabled = fingerDraws
-                self.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
+                // queue: .main delivers on main; assume MainActor to
+                // call the @MainActor capability + view-model reads
+                // without an extra hop.
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // Re-read the mode from AppStorage at notification
+                    // time. The resolved bool may flip from anyInput to
+                    // pencilOnly (or vice versa) when hasPencil changes
+                    // under `.auto` mode.
+                    let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.canvas.fingerDrawingMode")
+                    let mode = raw.flatMap(FingerDrawingMode.init(rawValue:)) ?? .auto
+                    let fingerDraws = mode.fingerDrawingEnabled(
+                        hasPencil: InputCapabilityDetector.shared.hasPencil
+                    )
+                    self.fingerDrawingEnabled = fingerDraws
+                    self.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
+                }
             }
             // Pixel-eraser width slider rebuilds the PKEraserTool on
             // every mounted canvas. Forced because the selectedTool
@@ -556,8 +561,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 object: nil,
                 queue: .main
             ) { [weak self] note in
-                guard let self else { return }
-                self.handleImageCrossPageHandoff(note)
+                // queue: .main delivers on the main thread, but
+                // `Notification` itself isn't Sendable so we can't
+                // capture it into a MainActor closure directly under
+                // strict concurrency. Pull the Sendable primitives
+                // out *before* the actor hop, then dispatch.
+                guard let info = note.userInfo,
+                      let elementId = info["elementId"] as? UUID,
+                      let sourcePageId = info["currentPageId"] as? UUID,
+                      let proposedX = info["proposedNormX"] as? Double,
+                      let proposedY = info["proposedNormY"] as? Double
+                else { return }
+                MainActor.assumeIsolated {
+                    self?.handleImageCrossPageHandoff(
+                        elementId: elementId,
+                        sourcePageId: sourcePageId,
+                        proposedNormX: proposedX,
+                        proposedNormY: proposedY
+                    )
+                }
             }
         }
 
@@ -1046,14 +1068,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// element's pageId + page relationship + normalizedY for
         /// the destination page's frame. SwiftData change
         /// notifications repaint both overlays automatically.
-        func handleImageCrossPageHandoff(_ note: Notification) {
-            guard let info = note.userInfo,
-                  let elementId   = info["elementId"] as? UUID,
-                  let sourcePageId = info["currentPageId"] as? UUID,
-                  let proposedX   = info["proposedNormX"] as? Double,
-                  let proposedY   = info["proposedNormY"] as? Double
-            else { return }
-
+        func handleImageCrossPageHandoff(
+            elementId: UUID,
+            sourcePageId: UUID,
+            proposedNormX proposedX: Double,
+            proposedNormY proposedY: Double
+        ) {
             // 1. Resolve the source page host to translate proposed
             //    normalised coords into content-view (continuous-
             //    scroll) coordinates.

@@ -1,6 +1,7 @@
 import XCTest
 @testable import CeciliasNotes
 
+@MainActor
 final class NameFormatterTests: XCTestCase {
 
     // mastheadPossessive returns the bare possessive — `BrandWordmark`

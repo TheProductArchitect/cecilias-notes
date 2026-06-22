@@ -1,7 +1,7 @@
 import Combine
 import CryptoKit
 import Foundation
-import MultipeerConnectivity
+@preconcurrency import MultipeerConnectivity
 import UIKit
 
 /// Direct device-to-device receiver for notebooks dropped by an
@@ -508,9 +508,16 @@ extension MultipeerSyncService: MCNearbyServiceAdvertiserDelegate {
         withContext context: Data?,
         invitationHandler: @escaping (Bool, MCSession?) -> Void
     ) {
+        // The handler type is fixed by Apple's MC delegate API and
+        // isn't Sendable, but we still need to hop to MainActor to
+        // read `self.session`. Wrap the handler in an unchecked
+        // Sendable box so the Task closure can capture it; the
+        // handler runs exactly once on the main actor, which matches
+        // MC's expected single-shot semantics.
+        let handlerBox = UncheckedSendableBox(invitationHandler)
         Task { @MainActor [weak self] in
             guard let self, let session = self.session else {
-                invitationHandler(false, nil)
+                handlerBox.value(false, nil)
                 return
             }
             // Accept the MC-level invitation unconditionally — the
@@ -518,7 +525,21 @@ extension MultipeerSyncService: MCNearbyServiceAdvertiserDelegate {
             // (or pairing-mode-authorised) peer. Refusing here would
             // break the legitimate pairing handshake before the first
             // payload arrives.
-            invitationHandler(true, session)
+            handlerBox.value(true, session)
         }
     }
+}
+
+// MARK: - Sendable transfer helper
+
+/// Single-shot box for ferrying a non-Sendable callback into a
+/// `Task { @MainActor in … }` closure. Apple's MC delegate hands us
+/// a non-Sendable `(Bool, MCSession?) -> Void` handler that we must
+/// call after a main-actor hop; this box lets the Task capture the
+/// closure without Swift 6 complaining about cross-actor sending.
+/// The handler is invoked exactly once per delegate callback, so
+/// "unchecked" is sound here.
+private struct UncheckedSendableBox<T>: @unchecked Sendable {
+    nonisolated(unsafe) let value: T
+    nonisolated init(_ value: T) { self.value = value }
 }

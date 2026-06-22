@@ -162,7 +162,7 @@ public struct TranscriptionSegment: Codable, Sendable, Hashable {
     public var endTime: Double
     public var confidence: Float
 
-    public init(word: String, startTime: Double, endTime: Double, confidence: Float) {
+    public nonisolated init(word: String, startTime: Double, endTime: Double, confidence: Float) {
         self.word = word
         self.startTime = startTime
         self.endTime = endTime

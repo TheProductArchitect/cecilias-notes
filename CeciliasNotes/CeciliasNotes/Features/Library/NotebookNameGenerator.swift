@@ -11,7 +11,7 @@ enum NotebookNameGenerator {
 
     /// ~35 names spanning the reasonable surface of "scratch pad" feeling
     /// without being precious. Edit freely — order doesn't matter.
-    static let names: [String] = [
+    nonisolated static let names: [String] = [
         "Brain Dump",
         "Scratch Pad of Doom",
         "The Notebook Formerly Known As New",
@@ -55,7 +55,7 @@ enum NotebookNameGenerator {
     /// site can choose the appropriate scope — the main app fetches all
     /// notebook titles; the widget can pass an empty set since it doesn't
     /// have access to the SwiftData store.
-    static func randomName(avoiding existingTitles: Set<String>) -> String {
+    nonisolated static func randomName(avoiding existingTitles: Set<String>) -> String {
         let base = names.randomElement() ?? "Untitled"
         if !existingTitles.contains(base) { return base }
         var n = 2

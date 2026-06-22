@@ -1,5 +1,5 @@
 import Accelerate
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 
 // MARK: - AudioRecorderError

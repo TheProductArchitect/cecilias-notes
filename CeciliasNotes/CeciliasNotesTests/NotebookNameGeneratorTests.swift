@@ -5,6 +5,7 @@ import XCTest
 /// picking is non-deterministic by design, so we test *properties* of
 /// the result rather than asserting on specific names: with the right
 /// `existingTitles` shape, the suffix `" 2"` / `" 3"` must appear.
+@MainActor
 final class NotebookNameGeneratorTests: XCTestCase {
 
     func test_returnsNonEmptyName_withEmptyAvoidSet() {

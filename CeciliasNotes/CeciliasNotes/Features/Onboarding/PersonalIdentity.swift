@@ -60,13 +60,28 @@ enum PersonalIdentity {
 /// choice if a future caller forgets the gate); callers that want a
 /// "clear the name" path (Settings → About) should handle the
 /// empty case themselves before calling.
-enum NameValidationResult: Equatable {
+enum NameValidationResult: Sendable {
     /// Valid input. The associated value is the stored name (first
     /// whitespace-separated word, original casing preserved).
     case accept(String)
     /// Empty input, or contains digits or emoji. Show
     /// "Letters only, please." inline for the latter.
     case invalid
+}
+
+// Manual nonisolated Equatable. The module hosts @MainActor types,
+// so synthesised conformance gets inferred MainActor — and the
+// XCTest assertion helpers consume Equatable from a nonisolated
+// context, which fails. Hand-writing the witness side-steps the
+// inference.
+extension NameValidationResult: Equatable {
+    nonisolated static func == (lhs: NameValidationResult, rhs: NameValidationResult) -> Bool {
+        switch (lhs, rhs) {
+        case (.accept(let a), .accept(let b)): return a == b
+        case (.invalid, .invalid):             return true
+        default:                                return false
+        }
+    }
 }
 
 /// Runs the validation rules from the spec.

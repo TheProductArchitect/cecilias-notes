@@ -10,6 +10,7 @@ import PencilKit
 ///
 /// Squiggle classification is intentionally negative-tested: a path
 /// that isn't a recognisable shape must yield `nil`, not a misfire.
+@MainActor
 final class ShapeDetectionTests: XCTestCase {
 
     // MARK: Stroke factories

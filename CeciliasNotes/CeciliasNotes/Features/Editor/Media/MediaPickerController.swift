@@ -30,20 +30,24 @@ struct PhotoLibraryPicker: UIViewControllerRepresentable {
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
             guard !results.isEmpty else { return }
-            var images: [UIImage] = []
+            // PHPicker callbacks fire on arbitrary threads. A
+            // captured-var accumulator trips Swift 6 even with an
+            // external lock; route through a reference-typed box
+            // whose mutation is guarded internally.
+            let box = _PHPickerImageBox()
             let group = DispatchGroup()
             for result in results {
                 let provider = result.itemProvider
                 if provider.canLoadObject(ofClass: UIImage.self) {
                     group.enter()
                     provider.loadObject(ofClass: UIImage.self) { obj, _ in
-                        if let img = obj as? UIImage { images.append(img) }
+                        if let img = obj as? UIImage { box.append(img) }
                         group.leave()
                     }
                 }
             }
             group.notify(queue: .main) { [weak self] in
-                self?.onPick(images)
+                self?.onPick(box.snapshot())
             }
         }
     }
@@ -156,5 +160,29 @@ struct DocumentScannerPicker: UIViewControllerRepresentable {
             controller.dismiss(animated: true)
             onCancel()
         }
+    }
+}
+
+// MARK: - PHPicker image accumulator
+
+/// Lock-guarded image accumulator for PHPicker results. Swift 6 can't
+/// prove an external NSLock guards a captured `var`, so each
+/// `loadObject` callback writes through this reference box instead.
+private final class _PHPickerImageBox: @unchecked Sendable {
+    private let lock = NSLock()
+    nonisolated(unsafe) private var images: [UIImage] = []
+
+    nonisolated init() {}
+
+    nonisolated func append(_ image: UIImage) {
+        lock.lock()
+        defer { lock.unlock() }
+        images.append(image)
+    }
+
+    nonisolated func snapshot() -> [UIImage] {
+        lock.lock()
+        defer { lock.unlock() }
+        return images
     }
 }

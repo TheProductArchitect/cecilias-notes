@@ -1,6 +1,7 @@
 import XCTest
 @testable import CeciliasNotes
 
+@MainActor
 final class CoverToneAssignerTests: XCTestCase {
 
     func test_rotation_neverPicksInkBlack() {

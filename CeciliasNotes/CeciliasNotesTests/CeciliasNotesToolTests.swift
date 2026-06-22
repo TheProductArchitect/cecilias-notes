@@ -5,6 +5,7 @@ import PencilKit
 /// Verifies the CeciliasNotesTool model: `.withColour` preserves width/opacity,
 /// `.hasWidth` reports correctly per case, and `.makePKTool()` returns
 /// the right `PKTool` subclass for each case.
+@MainActor
 final class CeciliasNotesToolTests: XCTestCase {
 
     // MARK: withColour preserves other dimensions

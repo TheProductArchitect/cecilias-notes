@@ -1048,7 +1048,12 @@ final class EditorViewModel: ObservableObject {
         // know to re-evaluate. Explicit `objectWillChange` makes the
         // toolbar's pin icon and the customise-panel toggle flip
         // visually the moment the user taps.
-        objectWillChange.send()
+        //
+        // Deferred to next runloop — the trigger is a SwiftUI
+        // `Toggle` binding, so a synchronous send lands inside the
+        // active view-update pass and emits "Publishing changes
+        // from within view updates" warnings.
+        Task { @MainActor in self.objectWillChange.send() }
         guard !notebook.autoHideHeader else { return }
         headerManualReHideTask?.cancel()
         interactionGraceTask?.cancel()
@@ -1545,7 +1550,10 @@ final class EditorViewModel: ObservableObject {
             // but the PKEraserTool already bound to each canvas
             // kept its old width — slider felt "dead."
             NotificationCenter.default.post(name: .pixelEraserWidthChanged, object: nil)
-            objectWillChange.send()
+            // Slider binding — deferred to next runloop so the
+            // synchronous send doesn't land inside the active
+            // view-update pass.
+            Task { @MainActor in self.objectWillChange.send() }
         }
     }
 
@@ -1587,7 +1595,10 @@ final class EditorViewModel: ObservableObject {
         // ContinuousCanvasView coordinator listens and force-rebuilds
         // every mounted canvas's PKTool against the latest state.
         NotificationCenter.default.post(name: .pixelEraserWidthChanged, object: nil)
-        objectWillChange.send()
+        // Called from binding-driven setters (selectColour / setWidth /
+        // setOpacity) so a synchronous send fires inside the view-
+        // update pass.
+        Task { @MainActor in self.objectWillChange.send() }
     }
 
     private func addRecentColour(_ colour: UIColor) {

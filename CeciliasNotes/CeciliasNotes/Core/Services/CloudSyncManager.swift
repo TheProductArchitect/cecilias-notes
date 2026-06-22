@@ -327,11 +327,11 @@ private enum CloudSyncError: LocalizedError {
 // avoid that optimizer path entirely.
 
 private final class _MetadataQueryBox: @unchecked Sendable {
-    let query: NSMetadataQuery
-    init(_ query: NSMetadataQuery) { self.query = query }
+    nonisolated(unsafe) let query: NSMetadataQuery
+    nonisolated init(_ query: NSMetadataQuery) { self.query = query }
 }
 
 private final class _ObserverTokenBox: @unchecked Sendable {
-    var token: NSObjectProtocol?
-    init() {}
+    nonisolated(unsafe) var token: NSObjectProtocol?
+    nonisolated init() {}
 }

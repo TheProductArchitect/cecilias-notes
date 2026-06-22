@@ -7,6 +7,7 @@ import XCTest
 /// a non-whitespace character, so this validator never sees empty in
 /// practice. Digits or emoji are rejected; otherwise the first
 /// whitespace-separated word is stored.
+@MainActor
 final class OnboardingValidationTests: XCTestCase {
 
     func test_emptyString_isInvalid() {

@@ -263,9 +263,13 @@ private final class PhotoPickerDelegate: NSObject, PHPickerViewControllerDelegat
         // Load each result's image off the main thread; the loader
         // emits on an arbitrary queue. Use a counter + final
         // completion to wait for all loads before firing.
-        let group     = DispatchGroup()
-        var picked    = [UIImage]()
-        let pickedLock = NSLock()
+        // Under Swift 6 a captured `var` in a `@Sendable` closure is
+        // a race even with an external NSLock — the compiler can't
+        // prove the lock guards the storage. Wrap the accumulator in
+        // a reference-typed actor-bounded box so each callback sees
+        // the same instance instead of capturing the var.
+        let group = DispatchGroup()
+        let pickedBox = _PickedImagesBox()
 
         for result in results {
             guard result.itemProvider.canLoadObject(ofClass: UIImage.self) else { continue }
@@ -273,13 +277,12 @@ private final class PhotoPickerDelegate: NSObject, PHPickerViewControllerDelegat
             result.itemProvider.loadObject(ofClass: UIImage.self) { object, _ in
                 defer { group.leave() }
                 guard let image = object as? UIImage else { return }
-                pickedLock.lock()
-                picked.append(image)
-                pickedLock.unlock()
+                pickedBox.append(image)
             }
         }
 
         group.notify(queue: .main) { [completion] in
+            let picked = pickedBox.snapshot()
             #if DEBUG
             dlog("[ImageInsert] presenter: loaded \(picked.count) image(s), firing completion")
             #endif
@@ -370,5 +373,30 @@ private final class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
         guard !hasFired else { return }
         hasFired = true
         controller.dismiss(animated: true) { [onCancel] in onCancel() }
+    }
+}
+
+// MARK: - Image accumulator
+
+/// Thread-safe collector for PHPicker image loads. The completions
+/// callback on arbitrary background threads, so the storage is
+/// guarded by an internal lock and the type is `@unchecked Sendable`
+/// — the lock is the actual safety guarantee.
+private final class _PickedImagesBox: @unchecked Sendable {
+    private let lock = NSLock()
+    nonisolated(unsafe) private var images: [UIImage] = []
+
+    nonisolated init() {}
+
+    nonisolated func append(_ image: UIImage) {
+        lock.lock()
+        defer { lock.unlock() }
+        images.append(image)
+    }
+
+    nonisolated func snapshot() -> [UIImage] {
+        lock.lock()
+        defer { lock.unlock() }
+        return images
     }
 }

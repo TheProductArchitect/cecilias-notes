@@ -5,6 +5,7 @@ import XCTest
 /// that don't start with a Latin letter (Cyrillic, Chinese, digits)
 /// must return `nil` — those names keep the default icon. Diacritics
 /// are stripped so "Naïve" → "n", "Émile" → "e".
+@MainActor
 final class BrandIconTests: XCTestCase {
 
     func test_uppercaseAscii_isLowercased() {

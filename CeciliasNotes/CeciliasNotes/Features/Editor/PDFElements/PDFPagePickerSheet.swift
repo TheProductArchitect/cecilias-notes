@@ -2,6 +2,31 @@
 import SwiftUI
 import UIKit
 
+/// File-scoped transfer record for loaded PDF data. Lives outside
+/// the `@MainActor` View so its memberwise init and stored
+/// properties stay nonisolated — the `Task.detached` loader in
+/// `PDFPagePickerSheet.loadDocument()` builds one inside the
+/// detached context and ships it back across the main-actor hop.
+/// `@unchecked Sendable` because `PDFDocument` isn't Sendable; the
+/// document is created inside the task and handed off exactly
+/// once, never shared, so the hop is sound.
+private struct LoadedPDF: @unchecked Sendable {
+    // PDFDocument is MainActor-isolated under strict concurrency,
+    // which would otherwise infect this stored property + the init.
+    // The detached loader builds + hands off exactly once, so it's
+    // sound to bypass the isolation here — the document is never
+    // shared concurrently. The `nonisolated(unsafe)` storage is the
+    // smallest opt-out that lets the loader hand a real PDFDocument
+    // back to the View without re-implementing PDFKit's API on top
+    // of an actor.
+    nonisolated(unsafe) let document: PDFDocument
+    let pageCount: Int
+    nonisolated init(document: PDFDocument, pageCount: Int) {
+        self.document = document
+        self.pageCount = pageCount
+    }
+}
+
 /// Custom multi-select page picker for Workflow B (PDF-as-reference).
 /// Presented after the user picks a PDF from the document picker
 /// via the image tool's long-press menu.
@@ -569,11 +594,6 @@ struct PDFPagePickerSheet: View {
     /// task. `PDFDocument` isn't `Sendable`; the document is created
     /// inside the task and handed off exactly once, never shared, so
     /// `@unchecked Sendable` is sound here.
-    private struct LoadedPDF: @unchecked Sendable {
-        let document: PDFDocument
-        let pageCount: Int
-    }
-
     private func loadDocument() async {
         let url = sourceURL
         let didStart = url.startAccessingSecurityScopedResource()
@@ -595,12 +615,32 @@ struct PDFPagePickerSheet: View {
     private func renderThumbnail(for index: Int) async {
         guard let document, index < document.pageCount else { return }
         let target = thumbnailSize
+        // The PDFDocument isn't Sendable; box it through an
+        // unchecked Sendable wrapper so the Task.detached closure
+        // can hold a reference without Swift 6 flagging the capture
+        // as a sending-closure race. PDF page rendering is read-
+        // only and reentrant per Apple's PDFKit threading notes.
+        let docBox = UncheckedSendableBox(document)
         let image: UIImage? = await Task.detached(priority: .background) {
-            guard let page = document.page(at: index) else { return nil }
+            guard let page = docBox.value.page(at: index) else { return nil }
             return page.thumbnail(of: target, for: .mediaBox)
         }.value
         await MainActor.run {
             if let image { thumbnailCache[index] = image }
         }
     }
+}
+
+// MARK: - Sendable transfer helper
+
+/// Single-shot box for ferrying a non-Sendable value across an
+/// actor hop. Used here so the detached PDF rendering task can
+/// capture a reference to the main-actor-owned `PDFDocument`
+/// without Swift 6 flagging it as a sending-closure race. The
+/// PDFDocument isn't shared concurrently — the detached task runs
+/// reentrant read-only PDFKit calls — so `@unchecked Sendable` is
+/// sound.
+private struct UncheckedSendableBox<T>: @unchecked Sendable {
+    nonisolated(unsafe) let value: T
+    nonisolated init(_ value: T) { self.value = value }
 }
