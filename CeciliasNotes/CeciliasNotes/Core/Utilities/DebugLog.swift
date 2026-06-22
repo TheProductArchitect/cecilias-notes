@@ -18,5 +18,11 @@ nonisolated func dlog(
     #if DEBUG
     let joined = items.map { "\($0)" }.joined(separator: separator)
     Swift.print(joined, terminator: terminator)
+    // Force-flush stdout so the log captures the exact final line
+    // before a freeze — `print` buffers and the buffered tail
+    // would be lost when the app stops responding, making freeze
+    // diagnosis impossible. The flush adds a single fputc(EOF marker)
+    // worth of overhead per line which is fine in DEBUG.
+    fflush(stdout)
     #endif
 }

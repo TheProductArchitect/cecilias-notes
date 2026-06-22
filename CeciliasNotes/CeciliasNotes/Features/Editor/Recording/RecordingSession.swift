@@ -344,6 +344,9 @@ final class RecordingSession: ObservableObject {
     }
 
     private func subscribeLiveTranscript(_ recorder: LectureRecorder) {
+        #if DEBUG
+        dlog("[Dictation] subscribeLiveTranscript phase=enter")
+        #endif
         recorder.$liveTranscript
             // Drop the initial "" emission so we don't spam an
             // empty `updateText` to SwiftData before the recogniser
@@ -357,6 +360,9 @@ final class RecordingSession: ObservableObject {
                 self?.handleLiveTranscript(transcript)
             }
             .store(in: &cancellables)
+        #if DEBUG
+        dlog("[Dictation] subscribeLiveTranscript phase=stored")
+        #endif
     }
 
     /// Stream the live transcript into the active dictation's
