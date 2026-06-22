@@ -99,7 +99,13 @@ enum AudioElementCommit {
         content.transcript = transcript
         if let timingMap { content.timingMap = timingMap }
         content.updatedAt = Date()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[AudioElement] updateTranscript SAVE FAILED contentId=\(contentId): \(error)")
+            #endif
+        }
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }
 
@@ -145,7 +151,17 @@ enum AudioElementCommit {
         )
         element.audioContent = content
         context.insert(element)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // Voice-note placeholder save failed — the recording is
+            // still rolling but its on-screen element won't render.
+            // Without this log the user sees "I'm recording but
+            // there's nothing on the page" with no telemetry trail.
+            #if DEBUG
+            dlog("[AudioElement] createRecordingPlaceholder SAVE FAILED contentId=\(contentId) elementId=\(elementId): \(error)")
+            #endif
+        }
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
         return elementId
     }
@@ -166,7 +182,17 @@ enum AudioElementCommit {
         guard let content = try? context.fetch(descriptor).first else { return }
         content.durationSeconds = durationSeconds
         content.updatedAt = Date()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // Failure here means the AudioElementView stays stuck in
+            // .recording state — pulsing dot + live timer never
+            // flip to play/pause/progress chrome. The recording is
+            // safe on disk; the row just doesn't know it's done.
+            #if DEBUG
+            dlog("[AudioElement] finalizeVoiceNote SAVE FAILED contentId=\(contentId): \(error)")
+            #endif
+        }
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }
 
