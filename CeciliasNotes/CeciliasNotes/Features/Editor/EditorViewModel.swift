@@ -1971,9 +1971,8 @@ final class EditorViewModel: ObservableObject {
                 guard let self else { return }
                 // `startDictation` invokes this closure synchronously
                 // after an `await` resume, so its `@Published`
-                // mutations (`refreshPages()`, `currentPageIndex`,
-                // `pendingScrollPageIndex`) can land inside a SwiftUI
-                // view-update pass — the source of several of the
+                // mutations can land inside a SwiftUI view-update
+                // pass — the source of several of the
                 // "Publishing changes from within view updates"
                 // warnings logged on dictation start. Hopping one
                 // runloop tick moves the whole navigation cluster
@@ -1981,8 +1980,25 @@ final class EditorViewModel: ObservableObject {
                 // the dictation state machine depends on the page
                 // index (only on `RecordingSession.state`, which is
                 // NOT deferred).
+                //
+                // The historical implementation called `refreshPages()`
+                // here to pick up the freshly-created dictation page,
+                // but `refreshPages()` performs a synchronous
+                // `mainContext.fetch` that wedges main when CloudKit
+                // holds the SwiftData metadata lock — the 2026-06-22
+                // device log traced the post-start freeze exactly to
+                // that fetch. The freshly-created page is already in
+                // the notebook's @Model relationship (storage.createPage
+                // populates `notebook.pages` synchronously before
+                // returning), so we can append it to our `pages`
+                // cache without re-reading the store.
                 Task { @MainActor in
-                    self.refreshPages()
+                    if !self.pages.contains(where: { $0.id == newPageId }),
+                       let newPage = (self.notebook.pages ?? [])
+                        .first(where: { $0.id == newPageId && !$0.isDeleted }) {
+                        self.pages.append(newPage)
+                        self.pages.sort { $0.pageNumber < $1.pageNumber }
+                    }
                     if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
                         self.currentPageIndex = idx
                         self.pendingScrollPageIndex = idx
@@ -1991,7 +2007,7 @@ final class EditorViewModel: ObservableObject {
                         #endif
                     } else {
                         #if DEBUG
-                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
+                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in notebook.pages")
                         #endif
                     }
                 }
