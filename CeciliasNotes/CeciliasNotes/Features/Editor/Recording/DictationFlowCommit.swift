@@ -58,18 +58,82 @@ enum DictationFlowCommit {
         notebookId: UUID,
         pageSize: CGSize
     ) -> UUID {
+        // Pre-allocate the elementId synchronously and DEFER every
+        // SwiftData operation (init + relationship attach + insert +
+        // save) to a Task hop. Device logs across 2026-06-22 showed
+        // that even `context.insert(element)` can block on the main
+        // mainContext while CloudKit's WAL checkpoint + Core Data
+        // import holds an internal SwiftData metadata lock — the
+        // entire mainContext is unreachable on the synchronous
+        // frame. Pre-allocating the UUID lets the calling
+        // `RecordingSession.startDictation` continue without
+        // touching SwiftData here at all; the row materialises
+        // asynchronously once the metadata lock clears.
+        //
+        // updateText already handles the "row not yet materialised"
+        // case via a no-op + redrive on the next partial-result
+        // tick (see `updateText` below — when the fetch fails it
+        // attempts a lazy create from the cached metadata, then
+        // returns). The lazy create + the deferred create race
+        // benignly through `id`: whichever lands first wins, the
+        // second silently no-ops because the row already exists.
         #if DEBUG
         dlog("[Dictation] createInitialTextElement phase=enter")
         #endif
-        let context = StorageService.shared.context
         let elementId = UUID()
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=ctxResolved")
-        #endif
-        let element = PageElement(
-            id: elementId,
+        Self.pendingPlaceholderMetadata[elementId] = PendingPlaceholder(
             pageId: pageId,
             notebookId: notebookId,
+            pageSize: pageSize
+        )
+        Task { @MainActor in
+            #if DEBUG
+            dlog("[Dictation] createInitialTextElement phase=deferredEntry elementId=\(elementId)")
+            #endif
+            Self.materializePlaceholderIfNeeded(elementId: elementId)
+        }
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=returnedImmediately elementId=\(elementId)")
+        #endif
+        return elementId
+    }
+
+    /// Metadata captured at `createInitialTextElement` call time so
+    /// the deferred materialisation (and the updateText lazy
+    /// fallback) has everything it needs to insert the row without
+    /// re-resolving Notebook / Page references.
+    private struct PendingPlaceholder {
+        let pageId: UUID
+        let notebookId: UUID
+        let pageSize: CGSize
+    }
+    nonisolated(unsafe) private static var pendingPlaceholderMetadata: [UUID: PendingPlaceholder] = [:]
+
+    /// Insert the PageElement + TextContent row described by the
+    /// pending metadata. Idempotent: if the row already exists
+    /// (because updateText's lazy create won the race, or because
+    /// a previous materialisation succeeded), this is a no-op.
+    @MainActor
+    fileprivate static func materializePlaceholderIfNeeded(elementId: UUID) {
+        guard let meta = pendingPlaceholderMetadata[elementId] else {
+            // Already materialised; nothing to do.
+            return
+        }
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { $0.id == elementId }
+        )
+        if let _ = try? context.fetch(descriptor).first {
+            // Row already in the context — possibly the updateText
+            // lazy path beat us here. Drop the pending metadata so
+            // a future call can't re-insert.
+            pendingPlaceholderMetadata.removeValue(forKey: elementId)
+            return
+        }
+        let element = PageElement(
+            id: elementId,
+            pageId: meta.pageId,
+            notebookId: meta.notebookId,
             kind: .text,
             normalizedX: (1 - textElementWidth) / 2,
             normalizedY: textElementTopInset,
@@ -77,54 +141,24 @@ enum DictationFlowCommit {
             normalizedHeight: textElementInitialHeight,
             zIndex: 1
         )
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=elementInit")
-        #endif
         let content = TextContent(
             text: "",
             source: .dictated,
             size: .body
         )
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=contentInit")
-        #endif
         element.textContent = content
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=textContentAttached")
-        #endif
         context.insert(element)
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=inserted")
-        #endif
-        // Defer the disk save off the synchronous frame. Device log
-        // 2026-06-22 showed the dictation start wedging here:
-        // `context.save()` was the next blocking call on the main
-        // actor after the recorder reported success, and it blocked
-        // indefinitely waiting for the SQLite writer lock that
-        // CloudKit's WAL checkpoint + Core Data import was holding.
-        // SwiftData has no off-main save API on the mainContext, so
-        // we hop one runloop tick — the in-memory insert is already
-        // findable on this same context (the live transcript's
-        // updateText path fetches the row immediately via
-        // DispatchQueue.main.async and resolves the in-memory
-        // object), and the save lands as soon as the lock contention
-        // clears. If save fails we log but don't surface — the
-        // element is committed to memory and the user keeps
-        // dictating; the next durable save (the next updateText
-        // tick) re-attempts persistence as part of its own save.
-        Task { @MainActor [context] in
-            do {
-                try context.save()
-            } catch {
-                #if DEBUG
-                dlog("[Dictation] createInitialTextElement SAVE FAILED elementId=\(elementId): \(error)")
-                #endif
-            }
+        do {
+            try context.save()
+            pendingPlaceholderMetadata.removeValue(forKey: elementId)
+            #if DEBUG
+            dlog("[Dictation] materializePlaceholder OK elementId=\(elementId)")
+            #endif
+        } catch {
+            #if DEBUG
+            dlog("[Dictation] materializePlaceholder SAVE FAILED elementId=\(elementId): \(error)")
+            #endif
         }
-        #if DEBUG
-        dlog("[Dictation] createInitialTextElement phase=saveScheduled")
-        #endif
-        return elementId
     }
 
     // MARK: - Step 2: live text update
@@ -150,6 +184,16 @@ enum DictationFlowCommit {
             let descriptor = FetchDescriptor<PageElement>(
                 predicate: #Predicate { $0.id == elementId }
             )
+            // Try to find the row; if the createInitialTextElement
+            // deferred materialisation hasn't landed yet (CloudKit
+            // contention can hold it off for hundreds of ms), run
+            // it now from the cached metadata so this tick has
+            // something to write into. Without this lazy fallback
+            // every partial that arrives before the deferred Task
+            // runs is silently dropped.
+            if (try? context.fetch(descriptor).first) == nil {
+                materializePlaceholderIfNeeded(elementId: elementId)
+            }
             guard let element = try? context.fetch(descriptor).first,
                   let content = element.textContent
             else {
