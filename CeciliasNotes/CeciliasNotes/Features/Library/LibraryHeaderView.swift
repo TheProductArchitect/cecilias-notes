@@ -369,11 +369,21 @@ struct LibraryHeaderView: View {
     }
 
     private var selectingStrip: some View {
-        // Drives the select-all / deselect-all toggle. "All visible" means
-        // every notebook in `viewModel.notebooks` — that array is already
-        // filtered by the active sidebar context (subject / all-notes /
-        // recent) and tag filter, so this naturally respects whatever
-        // narrowing the user has applied.
+        // Pivots its actions on the active library context. In
+        // `.allSubjects` it operates on subjects, in `.allQuizzes`
+        // on quizzes, otherwise on notebooks (the historical
+        // behaviour). One bar, three pools — keeps the user's
+        // muscle memory consistent (tap the top-right select chip,
+        // tap rows, tap delete) regardless of which file-system
+        // style surface they're in.
+        switch viewModel.selectedContext {
+        case .allSubjects: return AnyView(subjectsSelectingStrip)
+        case .allQuizzes:  return AnyView(quizzesSelectingStrip)
+        default:           return AnyView(notebooksSelectingStrip)
+        }
+    }
+
+    private var notebooksSelectingStrip: some View {
         let visibleIds = Set(viewModel.notebooks.map(\.id))
         let allVisibleSelected = !visibleIds.isEmpty
             && visibleIds.isSubset(of: viewModel.selectedNotebookIds)
@@ -413,6 +423,78 @@ struct LibraryHeaderView: View {
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.isSelecting = false
                     viewModel.selectedNotebookIds = []
+                }
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(theme.accent)
+        }
+        .frame(height: 44)
+    }
+
+    private var subjectsSelectingStrip: some View {
+        let visibleIds = Set(viewModel.subjects.map(\.id))
+        let allVisibleSelected = !visibleIds.isEmpty
+            && visibleIds.isSubset(of: viewModel.selectedSubjectIds)
+        return HStack(spacing: 8) {
+            Text("\(viewModel.selectedSubjectIds.count) selected")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(theme.recessivePrimary)
+
+            Button(allVisibleSelected ? "deselect all" : "select all") {
+                if allVisibleSelected {
+                    viewModel.selectedSubjectIds.subtract(visibleIds)
+                } else {
+                    viewModel.selectedSubjectIds.formUnion(visibleIds)
+                }
+            }
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(theme.accent)
+            .disabled(visibleIds.isEmpty)
+
+            Spacer(minLength: 8)
+
+            Button("delete") {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                    viewModel.deleteSelectedSubjects()
+                }
+            }
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(theme.danger)
+            .disabled(viewModel.selectedSubjectIds.isEmpty)
+
+            Button("done") {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
+                    viewModel.isSelecting = false
+                    viewModel.selectedSubjectIds = []
+                }
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(theme.accent)
+        }
+        .frame(height: 44)
+    }
+
+    private var quizzesSelectingStrip: some View {
+        return HStack(spacing: 8) {
+            Text("\(viewModel.selectedQuizIds.count) selected")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(theme.recessivePrimary)
+
+            Spacer(minLength: 8)
+
+            Button("delete") {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                    viewModel.deleteSelectedQuizzes()
+                }
+            }
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(theme.danger)
+            .disabled(viewModel.selectedQuizIds.isEmpty)
+
+            Button("done") {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
+                    viewModel.isSelecting = false
+                    viewModel.selectedQuizIds = []
                 }
             }
             .font(.system(size: 13, weight: .medium))

@@ -1894,6 +1894,28 @@ final class EditorViewModel: ObservableObject {
         #if DEBUG
         dlog("[Dictation] startDictationRecording — notebookId=\(notebookId) fromPageId=\(fromPageId) pageSize=\(pageSize)")
         #endif
+
+        // Defensive: if the user activated ruler immediately before
+        // dictation, the canvas still has `isRulerActive = true` +
+        // an attached ruler view that holds touch state. Bringing up
+        // AVAudioEngine while the ruler is mid-attach has been
+        // observed to deadlock — a reinstall was required to recover
+        // (device logs show RecordingSession.startDictation enters,
+        // `new page created` fires, then nothing). Reset the tool to
+        // cursor here so the canvas yields cleanly before audio
+        // engine init takes the main actor.
+        if selectedTool.identity == .ruler {
+            #if DEBUG
+            dlog("[Dictation] ruler active at start — switching to cursor before audio init")
+            #endif
+            selectedTool = .cursor
+            canvasView?.isRulerActive = false
+            // Let SwiftUI drain its pending view updates from the
+            // tool swap so PKCanvasView's ruler-detach finishes
+            // before the audio engine takes the main runloop.
+            await Task.yield()
+        }
+
         await RecordingSession.shared.startDictation(
             notebookId: notebookId,
             fromPageId: fromPageId,

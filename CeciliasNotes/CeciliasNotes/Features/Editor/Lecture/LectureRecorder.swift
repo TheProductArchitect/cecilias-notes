@@ -147,6 +147,9 @@ final class LectureRecorder: ObservableObject {
 
         // Permissions — bail early with a descriptive error if either
         // is denied. Caller surfaces a system alert.
+        #if DEBUG
+        dlog("[Lecture] start phase=permissions")
+        #endif
         try await ensureMicrophonePermission()
         await ensureSpeechPermission()       // optional — failure means no transcript
 
@@ -155,6 +158,9 @@ final class LectureRecorder: ObservableObject {
         self.recordId    = UUID()
         self.startedAt   = Date()
 
+        #if DEBUG
+        dlog("[Lecture] start phase=audioSession")
+        #endif
         try configureAudioSession()
 
         // New lecture writes land directly in the unified
@@ -166,7 +172,13 @@ final class LectureRecorder: ObservableObject {
         let url = MediaStorage.url(for: .lectures, id: recordId)
         self.outputURL = url
 
+        #if DEBUG
+        dlog("[Lecture] start phase=engineAndFile")
+        #endif
         try await startEngineAndFile(at: url)
+        #if DEBUG
+        dlog("[Lecture] start phase=speechRecognition")
+        #endif
         await startSpeechRecognition()
 
         // Step 5: dropped the V5 draft-persistence pattern (no

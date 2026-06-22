@@ -154,6 +154,14 @@ final class LibraryViewModel: ObservableObject {
     @Published var sortOrder: NotebookSortOrder = .lastModified
     @Published var isSelecting: Bool = false
     @Published var selectedNotebookIds: Set<UUID> = []
+    /// Selection state for the All Subjects file-system surface.
+    /// Parallel to `selectedNotebookIds`; the same top-bar select
+    /// chip toggles `isSelecting` for whichever context the user
+    /// is in, and the bottom selecting-strip reads the right ID
+    /// set based on `selectedContext`.
+    @Published var selectedSubjectIds: Set<UUID> = []
+    /// Same pattern for the All Quizzes surface.
+    @Published var selectedQuizIds: Set<UUID> = []
 
     // MARK: Additional published state
     @Published private(set) var subjects:         [Subject] = []
@@ -375,6 +383,24 @@ final class LibraryViewModel: ObservableObject {
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
         #endif
+
+        // Release-safe full-reset path (Settings → iCloud → Reset
+        // all iCloud data). Drop every cached list + reset selection
+        // back to .recent so the user lands on a clean grid instead
+        // of a stale subject view that no longer exists.
+        NotificationCenter.default.publisher(for: .userDataReset)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.selectedContext = .recent
+                self.selectedQuizID = nil
+                self.selectedSubjectId = nil
+                self.selectedNotebookIds = []
+                self.selectedSubjectIds = []
+                self.selectedQuizIds = []
+                self.refresh()
+            }
+            .store(in: &cancellables)
 
         $sortOrder
             .dropFirst()
@@ -1273,6 +1299,43 @@ final class LibraryViewModel: ObservableObject {
         }
         isSelecting = false
         selectedNotebookIds = []
+    }
+
+    /// Batch-delete from `selectedSubjectIds`. Used by AllSubjectsView
+    /// + the top-bar selecting strip when the user is in
+    /// `.allSubjects` context. Cascades through `storage.deleteSubject`
+    /// so every notebook owned by each deleted subject is soft-
+    /// deleted too (and lands in trash). Always calls `refresh()` so
+    /// the sidebar's subjects array reflects the change immediately.
+    func deleteSelectedSubjects() {
+        let ids = selectedSubjectIds
+        let targets = storage.fetchSubjects().filter { ids.contains($0.id) }
+        for subject in targets {
+            try? storage.deleteSubject(subject)
+            if selectedSubjectId == subject.id { selectedSubjectId = nil }
+        }
+        isSelecting = false
+        selectedSubjectIds = []
+        refresh()
+    }
+
+    /// Same shape as `deleteSelectedSubjects` for the quiz surface.
+    /// Uses SwiftData's hard delete (matches the existing per-row
+    /// `QuizSidebarRow` deletion) so questions + attempts cascade.
+    func deleteSelectedQuizzes() {
+        let ids = selectedQuizIds
+        let ctx = storage.context
+        let descriptor = FetchDescriptor<Quiz>(
+            predicate: #Predicate<Quiz> { quiz in true }
+        )
+        let all = (try? ctx.fetch(descriptor)) ?? []
+        for quiz in all where ids.contains(quiz.id) {
+            if selectedQuizID == quiz.id { selectedQuizID = nil }
+            ctx.delete(quiz)
+        }
+        try? ctx.save()
+        isSelecting = false
+        selectedQuizIds = []
     }
 
     func duplicateNotebook(_ notebook: Notebook) {

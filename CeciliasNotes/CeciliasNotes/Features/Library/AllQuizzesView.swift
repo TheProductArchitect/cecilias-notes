@@ -3,9 +3,10 @@ import SwiftUI
 
 /// File-system style list of every Quiz, grouped by folder. Mounted
 /// by `LibraryView` when `selectedContext == .allQuizzes`. Same
-/// shape as `AllSubjectsView` — single-column list, multi-select
-/// for batch delete. Sidebar already has per-quiz rename + folder
-/// move via the context menu; this surface is just for bulk ops.
+/// pattern as `AllSubjectsView`: the top-bar select chip drives
+/// `viewModel.isSelecting`, rows reflect `selectedQuizIds`, and
+/// batch delete fires through the view model so questions +
+/// attempt history cascade. Tap-without-select opens the quiz.
 struct AllQuizzesView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.theme) private var theme
@@ -17,11 +18,6 @@ struct AllQuizzesView: View {
     )
     private var quizzes: [Quiz]
 
-    @State private var selection: Set<UUID> = []
-    @State private var isEditing: Bool = false
-    @State private var confirmDelete: Bool = false
-
-    /// Quizzes grouped by folder (ungrouped first, then alphabetical).
     private var grouped: [(folder: String, quizzes: [Quiz])] {
         let dict = Dictionary(grouping: quizzes) { quiz -> String in
             quiz.folderName.trimmingCharacters(in: .whitespaces)
@@ -47,15 +43,6 @@ struct AllQuizzesView: View {
             }
         }
         .background(theme.surface.ignoresSafeArea())
-        .alert(
-            "delete \(selection.count) \(selection.count == 1 ? "quiz" : "quizzes")?",
-            isPresented: $confirmDelete
-        ) {
-            Button("delete", role: .destructive) { deleteSelected() }
-            Button("cancel", role: .cancel) {}
-        } message: {
-            Text("removes the selected quizzes along with their questions and attempt history. this can't be undone.")
-        }
     }
 
     private var header: some View {
@@ -67,28 +54,11 @@ struct AllQuizzesView: View {
                 .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(theme.recessiveTertiary)
             Spacer(minLength: 0)
-            if isEditing {
-                Button(role: .destructive) {
-                    if !selection.isEmpty { confirmDelete = true }
-                } label: {
-                    Text("delete \(selection.count)")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(selection.isEmpty ? theme.recessiveTertiary : theme.danger)
-                }
-                .buttonStyle(.plain)
-                .disabled(selection.isEmpty)
+            if !viewModel.isSelecting {
+                Text("use “select” in the top bar to delete in batches")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(theme.recessiveTertiary)
             }
-            Button {
-                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
-                    isEditing.toggle()
-                    if !isEditing { selection.removeAll() }
-                }
-            } label: {
-                Text(isEditing ? "done" : "select")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.accent)
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
@@ -132,9 +102,9 @@ struct AllQuizzesView: View {
     }
 
     private func row(for quiz: Quiz) -> some View {
-        let isSelected = selection.contains(quiz.id)
+        let isSelected = viewModel.selectedQuizIds.contains(quiz.id)
         return HStack(spacing: 12) {
-            if isEditing {
+            if viewModel.isSelecting {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 20))
                     .foregroundStyle(isSelected ? theme.accent : theme.recessiveTertiary)
@@ -156,9 +126,9 @@ struct AllQuizzesView: View {
         .padding(.vertical, 12)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isEditing {
-                if isSelected { selection.remove(quiz.id) }
-                else          { selection.insert(quiz.id) }
+            if viewModel.isSelecting {
+                if isSelected { viewModel.selectedQuizIds.remove(quiz.id) }
+                else          { viewModel.selectedQuizIds.insert(quiz.id) }
             } else {
                 viewModel.selectedQuizID = quiz.id
             }
@@ -190,18 +160,5 @@ struct AllQuizzesView: View {
                 .padding(.horizontal, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func deleteSelected() {
-        let ctx = StorageService.shared.context
-        for quiz in quizzes where selection.contains(quiz.id) {
-            if viewModel.selectedQuizID == quiz.id {
-                viewModel.selectedQuizID = nil
-            }
-            ctx.delete(quiz)
-        }
-        try? ctx.save()
-        selection.removeAll()
-        HapticManager.shared.destructiveConfirmed()
     }
 }

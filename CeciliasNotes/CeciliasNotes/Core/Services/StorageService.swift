@@ -402,6 +402,60 @@ extension StorageService {
     }
 }
 
+// MARK: - Full reset
+
+extension StorageService {
+
+    /// Release-safe destructive wipe. Hard-deletes every row in
+    /// every user-visible model so CloudKit propagates the deletes
+    /// to the user's iCloud account. Without this, "delete all in
+    /// the app + reinstall" leaves the user staring at the old data
+    /// — Apple's CloudKit preserves records across reinstalls
+    /// because the data lives in the iCloud account, not the app
+    /// sandbox.
+    ///
+    /// SwiftData's cascade delete rules handle child rows
+    /// (`PageElement` → `StrokeContent`/etc., `Quiz` → questions /
+    /// attempts), so we only need to delete the top-level entities.
+    /// Audio + image attachments on disk are wiped alongside so the
+    /// device's local Documents tree doesn't keep orphaned media.
+    func resetAllUserData() async throws {
+        // Top-level model deletes. SwiftData cascades to children
+        // via the `inverse:` rules declared on each entity.
+        for notebook in fetchAllNotebooks() {
+            context.delete(notebook)
+        }
+        for subject in fetchSubjects() {
+            context.delete(subject)
+        }
+        let quizDescriptor = FetchDescriptor<Quiz>()
+        for quiz in (try? context.fetch(quizDescriptor)) ?? [] {
+            context.delete(quiz)
+        }
+        try context.save()
+
+        // Sweep the local media + audio caches. Failures are
+        // logged but non-fatal — the SwiftData wipe above already
+        // dropped the rows that referenced them.
+        let fm = FileManager.default
+        let docs = (try? fm.url(for: .documentDirectory,
+                                in: .userDomainMask,
+                                appropriateFor: nil,
+                                create: false)) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        for sub in ["MediaAttachments", "Recordings", "Notebooks"] {
+            let target = docs.appendingPathComponent(sub, isDirectory: true)
+            try? fm.removeItem(at: target)
+        }
+        NotificationCenter.default.post(name: .userDataReset, object: nil)
+    }
+}
+
+extension Notification.Name {
+    /// Posted after the user confirms Settings → Reset iCloud Data
+    /// so library / cloud sync views can drop caches and refresh.
+    static let userDataReset = Notification.Name("ceciliasnotes.userDataReset")
+}
+
 // MARK: - Folders
 
 extension StorageService {

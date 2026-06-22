@@ -51,6 +51,9 @@ struct CloudSettingsView: View {
     @ObservedObject private var multipeer = MultipeerSyncService.shared
 
     @State private var inboxEvents: [CeciliasNotesFileWatcher.InboxEvent] = []
+    @State private var pendingFullReset: Bool = false
+    @State private var resetInProgress: Bool = false
+    @State private var resetStatusMessage: String?
 
     var body: some View {
         ScrollView {
@@ -63,6 +66,7 @@ struct CloudSettingsView: View {
                 }
                 inboxActivitySection
                 multipeerSection
+                dangerZoneSection
             }
             .padding(.horizontal, 24)
             .padding(.top, 24)
@@ -89,6 +93,14 @@ struct CloudSettingsView: View {
             }
         } message: {
             Text("Notes will remain on this device only.")
+        }
+        .alert("Reset all iCloud data?", isPresented: $pendingFullReset) {
+            Button("Cancel", role: .cancel) {}
+            Button("Reset", role: .destructive) {
+                Task { await performFullReset() }
+            }
+        } message: {
+            Text("Removes every notebook, subject, quiz, audio recording, and image attachment from this device AND your iCloud account. Reinstalling the app afterward will start blank. This can't be undone.")
         }
     }
 
@@ -679,6 +691,65 @@ struct CloudSettingsView: View {
                 Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
         }
+    }
+
+    // MARK: Danger zone
+
+    /// Full reset of every SwiftData row on this device. CloudKit
+    /// syncs the deletions back so the user's iCloud account also
+    /// drops the records — which fixes the "I deleted everything in
+    /// the app, reinstalled, and the old notebooks came back"
+    /// gotcha (Apple's CloudKit preserves records across reinstalls
+    /// because the data lives in the account, not the app sandbox).
+    /// The destructive alert is the gate; the message lists exactly
+    /// what disappears.
+    private var dangerZoneSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("danger zone")
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    pendingFullReset = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("reset all icloud data")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(theme.danger)
+                            Text("clears every notebook, subject, quiz, recording and image — on this device and in your icloud account. reinstalling won't bring them back.")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundStyle(theme.foregroundSubtle)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer()
+                        if resetInProgress {
+                            ProgressView().scaleEffect(0.6)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(resetInProgress)
+
+                if let resetStatusMessage {
+                    Text(resetStatusMessage)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(theme.recessivePrimary)
+                }
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
+            }
+        }
+    }
+
+    private func performFullReset() async {
+        resetInProgress = true
+        resetStatusMessage = nil
+        let start = Date()
+        await viewModel.resetAllUserData()
+        let elapsed = Date().timeIntervalSince(start)
+        resetInProgress = false
+        resetStatusMessage = String(format: "reset complete in %.1fs — sync will propagate the deletes to icloud over the next few minutes.", elapsed)
     }
 
     // MARK: Helpers

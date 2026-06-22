@@ -47,12 +47,18 @@ enum LassoGroupOps {
         // takes). Without this, the lasso translate clamps every
         // element into the current page — the user could move an
         // image freely between pages by dragging directly on it but
-        // not via the lasso chrome. Multi-element selections + any
-        // stroke-element selection still go through the in-page
-        // translate so partial drags don't accidentally rip a whole
-        // selection across pages.
+        // not via the lasso chrome.
+        //
+        // Partial stroke selections do NOT block this path. The
+        // common case is the user lassoes around a shape that also
+        // happens to overlap a stroke fragment — Wave 1 of this
+        // fix required partialStrokeSelections.isEmpty, which
+        // device logs showed as the most frequent block on the
+        // hand-off. When the hand-off does fire we drop the
+        // partial-stroke set on the floor: the strokes were never
+        // meant to travel with the element across pages, and
+        // selection.clear() at the end discards them either way.
         if selection.selectedElementIds.count == 1,
-           selection.partialStrokeSelections.isEmpty,
            let onlyId = selection.selectedElementIds.first,
            let element = fetch(onlyId, context: context),
            element.kind != .stroke,

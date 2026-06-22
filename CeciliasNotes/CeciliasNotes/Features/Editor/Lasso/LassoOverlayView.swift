@@ -359,6 +359,19 @@ struct LassoOverlayView: View {
             // chrome is hidden too — leaving just the delete
             // floating at an unrotated corner would look broken.
             if activeManipulation != .rotate {
+                // Place the delete badge OUTSIDE the chrome's top-
+                // right corner by default, but clamp the centre so
+                // the 44pt hit target stays fully inside the page.
+                // Without the clamp the badge floats into the
+                // gutter beside the notebook (or above the masthead)
+                // and the user can't tap it.
+                let badgeRadius: CGFloat = 22
+                let badgeX = max(badgeRadius,
+                                 min(pageSize.width  - badgeRadius,
+                                     displayed.maxX + 24))
+                let badgeY = max(badgeRadius,
+                                 min(pageSize.height - badgeRadius,
+                                     displayed.minY - 24))
                 Button {
                     LassoGroupOps.delete(selection: selection,
                                          context: modelContext)
@@ -371,7 +384,7 @@ struct LassoOverlayView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .position(x: displayed.maxX + 24, y: displayed.minY - 24)
+                .position(x: badgeX, y: badgeY)
             }
 
             // Resize + rotation chrome — hidden for locked
@@ -424,7 +437,36 @@ struct LassoOverlayView: View {
         return false
     }
 
+    /// Restrict an arbitrary rect so the chrome cannot extend past
+    /// the page bounds. The selection bbox itself can legitimately
+    /// land mid-drag at the edge — but rendering its border 100pt
+    /// off-page shows the user an empty blue box hovering in the
+    /// gutter beside the notebook, which they called out as broken.
+    /// We still permit the chrome to *touch* the edge so the
+    /// in-bounds case is unchanged.
+    private func clampToPage(_ rect: CGRect) -> CGRect {
+        let maxW = pageSize.width
+        let maxH = pageSize.height
+        var x = max(0, min(maxW, rect.minX))
+        var y = max(0, min(maxH, rect.minY))
+        let xEnd = max(0, min(maxW, rect.maxX))
+        let yEnd = max(0, min(maxH, rect.maxY))
+        let w = max(0, xEnd - x)
+        let h = max(0, yEnd - y)
+        // Preserve at least 1pt so SwiftUI doesn't collapse the
+        // chrome into invisibility when the user drags right onto
+        // the edge.
+        if w < 1 { x = max(0, min(maxW - 1, x)); }
+        if h < 1 { y = max(0, min(maxH - 1, y)); }
+        return CGRect(x: x, y: y, width: max(1, w), height: max(1, h))
+    }
+
     private func chromeDisplayRect(base: CGRect) -> CGRect {
+        let raw = rawChromeDisplayRect(base: base)
+        return clampToPage(raw)
+    }
+
+    private func rawChromeDisplayRect(base: CGRect) -> CGRect {
         switch activeManipulation {
         case .none:
             return base

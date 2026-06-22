@@ -335,6 +335,15 @@ final class SettingsViewModel: ObservableObject {
     }
     #endif
 
+    /// Release-safe full reset of every user-visible row in the
+    /// store. Wired to Settings → iCloud → "reset all icloud data".
+    /// Hard-deletes every Subject, Notebook, Quiz, etc.; CloudKit
+    /// syncs the deletions to the user's iCloud account so a
+    /// reinstall doesn't re-hydrate stale data from the cloud.
+    func resetAllUserData() async {
+        try? await StorageService.shared.resetAllUserData()
+    }
+
     func supportedOnDeviceLocales() -> [Locale] {
         SFSpeechRecognizer.supportedLocales()
             .filter { locale in

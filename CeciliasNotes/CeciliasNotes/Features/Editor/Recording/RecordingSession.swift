@@ -262,10 +262,35 @@ final class RecordingSession: ObservableObject {
 
         let recorder = LectureRecorder()
         do {
-            try await recorder.start(pageId: newPage.id, notebookId: notebookId)
+            // Time-boxed start. AVAudioEngine init + AVAudioSession
+            // activation have been observed to wedge indefinitely
+            // when CloudKit is mid-export (the device log preceding
+            // the freeze shows hundreds of `CoreData: WAL checkpoint`
+            // entries hammering the SQLite writer lock). Without a
+            // bound, the entire app freezes and the only escape is
+            // a force-quit + reinstall. 8 seconds is generous for a
+            // healthy device — anything longer is a wedge and the
+            // user should see a recoverable error instead.
+            // Capture the primitive IDs locally so the @Sendable
+            // closure doesn't have to ferry a SwiftData @Model
+            // instance across an actor boundary.
+            let newPageId = newPage.id
+            let nbId = notebookId
+            try await withDictationTimeout(seconds: 8) {
+                try await recorder.start(pageId: newPageId, notebookId: nbId)
+            }
             #if DEBUG
             dlog("[Dictation] LectureRecorder.start succeeded")
             #endif
+        } catch let error as DictationTimeoutError {
+            #if DEBUG
+            dlog("[Dictation] ABORT — recorder.start timed out: \(error)")
+            #endif
+            interruptionMessage = "Dictation took too long to start. Tap the dictation button again in a moment — iCloud may be syncing in the background."
+            // Best-effort: tear the half-initialised recorder down
+            // so the next attempt starts from a clean state.
+            Task { _ = await recorder.stop() }
+            return
         } catch {
             #if DEBUG
             dlog("[Dictation] ABORT — LectureRecorder.start threw: \(error)")
@@ -558,5 +583,38 @@ final class RecordingSession: ObservableObject {
                 }
             }
         }
+    }
+}
+
+// MARK: - Dictation timeout helper
+
+/// Thrown when the time-boxed dictation start path exceeds its
+/// budget. The caller surfaces a user-visible "try again in a
+/// moment" message instead of letting the app sit on a wedged
+/// audio engine.
+struct DictationTimeoutError: Error {}
+
+/// Race a throwing async operation against a timeout. Returns the
+/// op's result if it finishes first, throws `DictationTimeoutError`
+/// otherwise. The losing task is cancelled — but a wedged audio
+/// engine doesn't honour cooperative cancellation, so the caller
+/// must still tear down the partial state on the timeout branch
+/// (see `RecordingSession.startDictation`).
+@MainActor
+private func withDictationTimeout<T: Sendable>(
+    seconds: Double,
+    op: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await op() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw DictationTimeoutError()
+        }
+        guard let result = try await group.next() else {
+            throw DictationTimeoutError()
+        }
+        group.cancelAll()
+        return result
     }
 }

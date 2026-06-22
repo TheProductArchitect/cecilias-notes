@@ -184,6 +184,43 @@ final class EditorFollowUpTests: XCTestCase {
         XCTAssertFalse(selection.hasSelection, "selection clears on hand-off")
     }
 
+    /// Cross-page handoff must still fire when the lasso happens
+    /// to also catch a partial stroke fragment alongside the
+    /// moved element. Device logs showed the most common block on
+    /// the handoff was an incidentally-selected stroke fragment;
+    /// the fast-path now ignores `partialStrokeSelections`.
+    func test_lassoTranslate_pastEdge_withPartialStrokes_stillPostsHandoff() throws {
+        let ctx = container.mainContext
+        let pageId = UUID()
+        let element = makeShape(pageId: pageId, into: ctx)
+        element.normalizedY = 0.9
+        let strokeElementId = UUID()
+        try ctx.save()
+
+        let selection = LassoSelectionState.shared
+        selection.clear()
+        selection.setSelection(
+            elementIds: [element.id],
+            partialStrokes: [strokeElementId: [0, 2]],
+            pageId: pageId,
+            bounds: CGRect(x: 0, y: 800, width: 100, height: 100)
+        )
+
+        let expectation = XCTestExpectation(description: "handoff fires even with partial strokes")
+        let token = NotificationCenter.default.addObserver(
+            forName: .imageElementCrossPageHandoffRequested, object: nil, queue: nil
+        ) { _ in expectation.fulfill() }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        LassoGroupOps.translate(
+            selection: selection,
+            delta: CGSize(width: 0, height: 300),
+            pageSize: CGSize(width: 800, height: 1000),
+            context: ctx
+        )
+        wait(for: [expectation], timeout: 1.0)
+    }
+
     /// In-bounds translate must NOT hand off — only the past-edge
     /// case triggers cross-page routing.
     func test_lassoTranslate_inBounds_doesNotPostHandoff() throws {
