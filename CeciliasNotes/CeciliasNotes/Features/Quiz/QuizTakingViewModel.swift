@@ -163,7 +163,17 @@ final class QuizTakingViewModel: ObservableObject {
             attempt.quiz = quiz
         }
         context.insert(attempt)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // The quiz attempt — score, per-response history,
+            // duration — is silently lost on failure. User finishes
+            // the quiz, sees the score animate, then doesn't see
+            // it appear in the history list later. Log the cause.
+            #if DEBUG
+            dlog("[QuizTaking] attempt commit SAVE FAILED quizId=\(quizID): \(error)")
+            #endif
+        }
     }
 
     private func fetchQuiz() -> Quiz? {

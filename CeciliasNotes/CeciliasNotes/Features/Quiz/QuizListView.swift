@@ -250,7 +250,13 @@ private struct QuizSidebarRow: View {
             return
         }
         quiz.title = trimmed
-        try? StorageService.shared.context.save()
+        do {
+            try StorageService.shared.context.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizList] rename SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
         renameBuffer = ""
         HapticManager.shared.toolSwitched()
     }
@@ -258,7 +264,13 @@ private struct QuizSidebarRow: View {
     private func moveQuiz(to folder: String) {
         quiz.folderName = folder
         quiz.updatedAt = Date()
-        try? StorageService.shared.context.save()
+        do {
+            try StorageService.shared.context.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizList] move SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
         HapticManager.shared.toolSwitched()
     }
 
@@ -270,7 +282,13 @@ private struct QuizSidebarRow: View {
         }
         let ctx = StorageService.shared.context
         ctx.delete(quiz)   // cascades to questions, attempts, responses
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizList] delete SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
         HapticManager.shared.destructiveConfirmed()
     }
 

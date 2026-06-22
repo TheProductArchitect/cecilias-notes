@@ -78,7 +78,13 @@ struct QuizDetailView: View {
         viewModel.selectedQuizID = nil
         let ctx = StorageService.shared.context
         ctx.delete(quiz)
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizDetail] deleteQuiz SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
         HapticManager.shared.destructiveConfirmed()
     }
 
@@ -226,7 +232,13 @@ struct QuizDetailView: View {
     private func deleteAttempt(_ attempt: QuizAttempt) {
         let ctx = StorageService.shared.context
         ctx.delete(attempt)
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizDetail] deleteAttempt SAVE FAILED attemptId=\(attempt.id): \(error)")
+            #endif
+        }
         HapticManager.shared.destructiveConfirmed()
     }
 

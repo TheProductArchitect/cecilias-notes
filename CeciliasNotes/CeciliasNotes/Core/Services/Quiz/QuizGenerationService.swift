@@ -81,7 +81,13 @@ final class QuizGenerationService: ObservableObject {
         let quiz = Quiz(title: title, sourceScope: scope, format: format, generationTier: tier)
         quiz.autoUpdateEnabled = autoUpdate
         context.insert(quiz)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizGen] new quiz SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
 
         generatingQuizIDs.insert(quiz.id)
         let quizID = quiz.id
@@ -238,7 +244,13 @@ final class QuizGenerationService: ObservableObject {
             context.insert(q)
         }
         quiz.updatedAt = Date()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[QuizGen] questions batch SAVE FAILED quizId=\(quiz.id): \(error)")
+            #endif
+        }
     }
 
     private func fetchQuiz(id: UUID) -> Quiz? {

@@ -57,7 +57,13 @@ enum QuizAutoUpdater {
                     to: quiz, from: docs, count: batchSize
                 )
             }
-            try? context.save()
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[QuizAutoUpdater] SAVE FAILED quizId=\(quiz.id): \(error)")
+                #endif
+            }
         }
     }
 }
