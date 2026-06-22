@@ -56,62 +56,35 @@ struct AllSubjectsView: View {
         }
     }
 
+    /// File-system style folder grid. Each subject is a `SubjectFolderCardView`
+    /// tile — folder glyph, name, notebook count, and a small stack of
+    /// the subject's first few notebook covers fanned out behind the
+    /// glyph. Drops the list-row form (replaced 2026-06-22 per user
+    /// request for a "thumbnails / folders" surface that reads as
+    /// siblings to the rest of the library grid).
     private var list: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(active, id: \.id) { subject in
-                    row(for: subject)
-                    Rectangle()
-                        .fill(theme.recessiveQuinary)
-                        .frame(height: 0.5)
-                        .padding(.leading, 24)
+                    SubjectFolderCardView(subject: subject, viewModel: viewModel)
+                        .frame(maxWidth: .infinity)
+                        .frame(width: cardWidth, height: 200)
                 }
             }
+            .padding(.top, 24)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+            .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: active.map(\.id))
         }
     }
 
-    private func row(for subject: Subject) -> some View {
-        let isSelected = viewModel.selectedSubjectIds.contains(subject.id)
-        return HStack(spacing: 12) {
-            if viewModel.isSelecting {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isSelected ? theme.accent : theme.recessiveTertiary)
-            }
-            Image(systemName: "folder")
-                .font(.system(size: 16))
-                .foregroundStyle(theme.recessiveSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(subject.name.isEmpty ? "untitled subject" : subject.name)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(theme.foreground)
-                Text(countLabel(for: subject))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(theme.recessiveTertiary)
-            }
-            Spacer(minLength: 0)
-            if subject.isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.recessiveTertiary)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if viewModel.isSelecting {
-                if isSelected { viewModel.selectedSubjectIds.remove(subject.id) }
-                else          { viewModel.selectedSubjectIds.insert(subject.id) }
-            } else {
-                viewModel.selectedContext = .subject(subject.id)
-            }
-        }
+    private var columns: [GridItem] {
+        DeviceCapabilities.prefersTabletLayout
+            ? [GridItem(.adaptive(minimum: 168), spacing: 16)]
+            : [GridItem(.flexible(), spacing: 12)]
     }
-
-    private func countLabel(for subject: Subject) -> String {
-        let count = (subject.notebooks ?? []).filter { !$0.isDeleted }.count
-        return count == 1 ? "1 notebook" : "\(count) notebooks"
+    private var cardWidth: CGFloat? {
+        DeviceCapabilities.prefersTabletLayout ? 168 : nil
     }
 
     private var emptyState: some View {

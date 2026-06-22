@@ -68,25 +68,51 @@ struct AllQuizzesView: View {
         }
     }
 
+    /// File-system style folder grid. Each quiz is a `QuizFolderCardView`
+    /// tile — same visual rhythm as the All Subjects grid so the user
+    /// reads them as siblings. Replaces the prior LazyVStack-of-rows
+    /// surface (2026-06-22 redesign per user request).
+    ///
+    /// Folder groupings (`quiz.folderName`) are surfaced as section
+    /// headers above each group so the existing organisational signal
+    /// survives the migration.
     private var list: some View {
         ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVGrid(
+                columns: columns,
+                spacing: 16,
+                pinnedViews: []
+            ) {
                 ForEach(grouped, id: \.folder) { group in
-                    if !group.folder.isEmpty {
-                        folderHeader(group.folder)
-                    } else if grouped.contains(where: { !$0.folder.isEmpty }) {
-                        folderHeader("ungrouped")
-                    }
-                    ForEach(group.quizzes, id: \.id) { quiz in
-                        row(for: quiz)
-                        Rectangle()
-                            .fill(theme.recessiveQuinary)
-                            .frame(height: 0.5)
-                            .padding(.leading, 24)
+                    Section {
+                        ForEach(group.quizzes, id: \.id) { quiz in
+                            QuizFolderCardView(quiz: quiz, viewModel: viewModel)
+                                .frame(maxWidth: .infinity)
+                                .frame(width: cardWidth, height: 200)
+                        }
+                    } header: {
+                        if !group.folder.isEmpty {
+                            folderHeader(group.folder)
+                        } else if grouped.contains(where: { !$0.folder.isEmpty }) {
+                            folderHeader("ungrouped")
+                        }
                     }
                 }
             }
+            .padding(.top, 24)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 32)
+            .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: quizzes.map(\.id))
         }
+    }
+
+    private var columns: [GridItem] {
+        DeviceCapabilities.prefersTabletLayout
+            ? [GridItem(.adaptive(minimum: 168), spacing: 16)]
+            : [GridItem(.flexible(), spacing: 12)]
+    }
+    private var cardWidth: CGFloat? {
+        DeviceCapabilities.prefersTabletLayout ? 168 : nil
     }
 
     private func folderHeader(_ name: String) -> some View {
@@ -95,54 +121,10 @@ struct AllQuizzesView: View {
             .tracking(0.05)
             .textCase(.uppercase)
             .foregroundStyle(theme.recessiveTertiary)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 8)
             .padding(.top, 14)
             .padding(.bottom, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func row(for quiz: Quiz) -> some View {
-        let isSelected = viewModel.selectedQuizIds.contains(quiz.id)
-        return HStack(spacing: 12) {
-            if viewModel.isSelecting {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isSelected ? theme.accent : theme.recessiveTertiary)
-            }
-            Image(systemName: "questionmark.app")
-                .font(.system(size: 16))
-                .foregroundStyle(theme.recessiveSecondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(quiz.title.isEmpty ? "untitled quiz" : quiz.title)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(theme.foreground)
-                Text(subtitleLabel(for: quiz))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(theme.recessiveTertiary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if viewModel.isSelecting {
-                if isSelected { viewModel.selectedQuizIds.remove(quiz.id) }
-                else          { viewModel.selectedQuizIds.insert(quiz.id) }
-            } else {
-                viewModel.selectedQuizID = quiz.id
-            }
-        }
-    }
-
-    private func subtitleLabel(for quiz: Quiz) -> String {
-        let questionCount = (quiz.questions ?? []).count
-        let attemptCount  = (quiz.attempts  ?? []).count
-        let q = questionCount == 1 ? "1 question" : "\(questionCount) questions"
-        let a = attemptCount == 0 ? "no attempts"
-              : attemptCount == 1 ? "1 attempt"
-              : "\(attemptCount) attempts"
-        return "\(q) • \(a)"
     }
 
     private var emptyState: some View {
