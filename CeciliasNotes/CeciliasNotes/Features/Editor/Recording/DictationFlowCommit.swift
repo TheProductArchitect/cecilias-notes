@@ -78,19 +78,30 @@ enum DictationFlowCommit {
         )
         element.textContent = content
         context.insert(element)
-        do {
-            try context.save()
-        } catch {
-            // The dictation surface depends on this row landing —
-            // if the initial transcript element doesn't persist,
-            // every subsequent partial-result tick has nothing to
-            // mutate and the user's words disappear into the void.
-            // Swallowed here historically; log so a freeze /
-            // missing-transcript report can be triaged from the
-            // device log without guessing.
-            #if DEBUG
-            dlog("[Dictation] createInitialTextElement SAVE FAILED elementId=\(elementId): \(error)")
-            #endif
+        // Defer the disk save off the synchronous frame. Device log
+        // 2026-06-22 showed the dictation start wedging here:
+        // `context.save()` was the next blocking call on the main
+        // actor after the recorder reported success, and it blocked
+        // indefinitely waiting for the SQLite writer lock that
+        // CloudKit's WAL checkpoint + Core Data import was holding.
+        // SwiftData has no off-main save API on the mainContext, so
+        // we hop one runloop tick — the in-memory insert is already
+        // findable on this same context (the live transcript's
+        // updateText path fetches the row immediately via
+        // DispatchQueue.main.async and resolves the in-memory
+        // object), and the save lands as soon as the lock contention
+        // clears. If save fails we log but don't surface — the
+        // element is committed to memory and the user keeps
+        // dictating; the next durable save (the next updateText
+        // tick) re-attempts persistence as part of its own save.
+        Task { @MainActor [context] in
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[Dictation] createInitialTextElement SAVE FAILED elementId=\(elementId): \(error)")
+                #endif
+            }
         }
         return elementId
     }
