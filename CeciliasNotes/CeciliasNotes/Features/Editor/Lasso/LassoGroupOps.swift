@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import PencilKit
 import SwiftData
+import UIKit
 
 /// Group operations on a `LassoSelectionState` — translate, scale,
 /// rotate, delete. Each operation walks the selected elements,
@@ -290,8 +291,18 @@ enum LassoGroupOps {
     /// Soft-delete every selected whole element + strip the
     /// selected indices from every partially-selected stroke
     /// element's PKDrawing. Clears the selection on success.
+    ///
+    /// `canvas` is the PKCanvasView whose `undoManager` records the
+    /// per-element undo entries. Without it, deletes succeed but
+    /// ⌘Z (or the toolbar undo button) can't bring shapes /
+    /// sticky-notes back — which is the "undo doesn't work for
+    /// shapes" bug. Strokes deleted by lasso are NOT registered
+    /// here; PencilKit owns their undo via `applyTransformToStroke`'s
+    /// drawing rewrite, and double-registering would diverge from
+    /// what PencilKit thinks it knows.
     static func delete(
         selection: LassoSelectionState,
+        canvas: PKCanvasView? = nil,
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
@@ -301,6 +312,27 @@ enum LassoGroupOps {
             guard let element = fetch(elementId, context: context) else { continue }
             if element.kind == .shape { deletedAnyShape = true }
             if element.kind == .stickyNote { deletedAnySticky = true }
+            // Register undo BEFORE the delete so the undo manager's
+            // anchor (the canvas view) is still alive and the
+            // element is still findable on the next ⌘Z.
+            switch element.kind {
+            case .shape:
+                PageElementUndo.registerDelete(
+                    elementId: element.id,
+                    kind: .shape,
+                    canvas: canvas,
+                    actionName: "Delete Shape"
+                )
+            case .stickyNote:
+                PageElementUndo.registerDelete(
+                    elementId: element.id,
+                    kind: .stickyNote,
+                    canvas: canvas,
+                    actionName: "Delete Sticky Note"
+                )
+            default:
+                break
+            }
             element.deletedAt = Date()
             element.updatedAt = Date()
         }

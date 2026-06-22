@@ -1122,6 +1122,30 @@ struct ContinuousCanvasView: UIViewRepresentable {
             element.normalizedY = destNormY
             element.updatedAt   = Date()
             try? ctx.save()
+
+            // SwiftData saves on the main context don't drive the
+            // overlays here — each per-kind overlay uses a manual
+            // `refreshTick` bumped by a `Notification.Name` (the
+            // overlays render under per-page UIHostingControllers
+            // mounted by this coordinator, so they don't get an
+            // injected `@Environment(\.modelContext)` change signal).
+            // Without the post below the source overlay keeps
+            // painting the element until its next unrelated refresh
+            // and the destination overlay misses it entirely — which
+            // is the "image won't cross pages" bug for images and
+            // the "shape flickers / disappears" symptom for shapes.
+            // Post the right kind-specific signal so both ends
+            // re-fetch on the same runloop.
+            switch element.kind {
+            case .image:
+                NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+            case .shape:
+                NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+            case .stickyNote:
+                NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
+            default:
+                break
+            }
         }
 
         // MARK: Canvas membership (lazy mount/unmount)

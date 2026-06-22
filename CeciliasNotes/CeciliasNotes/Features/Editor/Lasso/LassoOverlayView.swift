@@ -374,6 +374,7 @@ struct LassoOverlayView: View {
                                      displayed.minY - 24))
                 Button {
                     LassoGroupOps.delete(selection: selection,
+                                         canvas: viewModel.canvasView,
                                          context: modelContext)
                 } label: {
                     Image(systemName: "trash.circle.fill")

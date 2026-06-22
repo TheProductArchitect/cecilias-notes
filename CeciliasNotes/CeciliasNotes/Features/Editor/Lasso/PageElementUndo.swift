@@ -34,6 +34,36 @@ enum PageElementUndo {
         )
     }
 
+    /// Register a soft-delete with the canvas undoManager. First ⌘Z
+    /// restores `deletedAt` to nil (the element returns); ⌘⇧Z
+    /// (redo) re-soft-deletes it. Mirror image of `registerCreate` —
+    /// the only difference is the initial `willDelete` polarity,
+    /// because the user just performed a delete, so the next
+    /// step in the chain (undo) must un-delete.
+    ///
+    /// Used by the lasso trash badge for shape and sticky-note
+    /// elements. Stroke elements aren't covered — PencilKit's
+    /// native UndoManager already records stroke edits, and
+    /// double-registering would push the user's drawing history
+    /// out of sync with what PencilKit thinks it knows.
+    @MainActor
+    static func registerDelete(
+        elementId: UUID,
+        kind: ElementKind,
+        canvas: PKCanvasView?,
+        actionName: String
+    ) {
+        guard let manager = canvas?.undoManager else { return }
+        registerToggle(
+            elementId: elementId,
+            kind: kind,
+            willDelete: false,                 // first ⌘Z restores the just-deleted element
+            manager: manager,
+            actionName: actionName,
+            anchor: canvas!
+        )
+    }
+
     /// Recursive toggle registration. `willDelete=true` means
     /// "the next undo/redo step is a soft-delete" — i.e. we're
     /// undoing a creation. After the toggle runs we re-register
