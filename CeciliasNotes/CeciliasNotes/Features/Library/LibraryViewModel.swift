@@ -983,14 +983,13 @@ final class LibraryViewModel: ObservableObject {
                let v = PageSize(rawValue: raw) { return v }
             return .a4
         }()
-        let template: PageTemplate = {
-            // The flat enum persists as its String raw value via
-            // `PageTemplate.jsonString` — no JSON encoding wrapper.
-            // Decode by raw value rather than `JSONDecoder`.
-            guard let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.lastUsed.template")
-            else { return .blank }
-            return PageTemplate.from(jsonString: raw)
-        }()
+        // New notebooks always start at `.blank`. The "set as default
+        // for future pages" toggle inside an existing notebook's Add
+        // Page picker pins ONLY that notebook's `defaultTemplate` —
+        // it must not leak into freshly-created notebooks. The legacy
+        // `ceciliasnotes.lastUsed.template` global key is no longer
+        // written; the read here is intentionally removed.
+        let template: PageTemplate = .blank
 
         createNotebook(
             title:         uniqueUntitledName(),

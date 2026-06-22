@@ -2355,7 +2355,11 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
-            userDefaults.set(template.jsonString, forKey: "ceciliasnotes.lastUsed.template")
+            // Intentionally NOT writing to `ceciliasnotes.lastUsed.template`.
+            // Per-notebook persistence happens via `Notebook.defaultTemplate`
+            // above; mirroring to the global key here used to leak this
+            // notebook's "set as default for future pages" choice into
+            // every newly-created notebook's starting template.
             // Defer to next runloop — synchronous `objectWillChange.send`
             // inside a view-body-driven mutation creates AttributeGraph
             // cycles. See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` Reg 1.

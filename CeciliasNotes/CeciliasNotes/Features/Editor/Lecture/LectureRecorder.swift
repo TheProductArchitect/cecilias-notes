@@ -161,7 +161,7 @@ final class LectureRecorder: ObservableObject {
         #if DEBUG
         dlog("[Lecture] start phase=audioSession")
         #endif
-        try configureAudioSession()
+        try await configureAudioSession()
 
         // New lecture writes land directly in the unified
         // `MediaStorage.lectures/` tree. The legacy notebook-scoped
@@ -331,8 +331,17 @@ final class LectureRecorder: ObservableObject {
             }
         }
 
-        eng.prepare()
-        try eng.start()
+        // `prepare()` + `start()` pre-allocate the engine's internal
+        // buffers and bring up the audio unit graph. Both calls block
+        // on Core Audio IPC and are the second-most-common dictation
+        // wedge phase (after `setActive(true)`) — see
+        // `Documentation/OPEN_ISSUES.md` §1. Off-load to a detached
+        // task so the main runloop stays responsive even when the
+        // graph configuration call stalls.
+        try await Task.detached(priority: .userInitiated) { [eng] in
+            eng.prepare()
+            try eng.start()
+        }.value
         #if DEBUG
         dlog("[Lecture] engine.start() OK, isRunning=\(eng.isRunning)")
         Task { [weak eng] in
@@ -831,22 +840,32 @@ final class LectureRecorder: ObservableObject {
 
     // MARK: - Session + permissions
 
-    private func configureAudioSession() throws {
-        let session = AVAudioSession.sharedInstance()
-        // `.voiceChat` activates Apple's built-in noise-suppression
-        // and echo-cancellation pipeline on the microphone input —
-        // the closest equivalent to the spec's `.voiceRecording`
-        // (which exists in iOS 18.4's docs but isn't surfaced as a
-        // public `AVAudioSession.Mode` constant in the current
-        // SDK). `.defaultToSpeaker` + `.allowBluetoothHFP` route
-        // audio sensibly when no headphones are connected; HFP
-        // replaces the deprecated `.allowBluetooth` option.
-        try session.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetoothHFP]
-        )
-        try session.setActive(true)
+    /// Configure + activate the shared audio session off the main
+    /// actor. `setActive(true)` is a blocking IPC into mediaserverd
+    /// that can take seconds when CloudKit is mid-export holding the
+    /// SQLite writer lock; running it on the main runloop wedged the
+    /// entire app (see `Documentation/OPEN_ISSUES.md` §1). Detached
+    /// to `userInitiated` so the wedge — if it still happens — only
+    /// stalls a background task, and the dictation `withDictationTimeout`
+    /// in `RecordingSession.startDictation` can recover the UI.
+    private func configureAudioSession() async throws {
+        try await Task.detached(priority: .userInitiated) {
+            let session = AVAudioSession.sharedInstance()
+            // `.voiceChat` activates Apple's built-in noise-suppression
+            // and echo-cancellation pipeline on the microphone input —
+            // the closest equivalent to the spec's `.voiceRecording`
+            // (which exists in iOS 18.4's docs but isn't surfaced as a
+            // public `AVAudioSession.Mode` constant in the current
+            // SDK). `.defaultToSpeaker` + `.allowBluetoothHFP` route
+            // audio sensibly when no headphones are connected; HFP
+            // replaces the deprecated `.allowBluetooth` option.
+            try session.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
+            )
+            try session.setActive(true)
+        }.value
     }
 
     private func ensureMicrophonePermission() async throws {

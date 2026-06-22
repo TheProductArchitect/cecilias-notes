@@ -337,21 +337,23 @@ private struct AddPageTemplatePicker: View {
     @Environment(\.theme) private var theme
     @State private var makeDefaultToggle: Bool = false
 
-    private let thumbSize = CGSize(width: 56, height: 74)
+    // Bumped from 56×74 → 64×84 so the template glyph isn't
+    // visually crushed inside the popover.
+    private let thumbSize = CGSize(width: 64, height: 84)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("pick a template for the new page")
                 .font(.system(size: 11, weight: .regular).italic())
                 .foregroundStyle(theme.recessiveQuaternary)
 
             ForEach(TemplateCategory.allCases, id: \.self) { category in
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(category.displayName)
                         .font(.system(size: 9, weight: .regular).italic())
                         .foregroundStyle(theme.recessiveQuaternary)
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             ForEach(PageTemplate.allCases.filter { $0.category == category },
                                     id: \.self) { template in
                                 Button {
@@ -383,14 +385,15 @@ private struct AddPageTemplatePicker: View {
             }
 
             Toggle(isOn: $makeDefaultToggle) {
-                Text("also set as default for future pages")
+                Text("also set as default for future pages in this notebook")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(theme.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .tint(theme.accent)
-            .padding(.top, 4)
+            .padding(.top, 6)
         }
-        .padding(14)
-        .frame(width: 380)
+        .padding(18)
+        .frame(width: 440)
     }
 }
