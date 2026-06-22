@@ -78,7 +78,20 @@ enum DictationFlowCommit {
         )
         element.textContent = content
         context.insert(element)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // The dictation surface depends on this row landing —
+            // if the initial transcript element doesn't persist,
+            // every subsequent partial-result tick has nothing to
+            // mutate and the user's words disappear into the void.
+            // Swallowed here historically; log so a freeze /
+            // missing-transcript report can be triaged from the
+            // device log without guessing.
+            #if DEBUG
+            dlog("[Dictation] createInitialTextElement SAVE FAILED elementId=\(elementId): \(error)")
+            #endif
+        }
         return elementId
     }
 
@@ -193,7 +206,13 @@ enum DictationFlowCommit {
         )
         element.textContent = content
         context.insert(element)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Dictation] createContinuationPage SAVE FAILED pageId=\(newPage.id): \(error)")
+            #endif
+        }
 
         return (pageId: newPage.id, textElementId: elementId)
     }
@@ -272,7 +291,20 @@ enum DictationFlowCommit {
         }
         stripElement.audioContent = audioContent
         context.insert(stripElement)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // Critical: this is the stop-time write that binds the
+            // on-disk .m4a to a queryable AudioContent row. Without
+            // it the audio file is orphaned — present in
+            // MediaStorage.audio/ but unreachable from any overlay,
+            // and the refinement-pass transcript update will fail
+            // its row lookup. Log loudly so a "my recording
+            // disappeared" report can be triaged.
+            #if DEBUG
+            dlog("[Dictation] finalizeDictation SAVE FAILED contentId=\(contentId) audioId=\(audioContent.id): \(error)")
+            #endif
+        }
 
         // Populate `audioData` from the on-disk recording so the
         // bytes ride CloudKit alongside the row. Done as a follow-up
@@ -291,7 +323,13 @@ enum DictationFlowCommit {
                 if let row = (try? ctx.fetch(descriptor))?.first {
                     row.audioData = data
                     row.updatedAt = Date()
-                    try? ctx.save()
+                    do {
+                        try ctx.save()
+                    } catch {
+                        #if DEBUG
+                        dlog("[Dictation] audio bytes backfill SAVE FAILED audioId=\(audioId): \(error)")
+                        #endif
+                    }
                 }
             }
         }
