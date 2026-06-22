@@ -111,7 +111,13 @@ enum StickyNoteCommit {
         guard let element = try? context.fetch(descriptor).first else { return }
         element.deletedAt = Date()
         element.updatedAt = Date()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[StickyNote] softDelete SAVE FAILED elementId=\(elementId): \(error)")
+            #endif
+        }
         NotificationCenter.default.post(
             name: .stickyNotesChanged, object: nil
         )
