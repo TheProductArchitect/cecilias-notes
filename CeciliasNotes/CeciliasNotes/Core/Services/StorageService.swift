@@ -138,7 +138,15 @@ final class StorageService: ObservableObject {
                 dirty = true
             }
         }
-        if dirty { try? context.save() }
+        if dirty {
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[Storage] pageCountBackfill SAVE FAILED: \(error)")
+                #endif
+            }
+        }
 
         defaults.set(true, forKey: Self.pageCountBackfillKey)
     }
@@ -185,7 +193,13 @@ final class StorageService: ObservableObject {
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Storage] purgeDuplicateRows SAVE FAILED: \(error)")
+            #endif
+        }
     }
 
     private func purgeDuplicates<Model: PersistentModel>(
@@ -1740,7 +1754,13 @@ extension StorageService {
             }
             context.delete(element)
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Storage] purgeImageElements SAVE FAILED pageCount=\(pageIds.count): \(error)")
+            #endif
+        }
     }
 
     /// Step 5: hard-delete V6 audio elements + their backing m4a
@@ -1761,7 +1781,13 @@ extension StorageService {
             }
             context.delete(element)
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Storage] purgeAudioElements SAVE FAILED pageCount=\(pageIds.count): \(error)")
+            #endif
+        }
     }
 }
 
