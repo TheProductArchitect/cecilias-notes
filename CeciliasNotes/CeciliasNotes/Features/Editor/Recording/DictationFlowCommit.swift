@@ -110,54 +110,80 @@ enum DictationFlowCommit {
     nonisolated(unsafe) private static var pendingPlaceholderMetadata: [UUID: PendingPlaceholder] = [:]
 
     /// Insert the PageElement + TextContent row described by the
-    /// pending metadata. Idempotent: if the row already exists
-    /// (because updateText's lazy create won the race, or because
-    /// a previous materialisation succeeded), this is a no-op.
+    /// pending metadata. Runs on a DETACHED background context so
+    /// the SwiftData metadata lock CloudKit's import is holding
+    /// can't wedge the main runloop. The 2026-06-22 device log
+    /// proved that `mainContext.insert` / `mainContext.save` can
+    /// hang for the full duration of a CloudKit import — moving
+    /// the write to a fresh `ModelContext(container)` sidesteps
+    /// the main-actor isolation that ties mainContext to the main
+    /// runloop. The background context writes to the same SQLite
+    /// store; once the lock clears, the merge propagates to
+    /// mainContext via SwiftData's persistent-history walk.
+    ///
+    /// Idempotent: if the row already exists (a prior call
+    /// succeeded, or an updateText lazy create beat us here), we
+    /// skip with no side effect.
     @MainActor
     fileprivate static func materializePlaceholderIfNeeded(elementId: UUID) {
         guard let meta = pendingPlaceholderMetadata[elementId] else {
-            // Already materialised; nothing to do.
+            // Already materialised or in-flight; nothing to do.
             return
         }
-        let context = StorageService.shared.context
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate { $0.id == elementId }
-        )
-        if let _ = try? context.fetch(descriptor).first {
-            // Row already in the context — possibly the updateText
-            // lazy path beat us here. Drop the pending metadata so
-            // a future call can't re-insert.
-            pendingPlaceholderMetadata.removeValue(forKey: elementId)
-            return
-        }
-        let element = PageElement(
-            id: elementId,
-            pageId: meta.pageId,
-            notebookId: meta.notebookId,
-            kind: .text,
-            normalizedX: (1 - textElementWidth) / 2,
-            normalizedY: textElementTopInset,
-            normalizedWidth: textElementWidth,
-            normalizedHeight: textElementInitialHeight,
-            zIndex: 1
-        )
-        let content = TextContent(
-            text: "",
-            source: .dictated,
-            size: .body
-        )
-        element.textContent = content
-        context.insert(element)
-        do {
-            try context.save()
-            pendingPlaceholderMetadata.removeValue(forKey: elementId)
+        // Drop the pending entry now so a second call can't enqueue
+        // a duplicate detached task while this one is in flight.
+        pendingPlaceholderMetadata.removeValue(forKey: elementId)
+        let container = StorageService.shared.container
+        let pageId = meta.pageId
+        let notebookId = meta.notebookId
+        let width = textElementWidth
+        let topInset = textElementTopInset
+        let initialHeight = textElementInitialHeight
+        Task.detached(priority: .userInitiated) {
             #if DEBUG
-            dlog("[Dictation] materializePlaceholder OK elementId=\(elementId)")
+            dlog("[Dictation] materializePlaceholder detached entry elementId=\(elementId)")
             #endif
-        } catch {
-            #if DEBUG
-            dlog("[Dictation] materializePlaceholder SAVE FAILED elementId=\(elementId): \(error)")
-            #endif
+            let context = ModelContext(container)
+            // Re-check on the background context — mainContext might
+            // have raced this materialisation and written the row
+            // before our detached Task got scheduled.
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate { $0.id == elementId }
+            )
+            if (try? context.fetch(descriptor).first) != nil {
+                #if DEBUG
+                dlog("[Dictation] materializePlaceholder skip — row already exists elementId=\(elementId)")
+                #endif
+                return
+            }
+            let element = PageElement(
+                id: elementId,
+                pageId: pageId,
+                notebookId: notebookId,
+                kind: .text,
+                normalizedX: (1 - width) / 2,
+                normalizedY: topInset,
+                normalizedWidth: width,
+                normalizedHeight: initialHeight,
+                zIndex: 1
+            )
+            let content = TextContent(
+                text: "",
+                source: .dictated,
+                size: .body
+            )
+            element.textContent = content
+            context.insert(element)
+            do {
+                try context.save()
+                #if DEBUG
+                dlog("[Dictation] materializePlaceholder OK elementId=\(elementId)")
+                #endif
+            } catch {
+                #if DEBUG
+                dlog("[Dictation] materializePlaceholder SAVE FAILED elementId=\(elementId): \(error)")
+                #endif
+            }
         }
     }
 
@@ -168,35 +194,42 @@ enum DictationFlowCommit {
     /// Throttling is handled upstream (the recorder publishes at
     /// its own cadence; SwiftData coalesces same-runloop writes).
     static func updateText(elementId: UUID, text: String) {
-        // Defer to the next runloop tick. The recogniser's
-        // partial-result callback lands inside RecordingSession's
-        // Combine sink on the main queue, which fires *during* the
-        // SwiftUI view-update transaction triggered by the
-        // previous partial's @Bindable propagation. Writing
-        // SwiftData synchronously here re-entrantly triggers
-        // another @Published mutation, which produces the
-        // "Publishing changes from within view updates is not
-        // allowed" warning + cascading view-update churn. One
-        // runloop tick breaks the synchronous chain so each
-        // partial lands cleanly.
-        DispatchQueue.main.async {
-            let context = StorageService.shared.context
+        // Detach the entire SwiftData fetch + mutate + save onto a
+        // background context for the same reason `createInitialTextElement`
+        // does: the mainContext acquires an internal metadata lock
+        // that CloudKit's import can hold for the full duration of
+        // a sync round. Running on `ModelContext(container)` keeps
+        // main responsive even when the SQLite writer lock is
+        // contended. SwiftData's persistent-history merge propagates
+        // the saved text back to mainContext once the lock clears
+        // and the editor's @Query-driven text overlay refreshes
+        // automatically — the user sees the transcript stream in
+        // with a slight visual lag rather than a frozen app.
+        let container = StorageService.shared.container
+        Task.detached(priority: .userInitiated) {
+            let context = ModelContext(container)
             let descriptor = FetchDescriptor<PageElement>(
                 predicate: #Predicate { $0.id == elementId }
             )
-            // Try to find the row; if the createInitialTextElement
-            // deferred materialisation hasn't landed yet (CloudKit
-            // contention can hold it off for hundreds of ms), run
-            // it now from the cached metadata so this tick has
-            // something to write into. Without this lazy fallback
-            // every partial that arrives before the deferred Task
-            // runs is silently dropped.
-            if (try? context.fetch(descriptor).first) == nil {
-                materializePlaceholderIfNeeded(elementId: elementId)
+            // If the background context hasn't seen the row yet
+            // (mainContext might have inserted, mainContext save
+            // pending, history merge to background context not yet
+            // run), the placeholder materialise path below picks
+            // up the slack and inserts it inline. The materialise
+            // helper is idempotent so a race with the original
+            // createInitialTextElement detached task no-ops.
+            var fetched = (try? context.fetch(descriptor).first)
+            if fetched == nil {
+                await MainActor.run {
+                    materializePlaceholderIfNeeded(elementId: elementId)
+                }
+                // Re-fetch on this background context. The
+                // materialise helper runs its own detached Task, so
+                // the row may still not be visible here — that's OK,
+                // we drop this tick and the next partial will retry.
+                fetched = (try? context.fetch(descriptor).first)
             }
-            guard let element = try? context.fetch(descriptor).first,
-                  let content = element.textContent
-            else {
+            guard let element = fetched, let content = element.textContent else {
                 #if DEBUG
                 dlog("[Dictation] updateText DROP — element/content fetch failed (elementId=\(elementId))")
                 #endif
