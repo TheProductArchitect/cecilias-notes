@@ -321,8 +321,24 @@ struct EditorToolbarView: View {
                 .frame(width: 32, height: 32)
         }
         .buttonStyle(.plain)
-        .popover(isPresented: $showRecordingPopover) {
+        // Explicit attachment anchor + arrow edge. Without these,
+        // SwiftUI's first attempt at presenting this popover silently
+        // no-ops because the Button's frame hasn't been measured by
+        // the time `showRecordingPopover` flips true — the canonical
+        // iPadOS 17+ "tap two or three times before the menu shows"
+        // symptom. `.rect(.bounds)` pins the anchor to the button's
+        // actual rendered bounds (resolved synchronously from the
+        // layout pass), and `.fixedSize()` on the content gives the
+        // popover an unambiguous size on the first present so the
+        // adaptation engine doesn't fall back to sheet behaviour
+        // and then bounce back to popover.
+        .popover(
+            isPresented: $showRecordingPopover,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
             recordingModePopover
+                .fixedSize()
                 .presentationCompactAdaptation(.popover)
         }
         .onChange(of: showRecordingPopover) { _, nowOpen in

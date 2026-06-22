@@ -1304,23 +1304,45 @@ final class LibraryViewModel: ObservableObject {
     /// + the top-bar selecting strip when the user is in
     /// `.allSubjects` context. Cascades through `storage.deleteSubject`
     /// so every notebook owned by each deleted subject is soft-
-    /// deleted too (and lands in trash). Always calls `refresh()` so
-    /// the sidebar's subjects array reflects the change immediately.
+    /// deleted too (and lands in trash).
+    ///
+    /// Mirrors `deleteSelectedNotebooks`: explicit error capture (the
+    /// previous `try?` silently swallowed save failures, which is the
+    /// "multi-select subject delete doesn't work" symptom — under
+    /// CloudKit contention the soft-delete write can fail and the
+    /// user saw nothing), in-memory cache pruning so the sidebar
+    /// updates immediately, and `refresh()` on either path so any
+    /// rows that didn't actually delete come back into the list
+    /// instead of stranding in the UI.
     func deleteSelectedSubjects() {
         let ids = selectedSubjectIds
+        var firstError: Error?
         let targets = storage.fetchSubjects().filter { ids.contains($0.id) }
         for subject in targets {
-            try? storage.deleteSubject(subject)
-            if selectedSubjectId == subject.id { selectedSubjectId = nil }
+            do {
+                try storage.deleteSubject(subject)
+                if selectedSubjectId == subject.id { selectedSubjectId = nil }
+            } catch {
+                if firstError == nil { firstError = error }
+            }
+        }
+        withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+            subjects.removeAll { ids.contains($0.id) }
         }
         isSelecting = false
         selectedSubjectIds = []
+        if let firstError {
+            showError(.storageFailed(action: "delete subjects", underlying: firstError))
+        }
         refresh()
     }
 
     /// Same shape as `deleteSelectedSubjects` for the quiz surface.
     /// Uses SwiftData's hard delete (matches the existing per-row
     /// `QuizSidebarRow` deletion) so questions + attempts cascade.
+    /// Errors are surfaced — the prior `try? ctx.save()` would
+    /// silently drop a failed batch save and the user would see
+    /// the rows return on the next sidebar refresh.
     func deleteSelectedQuizzes() {
         let ids = selectedQuizIds
         let ctx = storage.context
@@ -1332,9 +1354,14 @@ final class LibraryViewModel: ObservableObject {
             if selectedQuizID == quiz.id { selectedQuizID = nil }
             ctx.delete(quiz)
         }
-        try? ctx.save()
+        do {
+            try ctx.save()
+        } catch {
+            showError(.storageFailed(action: "delete quizzes", underlying: error))
+        }
         isSelecting = false
         selectedQuizIds = []
+        refresh()
     }
 
     func duplicateNotebook(_ notebook: Notebook) {

@@ -1487,21 +1487,46 @@ extension StorageService {
     }
 
     func clearExportedPDFs() async throws {
-        let fm   = FileManager.default
+        let fm = FileManager.default
+
+        // Source of truth — `ExportService.makeOutputURL` writes
+        // every exported PDF into `ExportService.globalExportsDirectory`,
+        // and `exportedPDFsSizeBytes()` reads from the same location.
+        // The legacy per-notebook `notebooks/<id>/exports/` tree was
+        // walked here originally but no live export path writes
+        // there, so the user saw "cleared" but the size badge stayed
+        // populated on the next entry into Settings → Storage.
+        // Clear the global directory first, then sweep the legacy
+        // per-notebook locations to scrub any stale leftovers.
+        let globalDir = ExportService.globalExportsDirectory
+        if fm.fileExists(atPath: globalDir.path) {
+            do {
+                let entries = try fm.contentsOfDirectory(
+                    at: globalDir,
+                    includingPropertiesForKeys: nil,
+                    options: .skipsHiddenFiles
+                )
+                for entry in entries {
+                    try fm.removeItem(at: entry)
+                }
+            } catch {
+                throw CeciliasNotesStorageError.fileWriteFailed(error)
+            }
+        }
+
         let dirs = (try? fm.contentsOfDirectory(
             at: Self.notebooksDirectoryURL,
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
         )) ?? []
         for dir in dirs {
-            let exportsDir = dir.appendingPathComponent("exports")
-            guard fm.fileExists(atPath: exportsDir.path) else { continue }
-            do {
-                try fm.removeItem(at: exportsDir)
-                try fm.createDirectory(at: exportsDir, withIntermediateDirectories: true)
-            } catch {
-                throw CeciliasNotesStorageError.fileWriteFailed(error)
-            }
+            let legacyExportsDir = dir.appendingPathComponent("exports")
+            guard fm.fileExists(atPath: legacyExportsDir.path) else { continue }
+            // Remove the legacy folder entirely (no recreate) — it's
+            // never written to by the current export pipeline, so a
+            // re-create would just be an empty placeholder that
+            // misleads future size walks.
+            try? fm.removeItem(at: legacyExportsDir)
         }
     }
 

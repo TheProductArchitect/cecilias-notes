@@ -122,9 +122,6 @@ struct SettingsView: View {
         case .storage:      StorageSettingsView(viewModel: viewModel)
         case .intelligence: IntelligenceSettingsView()
         case .about:        AboutSettingsView(viewModel: viewModel)
-        #if DEBUG
-        case .debug:        DebugSettingsView(viewModel: viewModel)
-        #endif
         }
     }
 
@@ -225,10 +222,6 @@ struct SettingsView: View {
             IntelligenceSettingsView()
         case .about:
             AboutSettingsView(viewModel: viewModel)
-        #if DEBUG
-        case .debug:
-            DebugSettingsView(viewModel: viewModel)
-        #endif
         }
     }
 }

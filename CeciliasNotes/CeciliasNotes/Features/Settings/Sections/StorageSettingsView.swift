@@ -285,14 +285,22 @@ struct StorageSettingsView: View {
 
             CeciliasNotesDivider()
 
-            // Pull from iCloud — kicks the NSMetadataQuery to re-gather
-            // anything an external agent (cecilias-notes-mcp on Mac)
-            // dropped into iCloud Drive. Same code path as the
-            // app-launch watcher, but fires immediately so the user
-            // doesn't sit through iCloud's auto-sync latency.
+            // Re-scan iCloud Files — kicks the NSMetadataQuery to
+            // re-gather anything an external agent (cecilias-notes-mcp
+            // on Mac) dropped into iCloud Drive. Same code path as
+            // the app-launch watcher, but fires immediately so the
+            // user doesn't sit through iCloud's auto-sync latency.
+            //
+            // The original label "Pull from iCloud Now" implied this
+            // also forced the SwiftData/CloudKit sync the home-page
+            // indicator tracks — but those two are separate systems
+            // (SwiftData sync runs on its own cadence and we don't
+            // expose a manual trigger). Tapping this used to leave
+            // the user staring at the home-page "last synced N min
+            // ago" timestamp and wondering why it didn't reset.
             actionRow(
-                title: "Pull from iCloud Now",
-                detail: nil,
+                title: "Re-scan iCloud Files",
+                detail: "Imports .inkbook files dropped into iCloud Drive by external tools. Does not force a notebook sync — the home-page indicator tracks that separately.",
                 icon: "arrow.down.to.line",
                 disabled: false,
                 disabledSubLabel: nil,

@@ -53,9 +53,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case storage      = "Storage"
     case intelligence = "Intelligence"
     case about        = "About"
-    #if DEBUG
-    case debug        = "Debug"
-    #endif
+    // `Debug` was retired from the Settings surface — `DebugSettingsView`
+    // still exists in source for ad-hoc testing but is no longer
+    // reachable from the rail (it was a tester-only affordance and
+    // shouldn't ride along in production review or TestFlight builds).
 
     var id: String { rawValue }
 
@@ -68,9 +69,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .storage:      return "internaldrive"
         case .intelligence: return "sparkles"
         case .about:        return "info.circle"
-        #if DEBUG
-        case .debug:        return "ladybug"
-        #endif
         }
     }
 }
