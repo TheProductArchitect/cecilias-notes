@@ -108,6 +108,34 @@ enum LassoMath {
         return coverage >= 0.25
     }
 
+    /// More forgiving variant for shape elements. Shapes are often
+    /// thin or small (a single line, a small circle), so the
+    /// centre-inside check from `rectSubstantiallyInside` misses
+    /// cases where the user's lasso clearly envelops the shape
+    /// but the centre point falls just outside the path. We sample
+    /// five points (four corners + centre) instead of one and lower
+    /// the area threshold to 10%, so a lasso that brushes most of a
+    /// thin line will still snag it — matching the "I drew a loop
+    /// around it, why isn't it selected" expectation that shaped
+    /// the user feedback.
+    static func shapeSubstantiallyInside(_ rect: CGRect, in path: CGPath) -> Bool {
+        let samples: [CGPoint] = [
+            CGPoint(x: rect.midX, y: rect.midY),
+            CGPoint(x: rect.minX, y: rect.minY),
+            CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.maxY),
+            CGPoint(x: rect.maxX, y: rect.maxY),
+        ]
+        if samples.contains(where: { contains(path, $0) }) { return true }
+        let pathBBox = path.boundingBoxOfPath
+        let intersection = rect.intersection(pathBBox)
+        guard !intersection.isNull, !intersection.isEmpty else { return false }
+        let elementArea = rect.width * rect.height
+        guard elementArea > 0 else { return false }
+        let coverage = (intersection.width * intersection.height) / elementArea
+        return coverage >= 0.10
+    }
+
     // MARK: - Affine transform builders
 
     /// Translation transform built around the origin. Simple

@@ -253,13 +253,22 @@ struct LassoOverlayView: View {
             default:
                 let rect = elementRectInPagePoints(element)
                 let centre = CGPoint(x: rect.midX, y: rect.midY)
-                // Centre-inside OR ≥25% area overlap — see
-                // `LassoMath.rectSubstantiallyInside`. The earlier
-                // point-sampling rule failed cases where the lasso
-                // genuinely covered a large chunk of a wide element
-                // (e.g. a text block) but the centre just escaped the
-                // loop, so the element was wrongly skipped.
-                let hit = LassoMath.rectSubstantiallyInside(rect, in: path)
+                // Shape elements use a more forgiving rule — five
+                // sample points (corners + centre) and a 10% area
+                // threshold — because shapes are often thin (a
+                // single line, a narrow rectangle) and the
+                // centre-inside check missed lassos that clearly
+                // envelop the shape but graze its centre point.
+                // Device logs from 2026-06-22 showed the user
+                // lassoing over shapes that fell juuuuust outside
+                // the 25% rule; user-impact called it out as
+                // "shapes can't be deleted with the delete icon".
+                let hit: Bool
+                if element.kind == .shape {
+                    hit = LassoMath.shapeSubstantiallyInside(rect, in: path)
+                } else {
+                    hit = LassoMath.rectSubstantiallyInside(rect, in: path)
+                }
                 #if DEBUG
                 dlog("[Lasso]   \(element.kind) element \(element.id.uuidString.prefix(8)) rect=\(rect) centre=\(centre) contained=\(hit)")
                 #endif
