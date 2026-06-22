@@ -110,7 +110,7 @@ enum LassoGroupOps {
                 context: context
             )
         }
-        try? context.save()
+        save(context)
 
         // Shift the cached bounding box too — caller already
         // composed the gesture delta; no need to re-run intersection.
@@ -156,7 +156,7 @@ enum LassoGroupOps {
                 transform: strokeTransform, context: context
             )
         }
-        try? context.save()
+        save(context)
 
         // Recompute selection bounds around the same anchor.
         let oldBounds = selection.selectionBounds
@@ -214,7 +214,7 @@ enum LassoGroupOps {
                 transform: strokeTransform, context: context
             )
         }
-        try? context.save()
+        save(context)
 
         // Recompute bbox by pivoting every corner around `anchor`.
         // This generalises both the legacy bbox-centre anchor
@@ -278,7 +278,7 @@ enum LassoGroupOps {
                 transform: strokeTransform, context: context
             )
         }
-        try? context.save()
+        save(context)
         // Rotation doesn't change the bbox of a rotated set in a
         // simple way; recompute from the elements' new bounds.
         // For v1 we leave the bbox as-is — the next intersection
@@ -352,7 +352,7 @@ enum LassoGroupOps {
             // truncated drawing instead of re-decoding stale bytes.
             StrokeCache.shared.cache(newDrawing, forPage: element.pageId)
         }
-        try? context.save()
+        save(context)
         // Shape overlay listens on this notification to re-fetch its
         // page-element list. Without it the shape stays painted on
         // screen even though it's soft-deleted, and the lasso can't
@@ -476,6 +476,26 @@ enum LassoGroupOps {
         element.normalizedY = max(0, min(1 - element.normalizedHeight, newYNorm))
         element.rotation   += Double(angle)
         element.updatedAt   = Date()
+    }
+
+    // MARK: - Save helper
+
+    /// Centralised save with error logging. The lasso group ops
+    /// commit batches of element-position mutations (translate /
+    /// scale / rotate / delete); if SwiftData rejects the write
+    /// (CloudKit conflict, schema migration mid-write), the user
+    /// sees their finger move the chrome but the model snaps back.
+    /// The previous `try? context.save()` calls swallowed the
+    /// error silently — log it under DEBUG so the next
+    /// "manipulation didn't stick" report can be triaged.
+    private static func save(_ context: ModelContext) {
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Lasso] context.save FAILED: \(error)")
+            #endif
+        }
     }
 
     // MARK: - Fetch helper
