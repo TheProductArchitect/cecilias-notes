@@ -1147,14 +1147,28 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // is the "image won't cross pages" bug for images and
             // the "shape flickers / disappears" symptom for shapes.
             // Post the right kind-specific signal so both ends
-            // re-fetch on the same runloop.
+            // re-fetch. UserInfo carries source + destination page
+            // ids so the source overlay can defer its refresh by
+            // one runloop tick — without that, both overlays
+            // refresh on the same tick and SwiftUI's render commit
+            // briefly shows neither (source has dropped the element
+            // already, destination's render of the new mount lands
+            // on the next frame). The deferred refresh shifts the
+            // ordering so the destination renders FIRST, then the
+            // source clears — the user sees the shape jump across
+            // pages instead of flickering through an empty frame.
+            let userInfo: [AnyHashable: Any] = [
+                "sourcePageId": sourcePageId,
+                "destPageId":   dest.pageId,
+                "elementId":    elementId
+            ]
             switch element.kind {
             case .image:
-                NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+                NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil, userInfo: userInfo)
             case .shape:
-                NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+                NotificationCenter.default.post(name: .shapeElementsChanged, object: nil, userInfo: userInfo)
             case .stickyNote:
-                NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
+                NotificationCenter.default.post(name: .stickyNotesChanged, object: nil, userInfo: userInfo)
             default:
                 break
             }

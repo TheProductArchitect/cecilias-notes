@@ -124,8 +124,22 @@ struct ImageElementsOverlayView: View {
         // inserts.
         .onReceive(
             NotificationCenter.default.publisher(for: .mediaAttachmentsChanged)
-        ) { _ in
-            refreshTick &+= 1
+        ) { note in
+            // Mirror the shape overlay's tick-deferring rule for the
+            // cross-page handoff: when this overlay is the source
+            // page in a move, refresh one runloop tick later so the
+            // destination renders first and the user doesn't see an
+            // empty frame between source-drop and destination-mount.
+            // Non-handoff posts (legacy import pipeline, soft-delete
+            // path) carry no userInfo and fall through to the
+            // immediate path.
+            if let info = note.userInfo,
+               let srcId = info["sourcePageId"] as? UUID,
+               srcId == pageId {
+                DispatchQueue.main.async { refreshTick &+= 1 }
+            } else {
+                refreshTick &+= 1
+            }
         }
     }
 

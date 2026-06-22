@@ -221,6 +221,14 @@ struct StickyNoteElementsOverlayView: View {
             canvas: viewModel.canvasView,
             actionName: "Create Sticky"
         )
+        // Mirror the stroke + shape auto-add trigger so dropping a
+        // sticky near the bottom of the last page grows the
+        // notebook continuously, regardless of which tool the user
+        // is reaching for.
+        viewModel.considerAutoAddAfterElement(
+            onPageId: pageId,
+            normalizedMaxY: element.normalizedY + element.normalizedHeight
+        )
     }
 
     private func delete(_ element: PageElement) {

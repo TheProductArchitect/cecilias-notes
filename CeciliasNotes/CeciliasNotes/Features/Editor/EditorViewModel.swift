@@ -1708,6 +1708,45 @@ final class EditorViewModel: ObservableObject {
     /// customise panel exposes a toggle to flip this per notebook.
     var autoAddEnabled: Bool { notebook.autoAddPagesOnScroll }
 
+    /// Mirror of the stroke-driven auto-add path
+    /// (`considerAutoAddAfterStroke` in ContinuousCanvasView) for
+    /// the non-stroke creation surfaces — shape draw-commit, sticky
+    /// note placement, image / audio inserts. Triggers when a
+    /// freshly-committed element's normalised `maxY` lands in the
+    /// lower third of the page AND the page is the last in the
+    /// notebook. Throttled to one append per second per call site
+    /// via the shared `lastAutoAddDate` so a flurry of small drops
+    /// (e.g. several shapes drawn in quick succession) doesn't
+    /// spawn a stack of pages.
+    ///
+    /// The user reported "auto add new page only works with strokes
+    /// and not shapes or other elements". This is the canonical fix
+    /// — extending the same trigger criterion to every creation
+    /// path that lands content on a page.
+    func considerAutoAddAfterElement(
+        onPageId pageId: UUID,
+        normalizedMaxY: Double
+    ) {
+        guard autoAddEnabled else { return }
+        guard let lastPageId = pages.last?.id, pageId == lastPageId else { return }
+        guard normalizedMaxY >= 0.66 else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastAutoAddDate) > 1.0 else { return }
+        lastAutoAddDate = now
+        // Same one-runloop-tick deferral the stroke path uses —
+        // mutating @Published state from inside a SwiftUI gesture
+        // closure (where the shape draw and sticky drop fire from)
+        // lands inside the active view-update transaction without
+        // it, producing AttributeGraph cycle warnings.
+        Task { @MainActor [weak self] in
+            self?.addPage(afterPageId: pageId)
+        }
+    }
+
+    /// Shared throttling anchor between the stroke and non-stroke
+    /// auto-add paths so neither can spawn pages faster than 1/s.
+    private var lastAutoAddDate: Date = .distantPast
+
     /// Page size used when appending a new page mid-notebook. The
     /// global Settings → New Pages section was removed; new pages now
     /// follow the notebook's own page size.

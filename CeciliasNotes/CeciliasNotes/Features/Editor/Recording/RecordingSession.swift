@@ -314,6 +314,9 @@ final class RecordingSession: ObservableObject {
 
         let contentId = UUID()
         dictationRecorder = recorder
+        #if DEBUG
+        dlog("[Dictation] post-start phase=assignRecorder")
+        #endif
         state = .dictation(DictationContext(
             audioContentId: contentId,
             originalPageId: newPage.id,
@@ -322,9 +325,18 @@ final class RecordingSession: ObservableObject {
             startTime: Date(),
             textElementIds: [firstTextId]
         ))
+        #if DEBUG
+        dlog("[Dictation] post-start phase=assignState")
+        #endif
 
         navigateToPage(newPage.id)
+        #if DEBUG
+        dlog("[Dictation] post-start phase=navigatedToPage")
+        #endif
         startElapsedTimer()
+        #if DEBUG
+        dlog("[Dictation] post-start phase=startedTimer")
+        #endif
         subscribeLiveTranscript(recorder)
         #if DEBUG
         dlog("[Dictation] startDictation completed successfully, state=\(state)")

@@ -104,8 +104,24 @@ struct ShapeElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onReceive(NotificationCenter.default.publisher(for: .shapeElementsChanged)) { _ in
-            refreshTick &+= 1
+        .onReceive(NotificationCenter.default.publisher(for: .shapeElementsChanged)) { note in
+            // Cross-page handoff carries the source page's id so the
+            // SOURCE overlay can refresh one runloop tick later than
+            // the DESTINATION. Without that delay both overlays
+            // refresh on the same tick and the SwiftUI render commit
+            // briefly shows neither: the source drops the element
+            // immediately, the destination's first render of the
+            // newly-mounted element lands on the next frame, and the
+            // user sees a one-frame "shape disappeared" flicker.
+            // Deferring the source by a tick lets the destination
+            // commit first.
+            if let info = note.userInfo,
+               let srcId = info["sourcePageId"] as? UUID,
+               srcId == pageId {
+                DispatchQueue.main.async { refreshTick &+= 1 }
+            } else {
+                refreshTick &+= 1
+            }
         }
     }
 
@@ -241,6 +257,17 @@ struct ShapeElementsOverlayView: View {
             kind: .shape,
             canvas: viewModel.canvasView,
             actionName: "Create Shape"
+        )
+        // Auto-add a fresh page if this shape just landed in the
+        // lower third of the last page and the user has auto-add
+        // enabled. Mirrors the stroke-driven path in
+        // ContinuousCanvasView.considerAutoAddAfterStroke so the
+        // user reaches the same "infinite scroll" behaviour
+        // regardless of whether they ink, draw shapes, or stick
+        // notes. The user reported this gap explicitly.
+        viewModel.considerAutoAddAfterElement(
+            onPageId: pageId,
+            normalizedMaxY: normY + normH
         )
     }
 }
