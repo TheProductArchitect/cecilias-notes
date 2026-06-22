@@ -177,6 +177,12 @@ struct LibraryView: View {
                     } else if let quizID = viewModel.selectedQuizID {
                         QuizDetailView(quizID: quizID, viewModel: viewModel)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if viewModel.selectedContext == .allSubjects {
+                        AllSubjectsView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if viewModel.selectedContext == .allQuizzes {
+                        AllQuizzesView(viewModel: viewModel)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         NotebookGridView(viewModel: viewModel)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)

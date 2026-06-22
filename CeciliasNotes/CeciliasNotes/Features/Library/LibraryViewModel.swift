@@ -239,6 +239,11 @@ final class LibraryViewModel: ObservableObject {
         case .recent:           pool = storage.fetchRecentNotebooks(limit: 200)
         case .allNotes:         pool = storage.fetchAllNotebooks()
         case .subject(let id):  pool = storage.fetchNotebooks(subjectId: id)
+        // No notebook pool for these surfaces — they list subjects
+        // / quizzes directly, not notebooks. Tag filter is hidden
+        // for both via shouldAllowNotebookCreation guards upstream.
+        case .allSubjects:      pool = []
+        case .allQuizzes:       pool = []
         }
         var seen = Set<String>()
         for nb in pool {
@@ -581,6 +586,12 @@ final class LibraryViewModel: ObservableObject {
         case .subject(let id):
             raw = storage.fetchNotebooks(subjectId: id)
             notebooks = dedupedById(sorted(applyTagFilter(raw)))
+        // .allSubjects / .allQuizzes don't drive the notebook grid —
+        // LibraryView switches to AllSubjectsView / AllQuizzesView
+        // instead. Clear the pool so a stale grid doesn't briefly
+        // flash during the context transition.
+        case .allSubjects, .allQuizzes:
+            notebooks = []
         }
     }
 

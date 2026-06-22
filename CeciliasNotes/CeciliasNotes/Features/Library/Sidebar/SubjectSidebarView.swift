@@ -40,6 +40,10 @@ struct SubjectSidebarView: View {
                     trashContextRow
                     sectionDivider
                     QuizListView(viewModel: viewModel)
+                    // File-system style multi-select surface for quizzes.
+                    // Sits below the per-folder quiz list for the same
+                    // "tap to enter bulk-ops" affordance as allSubjectsRow.
+                    allQuizzesRow
                 }
                 .padding(.top, 24)
                 .padding(.bottom, 16)
@@ -84,6 +88,9 @@ struct SubjectSidebarView: View {
             // view stays reachable. Italicised so it reads as a meta
             // entry rather than a real subject.
             allNotesRow
+            // Sibling meta entry — opens AllSubjectsView, the file-
+            // system style multi-select surface for bulk subject ops.
+            allSubjectsRow
             ForEach(pinned) { subject in
                 subjectRow(for: subject)
             }
@@ -136,6 +143,20 @@ struct SubjectSidebarView: View {
 
     private var allNotesRow: some View {
         AllNotesListRow(
+            viewModel: viewModel,
+            countColor: theme.foregroundSubtle
+        )
+    }
+
+    private var allSubjectsRow: some View {
+        AllSubjectsListRow(
+            viewModel: viewModel,
+            countColor: theme.foregroundSubtle
+        )
+    }
+
+    private var allQuizzesRow: some View {
+        AllQuizzesListRow(
             viewModel: viewModel,
             countColor: theme.foregroundSubtle
         )
@@ -749,5 +770,73 @@ private struct SubjectInlineRename: View {
                     onCommit(trimmed)
                 }
             }
+    }
+}
+
+// MARK: - All subjects / quizzes meta rows
+
+/// "all subjects" — bulk-ops surface paired with `allNotesRow`.
+private struct AllSubjectsListRow: View {
+    @ObservedObject var viewModel: LibraryViewModel
+    let countColor: Color
+    @Environment(\.theme) private var theme
+
+    @Query(filter: #Predicate<Subject> { $0.isDeleted == false })
+    private var subjects: [Subject]
+
+    private var isSelected: Bool {
+        viewModel.selectedContext == .allSubjects
+            && viewModel.selectedQuizID == nil
+            && !viewModel.isShowingTrash
+    }
+
+    var body: some View {
+        SidebarRow(
+            isSelected: isSelected,
+            onTap: { viewModel.selectedContext = .allSubjects }
+        ) {
+            HStack(spacing: 0) {
+                Text("all subjects")
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular).italic())
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
+                Spacer(minLength: 0)
+                Text("\(subjects.count)")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(countColor)
+            }
+        }
+    }
+}
+
+/// "all quizzes" — bulk-ops surface for the quizzes section.
+private struct AllQuizzesListRow: View {
+    @ObservedObject var viewModel: LibraryViewModel
+    let countColor: Color
+    @Environment(\.theme) private var theme
+
+    @Query(filter: #Predicate<Quiz> { $0.isArchived == false })
+    private var quizzes: [Quiz]
+
+    private var isSelected: Bool {
+        viewModel.selectedContext == .allQuizzes
+            && viewModel.selectedQuizID == nil
+            && !viewModel.isShowingTrash
+    }
+
+    var body: some View {
+        SidebarRow(
+            isSelected: isSelected,
+            onTap: { viewModel.selectedContext = .allQuizzes }
+        ) {
+            HStack(spacing: 0) {
+                Text("all quizzes")
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular).italic())
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
+                Spacer(minLength: 0)
+                Text("\(quizzes.count)")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(countColor)
+            }
+        }
     }
 }

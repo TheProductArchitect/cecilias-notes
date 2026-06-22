@@ -14,6 +14,14 @@ enum LibraryContext: Equatable, Hashable {
     case recent
     case allNotes
     case subject(UUID)
+    /// Top-level file-system style listing of every Subject, with
+    /// multi-select for batch delete / merge. The grid swaps to
+    /// `AllSubjectsView` when this is active.
+    case allSubjects
+    /// Top-level file-system style listing of every Quiz, with
+    /// multi-select for batch delete / move-to-folder. The grid
+    /// swaps to `AllQuizzesView` when this is active.
+    case allQuizzes
 
     // MARK: Persistence round-trip
 
@@ -22,13 +30,17 @@ enum LibraryContext: Equatable, Hashable {
         case .recent:           return "recent"
         case .allNotes:         return "all"
         case .subject(let id):  return "subject:\(id.uuidString)"
+        case .allSubjects:      return "allSubjects"
+        case .allQuizzes:       return "allQuizzes"
         }
     }
 
     init?(rawString: String) {
         switch rawString {
-        case "recent": self = .recent
-        case "all":    self = .allNotes
+        case "recent":      self = .recent
+        case "all":         self = .allNotes
+        case "allSubjects": self = .allSubjects
+        case "allQuizzes":  self = .allQuizzes
         default:
             let prefix = "subject:"
             guard rawString.hasPrefix(prefix),
