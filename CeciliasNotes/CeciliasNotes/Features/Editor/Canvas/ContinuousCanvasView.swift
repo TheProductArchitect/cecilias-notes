@@ -1233,12 +1233,46 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // Step 8: read via the in-memory cache first; fall
             // back to the V6 stroke singleton on miss and warm the
             // cache with the decoded drawing for next time.
+            //
+            // Mainline path: in-memory cache hit lands instantly.
+            // On miss, the SwiftData fetch is moved to a detached
+            // background ModelContext — the mainContext fetch
+            // acquires an internal metadata lock that CloudKit's
+            // import can hold for the full duration of a sync
+            // round, freezing every page mount while the user is
+            // mid-dictation. The 2026-06-22 device log showed
+            // dictation start completing successfully and then
+            // the app freezing on this exact mount path as
+            // SwiftUI mounted the dictation page's PKCanvasView.
+            // Async fetch: mount the canvas with whatever the
+            // cache holds (nil = empty drawing), kick a background
+            // fetch, and patch in the persisted drawing when it
+            // resolves. PencilKit gracefully accepts a drawing
+            // mid-flight; the user sees the strokes appear when
+            // SwiftData clears.
             if let cached = StrokeCache.shared.drawing(forPage: page.id) {
                 canvas.drawing = cached
-            } else if let data = StorageService.shared.strokeData(for: page),
-                      let drawing = try? PKDrawing(data: data) {
-                canvas.drawing = drawing
-                StrokeCache.shared.cache(drawing, forPage: page.id)
+            } else {
+                let container = StorageService.shared.container
+                let pageId = page.id
+                Task.detached(priority: .userInitiated) { [weak canvas] in
+                    let bgContext = ModelContext(container)
+                    let descriptor = FetchDescriptor<PageElement>(
+                        predicate: #Predicate<PageElement> {
+                            $0.pageId == pageId && $0.deletedAt == nil
+                        }
+                    )
+                    let elements = (try? bgContext.fetch(descriptor)) ?? []
+                    guard let strokeElement = elements.first(where: { $0.kind == .stroke }),
+                          let content = strokeElement.strokeContent,
+                          !content.strokeData.isEmpty,
+                          let drawing = try? PKDrawing(data: content.strokeData)
+                    else { return }
+                    await MainActor.run {
+                        StrokeCache.shared.cache(drawing, forPage: pageId)
+                        canvas?.drawing = drawing
+                    }
+                }
             }
             applyTool(viewModel.selectedTool, to: canvas)
             // Honour current text-mode state at mount time. Without
