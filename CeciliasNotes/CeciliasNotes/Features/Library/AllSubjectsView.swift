@@ -12,10 +12,27 @@ struct AllSubjectsView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @Environment(\.theme) private var theme
 
-    @Query(sort: [SortDescriptor(\Subject.sortOrder)])
+    // Filter at the @Query level so SwiftData's change-set delivery
+    // republishes the moment `isDeleted` flips — a post-fetch Swift
+    // filter only catches the row leaving the result set (i.e. a
+    // hard delete or insert), not a property mutation on an existing
+    // row, which leaves soft-deleted subjects visible in the grid
+    // until something else triggers a body re-evaluation. Belt: the
+    // `active` filter below still hides any row that slips through
+    // (e.g. CloudKit echo importing a non-deleted shadow before
+    // SwiftData notices). `deletedAt != nil` is a second-axis check
+    // because CloudKit conflict resolution has been observed to
+    // revive `isDeleted = false` while leaving `deletedAt` stamped
+    // — either flag is enough to consider the row gone.
+    @Query(
+        filter: #Predicate<Subject> { $0.isDeleted == false },
+        sort: [SortDescriptor(\Subject.sortOrder)]
+    )
     private var subjects: [Subject]
 
-    private var active: [Subject] { subjects.filter { !$0.isDeleted } }
+    private var active: [Subject] {
+        subjects.filter { !$0.isDeleted && $0.deletedAt == nil }
+    }
 
     var body: some View {
         VStack(spacing: 0) {

@@ -202,6 +202,66 @@ final class StorageService: ObservableObject {
         }
     }
 
+    /// Launch-time soft-delete reconciliation. CloudKit's per-property
+    /// merge policy has been observed to revive `isDeleted = false`
+    /// on a subject (or notebook) while leaving `deletedAt` still
+    /// stamped from the local delete — a "ghost" state that lets the
+    /// row reappear in the UI even though the user deleted it. The
+    /// sweep below restores the invariant in both directions:
+    ///
+    ///   • `isDeleted == true` + `deletedAt == nil` → stamp deletedAt
+    ///     so future filters that key on either field stay consistent.
+    ///   • `deletedAt != nil` + `isDeleted == false` → flip isDeleted
+    ///     back to true. The remote echo is wrong; the user already
+    ///     said delete.
+    ///
+    /// Called immediately after `purgeDuplicateRows` so the dedupe
+    /// pass runs against a consistent view of soft-delete state.
+    func reconcileSoftDeleteFlags() {
+        var dirty = false
+        let subjectDescriptor = FetchDescriptor<Subject>()
+        let subjects = (try? context.fetch(subjectDescriptor)) ?? []
+        for s in subjects {
+            if s.isDeleted && s.deletedAt == nil {
+                s.deletedAt = Date()
+                dirty = true
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — stamped missing deletedAt")
+                #endif
+            } else if !s.isDeleted, s.deletedAt != nil {
+                s.isDeleted = true
+                s.updatedAt = Date()
+                dirty = true
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — restored isDeleted (CloudKit echo)")
+                #endif
+            }
+        }
+        let notebookDescriptor = FetchDescriptor<Notebook>()
+        let notebooks = (try? context.fetch(notebookDescriptor)) ?? []
+        for n in notebooks {
+            if n.isDeleted && n.deletedAt == nil {
+                n.deletedAt = Date()
+                dirty = true
+            } else if !n.isDeleted, n.deletedAt != nil {
+                n.isDeleted = true
+                n.updatedAt = Date()
+                dirty = true
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete notebook id=\(n.id) — restored isDeleted (CloudKit echo)")
+                #endif
+            }
+        }
+        guard dirty else { return }
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Storage] reconcileSoftDeleteFlags SAVE FAILED: \(error)")
+            #endif
+        }
+    }
+
     private func purgeDuplicates<Model: PersistentModel>(
         type: Model.Type,
         keyedBy key: (Model) -> UUID,

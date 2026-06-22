@@ -196,6 +196,15 @@ struct CeciliasNotesApp: App {
                     // practice.
                     storageService.purgeDuplicateRows()
 
+                    // Soft-delete reconciliation. CloudKit's per-property
+                    // merge can leave a deleted row with mismatched
+                    // isDeleted / deletedAt flags — see
+                    // `reconcileSoftDeleteFlags` for the user-visible
+                    // symptom ("I deleted this subject and it came
+                    // back"). Runs immediately after the duplicate
+                    // purge so both passes see a consistent table.
+                    storageService.reconcileSoftDeleteFlags()
+
                     // Quiz auto-update: grow any `autoUpdateEnabled`
                     // quizzes from new note content on a weekly cadence.
                     // Detached + silent — never blocks the first frame.
