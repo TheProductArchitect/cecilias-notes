@@ -118,6 +118,17 @@ final class EditorViewModel: ObservableObject {
     /// can no longer touch.
     @Published var lastDrawingToolBeforeRuler: CeciliasNotesTool?
 
+    /// The tool the colour / width / opacity picker should reflect
+    /// and mutate. Returns `lastDrawingToolBeforeRuler` while ruler
+    /// is the selected tool (so the picker edits the ruler's
+    /// companion ink); otherwise the selected tool itself.
+    var effectiveInkTool: CeciliasNotesTool {
+        if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
+            return companion
+        }
+        return selectedTool
+    }
+
     // MARK: State machine (Phase 5E)
     //
     // Single consolidation point for the editor's high-level mode —
@@ -1496,6 +1507,18 @@ final class EditorViewModel: ObservableObject {
     }
 
     func setWidth(_ width: CGFloat) {
+        // Ruler is not a PKTool — it has no width of its own. While
+        // ruler is active the picker routes through the ruler's
+        // companion (the drawing tool active just before the user
+        // switched). Without this the slider felt dead because
+        // `.ruler.withWidth(_)` returns `.ruler` unchanged.
+        if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
+            lastDrawingToolBeforeRuler = companion.withWidth(width)
+            toolSettings.snapshot(lastDrawingToolBeforeRuler!)
+            toolSettings.save()
+            applyToolToCanvas()
+            return
+        }
         selectedTool = selectedTool.withWidth(width)
         persistCurrentToolSettings()
     }
@@ -1527,6 +1550,13 @@ final class EditorViewModel: ObservableObject {
     }
 
     func setOpacity(_ opacity: CGFloat) {
+        if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
+            lastDrawingToolBeforeRuler = companion.withOpacity(opacity)
+            toolSettings.snapshot(lastDrawingToolBeforeRuler!)
+            toolSettings.save()
+            applyToolToCanvas()
+            return
+        }
         selectedTool = selectedTool.withOpacity(opacity)
         persistCurrentToolSettings()
     }
@@ -1534,9 +1564,30 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Colour selection
 
     func selectColour(_ colour: UIColor) {
+        if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
+            lastDrawingToolBeforeRuler = companion.withColour(colour)
+            toolSettings.snapshot(lastDrawingToolBeforeRuler!)
+            toolSettings.save()
+            applyToolToCanvas()
+            addRecentColour(colour)
+            return
+        }
         selectedTool = selectedTool.withColour(colour)
         persistCurrentToolSettings()
         addRecentColour(colour)
+    }
+
+    /// Re-apply the active tool to every mounted canvas. Used by the
+    /// ruler-companion edit path: the user mutates colour/width on
+    /// the companion while ruler stays selected, so the canvas
+    /// needs a fresh PKTool with the updated settings even though
+    /// `selectedTool` itself didn't change.
+    private func applyToolToCanvas() {
+        // Same notification the pixel-eraser slider uses — the
+        // ContinuousCanvasView coordinator listens and force-rebuilds
+        // every mounted canvas's PKTool against the latest state.
+        NotificationCenter.default.post(name: .pixelEraserWidthChanged, object: nil)
+        objectWillChange.send()
     }
 
     private func addRecentColour(_ colour: UIColor) {

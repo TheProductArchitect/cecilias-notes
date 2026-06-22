@@ -73,7 +73,7 @@ struct ColorPickerView: View {
             .buttonStyle(.ceciliasNotesPressable)
 
             // Opacity (pen + pencil only)
-            if viewModel.selectedTool.hasOpacity {
+            if viewModel.effectiveInkTool.hasOpacity {
                 Divider()
                 opacitySlider
             }
@@ -83,7 +83,7 @@ struct ColorPickerView: View {
             // that fought ColorPickerView's own width and clipped
             // every label; folding it in here means one popover,
             // one source of truth, no clipping.
-            if viewModel.selectedTool.hasWidth {
+            if viewModel.effectiveInkTool.hasWidth {
                 Divider()
                 widthSlider
             }
@@ -93,7 +93,7 @@ struct ColorPickerView: View {
         .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
         .sheet(isPresented: $showCustomColorPicker) {
-            CustomColorPickerSheet(initial: viewModel.selectedTool.currentColour) { picked in
+            CustomColorPickerSheet(initial: viewModel.effectiveInkTool.currentColour) { picked in
                 viewModel.selectColour(picked)
                 showCustomColorPicker = false
                 onClose()
@@ -106,7 +106,7 @@ struct ColorPickerView: View {
     private var currentSwatchSection: some View {
         HStack(spacing: 12) {
             Circle()
-                .fill(Color(viewModel.selectedTool.currentColour))
+                .fill(Color(viewModel.effectiveInkTool.currentColour))
                 .frame(width: 36, height: 36)
                 .overlay(
                     Circle().strokeBorder(theme.accent, lineWidth: 2)
@@ -119,7 +119,7 @@ struct ColorPickerView: View {
                 Text("Current")
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundSubtle)
-                Text(viewModel.selectedTool.currentColour.hexString.uppercased())
+                Text(viewModel.effectiveInkTool.currentColour.hexString.uppercased())
                     .font(.system(size: 12, weight: .medium).monospacedDigit())
                     .foregroundColor(theme.foreground)
             }
@@ -145,7 +145,7 @@ struct ColorPickerView: View {
     // MARK: Single swatch
 
     private func colourCircle(colour: UIColor, size: CGFloat) -> some View {
-        let isSelected = colour.hexString == viewModel.selectedTool.currentColour.hexString
+        let isSelected = colour.hexString == viewModel.effectiveInkTool.currentColour.hexString
 
         return Button {
             viewModel.selectColour(colour)
@@ -177,14 +177,14 @@ struct ColorPickerView: View {
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundSubtle)
                 Spacer()
-                Text("\(Int(viewModel.selectedTool.currentOpacity * 100))%")
+                Text("\(Int(viewModel.effectiveInkTool.currentOpacity * 100))%")
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundMuted)
                     .monospacedDigit()
             }
             Slider(
                 value: Binding(
-                    get: { Double(viewModel.selectedTool.currentOpacity) },
+                    get: { Double(viewModel.effectiveInkTool.currentOpacity) },
                     set: { viewModel.setOpacity(CGFloat($0)) }
                 ),
                 in: 0.10...1.0
@@ -202,14 +202,14 @@ struct ColorPickerView: View {
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundSubtle)
                 Spacer()
-                Text(widthLabel(viewModel.selectedTool.currentWidth))
+                Text(widthLabel(viewModel.effectiveInkTool.currentWidth))
                     .font(.ceciliasNotesCaption)
                     .foregroundColor(theme.foregroundMuted)
                     .monospacedDigit()
             }
             Slider(
                 value: Binding(
-                    get: { Double(viewModel.selectedTool.currentWidth) },
+                    get: { Double(viewModel.effectiveInkTool.currentWidth) },
                     set: { viewModel.setWidth(CGFloat($0)) }
                 ),
                 in: 0.5...20,

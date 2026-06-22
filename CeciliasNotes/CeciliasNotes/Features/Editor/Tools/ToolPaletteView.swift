@@ -912,6 +912,12 @@ struct ToolPaletteView: View {
             lassoVariantPopover
         } else if viewModel.selectedTool.hasColour || viewModel.selectedTool.hasWidth {
             inkingCustomizePopover
+        } else if identity == .ruler {
+            // Ruler edits its companion ink tool's colour / width
+            // through the picker (re-applied to the canvas on each
+            // mutation). Without this entry the popover was empty
+            // for ruler and the user had to swap tools to recolour.
+            inkingCustomizePopover
         } else {
             EmptyView()
         }
@@ -934,18 +940,25 @@ struct ToolPaletteView: View {
     // MARK: Colour dot
 
     private var colourDot: some View {
-        Button {
-            guard viewModel.selectedTool.hasColour else { return }
+        // Ruler routes the dot through its companion ink so the user
+        // can still recolour while ruler is active. Picker edits
+        // flow back to lastDrawingToolBeforeRuler + force-rebuild
+        // the canvas tool (see viewModel.selectColour).
+        let canEdit = viewModel.selectedTool.hasColour
+            || (viewModel.selectedTool.identity == .ruler
+                && viewModel.lastDrawingToolBeforeRuler != nil)
+        return Button {
+            guard canEdit else { return }
             viewModel.isShowingColorPicker.toggle()
         } label: {
             Circle()
-                .fill(Color(viewModel.selectedTool.currentColour))
+                .fill(Color(viewModel.effectiveInkTool.currentColour))
                 .frame(width: 24, height: 24)
                 .overlay(
                     Circle()
                         .strokeBorder(theme.borderDefault, lineWidth: 0.5)
                 )
-                .opacity(viewModel.selectedTool.hasColour ? 1 : 0.3)
+                .opacity(canEdit ? 1 : 0.3)
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
