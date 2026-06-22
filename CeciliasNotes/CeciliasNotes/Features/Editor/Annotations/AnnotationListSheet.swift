@@ -292,7 +292,13 @@ struct AnnotationListSheet: View {
                 if let element = try? context.fetch(descriptor).first {
                     element.deletedAt = Date()
                     element.updatedAt = Date()
-                    try? context.save()
+                    do {
+                        try context.save()
+                    } catch {
+                        #if DEBUG
+                        dlog("[Annotations] highlight delete SAVE FAILED elementId=\(elementId): \(error)")
+                        #endif
+                    }
                     NotificationCenter.default.post(
                         name: .highlightElementsChanged, object: nil
                     )

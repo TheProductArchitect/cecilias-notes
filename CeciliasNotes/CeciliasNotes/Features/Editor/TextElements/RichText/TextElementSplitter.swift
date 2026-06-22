@@ -210,7 +210,19 @@ enum TextElementSplitter {
         )
         element.textContent = content
         context.insert(element)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            // Failure here means a long text block split off an
+            // overflow tail but the new tail-element wasn't
+            // persisted — the user types past the bottom of the
+            // page and the overflowing text never reappears on
+            // the continuation. Log so the lossy split is visible
+            // in device logs.
+            #if DEBUG
+            dlog("[TextSplit] new tail element SAVE FAILED: \(error)")
+            #endif
+        }
 
         // Let overlays re-fetch so the new element appears
         // immediately rather than waiting on the next view-tree

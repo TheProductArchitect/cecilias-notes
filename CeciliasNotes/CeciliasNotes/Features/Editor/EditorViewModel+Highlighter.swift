@@ -163,7 +163,13 @@ extension EditorViewModel {
                     element.updatedAt = Date()
                 }
             }
-            try? context.save()
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[Highlighter] undo soft-delete SAVE FAILED: \(error)")
+                #endif
+            }
             NotificationCenter.default.post(
                 name: .highlightElementsChanged, object: nil
             )

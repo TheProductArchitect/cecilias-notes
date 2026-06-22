@@ -1121,7 +1121,19 @@ struct ContinuousCanvasView: UIViewRepresentable {
             element.normalizedX = destNormX
             element.normalizedY = destNormY
             element.updatedAt   = Date()
-            try? ctx.save()
+            do {
+                try ctx.save()
+            } catch {
+                // Failure here strands the element half-moved —
+                // the @Bindable model already has the new pageId
+                // in memory, but persistence still points at the
+                // old page. After the next app launch the element
+                // jumps back. Log so a "my image went back to the
+                // wrong page" report surfaces in device logs.
+                #if DEBUG
+                dlog("[CrossPage] handoff SAVE FAILED elementId=\(elementId) sourcePage=\(sourcePageId) destPage=\(dest.pageId): \(error)")
+                #endif
+            }
 
             // SwiftData saves on the main context don't drive the
             // overlays here — each per-kind overlay uses a manual

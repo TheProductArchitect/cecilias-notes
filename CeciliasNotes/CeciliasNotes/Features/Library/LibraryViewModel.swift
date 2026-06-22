@@ -1192,7 +1192,13 @@ final class LibraryViewModel: ObservableObject {
                 context: context
             )
         }
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[LibraryVM] PDF import SAVE FAILED notebookId=\(notebook.id) pageCount=\(pageCount): \(error)")
+            #endif
+        }
         NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
 
         return notebook
