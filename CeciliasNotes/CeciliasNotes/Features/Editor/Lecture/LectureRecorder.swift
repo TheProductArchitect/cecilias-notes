@@ -868,19 +868,36 @@ final class LectureRecorder: ObservableObject {
         }.value
     }
 
+    /// Microphone permission is delivered via a system callback that
+    /// targets the main queue. When the main runloop is stalled by
+    /// CloudKit's WAL checkpoint + Core Data import (the freeze
+    /// pattern in `Documentation/OPEN_ISSUES.md` §1), the callback
+    /// queues but never gets pulled — the `await` hangs indefinitely
+    /// and the app appears frozen at the `[Lecture] start
+    /// phase=permissions` marker. Running the request from a
+    /// detached task lets the system callback resolve against a
+    /// quiet background queue instead of fighting Core Data for
+    /// the main runloop.
     private func ensureMicrophonePermission() async throws {
-        let granted = await AVAudioApplication.requestRecordPermission()
+        let granted = await Task.detached(priority: .userInitiated) {
+            await AVAudioApplication.requestRecordPermission()
+        }.value
         guard granted else { throw LectureRecorderError.microphoneDenied }
     }
 
     /// Speech permission is optional — we can record audio without
-    /// it; the transcript just stays empty.
+    /// it; the transcript just stays empty. `SFSpeechRecognizer.requestAuthorization`
+    /// delivers its callback on the main queue, same wedge as the
+    /// microphone request above. Detached so the main runloop's
+    /// state doesn't decide whether dictation can start.
     private func ensureSpeechPermission() async {
-        _ = await withCheckedContinuation { cont in
-            SFSpeechRecognizer.requestAuthorization { _ in
-                cont.resume(returning: ())
+        _ = await Task.detached(priority: .userInitiated) {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                SFSpeechRecognizer.requestAuthorization { _ in
+                    cont.resume(returning: ())
+                }
             }
-        }
+        }.value
     }
 
     // MARK: - Timer
