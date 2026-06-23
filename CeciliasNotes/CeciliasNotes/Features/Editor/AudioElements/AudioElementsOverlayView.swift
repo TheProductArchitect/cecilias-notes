@@ -51,23 +51,42 @@ struct AudioElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    private var elements: [PageElement] {
-        let _ = refreshTick
+    @State private var elements: [PageElement] = []
+
+    /// Off-main fetch + main-context rebind so SwiftUI body never
+    /// blocks on `mainContext.fetch` under CloudKit pressure.
+    private func refreshElements() {
         let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        let audioOnly = all.filter { $0.kind == .audio }
-        #if DEBUG
-        if !audioOnly.isEmpty {
-            dlog("[AudioPlayback] overlay elements fetch — pageId=\(pid) totalElements=\(all.count) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")
+        let container = StorageService.shared.container
+        Task.detached(priority: .userInitiated) {
+            let bgContext = ModelContext(container)
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                },
+                sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+            )
+            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
+            let audioIds = bgAll.filter { $0.kind == .audio }.map(\.id)
+            await MainActor.run {
+                guard !audioIds.isEmpty else {
+                    self.elements = []
+                    return
+                }
+                let mainCtx = StorageService.shared.container.mainContext
+                let idSet = Set(audioIds)
+                let mainDescriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
+                    sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+                )
+                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
+                #if DEBUG
+                if !self.elements.isEmpty {
+                    dlog("[AudioPlayback] overlay elements fetch — pageId=\(pid) audioElements=\(self.elements.count) ids=\(self.elements.map { $0.id.uuidString.prefix(8) })")
+                }
+                #endif
+            }
         }
-        #endif
-        return audioOnly
     }
 
     var body: some View {
@@ -109,7 +128,10 @@ struct AudioElementsOverlayView: View {
             NotificationCenter.default.publisher(for: .audioElementsChanged)
         ) { _ in
             refreshTick &+= 1
+            refreshElements()
         }
+        .task(id: pageId) { refreshElements() }
+        .onChange(of: refreshTick) { _, _ in refreshElements() }
     }
 
     private func bindingForSelected(elementId: UUID) -> Binding<Bool> {

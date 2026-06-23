@@ -31,17 +31,37 @@ struct ShapeElementsOverlayView: View {
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
-    private var elements: [PageElement] {
-        let _ = refreshTick
+    @State private var elements: [PageElement] = []
+
+    /// Off-main fetch + main-context rebind so SwiftUI body never
+    /// blocks on `mainContext.fetch` under CloudKit pressure.
+    private func refreshElements() {
         let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .shape }
+        let container = StorageService.shared.container
+        Task.detached(priority: .userInitiated) {
+            let bgContext = ModelContext(container)
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                },
+                sortBy: [SortDescriptor(\.zIndex)]
+            )
+            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
+            let shapeIds = bgAll.filter { $0.kind == .shape }.map(\.id)
+            await MainActor.run {
+                guard !shapeIds.isEmpty else {
+                    self.elements = []
+                    return
+                }
+                let mainCtx = StorageService.shared.container.mainContext
+                let idSet = Set(shapeIds)
+                let mainDescriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
+                    sortBy: [SortDescriptor(\.zIndex)]
+                )
+                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
+            }
+        }
     }
 
     var body: some View {
@@ -118,11 +138,17 @@ struct ShapeElementsOverlayView: View {
             if let info = note.userInfo,
                let srcId = info["sourcePageId"] as? UUID,
                srcId == pageId {
-                DispatchQueue.main.async { refreshTick &+= 1 }
+                DispatchQueue.main.async {
+                    refreshTick &+= 1
+                    refreshElements()
+                }
             } else {
                 refreshTick &+= 1
+                refreshElements()
             }
         }
+        .task(id: pageId) { refreshElements() }
+        .onChange(of: refreshTick) { _, _ in refreshElements() }
     }
 
     /// Wraps `renderShape` in a frame anchored at the element's

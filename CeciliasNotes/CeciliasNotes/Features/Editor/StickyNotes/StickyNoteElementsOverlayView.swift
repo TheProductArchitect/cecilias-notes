@@ -60,19 +60,37 @@ struct StickyNoteElementsOverlayView: View {
             || viewModel.selectedTool.isStickyNoteMode
     }
 
-    /// Fetch + post-filter — `#Predicate` enum-case equality is
-    /// rejected on iOS 26 (workaround established in Step 3).
-    private var elements: [PageElement] {
-        let _ = refreshTick
+    @State private var elements: [PageElement] = []
+
+    /// Off-main fetch + main-context rebind so SwiftUI body never
+    /// blocks on `mainContext.fetch` under CloudKit pressure.
+    private func refreshElements() {
         let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .stickyNote }
+        let container = StorageService.shared.container
+        Task.detached(priority: .userInitiated) {
+            let bgContext = ModelContext(container)
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                },
+                sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+            )
+            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
+            let stickyIds = bgAll.filter { $0.kind == .stickyNote }.map(\.id)
+            await MainActor.run {
+                guard !stickyIds.isEmpty else {
+                    self.elements = []
+                    return
+                }
+                let mainCtx = StorageService.shared.container.mainContext
+                let idSet = Set(stickyIds)
+                let mainDescriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
+                    sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+                )
+                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
+            }
+        }
     }
 
     var body: some View {
@@ -117,7 +135,12 @@ struct StickyNoteElementsOverlayView: View {
         }
         .onReceive(
             NotificationCenter.default.publisher(for: .stickyNotesChanged)
-        ) { _ in refreshTick &+= 1 }
+        ) { _ in
+            refreshTick &+= 1
+            refreshElements()
+        }
+        .task(id: pageId) { refreshElements() }
+        .onChange(of: refreshTick) { _, _ in refreshElements() }
     }
 
     // MARK: - Tap / long-press handling
