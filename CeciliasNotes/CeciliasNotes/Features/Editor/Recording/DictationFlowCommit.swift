@@ -179,6 +179,20 @@ enum DictationFlowCommit {
                 #if DEBUG
                 dlog("[Dictation] materializePlaceholder OK elementId=\(elementId)")
                 #endif
+                // Tell every TextElementsOverlayView to re-fetch on its
+                // background context. The save above landed on a
+                // background ModelContext, so the editor's mainContext
+                // (and the @Query-driven views built around it) won't
+                // notice until SwiftData's persistent-history merge
+                // catches up — and the overlay's @State cache won't
+                // ever notice without an explicit prompt. Posting
+                // .textElementsChanged on main triggers refreshElements
+                // across every mounted overlay.
+                await MainActor.run {
+                    NotificationCenter.default.post(
+                        name: .textElementsChanged, object: nil
+                    )
+                }
             } catch {
                 #if DEBUG
                 dlog("[Dictation] materializePlaceholder SAVE FAILED elementId=\(elementId): \(error)")
@@ -252,6 +266,16 @@ enum DictationFlowCommit {
                     #if DEBUG
                     dlog("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
                     #endif
+                    // Save landed on the background context — the
+                    // mainContext-driven overlays won't notice until
+                    // SwiftData's persistent-history merge catches
+                    // up. Post on main so every TextElementsOverlayView
+                    // re-fetches and shows the new transcript text.
+                    await MainActor.run {
+                        NotificationCenter.default.post(
+                            name: .textElementsChanged, object: nil
+                        )
+                    }
                 } catch {
                     #if DEBUG
                     dlog("[Dictation] updateText SAVE FAILED: \(error)")
