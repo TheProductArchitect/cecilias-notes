@@ -1959,10 +1959,22 @@ final class EditorViewModel: ObservableObject {
             notebookId: notebookId,
             fromPageId: fromPageId,
             pageSize: pageSize,
-            createNewPage: { [storage, notebook, currentPage] in
+            createNewPage: { [storage, notebook] in
+                // Append at END of notebook (not after the current
+                // page) so the ContinuousCanvasView coordinator can
+                // hit its fast `appendPageHosts` path instead of the
+                // full `rebuildPageHosts` tear-down. Inserting in the
+                // middle of the page list trips `isPurelyAppended`
+                // and forces all N hosts to rebuild, which queues
+                // SwiftUI's render of the recording pill + floating
+                // controls behind several seconds of work — the user
+                // taps Dictation, sees no recording UI, perceives
+                // the app as frozen even though the audio engine and
+                // transcript pipeline are already running (the
+                // 2026-06-24 device log proved both).
                 try? storage.createPage(
                     in: notebook,
-                    after: currentPage.pageNumber,
+                    after: nil,
                     pageSize: notebook.pageSize,
                     backgroundTemplate: notebook.defaultTemplate
                 )
@@ -1996,8 +2008,12 @@ final class EditorViewModel: ObservableObject {
                     if !self.pages.contains(where: { $0.id == newPageId }),
                        let newPage = (self.notebook.pages ?? [])
                         .first(where: { $0.id == newPageId && !$0.isDeleted }) {
+                        // Append-only — matches storage.createPage(after: nil)
+                        // above and lets ContinuousCanvasView's
+                        // `isPurelyAppended` fast-path fire so only
+                        // the new page's host mounts (rather than
+                        // rebuilding all N).
                         self.pages.append(newPage)
-                        self.pages.sort { $0.pageNumber < $1.pageNumber }
                     }
                     if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
                         self.currentPageIndex = idx
