@@ -168,10 +168,16 @@ struct CloudSettingsView: View {
                     get: { swiftDataCloudKitDisabled },
                     set: { newValue in
                         swiftDataCloudKitDisabled = newValue
-                        UserDefaults.standard.set(
+                        let defaults = UserDefaults.standard
+                        defaults.set(
                             newValue,
                             forKey: ModelContainer.swiftDataCloudKitDisabledKey
                         )
+                        // Force-flush so a fast force-quit (which
+                        // is exactly what the alert tells the user
+                        // to do next) doesn't lose the value before
+                        // UserDefaults' own periodic flush runs.
+                        defaults.synchronize()
                         pendingDatabaseSyncRelaunch = true
                     }
                 ))

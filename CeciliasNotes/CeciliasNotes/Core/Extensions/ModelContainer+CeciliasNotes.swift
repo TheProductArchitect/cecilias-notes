@@ -82,17 +82,37 @@ extension ModelContainer {
         // trap that forces single-version operation.
         let schema = Schema(versionedSchema: CeciliasNotesSchemaV6.self)
 
-        // User escape hatch: a stuck CloudKit export loop is an
-        // iOS-side bug that the app can't recover from on its own,
-        // but it can detect and route around it by opening the
-        // container without CloudKit sync. The user toggles this
-        // from Settings → iCloud; the value sticks across launches.
+        // Escape hatch 1: user-set preference. A chronic stuck
+        // CloudKit export loop is an iOS-side bug we can't recover
+        // from on our own, but the user can route around it by
+        // turning the database sync off from Settings → iCloud.
         let disabledByUser = UserDefaults.standard.bool(
             forKey: swiftDataCloudKitDisabledKey
         )
-        if disabledByUser {
+
+        // Escape hatch 2: dirty-launch auto-fallback. If the
+        // previous shutdown was abnormal (force-quit, watchdog kill,
+        // crash) AND it had happened TWICE in a row, the most likely
+        // cause is the launch itself wedging on a stuck CloudKit
+        // sync. Open the container without CloudKit so the user can
+        // at least reach the editor + Settings to toggle the
+        // preference durably. A single dirty launch isn't enough —
+        // a one-off force-quit during normal use shouldn't downgrade
+        // sync. Two in a row means the recovery path is needed.
+        let dirtyCountKey = "ceciliasnotes.swiftdata.dirtyLaunchStreak"
+        let dirtyStreak = UserDefaults.standard.integer(forKey: dirtyCountKey)
+        let autoFallback = dirtyStreak >= 2
+        // Bump the streak now — when launch completes cleanly the
+        // app delegate clears it back to 0 (see CeciliasNotesAppDelegate).
+        UserDefaults.standard.set(dirtyStreak + 1, forKey: dirtyCountKey)
+
+        if disabledByUser || autoFallback {
             #if DEBUG
-            dlog("[ModelContainer] SwiftData CloudKit sync DISABLED by user preference — opening with cloudKitDatabase: .none")
+            if disabledByUser {
+                dlog("[ModelContainer] SwiftData CloudKit sync DISABLED by user preference — opening with cloudKitDatabase: .none")
+            } else {
+                dlog("[ModelContainer] SwiftData CloudKit sync auto-disabled after \(dirtyStreak) consecutive dirty launches — opening with cloudKitDatabase: .none")
+            }
             #endif
             CloudKitContainerState.status = .localOnlyFallback
             let localConfig = ModelConfiguration(

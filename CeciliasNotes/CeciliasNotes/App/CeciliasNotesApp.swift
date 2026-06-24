@@ -568,6 +568,12 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        // Reset the dirty-launch streak — reaching background means
+        // the launch survived long enough to be useful, so the
+        // SwiftData CloudKit auto-fallback shouldn't fire on the
+        // next launch. See `ModelContainer.ceciliasNotesContainer`
+        // for the consumer.
+        UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
         // Refresh every notebook's MCP mirror on background — the
         // historical "write mirror once at creation" behaviour left
         // the mirror stale after every page add, ink stroke, or
@@ -585,6 +591,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationWillTerminate(_ application: UIApplication) {
         UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
         // Same reasoning as `applicationDidEnterBackground` — catch
         // the case where the user force-quits or iOS terminates the
         // app without a background pass.
