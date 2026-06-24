@@ -43,6 +43,25 @@ extension ModelContainer {
     /// console only; the user just sees a non-syncing app and
     /// Settings → iCloud surfaces "sign in to iCloud to sync your
     /// notes" via `CloudSyncManager`.
+    /// UserDefaults key for the user-controllable "disable SwiftData
+    /// CloudKit sync" escape hatch. Toggled from Settings → iCloud
+    /// → "Disable SwiftData CloudKit sync". When set, the container
+    /// is initialised with `cloudKitDatabase: .none` regardless of
+    /// the user's iCloud account state, sidestepping the chronic
+    /// CloudKit-stuck-export scenario that pins the SwiftData
+    /// metadata lock for the full sync round and freezes every
+    /// mainContext read on the main runloop.
+    ///
+    /// Use case: a user whose CloudKit container has entered a
+    /// stuck-export loop (same `com.apple.coredata.cloudkit.activity.export.<UUID>`
+    /// retrying for days). Disabling the SwiftData CloudKit sync
+    /// stops fighting that loop; their on-device data remains in
+    /// the same `ceciliasnotes.sqlite` and survives the toggle.
+    /// File-asset iCloud sync (media/audio via the ubiquity
+    /// container) is unaffected — that's managed by
+    /// `CloudSyncManager`.
+    static let swiftDataCloudKitDisabledKey = "ceciliasnotes.swiftdata.cloudkitDisabled"
+
     static func ceciliasNotesContainer() throws -> ModelContainer {
         let storeURL = StorageService.ceciliasNotesDirectoryURL
             .appendingPathComponent("ceciliasnotes.sqlite")
@@ -62,6 +81,30 @@ extension ModelContainer {
         // `CeciliasNotesSchemas.swift` for the duplicate-checksum
         // trap that forces single-version operation.
         let schema = Schema(versionedSchema: CeciliasNotesSchemaV6.self)
+
+        // User escape hatch: a stuck CloudKit export loop is an
+        // iOS-side bug that the app can't recover from on its own,
+        // but it can detect and route around it by opening the
+        // container without CloudKit sync. The user toggles this
+        // from Settings → iCloud; the value sticks across launches.
+        let disabledByUser = UserDefaults.standard.bool(
+            forKey: swiftDataCloudKitDisabledKey
+        )
+        if disabledByUser {
+            #if DEBUG
+            dlog("[ModelContainer] SwiftData CloudKit sync DISABLED by user preference — opening with cloudKitDatabase: .none")
+            #endif
+            CloudKitContainerState.status = .localOnlyFallback
+            let localConfig = ModelConfiguration(
+                schema: schema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
+            return try ModelContainer(
+                for: schema,
+                configurations: localConfig
+            )
+        }
 
         // First attempt: CloudKit private database. The container
         // identifier matches the iCloud capability provisioned in

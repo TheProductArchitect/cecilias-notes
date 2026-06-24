@@ -106,6 +106,10 @@ struct CloudSettingsView: View {
 
     // MARK: Sync toggle
 
+    @State private var swiftDataCloudKitDisabled: Bool = UserDefaults.standard
+        .bool(forKey: ModelContainer.swiftDataCloudKitDisabledKey)
+    @State private var pendingDatabaseSyncRelaunch: Bool = false
+
     private var syncSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("sync")
@@ -133,6 +137,56 @@ struct CloudSettingsView: View {
             .overlay(alignment: .bottom) {
                 Rectangle().fill(theme.hairline).frame(height: 0.5)
             }
+
+            // Escape hatch for the chronic-CloudKit-stuck-export
+            // scenario. When the SwiftData CloudKit pipeline gets
+            // stuck retrying the same export task indefinitely (an
+            // iOS-side bug we can't recover from in-app), every
+            // mainContext read on the main runloop blocks for the
+            // lock's duration — the editor freezes mid-render and
+            // the user sees an unresponsive app. Disabling the
+            // SwiftData CloudKit sync stops fighting that loop; the
+            // on-disk store survives the toggle, file-asset iCloud
+            // sync (media / audio via the ubiquity container) is
+            // unaffected.
+            //
+            // Setting the toggle requires a relaunch because the
+            // ModelContainer reads the value exactly once during
+            // launch (a runtime switch would have to tear down and
+            // rebuild every @Query view in flight).
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("disable database sync (advanced)")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.foreground)
+                    Text("if the app is freezing on a stuck iCloud sync loop, turn this on, force-quit, and relaunch. notes stay on this device.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.foregroundSubtle)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { swiftDataCloudKitDisabled },
+                    set: { newValue in
+                        swiftDataCloudKitDisabled = newValue
+                        UserDefaults.standard.set(
+                            newValue,
+                            forKey: ModelContainer.swiftDataCloudKitDisabledKey
+                        )
+                        pendingDatabaseSyncRelaunch = true
+                    }
+                ))
+                .labelsHidden()
+                .tint(theme.accent)
+            }
+            .padding(.vertical, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.hairline).frame(height: 0.5)
+            }
+        }
+        .alert("Relaunch the app", isPresented: $pendingDatabaseSyncRelaunch) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Force-quit and relaunch Cecilia's Notes for the database-sync change to take effect.")
         }
     }
 
