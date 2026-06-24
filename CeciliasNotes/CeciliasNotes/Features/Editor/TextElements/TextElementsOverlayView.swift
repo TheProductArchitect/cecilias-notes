@@ -53,52 +53,30 @@ struct TextElementsOverlayView: View {
     /// fetched list re-runs without waiting for the next view-tree
     /// invalidation.
     @State private var refreshTick: Int = 0
-    /// Cached element list. Populated by an asynchronous fetch on a
-    /// background `ModelContext` so the SwiftUI body never blocks on
-    /// `mainContext.fetch` — under CloudKit lock contention the main
-    /// context can hang the runloop for the full sync round, and a
-    /// per-body fetch from the overlay was the residual freeze point
-    /// after every other dictation-path SwiftData call had been
-    /// moved off main (see 2026-06-22 device log thread).
-    @State private var elements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
-    /// Re-resolve `elements` on a background `ModelContext`. The
-    /// background context reads the same SQLite store but doesn't
-    /// share the lock the mainContext is waiting for, so the fetch
-    /// returns without blocking main. Resulting `@Model` instances
-    /// belong to the background context — we re-fetch matching ids
-    /// on the main context after the hop so the UI binds to the
-    /// usual main-context @Bindable references (text edits propagate
-    /// through SwiftUI as before).
-    private func refreshElements() {
+    /// Fetch text elements for this page. Sorted by zIndex so
+    /// stacking is deterministic.
+    ///
+    /// Filtering by `kind` happens post-fetch in Swift because
+    /// SwiftData's `#Predicate` macro on iOS 26 rejects equality
+    /// against an enum case in a key-path comparison ("key path
+    /// cannot refer to enum case"). The pageId + deletedAt
+    /// predicate keeps the candidate set small, and the kind
+    /// filter is O(n) over what's typically a handful of elements
+    /// per page.
+    private var elements: [PageElement] {
+        let _ = refreshTick
         let pid = pageId
-        let container = StorageService.shared.container
-        Task.detached(priority: .userInitiated) {
-            let bgContext = ModelContext(container)
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> {
-                    $0.pageId == pid && $0.deletedAt == nil
-                },
-                sortBy: [SortDescriptor(\.zIndex)]
-            )
-            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
-            let textIds = bgAll.filter { $0.kind == .text }.map(\.id)
-            await MainActor.run {
-                guard !textIds.isEmpty else {
-                    self.elements = []
-                    return
-                }
-                let mainCtx = StorageService.shared.container.mainContext
-                let idSet = Set(textIds)
-                let mainDescriptor = FetchDescriptor<PageElement>(
-                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
-                    sortBy: [SortDescriptor(\.zIndex)]
-                )
-                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
-            }
-        }
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pid && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex)]
+        )
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .text }
     }
 
     /// True when the active tool grants text-element interaction.
@@ -162,16 +140,6 @@ struct TextElementsOverlayView: View {
             // interactive path (currently the AI Summarize result
             // sheet). Re-fetch so it appears immediately.
             refreshTick &+= 1
-            refreshElements()
-        }
-        .task(id: pageId) {
-            // Initial + per-page-change fetch on a background context
-            // so the SwiftUI body never blocks on a mainContext fetch
-            // under CloudKit pressure.
-            refreshElements()
-        }
-        .onChange(of: refreshTick) { _, _ in
-            refreshElements()
         }
         #if DEBUG
         // OPEN_ISSUES #1 diagnostic — reports whether the gated

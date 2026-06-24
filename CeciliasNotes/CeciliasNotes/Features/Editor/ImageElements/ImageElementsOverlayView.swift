@@ -57,42 +57,20 @@ struct ImageElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    /// Cached image-element list. Populated asynchronously off a
-    /// background `ModelContext` so the SwiftUI body never blocks on
-    /// `mainContext.fetch` under CloudKit pressure (see the
-    /// 2026-06-22 device log thread for the freeze pattern).
-    @State private var elements: [PageElement] = []
-
-    /// Re-resolve `elements` on a background `ModelContext` and then
-    /// rebind to main-context `@Model` instances so existing
-    /// @Bindable plumbing keeps working.
-    private func refreshElements() {
+    /// Fetch image elements for this page. Filtering by `.image`
+    /// kind happens in Swift; the predicate keeps the candidate set
+    /// small via pageId + soft-delete.
+    private var elements: [PageElement] {
+        let _ = refreshTick
         let pid = pageId
-        let container = StorageService.shared.container
-        Task.detached(priority: .userInitiated) {
-            let bgContext = ModelContext(container)
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> {
-                    $0.pageId == pid && $0.deletedAt == nil
-                },
-                sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-            )
-            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
-            let imageIds = bgAll.filter { $0.kind == .image }.map(\.id)
-            await MainActor.run {
-                guard !imageIds.isEmpty else {
-                    self.elements = []
-                    return
-                }
-                let mainCtx = StorageService.shared.container.mainContext
-                let idSet = Set(imageIds)
-                let mainDescriptor = FetchDescriptor<PageElement>(
-                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
-                    sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-                )
-                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
-            }
-        }
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pid && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+        )
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .image }
     }
 
     var body: some View {
@@ -158,16 +136,11 @@ struct ImageElementsOverlayView: View {
             if let info = note.userInfo,
                let srcId = info["sourcePageId"] as? UUID,
                srcId == pageId {
-                DispatchQueue.main.async {
-                    refreshTick &+= 1
-                    refreshElements()
-                }
+                DispatchQueue.main.async { refreshTick &+= 1 }
             } else {
                 refreshTick &+= 1
-                refreshElements()
             }
         }
-        .task(id: pageId) { refreshElements() }
     }
 
     // MARK: - Selection binding

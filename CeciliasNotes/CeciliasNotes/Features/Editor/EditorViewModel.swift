@@ -1959,22 +1959,10 @@ final class EditorViewModel: ObservableObject {
             notebookId: notebookId,
             fromPageId: fromPageId,
             pageSize: pageSize,
-            createNewPage: { [storage, notebook] in
-                // Append at END of notebook (not after the current
-                // page) so the ContinuousCanvasView coordinator can
-                // hit its fast `appendPageHosts` path instead of the
-                // full `rebuildPageHosts` tear-down. Inserting in the
-                // middle of the page list trips `isPurelyAppended`
-                // and forces all N hosts to rebuild, which queues
-                // SwiftUI's render of the recording pill + floating
-                // controls behind several seconds of work — the user
-                // taps Dictation, sees no recording UI, perceives
-                // the app as frozen even though the audio engine and
-                // transcript pipeline are already running (the
-                // 2026-06-24 device log proved both).
+            createNewPage: { [storage, notebook, currentPage] in
                 try? storage.createPage(
                     in: notebook,
-                    after: nil,
+                    after: currentPage.pageNumber,
                     pageSize: notebook.pageSize,
                     backgroundTemplate: notebook.defaultTemplate
                 )
@@ -1983,8 +1971,9 @@ final class EditorViewModel: ObservableObject {
                 guard let self else { return }
                 // `startDictation` invokes this closure synchronously
                 // after an `await` resume, so its `@Published`
-                // mutations can land inside a SwiftUI view-update
-                // pass — the source of several of the
+                // mutations (`refreshPages()`, `currentPageIndex`,
+                // `pendingScrollPageIndex`) can land inside a SwiftUI
+                // view-update pass — the source of several of the
                 // "Publishing changes from within view updates"
                 // warnings logged on dictation start. Hopping one
                 // runloop tick moves the whole navigation cluster
@@ -1992,29 +1981,8 @@ final class EditorViewModel: ObservableObject {
                 // the dictation state machine depends on the page
                 // index (only on `RecordingSession.state`, which is
                 // NOT deferred).
-                //
-                // The historical implementation called `refreshPages()`
-                // here to pick up the freshly-created dictation page,
-                // but `refreshPages()` performs a synchronous
-                // `mainContext.fetch` that wedges main when CloudKit
-                // holds the SwiftData metadata lock — the 2026-06-22
-                // device log traced the post-start freeze exactly to
-                // that fetch. The freshly-created page is already in
-                // the notebook's @Model relationship (storage.createPage
-                // populates `notebook.pages` synchronously before
-                // returning), so we can append it to our `pages`
-                // cache without re-reading the store.
                 Task { @MainActor in
-                    if !self.pages.contains(where: { $0.id == newPageId }),
-                       let newPage = (self.notebook.pages ?? [])
-                        .first(where: { $0.id == newPageId && !$0.isDeleted }) {
-                        // Append-only — matches storage.createPage(after: nil)
-                        // above and lets ContinuousCanvasView's
-                        // `isPurelyAppended` fast-path fire so only
-                        // the new page's host mounts (rather than
-                        // rebuilding all N).
-                        self.pages.append(newPage)
-                    }
+                    self.refreshPages()
                     if let idx = self.pages.firstIndex(where: { $0.id == newPageId }) {
                         self.currentPageIndex = idx
                         self.pendingScrollPageIndex = idx
@@ -2023,7 +1991,7 @@ final class EditorViewModel: ObservableObject {
                         #endif
                     } else {
                         #if DEBUG
-                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in notebook.pages")
+                        dlog("[Dictation] navigateToPage — newPageId=\(newPageId) NOT FOUND in refreshed pages")
                         #endif
                     }
                 }
@@ -2505,7 +2473,6 @@ final class EditorViewModel: ObservableObject {
     /// scroll to a particular page index. Read-and-clear contract: the
     /// canvas coordinator clears the value once it has acted on it.
     @Published var pendingScrollPageIndex: Int?
-
 
     private func performSave() async {
         guard let canvasView else { return }

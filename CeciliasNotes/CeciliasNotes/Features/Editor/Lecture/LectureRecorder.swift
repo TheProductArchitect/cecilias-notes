@@ -408,16 +408,8 @@ final class LectureRecorder: ObservableObject {
                 dlog("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
             }
             #endif
-            // `audioLevel` is currently unobserved — no view binds to
-            // it. Per-buffer `Task { @MainActor }` posts to update it
-            // were enqueueing ~6 main-actor jobs/sec during dictation,
-            // contributing to main saturation alongside the speech
-            // recogniser CPU + elapsed-timer ticks. Drop the publish
-            // for now; if a level-meter UI lands, route it through a
-            // bounded publisher (Combine `.throttle(for: .milliseconds(100))`
-            // on a dedicated audio-level subject) rather than per-tap
-            // main hops.
-            _ = Self.rms(buffer: buffer)
+            let rms = Self.rms(buffer: buffer)
+            Task { @MainActor [weak self] in self?.audioLevel = rms }
 
             // Copy off the AVAudioEngine queue. The actor will own
             // this copy; the engine is free to recycle the original.

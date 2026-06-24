@@ -58,37 +58,17 @@ struct PDFPageElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    @State private var elements: [PageElement] = []
-
-    /// Off-main fetch + main-context rebind so SwiftUI body never
-    /// blocks on `mainContext.fetch` under CloudKit pressure.
-    private func refreshElements() {
+    private var elements: [PageElement] {
+        let _ = refreshTick
         let pid = pageId
-        let container = StorageService.shared.container
-        Task.detached(priority: .userInitiated) {
-            let bgContext = ModelContext(container)
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> {
-                    $0.pageId == pid && $0.deletedAt == nil
-                },
-                sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-            )
-            let bgAll = (try? bgContext.fetch(descriptor)) ?? []
-            let pdfIds = bgAll.filter { $0.kind == .pdfPage }.map(\.id)
-            await MainActor.run {
-                guard !pdfIds.isEmpty else {
-                    self.elements = []
-                    return
-                }
-                let mainCtx = StorageService.shared.container.mainContext
-                let idSet = Set(pdfIds)
-                let mainDescriptor = FetchDescriptor<PageElement>(
-                    predicate: #Predicate<PageElement> { idSet.contains($0.id) },
-                    sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-                )
-                self.elements = (try? mainCtx.fetch(mainDescriptor)) ?? []
-            }
-        }
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pid && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
+        )
+        let all = (try? modelContext.fetch(descriptor)) ?? []
+        return all.filter { $0.kind == .pdfPage }
     }
 
     var body: some View {
@@ -124,10 +104,7 @@ struct PDFPageElementsOverlayView: View {
             NotificationCenter.default.publisher(for: .pdfPageElementsChanged)
         ) { _ in
             refreshTick &+= 1
-            refreshElements()
         }
-        .task(id: pageId) { refreshElements() }
-        .onChange(of: refreshTick) { _, _ in refreshElements() }
     }
 
     private func bindingForSelected(elementId: UUID) -> Binding<Bool> {
