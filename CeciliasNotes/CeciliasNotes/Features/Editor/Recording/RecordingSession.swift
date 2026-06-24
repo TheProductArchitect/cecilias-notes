@@ -101,16 +101,32 @@ final class RecordingSession: ObservableObject {
 
     struct DictationContext: Equatable {
         let audioContentId: UUID      // AudioContent.id (matches m4a filename stem)
-        let originalPageId: UUID      // first dictation page — where the audio strip lands on stop
-        var currentPageId: UUID       // updated as continuation pages are created
+        /// First dictation page — where the audio strip lands on stop.
+        /// `nil` until the first transcript word arrives and the lazy
+        /// page-creation path fires. This recording-first design lets
+        /// the floating timer pill come up the instant the user taps
+        /// Dictation; the heavy "create new page + navigate + mount
+        /// overlays + rebuild canvas hosts" work only runs once the
+        /// recogniser has produced content worth committing.
+        var originalPageId: UUID?
+        /// Updated as continuation pages are created. Same nil-until-
+        /// first-word semantics as `originalPageId`.
+        var currentPageId: UUID?
         let notebookId: UUID
         let startTime: Date
         /// First entry is the original page's TextContent; appends
         /// land as continuation pages are created. Used on stop to
-        /// place the audio strip above the first element and to
-        /// rewrite back-links if needed.
+        /// place the audio strip above the first element. Empty until
+        /// the lazy page-creation path fires.
         var textElementIds: [UUID]
     }
+
+    /// Lazy page-creation hooks, captured from `EditorViewModel` at
+    /// `startDictation` time and fired on the first non-empty
+    /// transcript partial. Cleared in `resetSession`.
+    private var dictationCreatePage: (() -> Page?)?
+    private var dictationNavigate: ((UUID) -> Void)?
+    private var dictationPageSize: CGSize = .zero
 
     // MARK: - Recorders
 
@@ -218,8 +234,8 @@ final class RecordingSession: ObservableObject {
         notebookId: UUID,
         fromPageId: UUID,
         pageSize: CGSize,
-        createNewPage: () -> Page?,
-        navigateToPage: (UUID) -> Void
+        createNewPage: @escaping () -> Page?,
+        navigateToPage: @escaping (UUID) -> Void
     ) async {
         // Read-only devices never start dictation — same defense
         // posture as `startVoiceNote`.
@@ -249,35 +265,30 @@ final class RecordingSession: ObservableObject {
         }
         interruptionMessage = nil
 
-        guard let newPage = createNewPage() else {
-            #if DEBUG
-            dlog("[Dictation] ABORT — createNewPage returned nil")
-            #endif
-            interruptionMessage = "Couldn't create a new page for dictation."
-            return
-        }
-        #if DEBUG
-        dlog("[Dictation] new page created id=\(newPage.id) number=\(newPage.pageNumber)")
-        #endif
-
+        // Recording-first design: the audio engine + recogniser come
+        // up immediately and the timer pill renders the next frame.
+        // Page creation, navigation, and the initial text element are
+        // deferred to `handleLiveTranscript`'s first non-empty
+        // partial. The previous "create page first, navigate, mount
+        // 14 page hosts, start recording" sequence consolidated tens
+        // of SwiftData fetches, SwiftUI rebuilds, and PencilKit canvas
+        // mounts into the same render cycle as the recording-state
+        // publish — wedging main on multi-page notebooks. Splitting
+        // the work along the "user has actually said something" line
+        // lets the recording UI come up while the page-mount storm
+        // happens later, once the user is already speaking.
         let recorder = LectureRecorder()
         do {
-            // Time-boxed start. AVAudioEngine init + AVAudioSession
-            // activation have been observed to wedge indefinitely
-            // when CloudKit is mid-export (the device log preceding
-            // the freeze shows hundreds of `CoreData: WAL checkpoint`
-            // entries hammering the SQLite writer lock). Without a
-            // bound, the entire app freezes and the only escape is
-            // a force-quit + reinstall. 8 seconds is generous for a
-            // healthy device — anything longer is a wedge and the
-            // user should see a recoverable error instead.
-            // Capture the primitive IDs locally so the @Sendable
-            // closure doesn't have to ferry a SwiftData @Model
-            // instance across an actor boundary.
-            let newPageId = newPage.id
             let nbId = notebookId
+            // Use the source page id so the recorder's audio file
+            // lands under the right notebook (the recorder only
+            // needs the notebook scope; the page id is informational
+            // here since the real dictation page hasn't been created
+            // yet). The fromPageId is a stable, already-existing page
+            // owned by the same notebook.
+            let bootstrapPageId = fromPageId
             try await withDictationTimeout(seconds: 8) {
-                try await recorder.start(pageId: newPageId, notebookId: nbId)
+                try await recorder.start(pageId: bootstrapPageId, notebookId: nbId)
             }
             #if DEBUG
             dlog("[Dictation] LectureRecorder.start succeeded")
@@ -287,8 +298,6 @@ final class RecordingSession: ObservableObject {
             dlog("[Dictation] ABORT — recorder.start timed out: \(error)")
             #endif
             interruptionMessage = "Dictation took too long to start. Tap the dictation button again in a moment — iCloud may be syncing in the background."
-            // Best-effort: tear the half-initialised recorder down
-            // so the next attempt starts from a clean state.
             Task { _ = await recorder.stop() }
             return
         } catch {
@@ -299,48 +308,66 @@ final class RecordingSession: ObservableObject {
             return
         }
 
-        // Create the initial transcript text element at the top of
-        // the new page. The element starts empty; the recorder's
-        // `@Published liveTranscript` streams text in via the
-        // sink below.
-        let firstTextId = DictationFlowCommit.createInitialTextElement(
-            pageId: newPage.id,
-            notebookId: notebookId,
-            pageSize: pageSize
-        )
-        #if DEBUG
-        dlog("[Dictation] initial text element id=\(firstTextId)")
-        #endif
+        // Store the lazy-create hooks so the first-word handler can
+        // fire them off the audio thread → main hop, not on the
+        // synchronous tap path.
+        dictationCreatePage = createNewPage
+        dictationNavigate = navigateToPage
+        dictationPageSize = pageSize
 
         let contentId = UUID()
         dictationRecorder = recorder
-        #if DEBUG
-        dlog("[Dictation] post-start phase=assignRecorder")
-        #endif
         state = .dictation(DictationContext(
             audioContentId: contentId,
-            originalPageId: newPage.id,
-            currentPageId: newPage.id,
+            originalPageId: nil,
+            currentPageId: nil,
             notebookId: notebookId,
             startTime: Date(),
-            textElementIds: [firstTextId]
+            textElementIds: []
         ))
-        #if DEBUG
-        dlog("[Dictation] post-start phase=assignState")
-        #endif
-
-        navigateToPage(newPage.id)
-        #if DEBUG
-        dlog("[Dictation] post-start phase=navigatedToPage")
-        #endif
         startElapsedTimer()
-        #if DEBUG
-        dlog("[Dictation] post-start phase=startedTimer")
-        #endif
         subscribeLiveTranscript(recorder)
         #if DEBUG
-        dlog("[Dictation] startDictation completed successfully, state=\(state)")
+        dlog("[Dictation] startDictation completed — awaiting first transcript word to materialise page")
         #endif
+    }
+
+    /// Fired from `handleLiveTranscript` on the first non-empty
+    /// transcript partial. Creates the dictation page, the initial
+    /// text element, mutates the state's `originalPageId` /
+    /// `currentPageId` / `textElementIds`, and navigates the editor
+    /// to the new page. Returns the newly-minted text element id so
+    /// the caller can immediately write the transcript into it. Nil
+    /// return = lazy creation failed (no closures, no page returned);
+    /// caller drops the tick and the next partial retries.
+    @discardableResult
+    private func materializeDictationPage(ctx: inout DictationContext) -> UUID? {
+        guard let createPage = dictationCreatePage,
+              let navigate = dictationNavigate else {
+            #if DEBUG
+            dlog("[Dictation] materialiseDictationPage — no hooks stored, dropping")
+            #endif
+            return nil
+        }
+        guard let newPage = createPage() else {
+            #if DEBUG
+            dlog("[Dictation] materialiseDictationPage — createPage returned nil")
+            #endif
+            return nil
+        }
+        let firstTextId = DictationFlowCommit.createInitialTextElement(
+            pageId: newPage.id,
+            notebookId: ctx.notebookId,
+            pageSize: dictationPageSize
+        )
+        ctx.originalPageId = newPage.id
+        ctx.currentPageId = newPage.id
+        ctx.textElementIds = [firstTextId]
+        navigate(newPage.id)
+        #if DEBUG
+        dlog("[Dictation] materialiseDictationPage — page=\(newPage.id) elementId=\(firstTextId)")
+        #endif
+        return firstTextId
     }
 
     private func subscribeLiveTranscript(_ recorder: LectureRecorder) {
@@ -379,14 +406,27 @@ final class RecordingSession: ObservableObject {
             #endif
             return
         }
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Lazy page-creation: the first non-empty partial is what
+        // triggers the new page + initial text element. Until then
+        // the recorder is rolling but the editor is unchanged — the
+        // user sees the timer pill on whatever page they were on.
+        if ctx.textElementIds.isEmpty {
+            guard !trimmed.isEmpty else { return }
+            #if DEBUG
+            dlog("[Dictation] handleLiveTranscript first-word — materialising page")
+            #endif
+            guard materializeDictationPage(ctx: &ctx) != nil else { return }
+            state = .dictation(ctx)
+        }
         guard let currentTextId = ctx.textElementIds.last else {
             #if DEBUG
-            dlog("[Dictation] handleLiveTranscript dropped — no current text element id")
+            dlog("[Dictation] handleLiveTranscript dropped — no current text element id post-materialise")
             #endif
             return
         }
 
-        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
         dlog("[Dictation] handleLiveTranscript routing \(trimmed.count) chars → textElement=\(currentTextId)")
         #endif
@@ -407,12 +447,13 @@ final class RecordingSession: ObservableObject {
         // before the recorder writes more so subsequent
         // `handleLiveTranscript` calls land on the new element.
         DictationFlowCommit.updateText(elementId: currentTextId, text: split.head)
-        guard let next = DictationFlowCommit.createContinuationPage(
-            afterPageId: ctx.currentPageId,
-            notebookId: ctx.notebookId,
-            anchorAudioId: ctx.audioContentId,
-            initialText: split.tail
-        ) else { return }
+        guard let currentPageId = ctx.currentPageId,
+              let next = DictationFlowCommit.createContinuationPage(
+                afterPageId: currentPageId,
+                notebookId: ctx.notebookId,
+                anchorAudioId: ctx.audioContentId,
+                initialText: split.tail
+              ) else { return }
 
         ctx.currentPageId = next.pageId
         ctx.textElementIds.append(next.textElementId)
@@ -514,11 +555,22 @@ final class RecordingSession: ObservableObject {
             return
         }
 
-        // Adopt the lecture file into the unified audio/ tree so
-        // AudioContent.fileURL resolves; commit the strip above the
-        // first text element on the original dictation page.
+        // No page was materialised — the user tapped stop before
+        // the recogniser delivered any content. Discard the empty
+        // recording so the directory doesn't accumulate orphaned
+        // m4a stubs and skip the commit entirely. The audio file
+        // exists on disk under MediaStorage.lectures/<recordId>; the
+        // recorder owns its own URL and won't expose it past stop().
+        guard let originalPageId = ctx.originalPageId else {
+            #if DEBUG
+            dlog("[Dictation] stopDictation — no page materialised, discarding empty recording")
+            #endif
+            try? FileManager.default.removeItem(at: result.audioURL)
+            resetSession()
+            return
+        }
+
         let contentId = ctx.audioContentId
-        let originalPageId = ctx.originalPageId
         let notebookId = ctx.notebookId
         let textElementIds = ctx.textElementIds
         let transcript = result.transcript
@@ -547,6 +599,9 @@ final class RecordingSession: ObservableObject {
         audioRecorder = nil
         dictationRecorder = nil
         pendingRecordingURL = nil
+        dictationCreatePage = nil
+        dictationNavigate = nil
+        dictationPageSize = .zero
         state = .idle
         elapsedSeconds = 0
     }

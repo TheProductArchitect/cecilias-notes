@@ -2506,6 +2506,7 @@ final class EditorViewModel: ObservableObject {
     /// canvas coordinator clears the value once it has acted on it.
     @Published var pendingScrollPageIndex: Int?
 
+
     private func performSave() async {
         guard let canvasView else { return }
         let drawing = canvasView.drawing
