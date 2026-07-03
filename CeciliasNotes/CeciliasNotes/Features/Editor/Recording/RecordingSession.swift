@@ -483,6 +483,52 @@ final class RecordingSession: ObservableObject {
             return
         }
 
+        // Read both Settings toggles fresh at stop-time so changes
+        // apply to the recording being stopped. These are the same
+        // semantics the legacy EditorViewModel.stopRecording path
+        // documented: save ON → audio strip (+ transcript when
+        // transcription is on); save OFF + transcribe ON →
+        // transcript-only text block, audio discarded; both OFF →
+        // recording discarded outright. The pill flow previously
+        // ignored "Save audio clips" entirely — the Settings toggle
+        // was a no-op.
+        let saveAudio = UserDefaults.standard
+            .object(forKey: "ceciliasnotes.audio.saveClips") as? Bool ?? true
+        let autoTranscribe = UserDefaults.standard
+            .object(forKey: "ceciliasnotes.transcription.auto") as? Bool ?? true
+
+        guard saveAudio || autoTranscribe else {
+            // Nothing to keep. Retract the placeholder strip and
+            // remove the temp audio.
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
+            if let url = pendingRecordingURL {
+                try? FileManager.default.removeItem(at: url)
+            }
+            resetSession()
+            return
+        }
+
+        guard saveAudio else {
+            // Transcript-only: no audio element survives, so the
+            // text lands as a standalone text block on the page the
+            // recording was made on. File is deleted once the
+            // recogniser has read it.
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
+            if let url = pendingRecordingURL {
+                let pageId = ctx.pageId
+                Task(priority: .utility) {
+                    let transcript = await SpeechTranscriber.shared.transcribeFile(url: url)
+                    try? FileManager.default.removeItem(at: url)
+                    guard let text = transcript?.text, !text.isEmpty,
+                          let page = StorageService.shared.fetchPage(id: pageId)
+                    else { return }
+                    _ = try? StorageService.shared.createTextBlock(on: page, content: text)
+                }
+            }
+            resetSession()
+            return
+        }
+
         AudioElementCommit.finalizeVoiceNote(
             elementId: ctx.audioElementId,
             contentId: ctx.audioContentId,
@@ -493,8 +539,6 @@ final class RecordingSession: ObservableObject {
         // `ceciliasnotes.transcription.auto` setting (architecture intent:
         // dictation always transcribes, voice notes are user-
         // configurable).
-        let autoTranscribe = UserDefaults.standard
-            .object(forKey: "ceciliasnotes.transcription.auto") as? Bool ?? true
         if autoTranscribe, let url = pendingRecordingURL {
             let contentId = ctx.audioContentId
             Task.detached(priority: .utility) {

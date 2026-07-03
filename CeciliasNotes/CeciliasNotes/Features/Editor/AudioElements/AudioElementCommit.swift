@@ -196,6 +196,30 @@ enum AudioElementCommit {
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }
 
+    /// Retract a recording placeholder that will never get audio —
+    /// the "Save audio clips" setting is OFF, so the pulsing strip
+    /// created at record-start must come off the page at stop-time.
+    /// Soft-delete (deletedAt) matches every other element removal
+    /// path; the overlay refetch drops it on the next render.
+    static func discardRecordingPlaceholder(elementId: UUID) {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { $0.id == elementId }
+        )
+        guard let element = try? context.fetch(descriptor).first else { return }
+        let now = Date()
+        element.deletedAt = now
+        element.updatedAt = now
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[AudioElement] discardRecordingPlaceholder SAVE FAILED elementId=\(elementId): \(error)")
+            #endif
+        }
+        NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+    }
+
     /// Make publicly accessible so DictationFlowCommit can mirror
     /// the height heuristic for the audio strip placement.
     static func defaultStripHeight(forPagePoints pageHeightPoints: Double) -> Double {

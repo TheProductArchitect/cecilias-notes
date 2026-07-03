@@ -28,6 +28,11 @@ struct SubjectSidebarView: View {
     @State private var isEditingSubjects: Bool = false
     @Environment(\.theme) private var theme
 
+    /// Settings → Intelligence → "quiz generation". When OFF the
+    /// quiz section disappears from the sidebar entirely. This key
+    /// previously had no reader — the toggle was a no-op.
+    @AppStorage("ceciliasnotes.quiz.enabled") private var quizEnabled: Bool = true
+
     private static let horizontalInset: CGFloat = 13
 
     var body: some View {
@@ -38,12 +43,14 @@ struct SubjectSidebarView: View {
                     sectionDivider
                     recentContextRow
                     trashContextRow
-                    sectionDivider
-                    QuizListView(viewModel: viewModel)
-                    // File-system style multi-select surface for quizzes.
-                    // Sits below the per-folder quiz list for the same
-                    // "tap to enter bulk-ops" affordance as allSubjectsRow.
-                    allQuizzesRow
+                    if quizEnabled {
+                        sectionDivider
+                        QuizListView(viewModel: viewModel)
+                        // File-system style multi-select surface for quizzes.
+                        // Sits below the per-folder quiz list for the same
+                        // "tap to enter bulk-ops" affordance as allSubjectsRow.
+                        allQuizzesRow
+                    }
                 }
                 .padding(.top, 24)
                 .padding(.bottom, 16)

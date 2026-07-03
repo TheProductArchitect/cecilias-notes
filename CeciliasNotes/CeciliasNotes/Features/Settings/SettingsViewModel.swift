@@ -91,6 +91,10 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: Pencil
     @AppStorage("ceciliasnotes.pencil.doubletap")   var doubleTapAction:  DoubleTapAction  = .switchTool
+    /// LEGACY — no reader; the canvas suppresses the system hover
+    /// preview outright (see `CeciliasNotesPKCanvasView`). The Settings
+    /// toggle was removed 2026-07-03; key kept so old installs'
+    /// values aren't orphaned if hover ever returns.
     @AppStorage("ceciliasnotes.pencil.hoverPreview") var hoverPreviewEnabled: Bool         = true
     @AppStorage("ceciliasnotes.haptics.drawing")    var drawingHapticsEnabled: Bool        = true
 
@@ -172,10 +176,6 @@ final class SettingsViewModel: ObservableObject {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
         let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
         return "Version \(v) (Build \(b))"
-    }
-
-    var supportsHoverPreview: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
     }
 
     // MARK: Init

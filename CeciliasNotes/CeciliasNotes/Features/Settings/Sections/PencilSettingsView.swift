@@ -130,14 +130,12 @@ struct PencilSettingsView: View {
                     .padding(.bottom, CeciliasNotes.Spacing.sm)
             }
 
-            if viewModel.supportsHoverPreview {
-                CeciliasNotesDivider()
-                toggleRow(
-                    "Pencil Hover Preview",
-                    systemImage: "pencil.tip",
-                    value: $viewModel.hoverPreviewEnabled
-                )
-            }
+            // "Pencil Hover Preview" toggle removed — nothing reads
+            // the key, and the canvas deliberately refuses every
+            // UIHoverGestureRecognizer (`CeciliasNotesPKCanvasView`) because
+            // the system hover preview shifts rendered strokes. A
+            // toggle promising a feature the app actively suppresses
+            // is worse than no toggle.
         }
         .ceciliasNotesCard()
     }

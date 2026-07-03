@@ -39,11 +39,13 @@ struct AudioSettingsView: View {
         .sheet(isPresented: $isShowingLocalePicker) {
             LocalePickerSheet(
                 selected: viewModel.transcriptionLocale,
-                locales: viewModel.supportedOnDeviceLocales()
-            ) { locale in
-                viewModel.transcriptionLocale = locale?.identifier ?? ""
-                isShowingLocalePicker = false
-            }
+                locales: viewModel.supportedOnDeviceLocales(),
+                onSelect: { locale in
+                    viewModel.transcriptionLocale = locale?.identifier ?? ""
+                    isShowingLocalePicker = false
+                },
+                onCancel: { isShowingLocalePicker = false }
+            )
         }
     }
 
@@ -166,6 +168,11 @@ private struct LocalePickerSheet: View {
     let selected: String
     let locales:  [Locale]
     let onSelect: (Locale?) -> Void
+    /// Dismiss WITHOUT changing the stored locale. The toolbar
+    /// Cancel used to call `onSelect(nil)` — which is the "System
+    /// default" selection — so cancelling silently reset the user's
+    /// chosen transcription language.
+    let onCancel: () -> Void
     @Environment(\.theme) private var theme
 
     @State private var query = ""
@@ -225,7 +232,7 @@ private struct LocalePickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { onSelect(nil) }
+                    Button("Cancel") { onCancel() }
                 }
             }
         }

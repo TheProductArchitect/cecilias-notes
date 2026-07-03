@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Settings → Intelligence. Hosts the quiz feature's controls: AI
 /// Features (toggles), Generation Engine (tier picker), and MCP Status.
-/// Quiz generation runs on-device by default, so this section is always
-/// available; the Apple Intelligence / MCP rows appear only when those
-/// tiers are present.
+/// Quiz generation requires Apple Intelligence or the Mac MCP helper
+/// (the on-device tier was retired); the engine rows appear only when
+/// their tier is present, with an explanatory line when neither is.
 ///
 /// Editorial style matches the rest of Settings: eyebrow + heavy title +
 /// hairline rule, 8pt tracked uppercase section labels, no card fills.
@@ -21,7 +21,7 @@ struct IntelligenceSettingsView: View {
     @AppStorage("ceciliasnotes.quiz.includeTranscriptions")
     private var includeTranscriptions: Bool = true
     @AppStorage("ceciliasnotes.quiz.engine")
-    private var engineRaw: String = AITier.onDevice.rawValue
+    private var engineRaw: String = AITier.appleIntelligence.rawValue
 
     private var appleIntelligenceAvailable: Bool { intelligence.isAvailable }
     private var mcpAvailable: Bool { mcp.hasEverConnected }
@@ -88,20 +88,38 @@ struct IntelligenceSettingsView: View {
     // MARK: Generation Engine
 
     private var generationEngine: some View {
+        // The on-device tier was retired (its pattern matcher rarely
+        // produced questions) — QuizGenerationService only ever
+        // resolves to Apple Intelligence or MCP now, and the builder
+        // silently upgrades a persisted ".onDevice" choice. Offering
+        // the retired row here let users select an engine that no
+        // longer exists.
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel("use for quiz generation")
-            engineRow(.onDevice, title: "on-device", caption: "faster · private · works offline")
             if appleIntelligenceAvailable {
-                engineRow(.appleIntelligence, title: "apple intelligence", caption: "better questions · marks short answers")
+                engineRow(.appleIntelligence, title: "apple intelligence", caption: "on-device · private · marks short answers")
             }
             if mcpAvailable {
                 engineRow(.mcp, title: "mcp (mac required)", caption: "best quality · requires cecilias-notes-mcp running")
             }
+            if !appleIntelligenceAvailable && !mcpAvailable {
+                Text("quiz generation needs apple intelligence (enable it in the Settings app → apple intelligence & siri) or the mac mcp helper.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 12)
+            }
         }
     }
 
+    /// Selection check treats a legacy persisted ".onDevice" as
+    /// Apple Intelligence — mirrors the silent upgrade the quiz
+    /// builder applies when it seeds its tier.
     private func engineRow(_ tier: AITier, title: String, caption: String) -> some View {
-        let isSelected = engineRaw == tier.rawValue
+        let effectiveRaw = engineRaw == AITier.onDevice.rawValue
+            ? AITier.appleIntelligence.rawValue
+            : engineRaw
+        let isSelected = effectiveRaw == tier.rawValue
         return Button {
             engineRaw = tier.rawValue
         } label: {
