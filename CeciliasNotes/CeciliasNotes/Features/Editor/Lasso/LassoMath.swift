@@ -165,4 +165,43 @@ enum LassoMath {
     static func apply(_ transform: CGAffineTransform, to point: CGPoint) -> CGPoint {
         point.applying(transform)
     }
+
+    /// Convex hull of a point cloud (Andrew's monotone chain,
+    /// O(n log n)). Returns the hull vertices in counter-clockwise
+    /// order; fewer than 3 input points (or a degenerate collinear
+    /// cloud) returns an empty array so callers fall back to the
+    /// rectangular chrome.
+    ///
+    /// Drives the freeform lasso's hugging selection outline — the
+    /// dashed boundary follows the selected content instead of its
+    /// axis-aligned bounding box.
+    static func convexHull(_ points: [CGPoint]) -> [CGPoint] {
+        guard points.count >= 3 else { return [] }
+        let sorted = points.sorted {
+            $0.x == $1.x ? $0.y < $1.y : $0.x < $1.x
+        }
+        func cross(_ o: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+            (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+        }
+        var lower: [CGPoint] = []
+        for p in sorted {
+            while lower.count >= 2,
+                  cross(lower[lower.count - 2], lower[lower.count - 1], p) <= 0 {
+                lower.removeLast()
+            }
+            lower.append(p)
+        }
+        var upper: [CGPoint] = []
+        for p in sorted.reversed() {
+            while upper.count >= 2,
+                  cross(upper[upper.count - 2], upper[upper.count - 1], p) <= 0 {
+                upper.removeLast()
+            }
+            upper.append(p)
+        }
+        lower.removeLast()
+        upper.removeLast()
+        let hull = lower + upper
+        return hull.count >= 3 ? hull : []
+    }
 }

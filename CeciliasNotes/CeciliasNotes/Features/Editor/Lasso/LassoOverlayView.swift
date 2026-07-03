@@ -190,6 +190,11 @@ struct LassoOverlayView: View {
         var elementIds:   Set<UUID> = []
         var partials:     [UUID: Set<Int>] = [:]
         var unionBounds:  CGRect? = nil
+        // Point cloud feeding the freeform hugging outline —
+        // sampled stroke points + (rotated) element corners. Only
+        // collected in freeform mode; marquee keeps its rectangle.
+        var hullInput:    [CGPoint] = []
+        let wantsHull = selection.mode == .freeform
 
         // Fetch every element on this page once.
         let pid = pageId
@@ -249,6 +254,29 @@ struct LassoOverlayView: View {
                     if LassoMath.rectSubstantiallyInside(bbox, in: path) {
                         matchedIndices.insert(i)
                         matchedBBoxes.append(bbox)
+                        if wantsHull {
+                            // Sample the stroke's real path (coarse —
+                            // the hull only needs the silhouette).
+                            // `PKStrokePath` points are pre-transform;
+                            // apply `stroke.transform` to land in the
+                            // same page space as `renderBounds`.
+                            var sampled = 0
+                            for sp in stroke.path.interpolatedPoints(by: .distance(24)) {
+                                hullInput.append(sp.location.applying(stroke.transform))
+                                sampled += 1
+                            }
+                            if sampled < 2 {
+                                // Dot-like stroke — fall back to its
+                                // bbox corners so it still shapes
+                                // the hull.
+                                hullInput.append(contentsOf: [
+                                    CGPoint(x: bbox.minX, y: bbox.minY),
+                                    CGPoint(x: bbox.maxX, y: bbox.minY),
+                                    CGPoint(x: bbox.maxX, y: bbox.maxY),
+                                    CGPoint(x: bbox.minX, y: bbox.maxY),
+                                ])
+                            }
+                        }
                     }
                 }
                 #if DEBUG
@@ -281,6 +309,7 @@ struct LassoOverlayView: View {
                 if hit {
                     elementIds.insert(element.id)
                     unionBounds = unionBounds?.union(rect) ?? rect
+                    if wantsHull { hullInput.append(contentsOf: rectCorners(rect)) }
                 }
 
             default:
@@ -313,6 +342,20 @@ struct LassoOverlayView: View {
                 if hit {
                     elementIds.insert(element.id)
                     unionBounds = unionBounds?.union(rect) ?? rect
+                    if wantsHull {
+                        // Corners rotated around the rect centre so a
+                        // rotated shape/image contributes its true
+                        // footprint, not its unrotated frame.
+                        if abs(element.rotation) > 0.001 {
+                            let t = LassoMath.rotation(
+                                angle: element.rotation,
+                                around: CGPoint(x: rect.midX, y: rect.midY)
+                            )
+                            hullInput.append(contentsOf: rectCorners(rect).map { $0.applying(t) })
+                        } else {
+                            hullInput.append(contentsOf: rectCorners(rect))
+                        }
+                    }
                 }
             }
         }
@@ -325,8 +368,16 @@ struct LassoOverlayView: View {
             elementIds: elementIds,
             partialStrokes: partials,
             pageId: pageId,
-            bounds: unionBounds ?? .zero
+            bounds: unionBounds ?? .zero,
+            hull: wantsHull ? LassoMath.convexHull(hullInput) : []
         )
+    }
+
+    private func rectCorners(_ rect: CGRect) -> [CGPoint] {
+        [CGPoint(x: rect.minX, y: rect.minY),
+         CGPoint(x: rect.maxX, y: rect.minY),
+         CGPoint(x: rect.maxX, y: rect.maxY),
+         CGPoint(x: rect.minX, y: rect.maxY)]
     }
 
     private func elementRectInPagePoints(_ element: PageElement) -> CGRect {
@@ -402,15 +453,36 @@ struct LassoOverlayView: View {
                         .position(x: displayed.midX, y: displayed.midY)
                         .onTapGesture { selection.clear() }
                 } else {
-                    Rectangle()
-                        .strokeBorder(theme.accent,
-                                      style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
-                        .background(theme.accent.opacity(0.05))
-                        .frame(width: displayed.width, height: displayed.height)
-                        .contentShape(Rectangle())
-                        .position(x: displayed.midX, y: displayed.midY)
-                        .rotationEffect(.radians(rotateAngle))
-                        .gesture(bodyDragGesture)
+                    // Freeform selections carry a convex hull of the
+                    // selected content — draw that hugging outline
+                    // instead of the axis-aligned box ("it doesn't
+                    // make sense to have a rectangle bounding box to
+                    // represent a freeform selection"). Handles,
+                    // badge, and the drag hit-area still use the
+                    // rect: the hull is the visual, not the gesture
+                    // surface. Marquee (and degenerate hulls) fall
+                    // back to the rectangle.
+                    Group {
+                        if let hull = hullLocalPath(displayed: displayed) {
+                            ZStack {
+                                hull.fill(theme.accent.opacity(0.05))
+                                hull.stroke(theme.accent,
+                                            style: StrokeStyle(lineWidth: 1.5,
+                                                               lineJoin: .round,
+                                                               dash: [4, 3]))
+                            }
+                        } else {
+                            Rectangle()
+                                .strokeBorder(theme.accent,
+                                              style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                                .background(theme.accent.opacity(0.05))
+                        }
+                    }
+                    .frame(width: displayed.width, height: displayed.height)
+                    .contentShape(Rectangle())
+                    .position(x: displayed.midX, y: displayed.midY)
+                    .rotationEffect(.radians(rotateAngle))
+                    .gesture(bodyDragGesture)
                 }
             }
 
@@ -539,6 +611,35 @@ struct LassoOverlayView: View {
     private func chromeDisplayRect(base: CGRect) -> CGRect {
         let raw = rawChromeDisplayRect(base: base)
         return clampToPage(raw)
+    }
+
+    /// The stored hull mapped into the displayed rect's LOCAL
+    /// coordinate space (origin at the rect's top-left). The
+    /// rect-to-rect map from the base selection bounds to the
+    /// displayed rect carries the live drag offset and the
+    /// anchored corner-resize for free — both manipulations are
+    /// exactly that affine map. The rotation preview comes from
+    /// the parent view's `rotationEffect`, which the hull path
+    /// inherits by living inside the bbox-sized view. Returns nil
+    /// for marquee selections / degenerate hulls (chrome falls
+    /// back to the rectangle).
+    private func hullLocalPath(displayed: CGRect) -> Path? {
+        let pts = selection.hullPoints
+        guard pts.count >= 3 else { return nil }
+        let base = selection.selectionBounds
+        guard base.width > 0.5, base.height > 0.5,
+              displayed.width > 0.5, displayed.height > 0.5 else { return nil }
+        let sx = displayed.width  / base.width
+        let sy = displayed.height / base.height
+        var path = Path()
+        let mapped = pts.map {
+            CGPoint(x: ($0.x - base.minX) * sx,
+                    y: ($0.y - base.minY) * sy)
+        }
+        path.move(to: mapped[0])
+        for p in mapped.dropFirst() { path.addLine(to: p) }
+        path.closeSubpath()
+        return path
     }
 
     private func rawChromeDisplayRect(base: CGRect) -> CGRect {

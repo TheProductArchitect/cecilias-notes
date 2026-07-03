@@ -661,9 +661,18 @@ struct ToolPaletteView: View {
                         ForEach(kinds, id: \.self) { kind in
                             Button {
                                 lastShapeKindRaw = kind.rawValue
-                                viewModel.selectedTool = .shape(kind: kind)
                                 showShapeVariantPopover = false
-                                HapticManager.shared.toolSwitched()
+                                // Defer the tool switch one runloop tick so the
+                                // popover dismisses cleanly first. Mutating
+                                // `selectedTool` (which re-renders the palette
+                                // hosting this popover) in the same transaction
+                                // as the dismissal sometimes dropped the write —
+                                // the user had to tap the kind twice. Same
+                                // pattern as `erasePageRow`.
+                                DispatchQueue.main.async {
+                                    viewModel.selectTool(.shape(kind: kind))
+                                    HapticManager.shared.toolSwitched()
+                                }
                             } label: {
                                 VStack(spacing: 4) {
                                     Image(systemName: kind.systemImage)
@@ -846,7 +855,10 @@ struct ToolPaletteView: View {
                 HapticManager.shared.contextMenuOpened()
             } else {
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.precise)) {
-                    viewModel.selectedTool = .shape(kind: lastShapeKind)
+                    // Route through selectTool so the outgoing tool's
+                    // settings snapshot + lastTool tracking happen —
+                    // direct `selectedTool =` assignment skipped both.
+                    viewModel.selectTool(.shape(kind: lastShapeKind))
                 }
                 HapticManager.shared.toolSwitched()
             }

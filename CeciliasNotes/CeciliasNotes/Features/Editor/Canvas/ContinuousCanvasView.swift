@@ -1027,13 +1027,24 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // Subtract the palette-covered strip from the available
             // width, centre the page in what's left, and add the
             // palette strip back to the opposite-side inset.
+            //
+            // Reserve only the part of the strip the page would
+            // actually intrude on. When the page is zoomed out far
+            // enough that the true-centre gutter already clears the
+            // palette, an unconditional reservation shifted the page
+            // ~34pt off-centre — the user read it as "the page leans
+            // left." `max(0, strip − gutter)` keeps the page truly
+            // centred while it fits, and continuously hands back the
+            // full reservation as the page grows under the palette.
             let paletteStrip: CGFloat = 56 + 12   // matches ToolPaletteView
+            let trueCentreGutter = (scrollView.bounds.width - width) / 2
+            let neededReservation = max(0, paletteStrip - max(0, trueCentreGutter))
             var reservedLeft:  CGFloat = 0
             var reservedRight: CGFloat = 0
             let paletteEdge = paletteEdgeForActiveNotebook(boundsSize: scrollView.bounds.size)
             switch paletteEdge {
-            case .left:  reservedLeft  = paletteStrip
-            case .right: reservedRight = paletteStrip
+            case .left:  reservedLeft  = neededReservation
+            case .right: reservedRight = neededReservation
             case .top, .bottom: break
             }
             let availableWidth = scrollView.bounds.width - reservedLeft - reservedRight

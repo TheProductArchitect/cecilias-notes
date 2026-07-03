@@ -79,6 +79,21 @@ enum QuizSourceCollector {
                 .filter { !$0.isEmpty }
             typed.append(contentsOf: pdfText)
 
+            // Legacy V5 `TextBlock` rows — text in pre-V6 notebooks
+            // AND every MCP/AI-imported notebook (the importer
+            // writes TextBlock until the V6 text migration lands,
+            // see MCP_SPEC.md §8). Without this fold-in, an
+            // agent-written notebook full of text reads as "no
+            // text the model can read" to quiz generation.
+            var legacyBlocks = fetchLegacyTextBlocks(notebookID: id, context: context)
+            if let since {
+                legacyBlocks = legacyBlocks.filter { $0.updatedAt > since }
+            }
+            let legacyText = legacyBlocks
+                .map { $0.content.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            typed.append(contentsOf: legacyText)
+
             var transcripts: [String] = []
             if scope.includeTranscriptions {
                 transcripts = elements
@@ -107,6 +122,17 @@ enum QuizSourceCollector {
             .reduce(0) { $0 + $1.allText.count }
     }
 
+    /// Total characters of readable text in scope. Drives the
+    /// builder's "enough context to quiz on" eligibility gate — a
+    /// unit count > 0 only proves *some* text exists; a two-word
+    /// text block can't seed a meaningful quiz.
+    static func contentCharacterCount(scope: QuizScope, context: ModelContext) -> Int {
+        collect(scope: scope, context: context)
+            .reduce(0) { sum, doc in
+                sum + doc.allText.reduce(0) { $0 + $1.count }
+            }
+    }
+
     // MARK: - Fetch helpers
 
     private static func fetchNotebook(id: UUID, context: ModelContext) -> Notebook? {
@@ -115,6 +141,20 @@ enum QuizSourceCollector {
         )
         descriptor.fetchLimit = 1
         return (try? context.fetch(descriptor))?.first
+    }
+
+    private static func fetchLegacyTextBlocks(notebookID: UUID, context: ModelContext) -> [TextBlock] {
+        // TextBlock carries no notebookId of its own — resolve via
+        // the notebook's live pages, then each page's blocks.
+        let pageDescriptor = FetchDescriptor<Page>(
+            predicate: #Predicate<Page> {
+                $0.notebookId == notebookID && $0.isDeleted == false
+            }
+        )
+        let pages = (try? context.fetch(pageDescriptor)) ?? []
+        return pages.flatMap { page in
+            (page.textBlocks ?? []).filter { !$0.isDeleted }
+        }
     }
 
     private static func fetchElements(notebookID: UUID, context: ModelContext) -> [PageElement] {

@@ -54,10 +54,18 @@ struct QuizBuilderView: View {
         }
     }
 
+    /// Minimum characters of readable text before a source counts as
+    /// having "enough context" to seed a meaningful quiz. Below this,
+    /// even a technically-successful generation pass produces
+    /// hallucinated filler — the model has nothing to ask about.
+    /// ~200 chars is two-to-three sentences of real notes.
+    private static let minQuizContextChars = 200
+
     /// Pre-flights a notebook for quiz generation by checking how
     /// much typed / transcribed / PDF text is on hand. Hand-drawn
     /// ink is invisible to every tier (no OCR), so a notebook full
-    /// of strokes only is `.ineligible` with a clear explanation.
+    /// of strokes only is `.ineligible` with a clear explanation —
+    /// as is one with only a few words of text.
     private func eligibility(for notebook: Notebook) -> QuizEligibility {
         let context = StorageService.shared.context
         let scope = QuizScope(
@@ -65,8 +73,19 @@ struct QuizBuilderView: View {
             notebookIDs: [notebook.id],
             includeTranscriptions: includeTranscriptions
         )
-        let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
-        if count > 0 { return .eligible(unitCount: count) }
+        let chars = QuizSourceCollector.contentCharacterCount(scope: scope, context: context)
+        if chars >= Self.minQuizContextChars {
+            let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
+            return .eligible(unitCount: count)
+        }
+        if chars > 0 {
+            return .ineligible(reason: """
+                this notebook has only a few words of readable text — \
+                not enough context to generate meaningful questions. \
+                add more typed notes, audio transcripts, or imported \
+                PDF text and try again.
+                """)
+        }
         return .ineligible(reason: """
             this notebook has no text the model can read. quiz \
             generation needs typed text blocks, audio transcripts, \
@@ -85,11 +104,22 @@ struct QuizBuilderView: View {
             subjectName: subject.name,
             includeTranscriptions: includeTranscriptions
         )
-        let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
-        if count > 0 { return .eligible(unitCount: count) }
+        let chars = QuizSourceCollector.contentCharacterCount(scope: scope, context: context)
+        if chars >= Self.minQuizContextChars {
+            let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
+            return .eligible(unitCount: count)
+        }
         let notebookCount = notebooks.filter { $0.subjectId == subject.id }.count
         if notebookCount == 0 {
             return .ineligible(reason: "this subject has no notebooks yet.")
+        }
+        if chars > 0 {
+            return .ineligible(reason: """
+                the notebooks in this subject have only a few words of \
+                readable text — not enough context to generate \
+                meaningful questions. add more typed notes, audio \
+                transcripts, or imported PDF text and try again.
+                """)
         }
         return .ineligible(reason: """
             none of the notebooks in this subject have text the model \

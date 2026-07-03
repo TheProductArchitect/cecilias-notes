@@ -377,7 +377,10 @@ enum LassoGroupOps {
                 union = union?.union(b) ?? b
             }
         }
-        if let union { selection.updateBounds(union) }
+        // Pass the true rotation transform for the hull outline —
+        // the default rect-to-rect remap would leave the hull
+        // unrotated inside the new axis-aligned bounds.
+        if let union { selection.updateBounds(union, hullTransform: strokeTransform) }
     }
 
     // MARK: - Delete

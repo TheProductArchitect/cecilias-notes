@@ -58,6 +58,14 @@ final class LassoSelectionState: ObservableObject {
     /// to draw the bbox + handles. Empty when nothing is selected.
     @Published private(set) var selectionBounds: CGRect = .zero
 
+    /// Convex hull of the selected content in page-pt coordinates —
+    /// set only for freeform lassos, empty otherwise. When present,
+    /// the chrome draws this hugging outline instead of the
+    /// rectangular bounding box (the rect still drives handles,
+    /// badge placement, and gesture hit areas). Remapped alongside
+    /// `selectionBounds` on every committed transform.
+    @Published private(set) var hullPoints: [CGPoint] = []
+
     /// Monotonic mutation counter. Bumped by every `setSelection` /
     /// `clear`. The editor-level "tap anywhere clears the selection"
     /// gesture snapshots this when the tap ends and only clears if
@@ -96,7 +104,8 @@ final class LassoSelectionState: ObservableObject {
         elementIds: Set<UUID>,
         partialStrokes: [UUID: Set<Int>],
         pageId: UUID,
-        bounds: CGRect
+        bounds: CGRect,
+        hull: [CGPoint] = []
     ) {
         guard !elementIds.isEmpty || !partialStrokes.isEmpty else {
             clear()
@@ -106,6 +115,7 @@ final class LassoSelectionState: ObservableObject {
         self.partialStrokeSelections = partialStrokes
         self.pageId                  = pageId
         self.selectionBounds         = bounds
+        self.hullPoints              = hull
         selectionVersion &+= 1
         LassoLiveDrag.shared.reset()
     }
@@ -113,8 +123,34 @@ final class LassoSelectionState: ObservableObject {
     /// Update the cached bounding box after a committed move /
     /// resize / rotate so the chrome stays aligned with the new
     /// element positions without re-running intersection.
-    func updateBounds(_ newBounds: CGRect) {
+    ///
+    /// The hull outline follows: with `hullTransform` (rotation —
+    /// where a rect-to-rect map would leave the hull unrotated)
+    /// the points are mapped through it directly; otherwise
+    /// they're remapped rect-to-rect from the old bounds to
+    /// `newBounds`, which is exact for translate and anchored
+    /// scale (both are affine maps that send the old bbox onto
+    /// the new one).
+    func updateBounds(_ newBounds: CGRect, hullTransform: CGAffineTransform? = nil) {
         guard pageId != nil else { return }
+        if !hullPoints.isEmpty {
+            if let t = hullTransform {
+                hullPoints = hullPoints.map { $0.applying(t) }
+            } else {
+                let old = selectionBounds
+                if old.width > 0.5, old.height > 0.5,
+                   newBounds.width > 0.5, newBounds.height > 0.5 {
+                    let sx = newBounds.width  / old.width
+                    let sy = newBounds.height / old.height
+                    hullPoints = hullPoints.map {
+                        CGPoint(x: newBounds.minX + ($0.x - old.minX) * sx,
+                                y: newBounds.minY + ($0.y - old.minY) * sy)
+                    }
+                } else {
+                    hullPoints = []
+                }
+            }
+        }
         selectionBounds = newBounds
     }
 
@@ -125,6 +161,7 @@ final class LassoSelectionState: ObservableObject {
         partialStrokeSelections = [:]
         pageId                  = nil
         selectionBounds         = .zero
+        hullPoints              = []
         selectionVersion &+= 1
         LassoLiveDrag.shared.reset()
     }
