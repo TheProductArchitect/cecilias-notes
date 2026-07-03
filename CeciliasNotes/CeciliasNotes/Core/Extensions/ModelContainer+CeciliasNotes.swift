@@ -1,5 +1,6 @@
 import CloudKit
 import Foundation
+import SQLite3
 import SwiftData
 
 /// Runtime visibility into whether the production ModelContainer
@@ -13,7 +14,14 @@ import SwiftData
 enum CloudKitContainerStatus: String {
     case uninitialized
     case privateDatabase
+    /// CloudKit was expected but unavailable — the library shows the
+    /// "iCloud sync unavailable" banner for this state only.
     case localOnlyFallback
+    /// Local-only on purpose (user preference toggle or `-uiTesting`
+    /// runs). No banner: the user asked for this, and during UI tests
+    /// the banner shifts the library layout and swallows taps meant
+    /// for the toolbar (it deep-links to system Settings).
+    case localOnlyIntentional
 }
 
 enum CloudKitContainerState {
@@ -70,6 +78,49 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
+        // Truncate the SQLite WAL log before SwiftData opens the
+        // store. Force-kills during debugging (or watchdog kills
+        // mid-write) leave the WAL un-checkpointed; SwiftData reads
+        // the journal lazily, then the first synchronous write —
+        // e.g. dictation's initial `mainContext.save()` — gets
+        // stuck behind a multi-second WAL checkpoint on the main
+        // runloop. Truncating up front pays the cost once at launch
+        // (off the user-visible interaction path) instead of
+        // ambushing the first dictation tap.
+        //
+        // Safe whether or not the file exists: the WAL sidecars
+        // (`-wal`, `-shm`) sit next to the .sqlite and `wal_checkpoint`
+        // is a no-op on a clean store.
+        let walURL = storeURL.appendingPathExtension("wal")
+        if FileManager.default.fileExists(atPath: walURL.path) {
+            let walSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
+            #if DEBUG
+            dlog("[ModelContainer] WAL log present at launch — sizeBytes=\(walSize)")
+            #endif
+            // Best-effort WAL truncate via sqlite3 CLI bound to the
+            // .sqlite file. SwiftData / Core Data don't expose a
+            // pragma API, but the file-format-level sqlite3 binary
+            // is part of every iOS app sandbox (linked via
+            // libsqlite3.tbd). A `wal_checkpoint(TRUNCATE)` pragma
+            // forces all pending pages out of the WAL and shrinks
+            // the file back to 0 bytes — turning a multi-second
+            // first-write into a fast no-op.
+            var db: OpaquePointer?
+            if sqlite3_open(storeURL.path, &db) == SQLITE_OK {
+                _ = sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE);", nil, nil, nil)
+                sqlite3_close(db)
+                #if DEBUG
+                let newSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
+                dlog("[ModelContainer] WAL checkpoint(TRUNCATE) done — newSizeBytes=\(newSize)")
+                #endif
+            } else {
+                #if DEBUG
+                dlog("[ModelContainer] WAL checkpoint skipped — sqlite3_open failed")
+                #endif
+                sqlite3_close(db)
+            }
+        }
+
         // V6 = the active schema. Step 1 of the unified PageElement
         // migration: adds `PageElement` and 7 polymorphic content
         // entities alongside the existing V5 entities. The V5
@@ -81,6 +132,14 @@ extension ModelContainer {
         // `CeciliasNotesSchemas.swift` for the duplicate-checksum
         // trap that forces single-version operation.
         let schema = Schema(versionedSchema: CeciliasNotesSchemaV6.self)
+
+        // Under UI tests (`-uiTesting` launch arg) the app resets its
+        // UserDefaults, so the user-preference key is always false.
+        // But CloudKit's first-save handshake can hold the writer lock
+        // long enough to freeze the main thread past the test's timeout
+        // budget. Force local-only so tests get a deterministic, fast
+        // store with no network dependency.
+        let isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
 
         // Escape hatch 1: user-set preference. A chronic stuck
         // CloudKit export loop is an iOS-side bug we can't recover
@@ -104,9 +163,15 @@ extension ModelContainer {
         let autoFallback = dirtyStreak >= 2
         // Bump the streak now — when launch completes cleanly the
         // app delegate clears it back to 0 (see CeciliasNotesAppDelegate).
-        UserDefaults.standard.set(dirtyStreak + 1, forKey: dirtyCountKey)
+        // Skip the bump during UI tests: XCTest kills the app process
+        // abruptly (no background callback), which would leave the
+        // streak at 1. A subsequent crashed-test can then push it to 2,
+        // triggering the CloudKit auto-fallback on a real user's launch.
+        if !isUITesting {
+            UserDefaults.standard.set(dirtyStreak + 1, forKey: dirtyCountKey)
+        }
 
-        if disabledByUser || autoFallback {
+        if isUITesting || disabledByUser || autoFallback {
             #if DEBUG
             if disabledByUser {
                 dlog("[ModelContainer] SwiftData CloudKit sync DISABLED by user preference — opening with cloudKitDatabase: .none")
@@ -114,7 +179,13 @@ extension ModelContainer {
                 dlog("[ModelContainer] SwiftData CloudKit sync auto-disabled after \(dirtyStreak) consecutive dirty launches — opening with cloudKitDatabase: .none")
             }
             #endif
-            CloudKitContainerState.status = .localOnlyFallback
+            // Deliberate local-only (test run / user toggle) is not a
+            // failure — don't trigger the library's "iCloud sync
+            // unavailable" banner. The dirty-launch auto-fallback IS
+            // a failure state the user should see.
+            CloudKitContainerState.status = (isUITesting || disabledByUser)
+                ? .localOnlyIntentional
+                : .localOnlyFallback
             let localConfig = ModelConfiguration(
                 schema: schema,
                 url: storeURL,

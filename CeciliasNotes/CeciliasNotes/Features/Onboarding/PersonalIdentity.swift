@@ -239,6 +239,10 @@ func reconcileAppIcon(preferredName: String? = nil) {
 /// write hasn't landed yet.
 @MainActor
 func updateAppIcon(for name: String) {
+    // The system "Change App Icon?" alert hangs XCTest's accessibility
+    // snapshot for up to 60s. Skip the icon change entirely during UI
+    // tests — it's cosmetic and unrelated to any test assertion.
+    guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
     reconcileAppIcon(preferredName: name)
 }
 

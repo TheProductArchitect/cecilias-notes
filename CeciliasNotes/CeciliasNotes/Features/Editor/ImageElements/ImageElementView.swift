@@ -375,9 +375,13 @@ struct ImageElementView: View {
                     dragOffset = .zero
                     return
                 }
-                element.normalizedX = max(0, min(maxX, proposedX))
-                element.normalizedY = max(0, min(1 - element.normalizedHeight, proposedY))
-                element.updatedAt   = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Move Image"
+                ) {
+                    element.normalizedX = max(0, min(maxX, proposedX))
+                    element.normalizedY = max(0, min(1 - element.normalizedHeight, proposedY))
+                    element.updatedAt   = Date()
+                }
                 dragOffset = .zero
                 #if DEBUG
                 dlog("[ImageGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
@@ -399,9 +403,13 @@ struct ImageElementView: View {
                 // there rather than letting the element bleed off.
                 let maxW = max(Self.minNormalizedWidth, 1 - element.normalizedX)
                 let maxH = max(0.01, 1 - element.normalizedY)
-                element.normalizedWidth  = min(maxW, newW)
-                element.normalizedHeight = min(maxH, newH)
-                element.updatedAt        = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Resize Image"
+                ) {
+                    element.normalizedWidth  = min(maxW, newW)
+                    element.normalizedHeight = min(maxH, newH)
+                    element.updatedAt        = Date()
+                }
                 pinchScale = 1.0
             }
     }
@@ -437,11 +445,15 @@ struct ImageElementView: View {
                 let normH = Double(new.height) / Double(pageSize.height)
                 // Clamp both origin and far edge: an element must fit
                 // inside [0,1] × [0,1] on the page.
-                element.normalizedWidth  = max(Self.minNormalizedWidth, min(1, normW))
-                element.normalizedHeight = max(0.01, min(1, normH))
-                element.normalizedX = max(0, min(1 - element.normalizedWidth,  normX))
-                element.normalizedY = max(0, min(1 - element.normalizedHeight, normY))
-                element.updatedAt        = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Resize Image"
+                ) {
+                    element.normalizedWidth  = max(Self.minNormalizedWidth, min(1, normW))
+                    element.normalizedHeight = max(0.01, min(1, normH))
+                    element.normalizedX = max(0, min(1 - element.normalizedWidth,  normX))
+                    element.normalizedY = max(0, min(1 - element.normalizedHeight, normY))
+                    element.updatedAt        = Date()
+                }
                 resizeDelta = nil
                 #if DEBUG
                 dlog("[ImageGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")
@@ -452,10 +464,14 @@ struct ImageElementView: View {
     private func rotate90() {
         // .pi/2 radians per tap. The element model uses radians
         // (consistent with TextBlock); 4 taps = full rotation.
-        let next = element.rotation + .pi / 2
-        let twoPi = 2 * Double.pi
-        element.rotation = next.truncatingRemainder(dividingBy: twoPi)
-        element.updatedAt = Date()
+        LassoTransformUndo.withUndo(
+            elementId: element.id, actionName: "Rotate Image"
+        ) {
+            let next = element.rotation + .pi / 2
+            let twoPi = 2 * Double.pi
+            element.rotation = next.truncatingRemainder(dividingBy: twoPi)
+            element.updatedAt = Date()
+        }
     }
 
     private func clampNorm(_ v: Double) -> Double { max(0, min(1, v)) }

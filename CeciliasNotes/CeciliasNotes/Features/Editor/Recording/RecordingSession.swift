@@ -527,7 +527,15 @@ final class RecordingSession: ObservableObject {
 
         Task { @MainActor in
             let adopted = await MediaStorage.adoptAudio(at: sourceURL, id: contentId)
-            guard adopted != nil else { return }
+            guard adopted != nil else {
+                // File-system move failed — the .m4a is gone; tell the
+                // user rather than silently discarding the recording.
+                self.interruptionMessage = "Recording couldn't be saved. Please check storage and try again."
+                #if DEBUG
+                dlog("[Dictation] stopDictation: adoptAudio returned nil — recording lost, sourceURL=\(sourceURL)")
+                #endif
+                return
+            }
             DictationFlowCommit.finalizeDictation(
                 contentId: contentId,
                 originalPageId: originalPageId,

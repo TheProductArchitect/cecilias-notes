@@ -58,7 +58,14 @@ enum DictationFlowCommit {
         notebookId: UUID,
         pageSize: CGSize
     ) -> UUID {
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=enter")
+        #endif
+        let t0 = CFAbsoluteTimeGetCurrent()
         let context = StorageService.shared.context
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=ctxResolved dt=\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - t0))s")
+        #endif
         let elementId = UUID()
         let element = PageElement(
             id: elementId,
@@ -77,9 +84,18 @@ enum DictationFlowCommit {
             size: .body
         )
         element.textContent = content
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=preInsert dt=\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - t0))s")
+        #endif
         context.insert(element)
+        #if DEBUG
+        dlog("[Dictation] createInitialTextElement phase=postInsert dt=\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - t0))s")
+        #endif
         do {
             try context.save()
+            #if DEBUG
+            dlog("[Dictation] createInitialTextElement phase=postSave dt=\(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - t0))s")
+            #endif
         } catch {
             // The dictation surface depends on this row landing —
             // if the initial transcript element doesn't persist,

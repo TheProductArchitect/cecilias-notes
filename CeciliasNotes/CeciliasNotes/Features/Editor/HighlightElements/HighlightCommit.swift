@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import PencilKit
 import SwiftData
 
 /// SwiftData commit helpers for highlight creation. Mirrors the
@@ -34,7 +35,8 @@ enum HighlightCommit {
         notebookId: UUID,
         style: HighlightStyle = .highlight,
         colorVariant: String = "yellow",
-        capturedText: String? = nil
+        capturedText: String? = nil,
+        canvas: PKCanvasView? = nil
     ) -> [UUID] {
         guard !rects.isEmpty else { return [] }
         let context = StorageService.shared.context
@@ -76,6 +78,21 @@ enum HighlightCommit {
             #if DEBUG
             dlog("[HighlightCommit] save failed: \(error)")
             #endif
+        }
+        // One grouped undo entry for the whole multi-line highlight
+        // — a single ⌘Z removes every rect, matching how the user
+        // perceives the gesture (one highlight, not N lines).
+        if let manager = canvas?.undoManager {
+            manager.beginUndoGrouping()
+            for id in createdIds {
+                PageElementUndo.registerCreate(
+                    elementId: id,
+                    kind: .highlight,
+                    canvas: canvas,
+                    actionName: "Highlight"
+                )
+            }
+            manager.endUndoGrouping()
         }
         NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
         return createdIds

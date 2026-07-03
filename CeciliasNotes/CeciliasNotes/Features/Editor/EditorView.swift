@@ -128,9 +128,29 @@ struct EditorView: View {
                     // is live.
                     .simultaneousGesture(
                         TapGesture().onEnded {
+                            // This simultaneous gesture fires for EVERY
+                            // tap while a selection is live — including
+                            // taps that themselves mutate the selection:
+                            // the chrome's delete badge (reads the
+                            // selection, then clears it) and cursor-tap
+                            // shape selection (sets a new selection).
+                            // Clearing unconditionally races both — the
+                            // badge saw an empty selection ("trash did
+                            // nothing") or the fresh selection was wiped
+                            // the moment it appeared.
+                            //
+                            // Snapshot the mutation counter now, defer a
+                            // tick, and clear only if NOTHING else
+                            // touched the selection as part of this tap
+                            // — i.e. the tap genuinely landed on empty
+                            // space.
                             let state = LassoSelectionState.shared
-                            if state.hasSelection {
-                                state.clear()
+                            let version = state.selectionVersion
+                            DispatchQueue.main.async {
+                                if state.hasSelection,
+                                   state.selectionVersion == version {
+                                    state.clear()
+                                }
                             }
                         }
                     )

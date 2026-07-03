@@ -95,12 +95,11 @@ struct CeciliasNotesApp: App {
         UIScrollView.appearance().delaysContentTouches = false
 
         // UI-test launch hook: when XCUIApplication launches us with the
-        // "-uiTesting" argument, blow away every persisted ceciliasnotes.* /
-        // app.user / app.onboarding key so each UI test starts from a
-        // clean state. We do *not* delete the SwiftData store here —
-        // that lives on disk and the tests that need a clean library
-        // build it inline. Resume is also force-disabled so a UI test
-        // run never lands inside an editor it didn't open itself.
+        // "-uiTesting" argument, wipe every persisted ceciliasnotes.* /
+        // app.user / app.onboarding key AND the on-disk SwiftData store
+        // so each UI test starts from a clean state. Resume is also
+        // force-disabled so a UI test run never lands inside an editor
+        // it didn't open itself.
         if ProcessInfo.processInfo.arguments.contains("-uiTesting") {
             Self.resetForUITesting()
         }
@@ -592,14 +591,18 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
     func applicationWillTerminate(_ application: UIApplication) {
         UserDefaults.standard.set(true, forKey: Self.shutdownKey)
         UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
-        // Same reasoning as `applicationDidEnterBackground` — catch
-        // the case where the user force-quits or iOS terminates the
-        // app without a background pass.
+        // Best-effort: stop any active recording so the .m4a is
+        // flushed and finalizeDictation runs before the process exits.
+        // This path is only reached when iOS terminates a foreground
+        // app (not force-quit, which gets no callback). Swift async
+        // tasks aren't guaranteed to finish, but the AVAudioFile
+        // flush and the SwiftData save are fast enough in practice.
         Task { @MainActor in
+            await RecordingSession.shared.stop()
             CeciliasNotesExporter.shared.exportAll()
         }
         #if DEBUG
-        dlog("[Launch] applicationWillTerminate → marked shutdown clean + queued mirror refresh")
+        dlog("[Launch] applicationWillTerminate → stopped recording + marked shutdown clean + queued mirror refresh")
         #endif
     }
 }

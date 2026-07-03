@@ -175,6 +175,12 @@ struct ImageElementsOverlayView: View {
         if selectedElementId == element.id {
             selectedElementId = nil
         }
+        PageElementUndo.registerDelete(
+            elementId: element.id,
+            kind: .image,
+            canvas: viewModel.canvasView,
+            actionName: "Delete Image"
+        )
         element.deletedAt = Date()
         element.updatedAt = Date()
         do {

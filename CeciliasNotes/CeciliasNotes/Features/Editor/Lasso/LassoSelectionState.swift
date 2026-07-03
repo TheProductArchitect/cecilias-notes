@@ -58,6 +58,15 @@ final class LassoSelectionState: ObservableObject {
     /// to draw the bbox + handles. Empty when nothing is selected.
     @Published private(set) var selectionBounds: CGRect = .zero
 
+    /// Monotonic mutation counter. Bumped by every `setSelection` /
+    /// `clear`. The editor-level "tap anywhere clears the selection"
+    /// gesture snapshots this when the tap ends and only clears if
+    /// it is unchanged one runloop tick later — i.e. the tap itself
+    /// didn't select something (cursor-tap on a shape) or already
+    /// clear (the chrome's delete badge). Without this, the global
+    /// clear races whatever the tap actually hit.
+    private(set) var selectionVersion: Int = 0
+
     // MARK: - Mode
 
     /// Active lasso gesture mode (freeform vs marquee). Persisted
@@ -97,6 +106,7 @@ final class LassoSelectionState: ObservableObject {
         self.partialStrokeSelections = partialStrokes
         self.pageId                  = pageId
         self.selectionBounds         = bounds
+        selectionVersion &+= 1
         LassoLiveDrag.shared.reset()
     }
 
@@ -115,6 +125,7 @@ final class LassoSelectionState: ObservableObject {
         partialStrokeSelections = [:]
         pageId                  = nil
         selectionBounds         = .zero
+        selectionVersion &+= 1
         LassoLiveDrag.shared.reset()
     }
 

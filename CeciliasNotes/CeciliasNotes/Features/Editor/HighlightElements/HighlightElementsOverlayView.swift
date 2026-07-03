@@ -181,6 +181,12 @@ struct HighlightElementsOverlayView: View {
         // Standalone: single soft-delete.
         guard let groupId = element.highlightContent?.groupId else {
             if selectedElementId == element.id { selectedElementId = nil }
+            PageElementUndo.registerDelete(
+                elementId: element.id,
+                kind: .highlight,
+                canvas: viewModel.canvasView,
+                actionName: "Delete Highlight"
+            )
             element.deletedAt = now
             element.updatedAt = now
             try? context.save()
@@ -194,10 +200,22 @@ struct HighlightElementsOverlayView: View {
             predicate: #Predicate { $0.groupId == groupId }
         )
         let contents = (try? context.fetch(descriptor)) ?? []
+        // One grouped undo step restores the whole multi-line
+        // highlight, matching how it was created.
+        let undoManager = viewModel.canvasView?.undoManager
+        undoManager?.beginUndoGrouping()
         for content in contents {
-            content.element?.deletedAt = now
-            content.element?.updatedAt = now
+            guard let el = content.element else { continue }
+            PageElementUndo.registerDelete(
+                elementId: el.id,
+                kind: .highlight,
+                canvas: viewModel.canvasView,
+                actionName: "Delete Highlight"
+            )
+            el.deletedAt = now
+            el.updatedAt = now
         }
+        undoManager?.endUndoGrouping()
         if let toClear = selectedElementId,
            contents.contains(where: { $0.element?.id == toClear }) {
             selectedElementId = nil

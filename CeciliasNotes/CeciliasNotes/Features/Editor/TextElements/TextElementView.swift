@@ -137,8 +137,12 @@ struct TextElementView: View {
             .onEnded { value in
                 let rawY = element.normalizedY * pageSize.height + value.translation.height
                 let clampedY = max(0, min(pageSize.height - 20, rawY))
-                element.normalizedY = clampedY / pageSize.height
-                element.updatedAt   = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Move Text"
+                ) {
+                    element.normalizedY = clampedY / pageSize.height
+                    element.updatedAt   = Date()
+                }
                 dragOffsetY = 0
             }
     }

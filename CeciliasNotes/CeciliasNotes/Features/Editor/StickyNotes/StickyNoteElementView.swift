@@ -418,9 +418,13 @@ struct StickyNoteElementView: View {
                 // Clamp so the card stays inside the page.
                 let maxX = 1 - element.normalizedWidth
                 let maxY = 1 - element.normalizedHeight
-                element.normalizedX = max(0, min(maxX, newX))
-                element.normalizedY = max(0, min(maxY, newY))
-                element.updatedAt   = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Move Sticky Note"
+                ) {
+                    element.normalizedX = max(0, min(maxX, newX))
+                    element.normalizedY = max(0, min(maxY, newY))
+                    element.updatedAt   = Date()
+                }
                 dragOffset = .zero
                 #if DEBUG
                 dlog("[StickyGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
@@ -437,9 +441,13 @@ struct StickyNoteElementView: View {
         let newY   = element.normalizedY + Double(dyNorm)
         let maxX   = 1 - element.normalizedWidth
         let maxY   = 1 - element.normalizedHeight
-        element.normalizedX = max(0, min(maxX, newX))
-        element.normalizedY = max(0, min(maxY, newY))
-        element.updatedAt   = Date()
+        LassoTransformUndo.withUndo(
+            elementId: element.id, actionName: "Move Sticky Note"
+        ) {
+            element.normalizedX = max(0, min(maxX, newX))
+            element.normalizedY = max(0, min(maxY, newY))
+            element.updatedAt   = Date()
+        }
     }
 
     private func resizeGesture(for corner: Corner) -> some Gesture {
@@ -465,11 +473,15 @@ struct StickyNoteElementView: View {
                 let normY = Double(new.minY)  / Double(pageSize.height)
                 let normW = Double(new.width)  / Double(pageSize.width)
                 let normH = Double(new.height) / Double(pageSize.height)
-                element.normalizedX      = max(0, min(1 - normW, normX))
-                element.normalizedY      = max(0, min(1 - normH, normY))
-                element.normalizedWidth  = max(0.01, min(1, normW))
-                element.normalizedHeight = max(0.01, min(1, normH))
-                element.updatedAt        = Date()
+                LassoTransformUndo.withUndo(
+                    elementId: element.id, actionName: "Resize Sticky Note"
+                ) {
+                    element.normalizedX      = max(0, min(1 - normW, normX))
+                    element.normalizedY      = max(0, min(1 - normH, normY))
+                    element.normalizedWidth  = max(0.01, min(1, normW))
+                    element.normalizedHeight = max(0.01, min(1, normH))
+                    element.updatedAt        = Date()
+                }
                 resizeDelta = nil
                 #if DEBUG
                 dlog("[StickyGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")

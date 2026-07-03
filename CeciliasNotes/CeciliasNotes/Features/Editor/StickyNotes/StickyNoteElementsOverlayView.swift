@@ -233,6 +233,12 @@ struct StickyNoteElementsOverlayView: View {
 
     private func delete(_ element: PageElement) {
         let id = element.id
+        PageElementUndo.registerDelete(
+            elementId: id,
+            kind: .stickyNote,
+            canvas: viewModel.canvasView,
+            actionName: "Delete Sticky Note"
+        )
         StickyNoteCommit.softDelete(elementId: id, context: modelContext)
         if selectedId == id { selectedId = nil }
         if editingId  == id { editingId  = nil }

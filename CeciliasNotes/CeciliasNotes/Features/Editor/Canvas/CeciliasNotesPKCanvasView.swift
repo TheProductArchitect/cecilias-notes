@@ -40,6 +40,21 @@ final class CeciliasNotesPKCanvasView: PKCanvasView {
     /// `false` for them. Nil closure → behave exactly like PKCanvasView.
     var shouldYieldTouchToOverlay: ((CGPoint, UIEvent?) -> Bool)?
 
+    /// Per-canvas undo scope. PKCanvasView registers its stroke undo
+    /// entries with `self.undoManager`, which by default resolves to
+    /// the shared UIWindow manager through the responder chain. The
+    /// continuous canvas mounts one PKCanvasView per warm-band page,
+    /// so with the shared manager every page's strokes interleaved on
+    /// ONE stack: tapping undo could silently revert a stroke on a
+    /// different (even off-screen) page, and unmounting a canvas on
+    /// scroll left dead entries behind — the undo button lit up but
+    /// tapping it did nothing. A private manager per canvas scopes
+    /// undo to the page the user is looking at; the toolbar reads
+    /// `viewModel.canvasView?.undoManager`, which always points at
+    /// the active page's canvas.
+    private let pageUndoManager = UndoManager()
+    override var undoManager: UndoManager? { pageUndoManager }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if shouldYieldTouchToOverlay?(point, event) == true {
             return nil

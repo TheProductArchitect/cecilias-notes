@@ -34,12 +34,23 @@ final class CeciliasNotesImporter {
 
     private init() {}
 
+    /// Tail of the import pipeline. Each `importFile` chains onto the
+    /// previous call's task so files persist strictly in arrival
+    /// order. Without this, two rapid pushes of the same notebook
+    /// (multipeer + iCloud, or two quick MCP writes) race their
+    /// detached parse tasks — a large stale file can finish parsing
+    /// AFTER a newer small one and clobber it on persist.
+    private var lastImportTask: Task<Void, Never>?
+
     /// Public entry point used by `CeciliasNotesFileWatcher` and any
     /// manual "Import" command. Reads/parses off-main, then hops back
     /// to persist. Logs and swallows errors — a single malformed
     /// file must never crash the importer loop.
     func importFile(at url: URL) {
-        Task.detached(priority: .utility) {
+        let previous = lastImportTask
+        lastImportTask = Task.detached(priority: .utility) {
+            // FIFO: wait for the prior import to fully persist first.
+            await previous?.value
             do {
                 let file = try CeciliasNotesParser.parse(url: url)
                 // Archive each page's rendered string to `Data` here on

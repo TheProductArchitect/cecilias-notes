@@ -204,6 +204,20 @@ struct LassoOverlayView: View {
         dlog("[Lasso] commit mode=\(selection.mode) points=\(lassoPoints.count) bbox=\(lassoBBox) pageSize=\(pageSize) fetched=\(elements.count) elements")
         #endif
 
+        // Highlights project through their parent PDF-page element —
+        // their own normalizedX/Y/W/H are all zeros (see
+        // `HighlightCommit`), so the generic rect path below would
+        // test a degenerate rect at the page origin: never selected
+        // by a normal lasso, spuriously selected by any lasso that
+        // grazes (0,0). Build the same contentId → parent map the
+        // highlight overlay uses for rendering.
+        var pdfParentsByContentId: [UUID: PageElement] = [:]
+        for element in elements where element.kind == .pdfPage {
+            if let content = element.pdfPageContent {
+                pdfParentsByContentId[content.id] = element
+            }
+        }
+
         for element in elements {
             switch element.kind {
             case .stroke:
@@ -250,8 +264,32 @@ struct LassoOverlayView: View {
                 }
                 for bbox in matchedBBoxes { unionBounds = unionBounds?.union(bbox) ?? bbox }
 
+            case .highlight:
+                // Render rect comes from HighlightContent projected
+                // through the parent PDF-page element — mirror the
+                // projection in `HighlightElementsOverlayView.renderRect`.
+                // Highlights are thin (underline / strikethrough), so
+                // use the forgiving multi-sample rule like shapes.
+                guard let content = element.highlightContent,
+                      let parent = pdfParentsByContentId[content.pdfPageContentId]
+                else { continue }
+                let rect = highlightRectInPagePoints(content: content, parent: parent)
+                let hit = LassoMath.shapeSubstantiallyInside(rect, in: path)
+                #if DEBUG
+                dlog("[Lasso]   highlight element \(element.id.uuidString.prefix(8)) rect=\(rect) contained=\(hit)")
+                #endif
+                if hit {
+                    elementIds.insert(element.id)
+                    unionBounds = unionBounds?.union(rect) ?? rect
+                }
+
             default:
                 let rect = elementRectInPagePoints(element)
+                // Degenerate rect (zero width or height) — nothing
+                // visible to select; the centre test on a zero rect
+                // at the origin would otherwise fire for any lasso
+                // touching the page's top-left corner.
+                guard rect.width > 0, rect.height > 0 else { continue }
                 let centre = CGPoint(x: rect.midX, y: rect.midY)
                 // Shape elements use a more forgiving rule — five
                 // sample points (corners + centre) and a 10% area
@@ -297,6 +335,25 @@ struct LassoOverlayView: View {
             y: element.normalizedY * pageSize.height,
             width:  element.normalizedWidth  * pageSize.width,
             height: element.normalizedHeight * pageSize.height
+        )
+    }
+
+    /// Same composition as `HighlightElementsOverlayView.renderRect`:
+    /// the highlight's rect is normalised to the PDF page, the parent
+    /// PDF element's rect is normalised to the canvas page.
+    private func highlightRectInPagePoints(
+        content: HighlightContent,
+        parent: PageElement
+    ) -> CGRect {
+        let normX = parent.normalizedX + content.rectOriginX * parent.normalizedWidth
+        let normY = parent.normalizedY + content.rectOriginY * parent.normalizedHeight
+        let normW = content.rectWidth  * parent.normalizedWidth
+        let normH = content.rectHeight * parent.normalizedHeight
+        return CGRect(
+            x: normX * pageSize.width,
+            y: normY * pageSize.height,
+            width:  normW * pageSize.width,
+            height: normH * pageSize.height
         )
     }
 
@@ -433,6 +490,7 @@ struct LassoOverlayView: View {
     private func selectionIsLocked() -> Bool {
         let ids = selection.selectedElementIds
         guard !ids.isEmpty, selection.partialStrokeSelections.isEmpty else { return false }
+        var allHighlights = true
         for id in ids {
             let descriptor = FetchDescriptor<PageElement>(
                 predicate: #Predicate<PageElement> { $0.id == id }
@@ -443,8 +501,15 @@ struct LassoOverlayView: View {
                el.normalizedHeight >= 0.999 {
                 return true
             }
+            if el.kind != .highlight { allHighlights = false }
         }
-        return false
+        // Highlights are anchored to the PDF text they annotate —
+        // their render position comes from HighlightContent projected
+        // through the parent PDF element, not from the PageElement
+        // rect the group ops mutate. Offering drag/resize/rotate on a
+        // highlight-only selection would preview a move the model
+        // can't commit. Locked chrome keeps delete + tap-to-clear.
+        return allHighlights
     }
 
     /// Restrict an arbitrary rect so the chrome cannot extend past
@@ -555,6 +620,7 @@ struct LassoOverlayView: View {
                     selection: selection,
                     delta: delta,
                     pageSize: pageSize,
+                    canvas: viewModel.canvasView,
                     context: modelContext
                 )
                 dragOffset = .zero
@@ -625,6 +691,7 @@ struct LassoOverlayView: View {
                     scaleY: scaleY,
                     pageSize: pageSize,
                     anchor: anchor,
+                    canvas: viewModel.canvasView,
                     context: modelContext
                 )
                 resizeTranslation = .zero
@@ -732,6 +799,7 @@ struct LassoOverlayView: View {
                     selection: selection,
                     angle: θ,
                     pageSize: pageSize,
+                    canvas: viewModel.canvasView,
                     context: modelContext
                 )
                 rotateAngle = 0

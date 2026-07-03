@@ -336,6 +336,12 @@ final class MediaInsertCoordinator: ObservableObject {
             dlog("[Image] save failed in MediaInsertCoordinator: \(error)")
             #endif
         }
+        PageElementUndo.registerCreate(
+            elementId: element.id,
+            kind: .image,
+            canvas: viewModel?.canvasView,
+            actionName: "Insert Image"
+        )
         NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 }

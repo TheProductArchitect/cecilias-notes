@@ -129,6 +129,12 @@ struct AudioElementsOverlayView: View {
         if selectedElementId == element.id {
             selectedElementId = nil
         }
+        PageElementUndo.registerDelete(
+            elementId: element.id,
+            kind: .audio,
+            canvas: viewModel.canvasView,
+            actionName: "Delete Audio"
+        )
         element.deletedAt = Date()
         element.updatedAt = Date()
         do {

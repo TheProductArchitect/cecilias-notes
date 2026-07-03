@@ -68,6 +68,17 @@ enum PageElementUndo {
     /// "the next undo/redo step is a soft-delete" — i.e. we're
     /// undoing a creation. After the toggle runs we re-register
     /// with the opposite intent so the next press flips back.
+    ///
+    /// The whole handler runs SYNCHRONOUSLY inside the undo
+    /// invocation. This matters for two reasons:
+    ///   • NSUndoManager routes a `registerUndo` call to the REDO
+    ///     stack only while `isUndoing` is true. The previous
+    ///     implementation deferred the re-registration into a
+    ///     `Task { @MainActor }`, which ran after the undo
+    ///     invocation ended — the mirror action landed back on the
+    ///     UNDO stack, so redo never lit up for element deletes.
+    ///   • The model mutation is visible (and the button-state
+    ///     poll accurate) the moment undo() returns.
     @MainActor
     private static func registerToggle(
         elementId: UUID,
@@ -77,8 +88,19 @@ enum PageElementUndo {
         actionName: String,
         anchor: AnyObject
     ) {
-        manager.registerUndo(withTarget: anchor) { [elementId, kind, willDelete, actionName] _ in
-            Task { @MainActor in
+        manager.registerUndo(withTarget: anchor) { [elementId, kind, willDelete, actionName] anchorRef in
+            MainActor.assumeIsolated {
+                // Re-register the opposite intent FIRST, while the
+                // manager is mid-undo/redo, so it lands on the
+                // correct mirror stack.
+                registerToggle(
+                    elementId: elementId,
+                    kind: kind,
+                    willDelete: !willDelete,
+                    manager: manager,
+                    actionName: actionName,
+                    anchor: anchorRef
+                )
                 let context = StorageService.shared.context
                 let desc = FetchDescriptor<PageElement>(
                     predicate: #Predicate { $0.id == elementId }
@@ -100,15 +122,6 @@ enum PageElementUndo {
                     #endif
                 }
                 postRefreshNotification(for: kind)
-                // Re-register the opposite intent for the next press.
-                registerToggle(
-                    elementId: elementId,
-                    kind: kind,
-                    willDelete: !willDelete,
-                    manager: manager,
-                    actionName: actionName,
-                    anchor: anchor
-                )
             }
         }
         manager.setActionName(actionName)
@@ -123,7 +136,15 @@ enum PageElementUndo {
             NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
         case .stickyNote:
             NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
-        default:
+        case .text:
+            NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+        case .image:
+            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        case .audio:
+            NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+        case .highlight:
+            NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
+        case .stroke, .pdfPage:
             break
         }
     }

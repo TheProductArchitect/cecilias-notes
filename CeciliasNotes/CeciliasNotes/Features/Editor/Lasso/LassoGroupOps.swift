@@ -34,10 +34,16 @@ enum LassoGroupOps {
         selection: LassoSelectionState,
         delta: CGSize,
         pageSize: CGSize,
+        canvas: PKCanvasView? = nil,
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
         guard delta != .zero, pageSize.width > 0, pageSize.height > 0 else { return }
+        let affectedIds = Array(selection.selectedElementIds)
+            + Array(selection.partialStrokeSelections.keys)
+        let beforeSnapshots = LassoTransformUndo.capture(
+            elementIds: affectedIds, context: context
+        )
 
         let dxNorm = delta.width  / pageSize.width
         let dyNorm = delta.height / pageSize.height
@@ -63,7 +69,8 @@ enum LassoGroupOps {
            let onlyId = selection.selectedElementIds.first,
            let element = fetch(onlyId, context: context),
            element.kind != .stroke,
-           element.kind != .pdfPage {
+           element.kind != .pdfPage,
+           element.kind != .highlight {
             let proposedY = element.normalizedY + dyNorm
             if proposedY < 0 || proposedY > 1 - element.normalizedHeight {
                 let proposedX = element.normalizedX + dxNorm
@@ -83,6 +90,7 @@ enum LassoGroupOps {
         }
 
         // Whole-element members (includes whole stroke elements).
+        var rewrittenStrokePageIds: Set<UUID> = []
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             switch element.kind {
@@ -93,6 +101,13 @@ enum LassoGroupOps {
                     transform: LassoMath.translation(dx: delta.width, dy: delta.height),
                     context: context
                 )
+                rewrittenStrokePageIds.insert(element.pageId)
+            case .highlight:
+                // Anchored to the PDF text they annotate — render
+                // position comes from HighlightContent projected
+                // through the parent PDF element, so mutating the
+                // PageElement rect would silently do nothing.
+                continue
             default:
                 // Clamp so the element stays fully within the page.
                 element.normalizedX = max(0, min(1 - element.normalizedWidth,  element.normalizedX + dxNorm))
@@ -109,8 +124,16 @@ enum LassoGroupOps {
                 transform: LassoMath.translation(dx: delta.width, dy: delta.height),
                 context: context
             )
+            rewrittenStrokePageIds.insert(element.pageId)
         }
         save(context)
+        postStrokeRewrite(pageIds: rewrittenStrokePageIds)
+        LassoTransformUndo.register(
+            before: beforeSnapshots,
+            after: LassoTransformUndo.capture(elementIds: affectedIds, context: context),
+            canvas: canvas,
+            actionName: "Move Selection"
+        )
 
         // Shift the cached bounding box too — caller already
         // composed the gesture delta; no need to re-run intersection.
@@ -136,6 +159,7 @@ enum LassoGroupOps {
                              y: selection.selectionBounds.midY)
         let strokeTransform = LassoMath.scale(sx: s, sy: s, around: anchor)
 
+        var rewrittenStrokePageIds: Set<UUID> = []
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             switch element.kind {
@@ -144,6 +168,9 @@ enum LassoGroupOps {
                     element: element, indices: nil,
                     transform: strokeTransform, context: context
                 )
+                rewrittenStrokePageIds.insert(element.pageId)
+            case .highlight:
+                continue    // PDF-anchored — see `translate`
             default:
                 scaleNonStrokeElement(element, anchor: anchor,
                                       scale: s, pageSize: pageSize)
@@ -155,8 +182,10 @@ enum LassoGroupOps {
                 element: element, indices: indices,
                 transform: strokeTransform, context: context
             )
+            rewrittenStrokePageIds.insert(element.pageId)
         }
         save(context)
+        postStrokeRewrite(pageIds: rewrittenStrokePageIds)
 
         // Recompute selection bounds around the same anchor.
         let oldBounds = selection.selectionBounds
@@ -179,11 +208,17 @@ enum LassoGroupOps {
         scaleY sy: CGFloat,
         pageSize: CGSize,
         anchor: CGPoint? = nil,
+        canvas: PKCanvasView? = nil,
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
         guard pageSize.width > 0, pageSize.height > 0 else { return }
         guard sx > 0, sy > 0, !(sx == 1 && sy == 1) else { return }
+        let affectedIds = Array(selection.selectedElementIds)
+            + Array(selection.partialStrokeSelections.keys)
+        let beforeSnapshots = LassoTransformUndo.capture(
+            elementIds: affectedIds, context: context
+        )
         // Default anchor (nil) keeps the legacy bbox-centre
         // behaviour so existing callers don't change semantics;
         // the lasso resize gesture now passes the OPPOSITE-corner
@@ -194,6 +229,7 @@ enum LassoGroupOps {
         )
         let strokeTransform = LassoMath.scale(sx: sx, sy: sy, around: anchor)
 
+        var rewrittenStrokePageIds: Set<UUID> = []
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             switch element.kind {
@@ -202,6 +238,9 @@ enum LassoGroupOps {
                     element: element, indices: nil,
                     transform: strokeTransform, context: context
                 )
+                rewrittenStrokePageIds.insert(element.pageId)
+            case .highlight:
+                continue    // PDF-anchored — see `translate`
             default:
                 scaleXYNonStrokeElement(element, anchor: anchor,
                                         scaleX: sx, scaleY: sy, pageSize: pageSize)
@@ -213,8 +252,16 @@ enum LassoGroupOps {
                 element: element, indices: indices,
                 transform: strokeTransform, context: context
             )
+            rewrittenStrokePageIds.insert(element.pageId)
         }
         save(context)
+        postStrokeRewrite(pageIds: rewrittenStrokePageIds)
+        LassoTransformUndo.register(
+            before: beforeSnapshots,
+            after: LassoTransformUndo.capture(elementIds: affectedIds, context: context),
+            canvas: canvas,
+            actionName: "Resize Selection"
+        )
 
         // Recompute bbox by pivoting every corner around `anchor`.
         // This generalises both the legacy bbox-centre anchor
@@ -250,14 +297,21 @@ enum LassoGroupOps {
         selection: LassoSelectionState,
         angle: CGFloat,
         pageSize: CGSize,
+        canvas: PKCanvasView? = nil,
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
         guard angle != 0, pageSize.width > 0, pageSize.height > 0 else { return }
+        let affectedIds = Array(selection.selectedElementIds)
+            + Array(selection.partialStrokeSelections.keys)
+        let beforeSnapshots = LassoTransformUndo.capture(
+            elementIds: affectedIds, context: context
+        )
         let anchor = CGPoint(x: selection.selectionBounds.midX,
                              y: selection.selectionBounds.midY)
         let strokeTransform = LassoMath.rotation(angle: angle, around: anchor)
 
+        var rewrittenStrokePageIds: Set<UUID> = []
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
             switch element.kind {
@@ -266,6 +320,9 @@ enum LassoGroupOps {
                     element: element, indices: nil,
                     transform: strokeTransform, context: context
                 )
+                rewrittenStrokePageIds.insert(element.pageId)
+            case .highlight:
+                continue    // PDF-anchored — see `translate`
             default:
                 rotateNonStrokeElement(element, anchor: anchor,
                                        angle: angle, pageSize: pageSize)
@@ -277,13 +334,50 @@ enum LassoGroupOps {
                 element: element, indices: indices,
                 transform: strokeTransform, context: context
             )
+            rewrittenStrokePageIds.insert(element.pageId)
         }
         save(context)
-        // Rotation doesn't change the bbox of a rotated set in a
-        // simple way; recompute from the elements' new bounds.
-        // For v1 we leave the bbox as-is — the next intersection
-        // run will refresh it. The user typically completes
-        // rotate → drag/delete, not rotate → resize.
+        postStrokeRewrite(pageIds: rewrittenStrokePageIds)
+        LassoTransformUndo.register(
+            before: beforeSnapshots,
+            after: LassoTransformUndo.capture(elementIds: affectedIds, context: context),
+            canvas: canvas,
+            actionName: "Rotate Selection"
+        )
+        // Recompute the chrome bbox from the rotated elements. The
+        // previous "leave it as-is" shortcut left the dashed box
+        // hovering over the PRE-rotate footprint while the content
+        // sat rotated elsewhere — the box looked detached and the
+        // handles grabbed empty space ("rotate feels weird").
+        var union: CGRect? = nil
+        for elementId in affectedIds {
+            guard let element = fetch(elementId, context: context) else { continue }
+            if element.kind == .stroke {
+                guard let content = element.strokeContent,
+                      let drawing = try? PKDrawing(data: content.strokeData),
+                      !drawing.strokes.isEmpty else { continue }
+                let indices = selection.partialStrokeSelections[elementId]
+                for (i, stroke) in drawing.strokes.enumerated() {
+                    if let indices, !indices.contains(i) { continue }
+                    let b = stroke.renderBounds
+                    union = union?.union(b) ?? b
+                }
+            } else {
+                // Axis-aligned bounds of the rotated element rect.
+                let w = element.normalizedWidth  * pageSize.width
+                let h = element.normalizedHeight * pageSize.height
+                let cx = (element.normalizedX + element.normalizedWidth  / 2) * pageSize.width
+                let cy = (element.normalizedY + element.normalizedHeight / 2) * pageSize.height
+                let cosA = abs(cos(element.rotation))
+                let sinA = abs(sin(element.rotation))
+                let aabbW = w * cosA + h * sinA
+                let aabbH = w * sinA + h * cosA
+                let b = CGRect(x: cx - aabbW / 2, y: cy - aabbH / 2,
+                               width: aabbW, height: aabbH)
+                union = union?.union(b) ?? b
+            }
+        }
+        if let union { selection.updateBounds(union) }
     }
 
     // MARK: - Delete
@@ -306,32 +400,31 @@ enum LassoGroupOps {
         context: ModelContext? = nil
     ) {
         let context = context ?? StorageService.shared.context
-        var deletedAnyShape = false
-        var deletedAnySticky = false
+        var deletedKinds: Set<ElementKind> = []
+        var rewrittenStrokePageIds: Set<UUID> = []
         for elementId in selection.selectedElementIds {
             guard let element = fetch(elementId, context: context) else { continue }
-            if element.kind == .shape { deletedAnyShape = true }
-            if element.kind == .stickyNote { deletedAnySticky = true }
-            // Register undo BEFORE the delete so the undo manager's
-            // anchor (the canvas view) is still alive and the
-            // element is still findable on the next ⌘Z.
-            switch element.kind {
-            case .shape:
+            deletedKinds.insert(element.kind)
+            if element.kind == .stroke {
+                // Whole stroke element soft-deleted — drop the stale
+                // cached drawing so the canvas reload below (and any
+                // later mount) doesn't resurrect the deleted strokes.
+                StrokeCache.shared.invalidate(pageId: element.pageId)
+                rewrittenStrokePageIds.insert(element.pageId)
+            } else {
+                // Register undo BEFORE the delete so the undo
+                // manager's anchor (the canvas view) is still alive
+                // and the element is still findable on the next ⌘Z.
+                // Every non-stroke kind is a plain deletedAt toggle;
+                // strokes stay out — PencilKit owns their undo and
+                // the soft-delete of the page singleton wipes the
+                // whole drawing, which a deletedAt flip restores.
                 PageElementUndo.registerDelete(
                     elementId: element.id,
-                    kind: .shape,
+                    kind: element.kind,
                     canvas: canvas,
-                    actionName: "Delete Shape"
+                    actionName: "Delete \(undoNoun(for: element.kind))"
                 )
-            case .stickyNote:
-                PageElementUndo.registerDelete(
-                    elementId: element.id,
-                    kind: .stickyNote,
-                    canvas: canvas,
-                    actionName: "Delete Sticky Note"
-                )
-            default:
-                break
             }
             element.deletedAt = Date()
             element.updatedAt = Date()
@@ -351,20 +444,54 @@ enum LassoGroupOps {
             // Cache write-through so the next canvas mount sees the
             // truncated drawing instead of re-decoding stale bytes.
             StrokeCache.shared.cache(newDrawing, forPage: element.pageId)
+            rewrittenStrokePageIds.insert(element.pageId)
         }
         save(context)
-        // Shape overlay listens on this notification to re-fetch its
-        // page-element list. Without it the shape stays painted on
-        // screen even though it's soft-deleted, and the lasso can't
-        // re-select what it visually still sees because the underlying
-        // record is filtered out by `deletedAt == nil`.
-        if deletedAnyShape {
-            NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        // Per-kind change notifications so each overlay re-fetches.
+        // Without them the element stays painted on screen even
+        // though it's soft-deleted, and the lasso can't re-select
+        // what it visually still sees because the underlying record
+        // is filtered out by `deletedAt == nil`.
+        for kind in deletedKinds {
+            postChangeNotification(for: kind)
         }
-        if deletedAnySticky {
-            NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
-        }
+        postStrokeRewrite(pageIds: rewrittenStrokePageIds)
         selection.clear()
+    }
+
+    /// Human noun for the undo action name shown in the Edit menu.
+    private static func undoNoun(for kind: ElementKind) -> String {
+        switch kind {
+        case .shape:      return "Shape"
+        case .stickyNote: return "Sticky Note"
+        case .text:       return "Text"
+        case .image:      return "Image"
+        case .audio:      return "Audio"
+        case .highlight:  return "Highlight"
+        case .pdfPage:    return "PDF Page"
+        case .stroke:     return "Strokes"
+        }
+    }
+
+    /// Per-kind overlay refresh signal — same names the overlays
+    /// already observe for their own mutation paths.
+    private static func postChangeNotification(for kind: ElementKind) {
+        switch kind {
+        case .shape:
+            NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        case .stickyNote:
+            NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
+        case .text:
+            NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+        case .image:
+            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        case .audio:
+            NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+        case .highlight:
+            NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
+        case .stroke, .pdfPage:
+            break
+        }
     }
 
     // MARK: - Stroke transform plumbing
@@ -478,6 +605,24 @@ enum LassoGroupOps {
         element.updatedAt   = Date()
     }
 
+    // MARK: - Stroke rewrite notification
+
+    /// Tell the mounted canvases that StrokeContent for these pages
+    /// was rewritten outside PencilKit. The live PKCanvasView renders
+    /// its own in-memory drawing — without this reload signal a lasso
+    /// move/delete of strokes stays invisible until the page host
+    /// remounts, and the stale canvas drawing clobbers the lasso edit
+    /// on the user's next drawn stroke (the debounced save writes
+    /// `canvas.drawing` wholesale).
+    private static func postStrokeRewrite(pageIds: Set<UUID>) {
+        guard !pageIds.isEmpty else { return }
+        NotificationCenter.default.post(
+            name: .strokeContentRewritten,
+            object: nil,
+            userInfo: ["pageIds": Array(pageIds)]
+        )
+    }
+
     // MARK: - Save helper
 
     /// Centralised save with error logging. The lasso group ops
@@ -506,4 +651,14 @@ enum LassoGroupOps {
         )
         return (try? context.fetch(descriptor))?.first
     }
+}
+
+// MARK: - Notification name
+
+extension Notification.Name {
+    /// Posted by `LassoGroupOps` after any operation rewrites
+    /// `StrokeContent.strokeData` (or soft-deletes a whole stroke
+    /// element) so the canvas coordinator can reload the affected
+    /// pages' PKCanvasViews. userInfo: `"pageIds": [UUID]`.
+    static let strokeContentRewritten = Notification.Name("strokeContentRewritten")
 }

@@ -178,7 +178,9 @@ final class EditorViewModel: ObservableObject {
     private var savedFlashTask: Task<Void, Never>?
 
     // MARK: Drawing accessor — set by CanvasContainerView coordinator after makeUIView
-    weak var canvasView: PKCanvasView?
+    weak var canvasView: PKCanvasView? {
+        didSet { ActivePageCanvas.current = canvasView }
+    }
 
     /// Transport struct for the normalised tap location the user
     /// wants the imported image centred on. Used as the `at:`
@@ -290,6 +292,12 @@ final class EditorViewModel: ObservableObject {
                 dlog("[Image] save failed on commitImportedImage: \(error)")
                 #endif
             }
+            PageElementUndo.registerCreate(
+                elementId: element.id,
+                kind: .image,
+                canvas: self.canvasView,
+                actionName: "Insert Image"
+            )
             NotificationCenter.default.post(
                 name: .mediaAttachmentsChanged, object: nil
             )
@@ -1959,10 +1967,22 @@ final class EditorViewModel: ObservableObject {
             notebookId: notebookId,
             fromPageId: fromPageId,
             pageSize: pageSize,
-            createNewPage: { [storage, notebook, currentPage] in
+            createNewPage: { [storage, notebook] in
+                // Append at notebook END (not after currentPage) so
+                // ContinuousCanvasView's `isPurelyAppended` fast-path
+                // mounts only one new host instead of tearing down
+                // and rebuilding all N. On a 15-page notebook the
+                // full rebuild on a mid-insert is ~80 synchronous
+                // mainContext fetches (15 pages × ~5 overlay views,
+                // each with a sync computed-property fetch in body)
+                // — wedges main long enough that the user perceives
+                // a hard freeze before the recording UI settles.
+                // Append-at-end sidesteps the entire rebuild storm.
+                // The user can still find the dictation page at the
+                // end of the notebook; we navigate there below.
                 try? storage.createPage(
                     in: notebook,
-                    after: currentPage.pageNumber,
+                    after: nil,
                     pageSize: notebook.pageSize,
                     backgroundTemplate: notebook.defaultTemplate
                 )

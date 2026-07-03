@@ -508,6 +508,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private nonisolated(unsafe) var capabilityObserver: NSObjectProtocol?
         private nonisolated(unsafe) var pixelEraserObserver: NSObjectProtocol?
         private nonisolated(unsafe) var imageHandoffObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var strokeRewriteObserver: NSObjectProtocol?
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
@@ -581,6 +582,16 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     )
                 }
             }
+            self.strokeRewriteObserver = NotificationCenter.default.addObserver(
+                forName: .strokeContentRewritten,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let pageIds = note.userInfo?["pageIds"] as? [UUID] else { return }
+                MainActor.assumeIsolated {
+                    self?.reloadCanvases(forPageIds: pageIds)
+                }
+            }
         }
 
         deinit {
@@ -591,6 +602,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(token)
             }
             if let token = imageHandoffObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
+            if let token = strokeRewriteObserver {
                 NotificationCenter.default.removeObserver(token)
             }
             // Detach the sticky-notes hosting controller from its
@@ -1542,6 +1556,36 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
+        /// Reload the mounted PKCanvasViews for pages whose
+        /// `StrokeContent` was rewritten outside PencilKit (lasso
+        /// move / scale / rotate / delete). Without this the live
+        /// canvas keeps rendering the pre-edit drawing, and its next
+        /// debounced save would clobber the lasso edit in the model.
+        /// Cache first (the lasso ops write through it), storage
+        /// fallback, empty drawing when the stroke element is gone
+        /// (whole-element delete).
+        func reloadCanvases(forPageIds pageIds: [UUID]) {
+            for pid in pageIds {
+                guard let i = hosts.firstIndex(where: { $0.pageId == pid }),
+                      let canvas = hosts[i].canvasView else { continue }
+                // Cancel any pending debounced save — it holds the
+                // stale pre-edit drawing.
+                hosts[i].saveTask?.cancel()
+                hosts[i].saveTask = nil
+                hosts[i].isDirty = false
+                if let cached = StrokeCache.shared.drawing(forPage: pid) {
+                    canvas.drawing = cached
+                } else if let page = page(for: pid),
+                          let data = StorageService.shared.strokeData(for: page),
+                          let drawing = try? PKDrawing(data: data) {
+                    canvas.drawing = drawing
+                    StrokeCache.shared.cache(drawing, forPage: pid)
+                } else {
+                    canvas.drawing = PKDrawing()
+                }
+            }
+        }
+
         // MARK: - UIScrollViewDelegate
 
         func viewForZooming(in scrollView: UIScrollView) -> UIView? { contentView }
@@ -1684,18 +1728,27 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let threshold: CGFloat = 44
             let inset   = scrollView.contentInset
             let offset  = scrollView.contentOffset
+            // contentSize is the UNSCALED base extent; multiply by
+            // zoomScale to get the actually-displayed size, which is
+            // what the scroll-range math needs.
+            let scale   = scrollView.zoomScale
 
             // Scrollable bounds for each axis (the resting offsets at
             // which an edge sits flush against the viewport).
             let minX = -inset.left
-            let maxX = scrollView.contentSize.width + inset.right - scrollView.bounds.width
+            let maxX = scrollView.contentSize.width * scale + inset.right - scrollView.bounds.width
             let minY = -inset.top
-            let maxY = scrollView.contentSize.height + inset.bottom - scrollView.bounds.height
+            let maxY = scrollView.contentSize.height * scale + inset.bottom - scrollView.bounds.height
 
             var target = offset
             if maxX > minX {
                 if abs(offset.x - minX) < threshold { target.x = minX }
                 else if abs(offset.x - maxX) < threshold { target.x = maxX }
+            } else if abs(offset.x - minX) < threshold {
+                // Content fits horizontally (page narrower than viewport
+                // after insets). Snap to the centred position so a
+                // slightly-drifted offset from zoom in/out is corrected.
+                target.x = minX
             }
             if maxY > minY {
                 if abs(offset.y - minY) < threshold { target.y = minY }

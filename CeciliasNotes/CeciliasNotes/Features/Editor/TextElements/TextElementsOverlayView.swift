@@ -465,6 +465,13 @@ struct TextElementsOverlayView: View {
             #endif
         }
 
+        PageElementUndo.registerCreate(
+            elementId: element.id,
+            kind: .text,
+            canvas: viewModel.canvasView,
+            actionName: "Create Text"
+        )
+
         // Force the next body() to re-fetch the elements list so
         // the new row appears immediately — without bumping, the
         // fetched array can lag a runloop.

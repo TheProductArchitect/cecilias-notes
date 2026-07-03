@@ -6,6 +6,58 @@ known-and-accepted.
 
 ---
 
+## Update — 2026-07-03 (stability + interaction-correctness pass)
+
+State after the July hardening sessions on `main`. Everything below
+is code-verified AND simulator-verified unless marked otherwise.
+
+### Tests
+- **Unit: 122 pass, 1 pre-existing fail** (`ShapeDetectionTests.
+  test_recogniseRectangle` — Vision returns nil on the iOS 26.4
+  simulator runtime; untouched code, tracked below).
+- **UI: 10/10 pass** on iPad Pro 13" (M5), iOS 26.4 — new end-to-end
+  suites for dictation, undo/redo, and lasso (select/delete/undo/redo
+  across strokes, text, shapes; move/resize/rotate with undo).
+
+### Fixed since the original audit
+- **Dictation freeze**: WAL checkpoint at launch + page append at
+  notebook end; end-to-end test guards the responsiveness budget.
+- **Undo/redo overhaul**: per-page undo scoping (was one window-wide
+  stack interleaving all pages, with dead entries after canvas
+  recycling); redo-stack registration fixed (mirror actions were
+  landing on the undo stack); every element kind now registers undo
+  for create, delete (lasso + direct), and move/resize/rotate
+  (lasso chrome + per-element handles).
+- **Lasso correctness**: highlights selectable (were never hit-
+  testable), stroke edits reload the live canvas (moves/deletes were
+  invisible and self-reverting), tap-clear race fixed (delete badge
+  and cursor-tap select both raced the global deselect gesture),
+  rotate recomputes the selection bounds (chrome no longer detaches).
+- **Recording data-loss paths**: adoptAudio failure surfaces an error
+  instead of silently discarding; `applicationWillTerminate` stops an
+  active recording; dirty-launch streak no longer contaminated by UI
+  test runs; deliberate local-only mode no longer shows the iCloud
+  failure banner.
+- **MCP import ordering**: imports serialized FIFO (out-of-order
+  clobber race). MCP contract now documented in `MCP_SPEC.md`
+  (source of truth going forward).
+
+### New known items (non-blocking, tracked)
+- `test_recogniseRectangle` regressed with the Xcode/iOS 26.4 runtime
+  update (was documented as "unimplemented"; circle + squiggle pass).
+- Finger shape-drag also scrolls the canvas (Pencil path is fixed;
+  finger-only users see displaced shapes). Real-device Pencil users
+  unaffected.
+- Highlighter tool's stroke-swap undo is one-shot (undo works, redo
+  of that specific action doesn't re-apply).
+- MCP/AI-written text is legacy `TextBlock` — renders and exports
+  correctly but not lasso-selectable until the V6 text migration.
+- New-notebook flow opens the customise sheet with title editing
+  active and lands in cursor mode — two taps of friction before
+  writing; product decision pending.
+
+---
+
 ## ✅ Code state
 
 ### Builds
