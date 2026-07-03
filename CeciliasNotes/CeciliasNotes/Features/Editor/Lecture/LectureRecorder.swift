@@ -129,7 +129,7 @@ final class LectureRecorder: ObservableObject {
     /// fires a tap, and the `.m4a` is a header-only stub.
     private var engineConfigObserver: NSObjectProtocol?
 
-    private static let tapBufferSize: AVAudioFrameCount = 4_096
+    nonisolated private static let tapBufferSize: AVAudioFrameCount = 4_096
 
     // MARK: - Public lifecycle
 
@@ -198,24 +198,38 @@ final class LectureRecorder: ObservableObject {
     func pause() {
         guard isRecording, !isPaused else { return }
         stopElapsedTimer()
-        engine?.pause()
+        // `engine.pause()` is Core Audio IPC — same main-thread wedge
+        // class as start/stop. Fire-and-forget off main; the UI state
+        // flips immediately either way.
+        if let eng = engine {
+            Task.detached(priority: .userInitiated) { [eng] in
+                eng.pause()
+            }
+        }
         Task { @MainActor in await self.endSpeechRecognition(commitFinal: true) }
         isPaused = true
     }
 
     func resume() {
-        guard isRecording, isPaused else { return }
-        do {
-            try engine?.start()
-            startElapsedTimer()
-            isPaused = false
-            Task { @MainActor in await self.startSpeechRecognition() }
-        } catch {
-            // Best-effort. If the engine fails to restart, stop the
-            // session entirely rather than leaving the UI in a half-
-            // paused state — the user can tap Lecture again to start
-            // fresh.
-            Task { _ = await stop() }
+        guard isRecording, isPaused, let eng = engine else { return }
+        // `engine.start()` blocks on Core Audio IPC — detach it and
+        // flip the UI state only once the engine actually restarted.
+        Task { [weak self, eng] in
+            let started = await Task.detached(priority: .userInitiated) { [eng] () -> Bool in
+                do { try eng.start(); return true } catch { return false }
+            }.value
+            guard let self else { return }
+            if started {
+                self.startElapsedTimer()
+                self.isPaused = false
+                await self.startSpeechRecognition()
+            } else {
+                // Best-effort. If the engine fails to restart, stop
+                // the session entirely rather than leaving the UI in
+                // a half-paused state — the user can tap Lecture
+                // again to start fresh.
+                _ = await self.stop()
+            }
         }
     }
 
@@ -233,23 +247,34 @@ final class LectureRecorder: ObservableObject {
             NotificationCenter.default.removeObserver(o)
             engineConfigObserver = nil
         }
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
+        // Tap removal, engine stop, and session deactivation are all
+        // blocking Core Audio IPC — the same wedge class as the
+        // config-change restart. Stop is the user's escape hatch
+        // when a session goes bad, so it must never wedge the main
+        // thread itself. Detach; `await` keeps the teardown ordering.
+        if let eng = engine {
+            await Task.detached(priority: .userInitiated) { [eng] in
+                eng.inputNode.removeTap(onBus: 0)
+                eng.stop()
+            }.value
+        }
         await endSpeechRecognition(commitFinal: true)
 
         await capture.setAudioFile(nil)
         engine = nil
 
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            #if DEBUG
-            dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
-            #endif
-        } catch {
-            #if DEBUG
-            dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
-            #endif
-        }
+        await Task.detached(priority: .userInitiated) {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                #if DEBUG
+                dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
+                #endif
+            } catch {
+                #if DEBUG
+                dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
+                #endif
+            }
+        }.value
 
         let url = outputURL ?? URL(fileURLWithPath: "lecture_\(recordId.uuidString).m4a")
         let duration = elapsedSeconds
@@ -299,7 +324,6 @@ final class LectureRecorder: ObservableObject {
 
     private func startEngineAndFile(at url: URL) async throws {
         let eng = AVAudioEngine()
-        let input = eng.inputNode
 
         // The persistent `.m4a` is created lazily by
         // `AudioCaptureActor` from the format of the first captured
@@ -310,8 +334,6 @@ final class LectureRecorder: ObservableObject {
         // now would reject every write once the tap re-installs
         // against the new rate.
         await capture.prepareFile(url: url)
-
-        installInputTap(on: input)
 
         // `prepare()` pre-allocates the engine's internal buffers
         // before `start()` — mirrors the AudioRecorder fix that
@@ -331,14 +353,16 @@ final class LectureRecorder: ObservableObject {
             }
         }
 
-        // `prepare()` + `start()` pre-allocate the engine's internal
-        // buffers and bring up the audio unit graph. Both calls block
-        // on Core Audio IPC and are the second-most-common dictation
-        // wedge phase (after `setActive(true)`) — see
-        // `Documentation/OPEN_ISSUES.md` §1. Off-load to a detached
-        // task so the main runloop stays responsive even when the
-        // graph configuration call stalls.
-        try await Task.detached(priority: .userInitiated) { [eng] in
+        // Tap install + `prepare()` + `start()` all block on Core
+        // Audio IPC (the tap path via `inputNode` / `inputFormat` /
+        // `installTap`, the start path via the audio unit graph) and
+        // are the second-most-common dictation wedge phase (after
+        // `setActive(true)`) — see `Documentation/OPEN_ISSUES.md` §1.
+        // Off-load the whole sequence to a detached task so the main
+        // runloop stays responsive even when a graph call stalls.
+        // Ordering preserved: tap installed before start.
+        try await Task.detached(priority: .userInitiated) { [weak self, eng] in
+            self?.installInputTap(on: eng.inputNode)
             eng.prepare()
             try eng.start()
         }.value
@@ -365,7 +389,14 @@ final class LectureRecorder: ObservableObject {
     /// time, so a tap surviving a 48 kHz → 24 kHz hardware shift
     /// keeps the stale rate and makes `engine.start()` fail with
     /// `-10868` (`kAudioUnitErr_FormatNotSupported`).
-    private func installInputTap(on input: AVAudioInputNode) {
+    ///
+    /// `nonisolated` — the config-change restart calls this from a
+    /// detached task because `inputFormat(forBus:)` + `installTap`
+    /// are blocking Core Audio IPC that must never run on the main
+    /// actor. The body only touches the `capture` actor reference
+    /// (a `let`), statics, and hops to the main actor explicitly
+    /// for the level publish.
+    nonisolated private func installInputTap(on input: AVAudioInputNode) {
         let captureActor = self.capture
         // Use the input node's *input* (hardware) format, NOT its
         // output format and NOT nil. When the speech AU forces a
@@ -451,19 +482,26 @@ final class LectureRecorder: ObservableObject {
               !isRestartingEngine
         else { return }
         isRestartingEngine = true
-        let input = eng.inputNode
-        input.removeTap(onBus: 0)
-        installInputTap(on: input)
-        // `prepare()` + `start()` block on Core Audio IPC — the exact
-        // wedge class the initial start off-loads to a detached task
-        // (see `startEngineAndFile`). Running them synchronously HERE
-        // froze the whole app on device: the speech recogniser's
-        // audio unit forces a graph reconfiguration moments after
-        // dictation starts, this handler ran on the main actor, and
-        // `eng.start()` never returned. Device log signature: the
-        // last line is "startDictation completed successfully", then
-        // silence — no "engine restarted", no "tap fired".
+        #if DEBUG
+        dlog("[Lecture] config change — engine stopped, restarting (detached)")
+        #endif
+        // EVERY Core Audio call here must stay off the main actor:
+        // not just `prepare()`/`start()` but also the `inputNode`
+        // getter, `removeTap`, `inputFormat(forBus:)`, and
+        // `installTap` — each is an IPC into mediaserverd that can
+        // block indefinitely while the graph is mid-reconfiguration.
+        // The first fix detached only prepare/start and the device
+        // still froze: the log showed engine start OK, then main
+        // wedged within 500 ms with no restart log — the tap
+        // remove/re-install running synchronously on the main actor
+        // was the remaining wedge. Device log signature: no
+        // "config change" line (there was no entry log), no
+        // "engine restarted", no "tap fired", and the 500 ms
+        // isRunning debug check never printed.
         Task.detached(priority: .userInitiated) { [weak self, eng] in
+            let input = eng.inputNode
+            input.removeTap(onBus: 0)
+            self?.installInputTap(on: input)
             eng.prepare()
             var started = false
             do {
@@ -1017,7 +1055,7 @@ final class LectureRecorder: ObservableObject {
         return url.lastPathComponent
     }
 
-    private static func rms(buffer: AVAudioPCMBuffer) -> Float {
+    nonisolated private static func rms(buffer: AVAudioPCMBuffer) -> Float {
         guard let data = buffer.floatChannelData?[0] else { return 0 }
         let frameCount = vDSP_Length(buffer.frameLength)
         guard frameCount > 0 else { return 0 }
@@ -1130,7 +1168,7 @@ private extension AVAudioPCMBuffer {
     /// that has no shared storage with the original. The engine is
     /// free to recycle the source the moment the tap callback
     /// returns, so anything we hand off to the actor must be a copy.
-    func deepCopy() -> AVAudioPCMBuffer? {
+    nonisolated func deepCopy() -> AVAudioPCMBuffer? {
         guard let copy = AVAudioPCMBuffer(
             pcmFormat: format,
             frameCapacity: frameCapacity
