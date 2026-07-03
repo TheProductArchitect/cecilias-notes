@@ -396,6 +396,12 @@ final class LectureRecorder: ObservableObject {
             #endif
             return
         }
+        // Level-meter throttle. The tap fires ~40–90×/s depending on
+        // buffer size; publishing `audioLevel` (a @Published var) on
+        // every buffer enqueues that many MainActor tasks per second
+        // and invalidates every SwiftUI view observing the recorder.
+        // The meter reads fine at ~10 Hz — publish every 5th buffer.
+        nonisolated(unsafe) var levelPublishCounter = 0
         input.installTap(
             onBus:      0,
             bufferSize: Self.tapBufferSize,
@@ -408,8 +414,11 @@ final class LectureRecorder: ObservableObject {
                 dlog("[Lecture] tap fired #\(tapFireCount), samples=\(frames)")
             }
             #endif
-            let rms = Self.rms(buffer: buffer)
-            Task { @MainActor [weak self] in self?.audioLevel = rms }
+            levelPublishCounter += 1
+            if levelPublishCounter % 5 == 0 {
+                let rms = Self.rms(buffer: buffer)
+                Task { @MainActor [weak self] in self?.audioLevel = rms }
+            }
 
             // Copy off the AVAudioEngine queue. The actor will own
             // this copy; the engine is free to recycle the original.
@@ -431,23 +440,56 @@ final class LectureRecorder: ObservableObject {
     /// re-install the tap against the current format before
     /// restarting; the persistent file is created lazily from the
     /// first buffer, so it follows the new format automatically.
+    /// Re-entrancy guard: config changes can arrive in bursts while
+    /// a restart is already in flight; a second synchronous restart
+    /// would race the first inside Core Audio.
+    private var isRestartingEngine = false
+
     private func restartEngineAfterConfigChange() {
         guard isRecording, !isPaused,
-              let eng = engine, !eng.isRunning
+              let eng = engine, !eng.isRunning,
+              !isRestartingEngine
         else { return }
+        isRestartingEngine = true
         let input = eng.inputNode
         input.removeTap(onBus: 0)
         installInputTap(on: input)
-        do {
+        // `prepare()` + `start()` block on Core Audio IPC — the exact
+        // wedge class the initial start off-loads to a detached task
+        // (see `startEngineAndFile`). Running them synchronously HERE
+        // froze the whole app on device: the speech recogniser's
+        // audio unit forces a graph reconfiguration moments after
+        // dictation starts, this handler ran on the main actor, and
+        // `eng.start()` never returned. Device log signature: the
+        // last line is "startDictation completed successfully", then
+        // silence — no "engine restarted", no "tap fired".
+        Task.detached(priority: .userInitiated) { [weak self, eng] in
             eng.prepare()
-            try eng.start()
-            #if DEBUG
-            dlog("[Lecture] engine restarted after configuration change, isRunning=\(eng.isRunning)")
-            #endif
-        } catch {
-            #if DEBUG
-            dlog("[Lecture] engine restart after config change FAILED: \(error)")
-            #endif
+            var started = false
+            do {
+                try eng.start()
+                started = true
+                #if DEBUG
+                dlog("[Lecture] engine restarted after configuration change, isRunning=\(eng.isRunning)")
+                #endif
+            } catch {
+                #if DEBUG
+                dlog("[Lecture] engine restart after config change FAILED: \(error)")
+                #endif
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isRestartingEngine = false
+                // A further config change may have stopped the engine
+                // again while this restart was in flight (its
+                // notification was swallowed by the re-entrancy
+                // guard). Re-run the check — but only after a
+                // SUCCESSFUL start, so a persistently-failing engine
+                // can't spin this into a hot retry loop.
+                if started, let live = self.engine, !live.isRunning {
+                    self.restartEngineAfterConfigChange()
+                }
+            }
         }
     }
 
