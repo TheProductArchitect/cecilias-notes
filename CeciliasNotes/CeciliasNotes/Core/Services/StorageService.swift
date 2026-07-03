@@ -989,7 +989,11 @@ extension StorageService {
             // the retired `Page.strokeData` field.
             cloneStrokeContent(fromPageId: page.id, toPage: newPage)
 
-            for block in (page.textBlocks ?? []) where !block.isDeleted {
+            // `deletedAt` check included because TextBlock's stored
+            // `isDeleted` collides with NSManagedObject's built-in
+            // and reads back false even after a soft delete — the
+            // flag alone resurrects soft-deleted blocks into copies.
+            for block in (page.textBlocks ?? []) where !block.isDeleted && block.deletedAt == nil {
                 let newBlock = TextBlock(
                     pageId: newPage.id, x: block.x, y: block.y,
                     width: block.width, height: block.height
@@ -1255,7 +1259,10 @@ extension StorageService {
         // direct copy.
         cloneStrokeContent(fromPageId: page.id, toPage: newPage)
 
-        for block in (page.textBlocks ?? []) where !block.isDeleted {
+        // Same `deletedAt` guard as `copyNotebook`'s block clone —
+        // the `isDeleted` flag alone never reads true at runtime
+        // (NSManagedObject name collision).
+        for block in (page.textBlocks ?? []) where !block.isDeleted && block.deletedAt == nil {
             let nb = TextBlock(
                 pageId: newPage.id, x: block.x, y: block.y,
                 width: block.width, height: block.height
@@ -1491,9 +1498,15 @@ extension StorageService {
             ))
         }
 
-        // Text blocks
+        // Text blocks. `deletedAt == nil` carries the real soft-
+        // delete state — the stored `isDeleted` attribute never
+        // gets written (NSManagedObject name collision swallows the
+        // setter), so the flag-only predicate returned soft-deleted
+        // blocks in search results.
         let blocks = (try? context.fetch(
-            FetchDescriptor<TextBlock>(predicate: #Predicate { $0.isDeleted == false })
+            FetchDescriptor<TextBlock>(predicate: #Predicate {
+                $0.isDeleted == false && $0.deletedAt == nil
+            })
         )) ?? []
         for block in blocks where block.content.lowercased().contains(q) {
             guard let nbId = pageToNotebook[block.pageId] else { continue }

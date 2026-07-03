@@ -65,8 +65,12 @@ struct TextBlockOverlayView: View {
     private var blocks: [TextBlock] {
         guard let page = viewModel.pages.first(where: { $0.id == pageId })
         else { return [] }
+        // `deletedAt == nil` is the reliable soft-delete check —
+        // TextBlock's stored `isDeleted` collides with
+        // NSManagedObject's built-in and always reads false, so the
+        // flag alone kept soft-deleted blocks rendering forever.
         return (page.textBlocks ?? [])
-            .filter { !$0.isDeleted && !$0.content.hasPrefix("lecture:") }
+            .filter { !$0.isDeleted && $0.deletedAt == nil && !$0.content.hasPrefix("lecture:") }
             .sorted { $0.zIndex < $1.zIndex }
     }
 

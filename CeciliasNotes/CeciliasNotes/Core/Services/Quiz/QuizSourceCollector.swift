@@ -152,8 +152,14 @@ enum QuizSourceCollector {
             }
         )
         let pages = (try? context.fetch(pageDescriptor)) ?? []
+        // Soft-delete check goes through `deletedAt`, not the
+        // `isDeleted` flag: TextBlock's stored `isDeleted` collides
+        // with NSManagedObject's built-in `isDeleted` at runtime, so
+        // property writes to it are silently dropped — reads always
+        // return false. `deletedAt` is set in lockstep by the
+        // soft-delete path and round-trips reliably.
         return pages.flatMap { page in
-            (page.textBlocks ?? []).filter { !$0.isDeleted }
+            (page.textBlocks ?? []).filter { !$0.isDeleted && $0.deletedAt == nil }
         }
     }
 

@@ -150,6 +150,77 @@ final class QuizEligibilityTests: XCTestCase {
         )
     }
 
+    /// Legacy V5 `TextBlock` rows count toward eligibility. This is
+    /// the storage layer every MCP/AI-imported notebook writes to
+    /// (until the V6 text migration), so without this fold-in an
+    /// agent-written notebook full of text reads as unquizzable.
+    func test_legacyTextBlocks_countTowardEligibility() throws {
+        let ctx = container.mainContext
+        let notebook = makeNotebook(in: ctx, title: "mcp import")
+        let page = makePage(in: ctx, notebook: notebook)
+        let block = TextBlock(pageId: page.id, x: 0.1, y: 0.1, width: 0.8, height: 0.2)
+        block.content = "Photosynthesis converts light energy into chemical energy stored in glucose."
+        block.page = page
+        ctx.insert(block)
+        try ctx.save()
+
+        let scope = QuizScope(
+            type: .notebook,
+            notebookIDs: [notebook.id],
+            includeTranscriptions: true
+        )
+        XCTAssertGreaterThan(
+            QuizSourceCollector.contentUnitCount(scope: scope, context: ctx), 0,
+            "Legacy TextBlock text must register as quiz source"
+        )
+        XCTAssertGreaterThan(
+            QuizSourceCollector.contentCharacterCount(scope: scope, context: ctx), 50
+        )
+        // Soft-deleted blocks must NOT count.
+        block.isDeleted = true
+        block.deletedAt = Date()
+        try ctx.save()
+        let flags = (page.textBlocks ?? []).map {
+            "isDeleted=\($0.isDeleted) deletedAt=\($0.deletedAt != nil)"
+        }
+        XCTAssertEqual(
+            QuizSourceCollector.contentUnitCount(scope: scope, context: ctx), 0,
+            "Soft-deleted TextBlock must not count as quiz source — blocks: \(flags)"
+        )
+    }
+
+    /// `contentCharacterCount` sums characters across every text
+    /// source — the builder's "enough context" gate reads this.
+    func test_characterCount_sumsAcrossSources() throws {
+        let ctx = container.mainContext
+        let notebook = makeNotebook(in: ctx, title: "char count")
+        let page = makePage(in: ctx, notebook: notebook)
+        let element = PageElement(
+            pageId: page.id, notebookId: notebook.id,
+            kind: .text,
+            normalizedX: 0.1, normalizedY: 0.1,
+            normalizedWidth: 0.5, normalizedHeight: 0.05,
+            zIndex: 1
+        )
+        element.textContent = TextContent(text: "abcde")     // 5 chars
+        ctx.insert(element)
+        let block = TextBlock(pageId: page.id, x: 0, y: 0, width: 1, height: 0.1)
+        block.content = "fghij"                              // 5 chars
+        block.page = page
+        ctx.insert(block)
+        try ctx.save()
+
+        let scope = QuizScope(
+            type: .notebook,
+            notebookIDs: [notebook.id],
+            includeTranscriptions: false
+        )
+        XCTAssertEqual(
+            QuizSourceCollector.contentCharacterCount(scope: scope, context: ctx),
+            10
+        )
+    }
+
     // MARK: - Fixtures
 
     private func makeNotebook(

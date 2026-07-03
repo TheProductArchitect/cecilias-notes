@@ -251,8 +251,11 @@ final class SearchIndexService {
 
         var freshPages: [String: PageIndexEntry] = [:]
         for page in pages {
+            // `deletedAt == nil` carries the real soft-delete state
+            // (the stored `isDeleted` never reads true — NSManagedObject
+            // name collision swallows the setter).
             let textBlockText = (page.textBlocks ?? [])
-                .filter { !$0.isDeleted }
+                .filter { !$0.isDeleted && $0.deletedAt == nil }
                 .map(\.content)
                 .joined(separator: "\n")
             // Step 5: audio transcripts come from V6

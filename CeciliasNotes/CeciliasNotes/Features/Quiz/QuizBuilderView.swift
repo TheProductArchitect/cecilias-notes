@@ -61,24 +61,52 @@ struct QuizBuilderView: View {
     /// ~200 chars is two-to-three sentences of real notes.
     private static let minQuizContextChars = 200
 
+    /// Eligibility per source row, keyed by notebook / subject UUID.
+    /// Computed once on appear and again when the transcription
+    /// toggle flips — each entry costs a full `collect()` fetch, so
+    /// computing inside the row builders re-ran N fetches on every
+    /// render of the sheet (visible lag past a dozen notebooks).
+    @State private var eligibilityCache: [UUID: QuizEligibility] = [:]
+
+    private func refreshEligibilityCache() {
+        var cache: [UUID: QuizEligibility] = [:]
+        for nb in notebooks {
+            cache[nb.id] = computeEligibility(for: nb)
+        }
+        for subject in subjects {
+            cache[subject.id] = computeEligibility(for: subject)
+        }
+        eligibilityCache = cache
+    }
+
+    /// One `collect()` pass → (chars, units) for the gate + preview.
+    private func sourceStats(scope: QuizScope) -> (chars: Int, units: Int) {
+        let docs = QuizSourceCollector.collect(
+            scope: scope, context: StorageService.shared.context
+        )
+        let units = docs.reduce(0) { $0 + $1.allText.count }
+        let chars = docs.reduce(0) { sum, doc in
+            sum + doc.allText.reduce(0) { $0 + $1.count }
+        }
+        return (chars, units)
+    }
+
     /// Pre-flights a notebook for quiz generation by checking how
     /// much typed / transcribed / PDF text is on hand. Hand-drawn
     /// ink is invisible to every tier (no OCR), so a notebook full
     /// of strokes only is `.ineligible` with a clear explanation —
     /// as is one with only a few words of text.
-    private func eligibility(for notebook: Notebook) -> QuizEligibility {
-        let context = StorageService.shared.context
+    private func computeEligibility(for notebook: Notebook) -> QuizEligibility {
         let scope = QuizScope(
             type: .notebook,
             notebookIDs: [notebook.id],
             includeTranscriptions: includeTranscriptions
         )
-        let chars = QuizSourceCollector.contentCharacterCount(scope: scope, context: context)
-        if chars >= Self.minQuizContextChars {
-            let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
-            return .eligible(unitCount: count)
+        let stats = sourceStats(scope: scope)
+        if stats.chars >= Self.minQuizContextChars {
+            return .eligible(unitCount: stats.units)
         }
-        if chars > 0 {
+        if stats.chars > 0 {
             return .ineligible(reason: """
                 this notebook has only a few words of readable text — \
                 not enough context to generate meaningful questions. \
@@ -96,24 +124,22 @@ struct QuizBuilderView: View {
 
     /// Pre-flights a subject by aggregating its notebooks. Ineligible
     /// when *every* notebook in the subject is empty of usable text.
-    private func eligibility(for subject: Subject) -> QuizEligibility {
-        let context = StorageService.shared.context
+    private func computeEligibility(for subject: Subject) -> QuizEligibility {
         let scope = QuizScope(
             type: .subject,
             subjectID: subject.id,
             subjectName: subject.name,
             includeTranscriptions: includeTranscriptions
         )
-        let chars = QuizSourceCollector.contentCharacterCount(scope: scope, context: context)
-        if chars >= Self.minQuizContextChars {
-            let count = QuizSourceCollector.contentUnitCount(scope: scope, context: context)
-            return .eligible(unitCount: count)
+        let stats = sourceStats(scope: scope)
+        if stats.chars >= Self.minQuizContextChars {
+            return .eligible(unitCount: stats.units)
         }
         let notebookCount = notebooks.filter { $0.subjectId == subject.id }.count
         if notebookCount == 0 {
             return .ineligible(reason: "this subject has no notebooks yet.")
         }
-        if chars > 0 {
+        if stats.chars > 0 {
             return .ineligible(reason: """
                 the notebooks in this subject have only a few words of \
                 readable text — not enough context to generate \
@@ -143,7 +169,13 @@ struct QuizBuilderView: View {
         .background(theme.surface.ignoresSafeArea())
         .presentationDetents([.fraction(0.82), .large])
         .presentationDragIndicator(.visible)
-        .onAppear(perform: seedDefaults)
+        .onAppear {
+            seedDefaults()
+            refreshEligibilityCache()
+        }
+        .onChange(of: includeTranscriptions) { _, _ in
+            refreshEligibilityCache()
+        }
     }
 
     // MARK: Title bar
@@ -207,7 +239,7 @@ struct QuizBuilderView: View {
     private func notebookList(multi: Bool) -> some View {
         VStack(spacing: 0) {
             ForEach(notebooks) { nb in
-                let elig = eligibility(for: nb)
+                let elig = eligibilityCache[nb.id] ?? computeEligibility(for: nb)
                 let isEligible = elig.isEligible
                 let isSelected = multi ? customSelected.contains(nb.id) : selectedNotebookID == nb.id
                 // Row split into a tappable name column (disabled
@@ -268,7 +300,7 @@ struct QuizBuilderView: View {
     private var subjectList: some View {
         VStack(spacing: 0) {
             ForEach(subjects) { subject in
-                let elig = eligibility(for: subject)
+                let elig = eligibilityCache[subject.id] ?? computeEligibility(for: subject)
                 let isEligible = elig.isEligible
                 let isSelected = selectedSubjectID == subject.id
                 HStack(spacing: 0) {

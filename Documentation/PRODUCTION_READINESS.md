@@ -42,6 +42,29 @@ is code-verified AND simulator-verified unless marked otherwise.
   clobber race). MCP contract now documented in `MCP_SPEC.md`
   (source of truth going forward).
 
+### Update — 2026-07-03 (evening: feedback round + latent-bug sweep)
+- **On-device dictation freeze fully resolved** (user-verified on
+  hardware): every Core Audio IPC call (tap install/remove, engine
+  prepare/start/stop/pause, session deactivate) now runs off the
+  main thread in LectureRecorder.
+- **Shape picker tap race** fixed (tool switch deferred past popover
+  dismissal); **freeform lasso** now draws a convex-hull outline
+  hugging the selected content; **page centering** no longer leans
+  left (palette-strip reservation is now proportional); **quiz
+  builder** greys out sources below a 200-char context threshold
+  and reads legacy TextBlock text (all MCP/AI-imported notebooks).
+- **Latent bug found by new tests**: `TextBlock.isDeleted` writes
+  are silently dropped at runtime (name collision with
+  NSManagedObject's built-in `isDeleted`) — the flag always reads
+  false. Every soft-delete read path (render overlay, search, page
+  duplication, quiz collector) now checks `deletedAt == nil`, which
+  round-trips reliably. Audit note: `Notebook.isDeleted` /
+  `Page.isDeleted` predicates are query-level and their delete
+  flows work in-app, but the same collision class deserves a look
+  if soft-delete anomalies ever surface there.
+- Tests now: **130 unit pass / 1 pre-existing fail**; lasso,
+  undo/redo, and dictation UI suites pass.
+
 ### New known items (non-blocking, tracked)
 - `test_recogniseRectangle` regressed with the Xcode/iOS 26.4 runtime
   update (was documented as "unimplemented"; circle + squiggle pass).
