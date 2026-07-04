@@ -7,82 +7,89 @@ matter-of-fact descriptions, no marketing-speak superlatives
 
 ## App Name (limit 30 chars)
 ```
-cecilia's notes
+Cecilia's Notes
 ```
 *14 / 30*
 
 ## Subtitle (limit 30 chars)
 ```
-notebook for ipad and iphone
+Notebook for iPad and iPhone
 ```
 *27 / 30*
 
 ## Promotional Text (limit 170 chars, updateable without app review)
 ```
-write with apple pencil, type when you can't. organise by subject. import a pdf, ask your notes a question, generate a quiz from what you wrote.
+Write with Apple Pencil, type, or let AI agents help you. Organise by subject. Import a PDF, ask your notes a question, generate a quiz.
 ```
-*149 / 170*
+*138 / 170*
 
 ## Description (limit 4000 chars)
 ```
-cecilia's notes is an editorial-feeling notebook app for ipad and iphone. write with apple pencil, type with the keyboard, drop in a pdf or a photo, record dictation. organise notebooks by subject, jump between them from a single library home.
+Cecilia's Notes is an editorial-feeling notebook app for iPad and iPhone. Write with Apple Pencil, type with the keyboard, drop in a PDF or a photo, record dictation. Organise notebooks by subject, jump between them from a single library home.
 
-— write & draw
-  • apple pencil with palm rejection, full pencilkit stack
-  • pen, pencil, brush, marker, highlighter, crayon
-  • shapes tool: rectangle, ellipse, triangle, line, arrow, star, heart, callout
-  • pixel + whole-stroke eraser
-  • write with finger on iphone (no pencil needed)
+Write & Draw
+  • Apple Pencil with palm rejection, full PencilKit stack
+  • Pen, pencil, brush, marker, highlighter, crayon
+  • Shapes tool: rectangle, ellipse, triangle, line, arrow, star, heart, callout
+  • Pixel + whole-stroke eraser
+  • Write with finger on iPhone (no Pencil needed)
 
-— organise
-  • every notebook lives in a subject
-  • drag-and-drop pages anywhere in the strip
-  • pin notebooks, tag them, search across them
-  • notebooks sync across your devices with icloud
+Organise
+  • Every notebook lives in a subject
+  • Drag-and-drop pages anywhere in the strip
+  • Pin notebooks, tag them, search across them
+  • Notebooks sync across your devices with iCloud
 
-— import
-  • pdfs render as notebook pages — extract page text for search and quiz
-  • photos and screenshots place at the tap location
-  • share extension drops files from any app into a "shareinbox" the library picks up
+Import
+  • PDFs render as notebook pages — extract page text for search and quiz
+  • Photos and screenshots place at the tap location
+  • Share extension drops files from any app into a "ShareInbox" the library picks up
 
-— audio & dictation
-  • record voice notes alongside written pages
-  • transcripts on supported devices
-  • apple intelligence post-processes long transcripts into headings + subheadings
+Audio & Dictation
+  • Record voice notes alongside written pages
+  • Transcripts on supported devices
+  • Apple Intelligence post-processes long transcripts into headings + subheadings
 
-— quizzes from your notes
-  • multiple choice, flashcards, short answer
-  • generation runs on-device via apple intelligence (when available) or mcp
-  • each quiz is renameable; the source notebook stays linked
+Quizzes From Your Notes
+  • Multiple choice, flashcards, short answer
+  • Generation runs on-device via Apple Intelligence (when available) or MCP
+  • Each quiz is renameable; the source notebook stays linked
 
-— ask your notes
-  • point a question at any notebook or subject
-  • answers cite the pages they came from
+Ask Your Notes
+  • Point a question at any notebook or subject
+  • Answers cite the pages they came from
 
-— made for ipad and iphone
-  • full editor on ipad with apple pencil
-  • compact layout on iphone with finger input
-  • icloud sync keeps both in step
-  • settings adapt to dark mode and your accent colour
+AI Agent Compatible (MCP)
+  • Let AI agents on your Mac read and write to your notebooks
+  • Seamless local network sync (Multipeer) for instant updates
+  • Works over iCloud Drive anywhere
+
+Made for iPad and iPhone
+  • Full editor on iPad with Apple Pencil
+  • Compact layout on iPhone with finger input
+  • iCloud sync keeps both in step
+  • Settings adapt to dark mode and your accent colour
 ```
 
 ## Keywords (limit 100 chars, comma-separated)
 ```
-notes,notebook,handwriting,apple pencil,pdf,quiz,dictation,study,ipad,journal,sketch,markdown,ai
+notes,notebook,handwriting,apple pencil,pdf,quiz,dictation,study,ipad,ai,mcp,agents
 ```
-*108 chars — trim before submitting. drop "markdown" or "journal" to fit*
+*87 / 100 chars*
 
 ## What's New (limit 4000 chars, per-release)
 For the iphone-support branch's first release:
 ```
-— full iphone support: compact masthead, drawer sidebar, single-column editor, finger-first writing
-— shapes tool: drag-to-create rectangles, ellipses, triangles, lines, arrows, stars, hearts, callouts
-— drag-and-drop reorder pages anywhere in the page strip
-— icloud sync banner explains exactly when sync is off (and opens settings)
-— quizzes can be renamed
-— pdfs preserve their original filename on import
-— images stay in their actual aspect ratio when selected
-— pencil pro double-tap and squeeze gestures
+• Full iPhone support: compact masthead, drawer sidebar, single-column editor, finger-first writing
+• Shapes tool: drag-to-create rectangles, ellipses, triangles, lines, arrows, stars, hearts, callouts
+• AI agent compatibility: agents on your Mac can read and write to your notebooks via MCP
+• Local network sync (Multipeer) for instant updates from agents on your network
+• Drag-and-drop reorder pages anywhere in the page strip
+• iCloud sync banner explains exactly when sync is off (and opens settings)
+• Quizzes can be renamed
+• PDFs preserve their original filename on import
+• Images stay in their actual aspect ratio when selected
+• Pencil Pro double-tap and squeeze gestures
 ```
 
 ## Category
