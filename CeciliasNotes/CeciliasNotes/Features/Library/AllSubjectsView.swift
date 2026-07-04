@@ -82,7 +82,7 @@ struct AllSubjectsView: View {
     private var list: some View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(active, id: \.id) { subject in
+                ForEach(active.dedupedById(), id: \.id) { subject in
                     SubjectFolderCardView(subject: subject, viewModel: viewModel)
                         .frame(maxWidth: .infinity)
                         .frame(width: cardWidth, height: 200)

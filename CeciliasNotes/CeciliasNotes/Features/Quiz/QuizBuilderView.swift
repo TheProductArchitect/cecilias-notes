@@ -238,7 +238,7 @@ struct QuizBuilderView: View {
 
     private func notebookList(multi: Bool) -> some View {
         VStack(spacing: 0) {
-            ForEach(notebooks) { nb in
+            ForEach(notebooks.dedupedById()) { nb in
                 let elig = eligibilityCache[nb.id] ?? computeEligibility(for: nb)
                 let isEligible = elig.isEligible
                 let isSelected = multi ? customSelected.contains(nb.id) : selectedNotebookID == nb.id
@@ -299,7 +299,7 @@ struct QuizBuilderView: View {
 
     private var subjectList: some View {
         VStack(spacing: 0) {
-            ForEach(subjects) { subject in
+            ForEach(subjects.dedupedById()) { subject in
                 let elig = eligibilityCache[subject.id] ?? computeEligibility(for: subject)
                 let isEligible = elig.isEligible
                 let isSelected = selectedSubjectID == subject.id

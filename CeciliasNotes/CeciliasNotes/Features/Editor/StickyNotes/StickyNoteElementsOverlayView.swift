@@ -72,7 +72,7 @@ struct StickyNoteElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .stickyNote }
+        return all.filter { $0.kind == .stickyNote }.dedupedById()
     }
 
     var body: some View {

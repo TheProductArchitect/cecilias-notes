@@ -61,7 +61,7 @@ struct AudioElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        let audioOnly = all.filter { $0.kind == .audio }
+        let audioOnly = all.filter { $0.kind == .audio }.dedupedById()
         #if DEBUG
         if !audioOnly.isEmpty {
             dlog("[AudioPlayback] overlay elements fetch — pageId=\(pid) totalElements=\(all.count) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")

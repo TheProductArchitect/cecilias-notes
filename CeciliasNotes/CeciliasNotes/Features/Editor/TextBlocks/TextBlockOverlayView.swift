@@ -72,6 +72,7 @@ struct TextBlockOverlayView: View {
         return (page.textBlocks ?? [])
             .filter { !$0.isDeleted && $0.deletedAt == nil && !$0.content.hasPrefix("lecture:") }
             .sorted { $0.zIndex < $1.zIndex }
+            .dedupedById()
     }
 
     var body: some View {

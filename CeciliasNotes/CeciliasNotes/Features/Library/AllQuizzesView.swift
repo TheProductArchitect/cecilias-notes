@@ -19,7 +19,7 @@ struct AllQuizzesView: View {
     private var quizzes: [Quiz]
 
     private var grouped: [(folder: String, quizzes: [Quiz])] {
-        let dict = Dictionary(grouping: quizzes) { quiz -> String in
+        let dict = Dictionary(grouping: quizzes.dedupedById()) { quiz -> String in
             quiz.folderName.trimmingCharacters(in: .whitespaces)
         }
         let folders = dict.keys.filter { !$0.isEmpty }.sorted { $0.lowercased() < $1.lowercased() }

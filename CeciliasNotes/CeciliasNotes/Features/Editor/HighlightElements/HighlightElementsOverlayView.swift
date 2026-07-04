@@ -65,7 +65,7 @@ struct HighlightElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .highlight }
+        return all.filter { $0.kind == .highlight }.dedupedById()
     }
 
     /// Quick lookup of every PDF page element on this page —

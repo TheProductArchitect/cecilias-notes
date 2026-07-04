@@ -41,7 +41,7 @@ struct ShapeElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .shape }
+        return all.filter { $0.kind == .shape }.dedupedById()
     }
 
     var body: some View {

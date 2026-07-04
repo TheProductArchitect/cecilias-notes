@@ -23,7 +23,7 @@ struct QuizListView: View {
     /// quiz under the default "ungrouped" bucket. Within each
     /// group quizzes keep the @Query sort (createdAt desc).
     private var grouped: [(folder: String, quizzes: [Quiz])] {
-        let dict = Dictionary(grouping: quizzes) { quiz -> String in
+        let dict = Dictionary(grouping: quizzes.dedupedById()) { quiz -> String in
             let trimmed = quiz.folderName.trimmingCharacters(in: .whitespaces)
             return trimmed.isEmpty ? "" : trimmed
         }

@@ -68,7 +68,7 @@ struct PDFPageElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .pdfPage }
+        return all.filter { $0.kind == .pdfPage }.dedupedById()
     }
 
     var body: some View {

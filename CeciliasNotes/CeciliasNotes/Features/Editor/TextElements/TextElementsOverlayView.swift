@@ -76,7 +76,7 @@ struct TextElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .text }
+        return all.filter { $0.kind == .text }.dedupedById()
     }
 
     /// True when the active tool grants text-element interaction.

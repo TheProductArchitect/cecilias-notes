@@ -70,7 +70,7 @@ struct ImageElementsOverlayView: View {
             sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .image }
+        return all.filter { $0.kind == .image }.dedupedById()
     }
 
     var body: some View {
