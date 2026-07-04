@@ -235,12 +235,16 @@ struct EditorToolbarView: View {
             // devices — it's pure navigation, not mutation.
             iconButton("rectangle.bottomthird.inset.filled") { onTogglePageStrip() }
 
-            // Mic + undo/redo are mutation surfaces — hidden
-            // entirely on read-only devices (iPhone) so the
-            // toolbar doesn't show controls that can't do
-            // anything. iPad behaviour is unchanged: the gate is a
-            // no-op view modifier when `canMutate == true`.
-            recordingMicButton.mutationOnly()
+            // Mic gates on `canRecord`, NOT `canMutate`: iPhone
+            // gained light editing (canMutate == true) but recording
+            // stays iPad-only — `RecordingSession.start*` guard on
+            // `canRecord` and silently refuse. The old
+            // `.mutationOnly()` gate dates from when iPhone was
+            // read-only; after the light-editing change it rendered
+            // a mic on iPhone that did nothing when tapped.
+            if DeviceCapabilities.canRecord {
+                recordingMicButton
+            }
             iconButton("arrow.uturn.backward", enabled: canUndo) { onUndo() }.mutationOnly()
             iconButton("arrow.uturn.forward",  enabled: canRedo) { onRedo() }.mutationOnly()
 
