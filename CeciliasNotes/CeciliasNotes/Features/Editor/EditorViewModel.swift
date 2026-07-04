@@ -395,6 +395,18 @@ final class EditorViewModel: ObservableObject {
         isCustomisePillVisible = false
     }
 
+    /// Mark this notebook as having had its customise moment without
+    /// showing the pill. Called when the "+ new notebook" flow
+    /// auto-opens the customise panel — the panel IS the customise
+    /// affordance, so the pill must not resurface when the user
+    /// closes it and re-enters the notebook within the 30-second
+    /// freshness window ("I can still see the customise pill after
+    /// first opening").
+    func markCustomisePillSatisfied() {
+        Self.pillShownIds.insert(notebook.id)
+        isCustomisePillVisible = false
+    }
+
     func openCustomisePanel() {
         isCustomisePillVisible = false
         isCustomisePanelOpen   = true

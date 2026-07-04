@@ -190,7 +190,14 @@ struct TextElementsOverlayView: View {
             // this, cursor-mode taps would land directly on the
             // UITextView and immediately start editing — skipping
             // the "select first" intermediate state.
-            if !isEditing {
+            // Once the element is SELECTED the catcher unmounts so
+            // the drag surface on `TextElementView` owns the touch
+            // stream — the catcher's 0.35s long-press recogniser
+            // was competing with the move gesture and made block
+            // drags feel sticky ("moving them as a block is not
+            // working properly"). Tap-to-edit while selected is
+            // handled by `TextElementView` itself.
+            if !isEditing && !isSelected {
                 // The renderer ignores the element's stored
                 // `normalizedX` / `normalizedWidth` for text and
                 // always lays out at `pageMargin × fullContentWidth`.
@@ -276,12 +283,56 @@ struct TextElementsOverlayView: View {
             ? elementOriginY - gap - pickerHeight / 2
             : (element.normalizedY + element.normalizedHeight) * pageSize.height + gap + pickerHeight / 2
 
-        TextSizePickerView(size: Binding(
-            get: { content.size },
-            set: { content.size = $0 }
-        ))
+        HStack(spacing: 8) {
+            TextSizePickerView(size: Binding(
+                get: { content.size },
+                set: { content.size = $0 }
+            ))
+            // Delete-as-element. Text blocks previously had no
+            // per-element delete affordance — the only removal
+            // paths were the lasso chrome and clearing every
+            // character. Same soft-delete + undo registration the
+            // other element kinds use.
+            Button {
+                softDelete(element: element)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(UIColor.systemRed))
+                    .frame(width: 32, height: 32)
+                    .background(
+                        Circle().fill(Color(UIColor.systemBackground).opacity(0.95))
+                    )
+                    .overlay(
+                        Circle().strokeBorder(Color(UIColor.separator), lineWidth: 0.5)
+                    )
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete text block")
+        }
         .frame(height: pickerHeight)
         .position(x: elementCenterX, y: y)
+    }
+
+    /// Soft-delete a text element with undo registration — mirrors
+    /// the direct-delete paths on the image / audio / sticky
+    /// overlays.
+    private func softDelete(element: PageElement) {
+        PageElementUndo.registerDelete(
+            elementId: element.id,
+            kind: .text,
+            canvas: viewModel.canvasView,
+            actionName: "Delete Text"
+        )
+        let now = Date()
+        element.deletedAt = now
+        element.updatedAt = now
+        try? modelContext.save()
+        if selectedId == element.id { selectedId = nil }
+        if editingId  == element.id { editingId  = nil }
+        refreshTick &+= 1
+        NotificationCenter.default.post(name: .textElementsChanged, object: nil)
     }
 
     // MARK: - Selection / editing bindings

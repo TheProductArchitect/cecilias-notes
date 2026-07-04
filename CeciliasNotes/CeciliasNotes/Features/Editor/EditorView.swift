@@ -701,19 +701,26 @@ struct EditorView: View {
         // .onChange handlers translate flag flips into presenter
         // calls and the `onDidDismiss` callback resets the flag on
         // swipe-dismiss.
-        .onChange(of: viewModel.activeMediaSource) { _, newValue in
-            guard let source = newValue else { return }
-            ModalPresenter.shared.present(.sheet(
-                id: "editor.mediaSource.\(source)",
-                onDidDismiss: {
-                    // Sheet dismissal can land mid-view-update; defer
-                    // the @Published clear to avoid AttributeGraph
-                    // cycles.
+        // Files / camera / scan pickers present LOCALLY off
+        // EditorView — same fix the cover picker got. The previous
+        // `ModalPresenter` route attached its sheet at the
+        // LibraryView level BEHIND the editor's `.fullScreenCover`,
+        // so on device the picker only surfaced after the user
+        // dismissed back to the library ("insert media options only
+        // open after coming out of the notebook").
+        .sheet(item: Binding(
+            get: { viewModel.activeMediaSource },
+            set: { newValue in
+                // Swipe-dismiss lands mid-view-update; defer the
+                // @Published clear to avoid AttributeGraph cycles.
+                if newValue == nil {
                     Task { @MainActor in viewModel.activeMediaSource = nil }
+                } else {
+                    viewModel.activeMediaSource = newValue
                 }
-            ) {
-                mediaPickerSheet(for: source)
-            })
+            }
+        )) { source in
+            mediaPickerSheet(for: source)
         }
         // The image-attachment import picker is presented from
         // `LibraryViewModel` via the `.imageImportRequested` /
@@ -721,18 +728,17 @@ struct EditorView: View {
         // `ImageImportNotifications.swift`. It deliberately bypasses
         // the editor entirely so the editor's cover doesn't share a
         // presentation lineage with the picker.
-        .onChange(of: viewModel.isShowingAudioFilePicker) { _, newValue in
-            guard newValue else { return }
-            ModalPresenter.shared.present(.sheet(
-                id: "editor.audioFilePicker",
-                onDidDismiss: {
+        .sheet(isPresented: Binding(
+            get: { viewModel.isShowingAudioFilePicker },
+            set: { newValue in
+                if !newValue {
                     Task { @MainActor in viewModel.isShowingAudioFilePicker = false }
                 }
-            ) {
-                AudioFilePicker(viewModel: viewModel) {
-                    ModalPresenter.shared.dismiss()
-                }
-            })
+            }
+        )) {
+            AudioFilePicker(viewModel: viewModel) {
+                Task { @MainActor in viewModel.isShowingAudioFilePicker = false }
+            }
         }
         // Cover picker — local `.sheet` (NOT `ModalPresenter`) so it
         // presents on top of the editor immediately. The previous
@@ -798,6 +804,12 @@ struct EditorView: View {
                 // via the one-shot registry so re-opening doesn't repeat.
                 if NewNotebookCustomiseTrigger.consume(viewModel.notebook.id) {
                     viewModel.pendingCustomiseNameFocus = true
+                    // The auto-opened panel IS the customise moment —
+                    // mark the pill satisfied so it can't resurface
+                    // when the user closes the panel and this
+                    // notebook re-appears within the 30s freshness
+                    // window.
+                    viewModel.markCustomisePillSatisfied()
                     withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                         viewModel.isCustomisePanelOpen = true
                     }

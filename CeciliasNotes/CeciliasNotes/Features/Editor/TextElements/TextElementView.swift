@@ -81,12 +81,17 @@ struct TextElementView: View {
     private var width: CGFloat {
         max(40, pageSize.width - 2 * Self.pageMargin)
     }
-    /// Visual height — measured from the attributed string so the box
-    /// hugs the actual last line of content (no extra empty space at
-    /// the bottom). Clamped at the page boundary so a long block
-    /// can't extend past the page; Pass 3 will split overflow onto a
-    /// new page.
-    private var height: CGFloat {
+    /// Cached content measurement (padded, unclamped). Text layout
+    /// via `boundingRect` is the expensive part of this view's body
+    /// — recomputing it on EVERY body evaluation made drags visibly
+    /// stutter, because each drag frame changes `dragOffsetY` and
+    /// re-runs body. The measurement only actually changes when the
+    /// attributed text changes, so it's cached here and refreshed
+    /// from `onChange(of: attributed)`; the per-frame `height` read
+    /// is then a cheap clamp.
+    @State private var measuredContentHeight: CGFloat = 24
+
+    private func remeasureContentHeight() {
         let cw = width
         let measured: CGFloat
         if attributed.length == 0 {
@@ -115,9 +120,15 @@ struct TextElementView: View {
         // line so the selection box always read as "much bigger
         // than the text." 2pt is enough for the caret without
         // creating that perception.
-        let padded = measured + 2
+        measuredContentHeight = measured + 2
+    }
+
+    /// Visual height — cached measurement clamped at the page
+    /// boundary so a long block can't extend past the page; Pass 3
+    /// will split overflow onto a new page.
+    private var height: CGFloat {
         let maxH = pageSize.height - originY
-        return max(24, min(padded, maxH))
+        return max(24, min(measuredContentHeight, maxH))
     }
     private var originY: CGFloat {
         let raw = element.normalizedY * pageSize.height + dragOffsetY + lassoDragOffsetY
@@ -174,12 +185,23 @@ struct TextElementView: View {
         }
         .frame(width: width, height: height, alignment: .topLeading)
         .contentShape(Rectangle())
+        // Tap while selected (not editing) enters edit mode. The
+        // overlay's tap catcher unmounts once the element is
+        // selected — it competed with the move gesture — so the
+        // second-tap-to-edit affordance lives here now.
+        .onTapGesture {
+            if isSelected && !isEditing { isEditing = true }
+        }
         .gesture(isSelected && !isEditing ? moveGesture : nil)
         .position(x: origin.x + width / 2, y: origin.y + height / 2)
         .rotationEffect(.radians(element.rotation))
         .lassoRotationPreview(elementId: element.id)
-        .onAppear { seedIfNeeded() }
+        .onAppear {
+            seedIfNeeded()
+            remeasureContentHeight()
+        }
         .onChange(of: attributed) { _, newValue in
+            remeasureContentHeight()
             persist(newValue)
         }
         .onChange(of: content.text) { _, _ in

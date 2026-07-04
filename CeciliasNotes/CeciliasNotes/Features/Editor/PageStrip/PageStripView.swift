@@ -342,47 +342,65 @@ private struct AddPageTemplatePicker: View {
     private let thumbSize = CGSize(width: 64, height: 84)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // Category rows scroll VERTICALLY inside a bounded height;
+        // the "set as default" toggle is pinned OUTSIDE the scroll
+        // so it's always visible. The previous fixed VStack grew
+        // taller than the popover with every template category
+        // added, iOS clipped the overflow, and the toggle vanished
+        // below the fold with no way to scroll to it ("the pop up
+        // is rigid, can't scroll, and I don't see the option to
+        // set default").
+        VStack(alignment: .leading, spacing: 14) {
             Text("pick a template for the new page")
                 .font(.system(size: 11, weight: .regular).italic())
                 .foregroundStyle(theme.recessiveQuaternary)
 
-            ForEach(TemplateCategory.allCases, id: \.self) { category in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(category.displayName)
-                        .font(.system(size: 9, weight: .regular).italic())
-                        .foregroundStyle(theme.recessiveQuaternary)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(PageTemplate.allCases.filter { $0.category == category },
-                                    id: \.self) { template in
-                                Button {
-                                    onPick(template, makeDefaultToggle)
-                                } label: {
-                                    VStack(spacing: 4) {
-                                        TemplateThumbView(
-                                            template: template,
-                                            size: thumbSize
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 4)
-                                                .strokeBorder(
-                                                    template == currentDefault ? theme.accent : .clear,
-                                                    lineWidth: template == currentDefault ? 1.5 : 0
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(TemplateCategory.allCases, id: \.self) { category in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(category.displayName)
+                                .font(.system(size: 9, weight: .regular).italic())
+                                .foregroundStyle(theme.recessiveQuaternary)
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(PageTemplate.allCases.filter { $0.category == category },
+                                            id: \.self) { template in
+                                        Button {
+                                            onPick(template, makeDefaultToggle)
+                                        } label: {
+                                            VStack(spacing: 4) {
+                                                TemplateThumbView(
+                                                    template: template,
+                                                    size: thumbSize
                                                 )
-                                        )
-                                        Text(template.displayName.lowercased())
-                                            .font(.system(size: 9, weight: .regular))
-                                            .foregroundStyle(theme.foregroundMuted)
-                                            .lineLimit(1)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 4)
+                                                        .strokeBorder(
+                                                            template == currentDefault ? theme.accent : .clear,
+                                                            lineWidth: template == currentDefault ? 1.5 : 0
+                                                        )
+                                                )
+                                                Text(template.displayName.lowercased())
+                                                    .font(.system(size: 9, weight: .regular))
+                                                    .foregroundStyle(theme.foregroundMuted)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
-                                .buttonStyle(.plain)
+                                // Keep thumbnails clear of the
+                                // vertical scroll indicator.
+                                .padding(.trailing, 4)
                             }
                         }
                     }
                 }
             }
+            .frame(maxHeight: 340)
+
+            CeciliasNotesDivider()
 
             Toggle(isOn: $makeDefaultToggle) {
                 Text("also set as default for future pages in this notebook")
@@ -391,7 +409,6 @@ private struct AddPageTemplatePicker: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .tint(theme.accent)
-            .padding(.top, 6)
         }
         .padding(18)
         .frame(width: 440)

@@ -1201,11 +1201,50 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // MARK: Canvas membership (lazy mount/unmount)
 
+        /// True while the user's finger is down or a flick is
+        /// decelerating. During that window `updateCanvasMembership`
+        /// runs in a lightweight mode: it mounts only pages entering
+        /// the actually-VISIBLE viewport (a canvas the user can see
+        /// must exist) and defers warm-band prefetch mounts AND all
+        /// unmounts to scroll-rest. Mounting is the expensive step —
+        /// PKCanvasView alloc + PKDrawing decode on the main thread
+        /// — and running it mid-scroll was the recurring "tiny lag
+        /// while resuming smooth scroll" hitch: every page crossing
+        /// the padded band cost a frame spike. The full band pass
+        /// re-runs from the didEnd callbacks.
+        private(set) var isActivelyScrolling = false
+
+        func setActivelyScrolling(_ active: Bool) {
+            guard isActivelyScrolling != active else { return }
+            isActivelyScrolling = active
+            if !active {
+                updateCanvasMembership()
+                // The throttle may have swallowed the last few
+                // scroll ticks — publish the final resting viewport
+                // so the minimap doesn't stop a hair off-position.
+                if let scrollView {
+                    lastViewportPost = CACurrentMediaTime()
+                    NotificationCenter.default.post(
+                        name: .ceciliasNotesCanvasViewportDidChange,
+                        object: nil,
+                        userInfo: [
+                            "offset": scrollView.contentOffset,
+                            "zoom":   scrollView.zoomScale,
+                        ]
+                    )
+                }
+            }
+        }
+
         func updateCanvasMembership(force: Bool = false) {
             guard let scrollView, let contentView else { return }
             let viewportTop    = scrollView.contentOffset.y
             let viewportBottom = viewportTop + scrollView.bounds.height
-            let pad = scrollView.bounds.height * warmBandPaddingFactor
+            // Mid-scroll: no prefetch padding — only what the user
+            // can see mounts. At rest: full warm band.
+            let pad = isActivelyScrolling
+                ? 0
+                : scrollView.bounds.height * warmBandPaddingFactor
             let warmTop    = viewportTop - pad
             let warmBottom = viewportBottom + pad
 
@@ -1222,7 +1261,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 let isInBand = scaled.maxY >= warmTop && scaled.minY <= warmBottom
                 if isInBand && hosts[i].canvasView == nil {
                     mountCanvas(at: i, in: contentView)
-                } else if !isInBand && hosts[i].canvasView != nil && !force {
+                } else if !isInBand && hosts[i].canvasView != nil && !force
+                            && !isActivelyScrolling {
+                    // Unmount churn deferred to scroll-rest — a page
+                    // leaving the zero-pad "band" mid-scroll is often
+                    // still inside the real warm band and would be
+                    // remounted seconds later.
                     unmountCanvas(at: i)
                 }
             }
@@ -1667,11 +1711,19 @@ struct ContinuousCanvasView: UIViewRepresentable {
             updateCanvasMembership()
         }
 
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            setActivelyScrolling(true)
+        }
+
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-            if !decelerate { snapToEdgesIfClose(scrollView) }
+            if !decelerate {
+                setActivelyScrolling(false)
+                snapToEdgesIfClose(scrollView)
+            }
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            setActivelyScrolling(false)
             snapToEdgesIfClose(scrollView)
         }
 
@@ -1770,15 +1822,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
+        /// Last time the viewport notification was posted — the
+        /// minimap (its only consumer) throttles to ~15fps anyway,
+        /// so posting on every 120Hz scroll tick just burned main-
+        /// thread time on dictionary allocs + delivery.
+        private var lastViewportPost: CFTimeInterval = 0
+
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            NotificationCenter.default.post(
-                name: .ceciliasNotesCanvasViewportDidChange,
-                object: nil,
-                userInfo: [
-                    "offset": scrollView.contentOffset,
-                    "zoom":   scrollView.zoomScale,
-                ]
-            )
+            let now = CACurrentMediaTime()
+            if now - lastViewportPost > (1.0 / 30.0) {
+                lastViewportPost = now
+                NotificationCenter.default.post(
+                    name: .ceciliasNotesCanvasViewportDidChange,
+                    object: nil,
+                    userInfo: [
+                        "offset": scrollView.contentOffset,
+                        "zoom":   scrollView.zoomScale,
+                    ]
+                )
+            }
             updateCanvasMembership()
             updateActivePageFromScroll()
         }
