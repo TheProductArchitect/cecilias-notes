@@ -11,10 +11,10 @@ import XCTest
 ///     persists;
 ///   • NO drawing surface: the floating tool palette must not
 ///     mount (its drag handle is the stable a11y anchor);
-///   • NO recording: the toolbar mic must not render (it gates on
-///     `canRecord`, which is false on phones — regression guard
-///     for the stale `.mutationOnly()` gate that showed a dead
-///     mic after light editing was enabled).
+///   • recording IS available (2026-07: `canRecord == true` on
+///     every device so phone-recorded notes sync to the iPad):
+///     the toolbar mic renders and its popover offers both
+///     Voice note and Dictation.
 ///
 /// The test skips itself on iPad so it can ride in the shared
 /// bundle without constraining which destination runs the suite.
@@ -100,17 +100,28 @@ final class PhoneUITests: XCTestCase {
                       "Phone editor should open with its toolbar")
         dismissCustomisePanelIfPresent(in: app)
 
-        // Capability contract: no tool palette, no mic.
+        // Capability contract: no tool palette (canDraw == false),
+        // but recording IS available (canRecord == true everywhere
+        // since 2026-07) — the mic renders and offers both modes.
         XCTAssertFalse(app.otherElements["Drag handle"].exists
                         && app.otherElements["Drag handle"].isHittable,
                        "Tool palette must not mount on iPhone (canDraw == false)")
-        XCTAssertFalse(app.buttons["mic"].exists,
-                       "Toolbar mic must not render on iPhone (canRecord == false)")
+        let window = app.windows.firstMatch
+        let mic = app.buttons["mic"].firstMatch
+        XCTAssertTrue(mic.waitForExistence(timeout: 5),
+                      "Toolbar mic should render on iPhone (canRecord == true)")
+        mic.tap()
+        XCTAssertTrue(app.staticTexts["Voice note"].waitForExistence(timeout: 5),
+                      "Recording popover should offer Voice note on iPhone")
+        XCTAssertTrue(app.staticTexts["Dictation"].exists,
+                      "Recording popover should offer Dictation on iPhone")
+        // Dismiss the popover without starting a recording (the
+        // system mic-permission alert would otherwise interleave).
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)).tap()
 
         // Text as an element: the phone editor defaults to the text
         // tool — a tap on the page body creates a text element and
         // focuses it.
-        let window = app.windows.firstMatch
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 8),
                       "Tapping the page in text mode should open the keyboard for a new text element")

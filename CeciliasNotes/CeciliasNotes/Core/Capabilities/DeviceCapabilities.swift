@@ -64,10 +64,13 @@ enum DeviceCapabilities {
     static var canDraw: Bool { !isPhoneIdiom }
 
     /// True when the user can start dictation / voice notes /
-    /// lecture recordings. iPad-class workflow — the live
-    /// transcript + lecture pane don't make sense on a phone-shaped
-    /// frame yet, so iPhone hides the mic affordances entirely.
-    static var canRecord: Bool { !isPhoneIdiom }
+    /// lecture recordings. Enabled on every device (2026-07):
+    /// recording + live transcription need no drawing surface, and
+    /// the phone in the pocket is often the closest mic — notes
+    /// recorded on iPhone reach the iPad via the same CloudKit sync
+    /// as every other edit. The phone editor already hosts the text
+    /// elements dictation writes into.
+    static var canRecord: Bool { true }
 
     /// True when the user can edit notebook metadata (title,
     /// subject, tags, page template, page size). Enabled on

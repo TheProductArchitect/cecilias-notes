@@ -1,4 +1,5 @@
 import Combine
+import CoreData
 import CoreSpotlight
 import SwiftData
 import SwiftUI
@@ -341,7 +342,28 @@ struct CeciliasNotesApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         reconcileAppIcon()
+                        // Cross-device hygiene on every return to
+                        // foreground: another device (iPhone records
+                        // a note, iPad edits the same notebook, both
+                        // import the same Inbox .inkbook) may have
+                        // synced rows in while we were backgrounded.
+                        // The launch-only sweep left a window where a
+                        // duplicated primary key could crash iOS 26's
+                        // ForEach until the next cold start.
+                        scheduleDuplicateSweep()
                     }
+                }
+                // Mid-session CloudKit deliveries — SwiftData's
+                // CloudKit stack posts NSPersistentStoreRemoteChange
+                // as remote records land. Debounced: imports arrive
+                // in bursts and the sweep only needs to run once per
+                // batch.
+                .onReceive(
+                    NotificationCenter.default
+                        .publisher(for: .NSPersistentStoreRemoteChange)
+                        .receive(on: DispatchQueue.main)
+                ) { _ in
+                    scheduleDuplicateSweep()
                 }
                 // Spotlight launch
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
@@ -362,6 +384,28 @@ struct CeciliasNotesApp: App {
         // can be racy under sheet transitions; the UIKit lifecycle
         // callbacks are the OS-guaranteed signals.
     }
+
+    /// Debounced duplicate-row + soft-delete sweep. Coalesces the
+    /// burst of `NSPersistentStoreRemoteChange` notifications a
+    /// CloudKit import batch produces into one pass, two seconds
+    /// after the last event. The sweep itself is a few fetches and
+    /// a Dictionary group — cheap enough to run opportunistically,
+    /// too expensive for every notification.
+    private func scheduleDuplicateSweep() {
+        Self.pendingDuplicateSweep?.cancel()
+        let storage = storageService
+        Self.pendingDuplicateSweep = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            storage.purgeDuplicateRows()
+            storage.reconcileSoftDeleteFlags()
+        }
+    }
+
+    /// Held statically because `App` structs are value types —
+    /// storing the task in `@State` would need a binding writable
+    /// from `body`, and there is exactly one app instance.
+    private static var pendingDuplicateSweep: Task<Void, Never>?
 
 }
 
