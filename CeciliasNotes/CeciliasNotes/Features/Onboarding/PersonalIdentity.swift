@@ -1,7 +1,11 @@
 import Foundation
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(WidgetKit)
 import WidgetKit
+#endif
 
 // MARK: - Storage keys
 
@@ -46,8 +50,11 @@ enum PersonalIdentity {
         // (e.g. "cecilia's") lags every name change. `reloadAllTimelines`
         // tells the system to re-fetch every active widget's data
         // and re-render — the user sees the new name within
-        // 2–3s on the home / lock screen.
+        // 2–3s on the home / lock screen. macOS builds skip this —
+        // WidgetKit is iOS-only in this project's scope for now.
+        #if canImport(WidgetKit) && !os(macOS)
         WidgetCenter.shared.reloadAllTimelines()
+        #endif
     }
 }
 
@@ -193,6 +200,13 @@ func libraryGreeting(forName name: String) -> String {
 // path. The mandatory system alert still appears whenever a swap
 // finally succeeds.
 
+// The app icon reconcile system is iOS-only — macOS apps carry
+// their icon in the app bundle as a static `.icns` and can't swap
+// alternates at runtime. We keep the function symbols visible on
+// macOS as no-ops so shared library-onAppear code paths that call
+// `reconcileAppIcon()` compile cleanly.
+#if canImport(UIKit)
+
 /// True while a reconcile swap is queued in the gate or its retry
 /// chain is running — prevents overlapping attempts (and duplicate
 /// system alerts) when several call sites reconcile at once.
@@ -283,3 +297,12 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
         }
     }
 }
+
+#else
+
+/// macOS stub — the app icon lives in the bundle and isn't swappable
+/// at runtime, so onboarding + library `onAppear` calls no-op cleanly.
+@MainActor func reconcileAppIcon(preferredName: String? = nil) { }
+@MainActor func updateAppIcon(for name: String) { }
+
+#endif

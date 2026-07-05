@@ -63,6 +63,13 @@ AI Agent Compatible (MCP)
   • Let AI agents on your Mac read and write to your notebooks
   • Seamless local network sync (Multipeer) for instant updates
   • Works over iCloud Drive anywhere
+  • Install on your Mac via terminal: npm install -g cecilias-notes-mcp 
+
+Personalised to You
+  • Tell the app your name, and it magically becomes yours
+  • The app's name and icon change dynamically to match you
+  • A few delightful, hidden surprises wait on the splash screen
+  • Hyper-personalised, totally private, and runs entirely on-device with no backend
 
 Made for iPad and iPhone
   • Full editor on iPad with Apple Pencil

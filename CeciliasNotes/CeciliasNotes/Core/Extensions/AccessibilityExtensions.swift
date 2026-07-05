@@ -1,39 +1,25 @@
 import Foundation
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
-
-// MARK: - Accessibility string builders
-//
-// All accessibility label/hint strings in the app are computed here. No string
-// literals for `.accessibilityLabel(...)` or `.accessibilityHint(...)` should
-// appear in any view file — call into `A11y` instead.
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 enum A11y {
 
-    // MARK: Date relative formatter (cached)
-
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f
-    }()
-
-    private static let durationFormatter: DateComponentsFormatter = {
-        let f = DateComponentsFormatter()
-        f.unitsStyle = .short
-        f.allowedUnits = [.minute, .second]
-        return f
-    }()
-
     static func relativeDate(_ date: Date) -> String {
-        relativeFormatter.localizedString(for: date, relativeTo: Date())
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     static func duration(_ seconds: Double) -> String {
-        durationFormatter.string(from: seconds) ?? "\(Int(seconds)) seconds"
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .short
+        formatter.allowedUnits = [.minute, .second]
+        return formatter.string(from: seconds) ?? "\(Int(seconds)) seconds"
     }
-
-    // MARK: Notebook
 
     static func notebookLabel(
         title: String,
@@ -48,8 +34,6 @@ enum A11y {
 
     static let notebookHint = "Double tap to open"
 
-    // MARK: Canvas
-
     static func canvasLabel(strokeCount: Int) -> String {
         let strokes = strokeCount == 1 ? "1 stroke" : "\(strokeCount) strokes"
         return "Drawing canvas, \(strokes)"
@@ -57,15 +41,11 @@ enum A11y {
 
     static let canvasHint = "Use Apple Pencil to draw. Activate the text tool to type."
 
-    // MARK: Tool palette
-
     static func toolLabel(name: String, isActive: Bool) -> String {
         isActive ? "\(name), selected" : name
     }
 
     static let toolHint = "Double tap to select"
-
-    // MARK: Audio annotation
 
     static func audioLabel(duration: Double, hasTranscription: Bool) -> String {
         let base = "Audio recording, \(self.duration(duration))"
@@ -74,8 +54,6 @@ enum A11y {
 
     static let audioHint = "Double tap to play"
 
-    // MARK: Media attachment
-
     static func mediaLabel(caption: String?) -> String {
         if let caption, !caption.isEmpty { return "Image, \(caption)" }
         return "Image"
@@ -83,13 +61,9 @@ enum A11y {
 
     static let mediaHint = "Double tap to select and edit"
 
-    // MARK: Page navigation
-
     static func pageLabel(index: Int, total: Int) -> String {
         "Page \(index + 1) of \(total)"
     }
-
-    // MARK: Subject row
 
     static func subjectLabel(name: String, notebookCount: Int) -> String {
         let nbs = notebookCount == 1 ? "1 notebook" : "\(notebookCount) notebooks"
@@ -97,32 +71,26 @@ enum A11y {
     }
 }
 
-// MARK: - High-contrast helpers
-
 extension View {
-    /// Returns 1.0 in high-contrast mode, 0.5 otherwise — for hairline borders.
     func inkBorderWidth(base: CGFloat = 0.5) -> CGFloat {
+#if canImport(UIKit)
         UIAccessibility.isDarkerSystemColorsEnabled ? base * 2 : base
+#else
+        base
+#endif
     }
 
-    // `inkSecondaryText()` helper was removed in D2 — never called from
-    // anywhere in the codebase (dead code) and the body referenced
-    // `theme.foreground` / `theme.foregroundMuted` which need either a
-    // SwiftUI @Environment lookup (not possible inside this View
-    // extension's helper-method context) or a theme parameter. If the
-    // accessibility behaviour is needed in future, add it as a View
-    // modifier that captures @Environment(\.theme) and writes the
-    // selected color via `.foregroundStyle(_:)`.
-}
-
-// MARK: - Reduce-motion helpers
-
-extension View {
-    /// Wraps a transition so it becomes opacity-only when Reduce Motion is on.
-    /// Use this everywhere instead of raw `.transition(...)` to keep a11y consistent.
     func ceciliasNotesTransition(_ transition: AnyTransition) -> some View {
+#if canImport(UIKit)
         UIAccessibility.isReduceMotionEnabled
             ? self.transition(.opacity)
             : self.transition(transition)
+#elseif canImport(AppKit)
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? self.transition(.opacity)
+            : self.transition(transition)
+#else
+        self.transition(transition)
+#endif
     }
 }

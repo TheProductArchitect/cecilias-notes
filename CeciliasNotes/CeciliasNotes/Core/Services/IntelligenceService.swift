@@ -27,17 +27,11 @@ import FoundationModels
 ///     hops to a detached Task internally if needed. Callers
 ///     `await intelligenceService.summarise(...)` from any context.
 @MainActor
-final class IntelligenceService: ObservableObject {
+final class IntelligenceService {
 
     static let shared = IntelligenceService()
 
-    /// Explicit publisher — `@MainActor` classes whose only
-    /// publishable state is `@AppStorage` don't get
-    /// `ObservableObject` synthesised automatically under Swift's
-    /// stricter isolation rules. Declaring it ourselves lets views
-    /// observe `intelligence` via `@ObservedObject` while
-    /// `@AppStorage` continues to publish its own changes through
-    /// the property wrapper. Same pattern as `SettingsViewModel`.
+    /// Explicit publisher for `@ObservedObject` in Settings / Library (iOS).
     let objectWillChange = ObservableObjectPublisher()
 
     // MARK: Availability + master gate
@@ -50,7 +44,7 @@ final class IntelligenceService: ObservableObject {
     /// Two-layer guard:
     ///   • `#if canImport(FoundationModels)` — the framework
     ///     itself may be absent on simulators or older SDKs.
-    ///   • `if #available(iOS 26.0, *)` — even when the framework
+    ///   • `if #available(iOS 26.0, macOS 26.0, *)` — even when the framework
     ///     is present in the SDK, the public Foundation Models
     ///     types are marked iOS 26+ on the current toolchain. At
     ///     this app's iOS 18.4 deployment target the runtime check
@@ -61,7 +55,7 @@ final class IntelligenceService: ObservableObject {
     ///     deployment moves up.
     var isAvailable: Bool {
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
         return false
@@ -398,7 +392,7 @@ final class IntelligenceService: ObservableObject {
             )
             Task {
                 #if canImport(FoundationModels)
-                if #available(iOS 26.0, *) {
+                if #available(iOS 26.0, macOS 26.0, *) {
                     let session = LanguageModelSession()
                     do {
                         let stream = session.streamResponse(to: prompt)
@@ -465,7 +459,7 @@ final class IntelligenceService: ObservableObject {
     /// failures into the UI — `nil` is the only failure signal.
     private func respond(to prompt: String) async -> String? {
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             do {
                 let session = LanguageModelSession()
                 let response = try await session.respond(to: prompt)
@@ -482,3 +476,7 @@ final class IntelligenceService: ObservableObject {
         #endif
     }
 }
+
+#if os(iOS)
+extension IntelligenceService: ObservableObject {}
+#endif

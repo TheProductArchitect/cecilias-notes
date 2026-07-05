@@ -73,6 +73,7 @@
 		ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		BEBD418F864F793079F7B293 /* CeciliasNotesShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = CeciliasNotesShareExtension.entitlements; sourceTree = "<group>"; };
+		C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CeciliasNotesMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -96,6 +97,101 @@
 				Info.plist,
 			);
 			target = ABB82F3A2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension */;
+		};
+		C0A1A0A12FAD100000000002 /* Exceptions for "CeciliasNotesMac" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Resources/Info.plist,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000020 /* Exceptions for "CeciliasNotes/Core" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Extensions/.gitkeep,
+				Models/.gitkeep,
+				Services/.gitkeep,
+				Services/ImagePickerBridge.swift,
+				Services/InputCapabilityDetector.swift,
+				Services/KeyboardObserver.swift,
+				Services/ModalPresenter.swift,
+				Services/ModifierKeyObserver.swift,
+				Services/ShareInboxWatcher.swift,
+				Utilities/.gitkeep,
+				Utilities/HostingHierarchyDiagnostics.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000021 /* Exceptions for "CeciliasNotes/DesignSystem" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				BrandIconRenderer.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000022 /* Exceptions for "CeciliasNotes/Features/Library" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.gitkeep,
+				AllQuizzesView.swift,
+				AllSubjectsView.swift,
+				Ask/AskMyNotesView.swift,
+				Grid/CoverTextureCanvas.swift,
+				Grid/QuizFolderCardView.swift,
+				Grid/SubjectFolderCardView.swift,
+				LibraryView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000023 /* Exceptions for "CeciliasNotes/Features/Editor/Strokes" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				StrokeElementsOverlayView.swift,
+				StrokeElementView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000024 /* Exceptions for "CeciliasNotes/Features/Editor/Shapes" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				PencilFingerDragSurface.swift,
+				ShapeElementsOverlayView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000025 /* Exceptions for "CeciliasNotes/Features/Editor/TextElements" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				RichText/RichTextController.swift,
+				RichText/RichTextStyle.swift,
+				RichText/TextElementSplitter.swift,
+				RichText/TextElementToolbar.swift,
+				TextEditorRepresentable.swift,
+				TextElementsOverlayView.swift,
+				TextElementView.swift,
+				TextSizePickerView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000029 /* Exceptions for "CeciliasNotes/Resources" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppIcons,
+				Assets.xcassets,
+				CeciliasNotes.entitlements,
+				Info.plist,
+				PrivacyInfo.xcprivacy,
+				"SVG Graphics",
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD10000000002A /* Exceptions for "CeciliasNotes/Features/Onboarding" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				IconUpdateGate.swift,
+				OnboardingView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -124,6 +220,88 @@
 				ABB82F552FAD0C6300EAEC50 /* Exceptions for "CeciliasNotesWidget" folder in "CeciliasNotesWidgetExtension" target */,
 			);
 			path = CeciliasNotesWidget;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000003 /* CeciliasNotesMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000002 /* Exceptions for "CeciliasNotesMac" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotesMac;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000030 /* CeciliasNotes/Core */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000020 /* Exceptions for "CeciliasNotes/Core" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Core;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000031 /* CeciliasNotes/DesignSystem */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000021 /* Exceptions for "CeciliasNotes/DesignSystem" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/DesignSystem;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000032 /* CeciliasNotes/Features/Library */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000022 /* Exceptions for "CeciliasNotes/Features/Library" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Library;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000033 /* CeciliasNotes/Features/Editor/Strokes */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000023 /* Exceptions for "CeciliasNotes/Features/Editor/Strokes" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Editor/Strokes;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000034 /* CeciliasNotes/Features/Editor/Shapes */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000024 /* Exceptions for "CeciliasNotes/Features/Editor/Shapes" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Editor/Shapes;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000035 /* CeciliasNotes/Features/Editor/TextElements */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000025 /* Exceptions for "CeciliasNotes/Features/Editor/TextElements" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Editor/TextElements;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000036 /* CeciliasNotes/Features/Sync */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotes/Features/Sync;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000037 /* CeciliasNotes/Features/Editor/Cover */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotes/Features/Editor/Cover;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000038 /* CeciliasNotes/Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000029 /* Exceptions for "CeciliasNotes/Resources" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Resources;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD100000000039 /* CeciliasNotes/Features/Onboarding */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD10000000002A /* Exceptions for "CeciliasNotes/Features/Onboarding" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Onboarding;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -167,6 +345,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A1A0A12FAD100000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -178,16 +363,35 @@
 			name = iOS;
 			sourceTree = "<group>";
 		};
+		ABA4F30A2FFA91CE0047D365 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				C0A1A0A12FAD100000000030 /* CeciliasNotes/Core */,
+				C0A1A0A12FAD100000000031 /* CeciliasNotes/DesignSystem */,
+				C0A1A0A12FAD100000000032 /* CeciliasNotes/Features/Library */,
+				C0A1A0A12FAD100000000033 /* CeciliasNotes/Features/Editor/Strokes */,
+				C0A1A0A12FAD100000000034 /* CeciliasNotes/Features/Editor/Shapes */,
+				C0A1A0A12FAD100000000035 /* CeciliasNotes/Features/Editor/TextElements */,
+				C0A1A0A12FAD100000000036 /* CeciliasNotes/Features/Sync */,
+				C0A1A0A12FAD100000000037 /* CeciliasNotes/Features/Editor/Cover */,
+				C0A1A0A12FAD100000000038 /* CeciliasNotes/Resources */,
+				C0A1A0A12FAD100000000039 /* CeciliasNotes/Features/Onboarding */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		ABB82E172FAD01B300EAEC50 = {
 			isa = PBXGroup;
 			children = (
 				ABB82E222FAD01B300EAEC50 /* CeciliasNotes */,
+				C0A1A0A12FAD100000000003 /* CeciliasNotesMac */,
 				ABB82E302FAD01B400EAEC50 /* CeciliasNotesTests */,
 				ABB82E3A2FAD01B400EAEC50 /* CeciliasNotesUITests */,
 				ABB82F412FAD0C6100EAEC50 /* CeciliasNotesWidget */,
 				ABB82F3C2FAD0C6100EAEC50 /* Frameworks */,
 				ABB82E212FAD01B300EAEC50 /* Products */,
 				DF115FFA824CCAE1CD2297B2 /* CeciliasNotesShareExtension */,
+				ABA4F30A2FFA91CE0047D365 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -195,6 +399,7 @@
 			isa = PBXGroup;
 			children = (
 				ABB82E202FAD01B300EAEC50 /* venu_bundle_1.app */,
+				C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */,
 				ABB82E2D2FAD01B400EAEC50 /* CeciliasNotesTests.xctest */,
 				ABB82E372FAD01B400EAEC50 /* CeciliasNotesUITests.xctest */,
 				ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */,
@@ -328,6 +533,36 @@
 			productReference = ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		C0A1A0A12FAD100000000010 /* CeciliasNotesMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0A1A0A12FAD100000000011 /* Build configuration list for PBXNativeTarget "CeciliasNotesMac" */;
+			buildPhases = (
+				C0A1A0A12FAD100000000006 /* Sources */,
+				C0A1A0A12FAD100000000004 /* Frameworks */,
+				C0A1A0A12FAD100000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0A1A0A12FAD100000000003 /* CeciliasNotesMac */,
+				C0A1A0A12FAD100000000030 /* CeciliasNotes/Core */,
+				C0A1A0A12FAD100000000031 /* CeciliasNotes/DesignSystem */,
+				C0A1A0A12FAD100000000032 /* CeciliasNotes/Features/Library */,
+				C0A1A0A12FAD100000000033 /* CeciliasNotes/Features/Editor/Strokes */,
+				C0A1A0A12FAD100000000034 /* CeciliasNotes/Features/Editor/Shapes */,
+				C0A1A0A12FAD100000000035 /* CeciliasNotes/Features/Editor/TextElements */,
+				C0A1A0A12FAD100000000036 /* CeciliasNotes/Features/Sync */,
+				C0A1A0A12FAD100000000037 /* CeciliasNotes/Features/Editor/Cover */,
+				C0A1A0A12FAD100000000038 /* CeciliasNotes/Resources */,
+				C0A1A0A12FAD100000000039 /* CeciliasNotes/Features/Onboarding */,
+			);
+			name = CeciliasNotesMac;
+			productName = CeciliasNotesMac;
+			productReference = C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -369,6 +604,7 @@
 			projectRoot = "";
 			targets = (
 				ABB82E1F2FAD01B300EAEC50 /* CeciliasNotes */,
+				C0A1A0A12FAD100000000010 /* CeciliasNotesMac */,
 				ABB82E2C2FAD01B400EAEC50 /* CeciliasNotesTests */,
 				ABB82E362FAD01B400EAEC50 /* CeciliasNotesUITests */,
 				ABB82F3A2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension */,
@@ -413,6 +649,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A1A0A12FAD100000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -446,6 +689,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		ABB82F372FAD0C6100EAEC50 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0A1A0A12FAD100000000006 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -636,7 +886,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0;
 				DEVELOPMENT_TEAM = W9559HJWN9;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_PHOTO_LIBRARY = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CeciliasNotes/Resources/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Cecilia's Notes";
@@ -650,7 +906,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes;
 				PRODUCT_MODULE_NAME = CeciliasNotes;
 				PRODUCT_NAME = venu_bundle_1;
+				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -685,6 +944,8 @@
 				PRODUCT_MODULE_NAME = CeciliasNotes;
 				PRODUCT_NAME = venu_bundle_1;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -840,6 +1101,64 @@
 			};
 			name = Release;
 		};
+		C0A1A0A12FAD100000000012 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CeciliasNotesMac/Resources/CeciliasNotesMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 0;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CeciliasNotesMac/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Cecilia's Notes";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes;
+				PRODUCT_MODULE_NAME = CeciliasNotesMac;
+				PRODUCT_NAME = CeciliasNotesMac;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		C0A1A0A12FAD100000000013 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = CeciliasNotesMac/Resources/CeciliasNotesMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 0;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CeciliasNotesMac/Resources/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Cecilia's Notes";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 2.1;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes;
+				PRODUCT_MODULE_NAME = CeciliasNotesMac;
+				PRODUCT_NAME = CeciliasNotesMac;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		E3A1969923A25FBD59464C0F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -920,6 +1239,15 @@
 			buildConfigurations = (
 				ABB82F532FAD0C6300EAEC50 /* Debug */,
 				ABB82F542FAD0C6300EAEC50 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0A1A0A12FAD100000000011 /* Build configuration list for PBXNativeTarget "CeciliasNotesMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0A1A0A12FAD100000000012 /* Debug */,
+				C0A1A0A12FAD100000000013 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

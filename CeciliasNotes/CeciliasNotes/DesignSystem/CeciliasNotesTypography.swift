@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - SwiftUI Font tokens
 
@@ -26,6 +28,7 @@ public extension Font {
 
 // MARK: - UIFont tokens (for UIKit / PencilKit contexts)
 
+#if canImport(UIKit)
 public extension UIFont {
     static let ceciliasNotesDisplay:   UIFont = .systemFont(ofSize: 34, weight: .light)
     static let ceciliasNotesTitle1:    UIFont = .systemFont(ofSize: 28, weight: .regular)
@@ -38,3 +41,4 @@ public extension UIFont {
     static let ceciliasNotesCaption:   UIFont = .systemFont(ofSize: 12, weight: .regular)
     static let ceciliasNotesMono:      UIFont = .monospacedSystemFont(ofSize: 13, weight: .regular)
 }
+#endif

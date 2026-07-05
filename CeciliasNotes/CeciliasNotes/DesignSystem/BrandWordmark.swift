@@ -1,5 +1,11 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+typealias BrandUIFont = UIFont
+#elseif canImport(AppKit)
+import AppKit
+typealias BrandUIFont = NSFont
+#endif
 
 /// The brand wordmark — the masthead identity element.
 ///
@@ -169,8 +175,12 @@ enum BrandFont {
         .system(size: size, weight: .heavy, design: .default)
     }
 
-    static func wordmarkUIFont(size: CGFloat) -> UIFont {
+    static func wordmarkUIFont(size: CGFloat) -> BrandUIFont {
+#if canImport(UIKit)
         .systemFont(ofSize: size, weight: .heavy)
+#else
+        .systemFont(ofSize: size, weight: .heavy)
+#endif
     }
 }
 

@@ -288,7 +288,9 @@ final class CloudSyncManager: ObservableObject {
             }()
             syncStatus = .upToDate
             markSyncCompleted()
+#if os(iOS)
             if wasSyncing { HapticManager.shared.iCloudSyncCompleted() }
+#endif
             return false
         }
     }

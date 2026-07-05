@@ -1,5 +1,13 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+public typealias ThemeInterfaceStyle = UIUserInterfaceStyle
+#else
+public enum ThemeInterfaceStyle {
+    case light
+    case dark
+}
+#endif
 
 // MARK: - Theme
 
@@ -16,13 +24,13 @@ import UIKit
 /// providers (Phase A inventory), preserving the values that were tuned in
 /// device testing. Per-token light/dark values are split across the two
 /// static instances rather than living in `Color { trait in … }` closures.
-public struct Theme: Identifiable, Equatable, Hashable {
+public struct Theme: Identifiable, Equatable, Hashable, @unchecked Sendable {
 
     // MARK: Identity
 
     public let id: String                                  // "default" | "midnight"
     public let displayName: String                         // "Default" | "Midnight"
-    public let interfaceStyle: UIUserInterfaceStyle        // .light | .dark
+    public let interfaceStyle: ThemeInterfaceStyle        // .light | .dark
 
     // MARK: Foundation
 

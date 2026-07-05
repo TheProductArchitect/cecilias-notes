@@ -2,7 +2,6 @@ import CryptoKit
 import Foundation
 import SwiftData
 import os
-import UIKit
 
 /// Single namespace for every media-byte file the editor produces.
 ///
@@ -131,7 +130,7 @@ enum MediaStorage {
     /// behind `pdfDocumentId(forHash:)` keeps repeated lookups
     /// during a single import batch cheap.
     private static let pdfIndexFilename = "_index.json"
-    private static var pdfHashIndexCache: [String: UUID]?
+    nonisolated(unsafe) private static var pdfHashIndexCache: [String: UUID]? = nil
 
     private static var pdfIndexURL: URL {
         pdfDirectory.appendingPathComponent(pdfIndexFilename)
@@ -207,11 +206,11 @@ enum MediaStorage {
     /// PNG encoding is fast and the import pipeline already runs
     /// inside a Task.
     @discardableResult
-    nonisolated static func writePDFPreview(_ image: UIImage, contentId: UUID) -> String? {
+    nonisolated static func writePDFPreview(_ image: PlatformImage, contentId: UUID) -> String? {
         ensureDirectoriesExist()
         let name = "\(contentId.uuidString).png"
         let dest = pdfPreviewDirectory.appendingPathComponent(name)
-        guard let pngData = image.pngData() else { return nil }
+        guard let pngData = PlatformImageFactory.pngData(from: image) else { return nil }
         do {
             try pngData.write(to: dest, options: .atomic)
             return name
@@ -340,7 +339,7 @@ enum MediaStorage {
     /// documents-relative path on success.
     @discardableResult
     static func writeImage(
-        _ image: UIImage,
+        _ image: PlatformImage,
         id: UUID,
         format: ImageFormat = .jpeg(quality: 0.85)
     ) async -> String? {
@@ -355,7 +354,7 @@ enum MediaStorage {
     /// + AI consumers ultimately read. Avoids a redundant disk
     /// re-read of the file we just wrote.
     static func writeImageReturningBytes(
-        _ image: UIImage,
+        _ image: PlatformImage,
         id: UUID,
         format: ImageFormat = .jpeg(quality: 0.85)
     ) async -> (path: String, data: Data)? {
@@ -364,8 +363,10 @@ enum MediaStorage {
         let url = Self.url(for: .images, id: id, fileExtension: ext)
         let data: Data? = await Task.detached(priority: .userInitiated) { () -> Data? in
             switch format {
-            case .jpeg(let quality): return image.jpegData(compressionQuality: quality)
-            case .png:               return image.pngData()
+            case .jpeg(let quality):
+                return PlatformImageFactory.jpegData(from: image, compressionQuality: quality)
+            case .png:
+                return PlatformImageFactory.pngData(from: image)
             }
         }.value
         guard let data else { return nil }

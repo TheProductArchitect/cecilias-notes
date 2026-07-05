@@ -116,7 +116,7 @@ private struct SearchResultRow: View {
                 // so the rows feel like they belong to specific
                 // notebooks rather than a flat list.
                 Rectangle()
-                    .fill(notebook.flatMap { Color(UIColor(hex: $0.coverColorHex)) }
+                    .fill(notebook.flatMap { Color(hex: $0.coverColorHex) }
                           ?? theme.foregroundSubtle)
                     .frame(width: 2)
                     .padding(.trailing, CeciliasNotes.Spacing.md)
@@ -177,7 +177,7 @@ private struct SearchResultRow: View {
         if showHandwritingBadge {
             var suffix = AttributedString("  — handwriting")
             suffix.font = .system(size: 11).italic()
-            suffix.foregroundColor = UIColor(ThemeManager.shared.current.foregroundSubtle)
+            suffix.foregroundColor = PlatformColor(ThemeManager.shared.current.foregroundSubtle)
             attributed.append(suffix)
         }
         return attributed
@@ -197,7 +197,7 @@ private struct SearchResultRow: View {
             if let start = AttributedString.Index(r.lowerBound, within: attributed),
                let end   = AttributedString.Index(r.upperBound, within: attributed) {
                 attributed[start..<end].font = .ceciliasNotesFootnote.bold()
-                attributed[start..<end].foregroundColor = UIColor(ThemeManager.shared.current.accent)
+                attributed[start..<end].foregroundColor = PlatformColor(ThemeManager.shared.current.accent)
             }
             searchStart = r.upperBound
         }

@@ -1,4 +1,8 @@
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 import SwiftUI
 
 // MARK: - CeciliasNotesColors (post-D2 reduced form)
@@ -55,11 +59,19 @@ public extension Color {
     /// that isn't a theme field — most reads should go through
     /// `@Environment(\.theme)` instead.
     init(light: Color, dark: Color) {
+#if canImport(UIKit)
         self = Color(UIColor { trait in
             trait.userInterfaceStyle == .dark
                 ? UIColor(dark)
                 : UIColor(light)
         })
+#else
+        self = Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let chosen: Color = isDark ? dark : light
+            return NSColor(chosen)
+        })
+#endif
     }
 
     /// Fixed near-black for cover-stock text overlays (CustomisePanel).
@@ -70,6 +82,7 @@ public extension Color {
     static let coverTextBlack = Color(hex: "#0a0a0a")
 }
 
+#if canImport(UIKit)
 public extension UIColor {
 
     /// Hex string → UIColor. Accepts "#RRGGBB" or "RRGGBB". Invalid
@@ -87,3 +100,25 @@ public extension UIColor {
         self.init(red: r, green: g, blue: b, alpha: 1)
     }
 }
+#endif
+
+#if canImport(AppKit) && !canImport(UIKit)
+public extension NSColor {
+
+    /// Hex string → NSColor. Mirrors the iOS `UIColor(hex:)` so
+    /// call sites can use `PlatformColor(hex:)` uniformly across
+    /// both platforms without a `#if`.
+    convenience init(hex: String) {
+        var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        sanitized = sanitized.hasPrefix("#") ? String(sanitized.dropFirst()) : sanitized
+
+        var rgb: UInt64 = 0
+        Scanner(string: sanitized).scanHexInt64(&rgb)
+
+        let r = CGFloat((rgb & 0xFF0000) >> 16) / 255
+        let g = CGFloat((rgb & 0x00FF00) >> 8) / 255
+        let b = CGFloat(rgb & 0x0000FF) / 255
+        self.init(srgbRed: r, green: g, blue: b, alpha: 1)
+    }
+}
+#endif

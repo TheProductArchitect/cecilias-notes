@@ -1,7 +1,9 @@
 import Foundation
 import PencilKit
 import SwiftData
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// In-memory LRU cache of decoded `PKDrawing` instances, keyed by
 /// `pageId`. Step 8 — Tier 1 of the three-tier caching subsystem.
@@ -49,17 +51,15 @@ final class StrokeCache {
     private nonisolated(unsafe) var memoryWarningObserver: NSObjectProtocol?
 
     private init() {
+#if os(iOS)
         memoryWarningObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Hop back to MainActor since the observer block doesn't
-            // inherit it automatically. Explicit `[weak self]` on
-            // the Task too — Swift 6 flags the implicit capture of
-            // a mutable `self` value crossing the Sendable boundary.
             Task { @MainActor [weak self] in self?.evictHalf() }
         }
+#endif
     }
 
     deinit {

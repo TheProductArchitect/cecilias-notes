@@ -9,7 +9,7 @@ import FoundationModels
 ///
 ///   • `#if canImport(FoundationModels)` keeps the framework symbols
 ///     out of the binary on simulators / older SDKs.
-///   • `if #available(iOS 26.0, *)` keeps the runtime branch
+///   • `if #available(iOS 26.0, macOS 26.0, *)` keeps the runtime branch
 ///     unreachable on iOS 18 devices until the deployment target
 ///     is bumped.
 ///
@@ -31,7 +31,7 @@ final class AppleFoundationProvider: AIProvider {
 
     var isAvailable: Bool {
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             return SystemLanguageModel.default.availability == .available
         }
         return false
@@ -51,7 +51,7 @@ final class AppleFoundationProvider: AIProvider {
         let prompt = Self.composePrompt(system: systemPrompt, user: userPrompt)
 
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             guard SystemLanguageModel.default.availability == .available else {
                 throw AIError.unavailable
             }
@@ -84,7 +84,7 @@ final class AppleFoundationProvider: AIProvider {
 
         return AsyncThrowingStream { continuation in
             #if canImport(FoundationModels)
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 guard SystemLanguageModel.default.availability == .available else {
                     continuation.finish(throwing: AIError.unavailable)
                     return

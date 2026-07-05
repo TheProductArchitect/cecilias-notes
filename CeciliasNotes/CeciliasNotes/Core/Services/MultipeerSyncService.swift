@@ -2,7 +2,11 @@ import Combine
 import CryptoKit
 import Foundation
 @preconcurrency import MultipeerConnectivity
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Direct device-to-device receiver for notebooks dropped by an
 /// external agent (currently `cecilias-notes-mcp` running on a Mac).
@@ -87,7 +91,20 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     // MARK: Private state
 
     private let localPeerId: MCPeerID = {
-        let safe = String(UIDevice.current.name.prefix(60))
+        // Cross-platform device name. `MCPeerID` truncates internally
+        // if the display name is >63 UTF-8 bytes, so we cap at 60 to
+        // keep multi-byte hostnames safe.
+        #if canImport(UIKit)
+        let deviceName = UIDevice.current.name
+        #else
+        // AppKit path — Host.current().localizedName is the friendly
+        // "Venu's MacBook Air" string a user recognises in Finder,
+        // AirDrop, and Universal Control. Falls back to ProcessInfo
+        // hostName if the localized name is unavailable (unlikely on
+        // production Macs but cheap to guard).
+        let deviceName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        #endif
+        let safe = String(deviceName.prefix(60))
         return MCPeerID(displayName: safe)
     }()
 

@@ -1,7 +1,6 @@
 import CoreSpotlight
 import Foundation
 import PencilKit
-import UIKit
 
 /// Full-text search across notebook titles, typed `TextBlock` content,
 /// audio transcripts, and handwriting (via Vision OCR). Entirely

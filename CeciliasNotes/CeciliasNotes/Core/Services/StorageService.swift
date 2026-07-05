@@ -2,8 +2,12 @@ import Combine
 import Foundation
 import PencilKit
 import SwiftData
+#if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(WidgetKit)
 import WidgetKit
+#endif
 
 // MARK: - StorageService
 
@@ -62,6 +66,12 @@ final class StorageService: ObservableObject {
             return icloudRoot
         }
         return localNotebooksDirectoryURL
+    }
+
+    nonisolated static var globalExportsDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("CeciliasNotes")
+            .appendingPathComponent("Exports")
     }
 
     // MARK: Core
@@ -1038,8 +1048,8 @@ extension StorageService {
         try context.save()
     }
 
-    func updateThumbnail(for notebook: Notebook, image: UIImage) throws {
-        guard let data = image.jpegData(compressionQuality: 0.80) else { return }
+    func updateThumbnail(for notebook: Notebook, image: PlatformImage) throws {
+        guard let data = PlatformImageFactory.jpegData(from: image, compressionQuality: 0.80) else { return }
         notebook.thumbnailData = data
         notebook.updatedAt     = Date()
         try context.save()
@@ -1585,7 +1595,7 @@ extension StorageService {
         // populated on the next entry into Settings → Storage.
         // Clear the global directory first, then sweep the legacy
         // per-notebook locations to scrub any stale leftovers.
-        let globalDir = ExportService.globalExportsDirectory
+        let globalDir = Self.globalExportsDirectory
         if fm.fileExists(atPath: globalDir.path) {
             do {
                 let entries = try fm.contentsOfDirectory(
@@ -1650,7 +1660,7 @@ extension StorageService {
     }
 
     func exportedPDFsSizeBytes() -> Int64 {
-        directorySize(at: ExportService.globalExportsDirectory)
+        directorySize(at: Self.globalExportsDirectory)
     }
 
     func audioSizeBytes() -> Int64 {
@@ -1935,26 +1945,9 @@ extension StorageService {
                 )
             }
         Task { await WidgetDataWriter.shared.scheduleWrite(summaries) }
-        // Tell WidgetKit to re-fetch + redraw. The actual JSON
-        // write is debounced inside `WidgetDataWriter`; the
-        // reload is cheap and idempotent, so calling it before
-        // the write completes is fine — when the widget re-fetches
-        // (~1s later) the new snapshot is already on disk.
+#if canImport(WidgetKit)
         WidgetCenter.shared.reloadAllTimelines()
-    }
-}
-
-// MARK: - UIImage thumbnail helper
-
-private extension UIImage {
-    func thumbnailFitting(maxDimension: CGFloat) -> UIImage? {
-        let ratio  = min(maxDimension / size.width, maxDimension / size.height)
-        let target = CGSize(width: size.width * ratio, height: size.height * ratio)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            draw(in: CGRect(origin: .zero, size: target))
-        }
+#endif
     }
 }
 

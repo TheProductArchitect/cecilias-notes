@@ -169,7 +169,9 @@ final class QuizGenerationService: ObservableObject {
         }
         persist(generated, into: quiz, startingAt: 0)
         generatingQuizIDs.remove(quizID)
+#if os(iOS)
         HapticManager.shared.exportCompleted()
+#endif
     }
 
     /// Classify why an on-device generation run produced zero
@@ -197,7 +199,9 @@ final class QuizGenerationService: ObservableObject {
         let startingAt = quiz.orderedQuestions.count
         persist(questions, into: quiz, startingAt: startingAt)
         if !questions.isEmpty { QuizDiagnosticStore.clear(quizID) }
+#if os(iOS)
         HapticManager.shared.exportCompleted()
+#endif
     }
 
     /// Run the right generator for the requested tier. On-device

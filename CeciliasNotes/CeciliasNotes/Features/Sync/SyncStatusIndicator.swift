@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// Compact sync-state badge that surfaces `CloudSyncManager.syncStatus`
 /// in chrome. Renders one of five glyphs (idle / syncing / waiting /
@@ -111,9 +114,15 @@ struct SyncStatusIndicator: View {
         case .disabled:
             Text("iCloud sync off")
             Button("Open Settings → iCloud") {
+#if os(iOS)
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
+#else
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preferences.AppleIDPrefPane") {
+                    NSWorkspace.shared.open(url)
+                }
+#endif
             }
         case .upToDate:
             if let date = cloudSync.lastSyncedAt {

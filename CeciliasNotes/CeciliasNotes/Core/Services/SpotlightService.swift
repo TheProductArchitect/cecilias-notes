@@ -1,6 +1,5 @@
 import CoreSpotlight
 import Foundation
-import UIKit
 import UniformTypeIdentifiers
 
 // MARK: - SpotlightService

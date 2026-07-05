@@ -45,11 +45,12 @@ struct SubjectSidebarView: View {
                     trashContextRow
                     if quizEnabled {
                         sectionDivider
+#if os(iOS)
                         QuizListView(viewModel: viewModel)
-                        // File-system style multi-select surface for quizzes.
-                        // Sits below the per-folder quiz list for the same
-                        // "tap to enter bulk-ops" affordance as allSubjectsRow.
                         allQuizzesRow
+#else
+                        macQuizPlaceholder
+#endif
                     }
                 }
                 .padding(.top, 24)
@@ -168,6 +169,25 @@ struct SubjectSidebarView: View {
             countColor: theme.foregroundSubtle
         )
     }
+
+#if os(macOS)
+    private var macQuizPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("quizzes")
+                .font(.system(size: 7.5, weight: .regular))
+                .tracking(0.12)
+                .textCase(.uppercase)
+                .foregroundStyle(theme.recessiveSecondary)
+                .padding(.horizontal, Self.horizontalInset)
+                .padding(.bottom, 8)
+            Text("nothing yet.")
+                .font(.system(size: 11, weight: .regular).italic())
+                .foregroundStyle(theme.recessivePrimary)
+                .padding(.horizontal, Self.horizontalInset)
+                .padding(.vertical, 6)
+        }
+    }
+#endif
 
     private func subjectRow(for subject: Subject) -> some View {
         SubjectListRow(
@@ -756,16 +776,14 @@ private struct SubjectInlineRename: View {
             }
             .onAppear {
                 focused = true
-                // Select the existing name so the user can type a
-                // replacement without first having to delete it.
-                // Matches the title-field behaviour in CustomisePanel
-                // — same selectAll(_:) responder-chain dispatch.
+#if os(iOS)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     UIApplication.shared.sendAction(
                         #selector(UIResponder.selectAll(_:)),
                         to: nil, from: nil, for: nil
                     )
                 }
+#endif
             }
             .onChange(of: focused) { _, isFocused in
                 // Focus-loss commits if there is content; cancels otherwise.

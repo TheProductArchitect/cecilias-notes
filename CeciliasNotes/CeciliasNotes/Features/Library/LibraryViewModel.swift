@@ -422,19 +422,8 @@ final class LibraryViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Image-import signal channel. Bypasses SwiftUI's
-        // presentation system entirely — `MediaPickerPresenter`
-        // walks up to the topmost UIKit VC and calls
-        // `present(_:animated:)` directly. SwiftUI `.sheet` /
-        // `.fullScreenCover` at this level both failed previously:
-        //   • `.sheet` was rejected with "only presenting a single
-        //     sheet is supported" because the editor's
-        //     `.fullScreenCover` already counted as an active
-        //     presentation.
-        //   • `.fullScreenCover` over `.fullScreenCover` has the
-        //     same accounting limitation.
-        // UIKit `present` has no such restriction — the picker
-        // lands above the editor cover and dismisses cleanly.
+        // Image-import signal channel — iOS only (UIKit picker).
+#if os(iOS)
         NotificationCenter.default.publisher(for: .imageImportRequested)
             .sink { note in
                 let normX = (note.userInfo?[ImageImportUserInfoKey.normalizedX] as? Double) ?? 0.5
@@ -504,6 +493,7 @@ final class LibraryViewModel: ObservableObject {
                 )
             }
             .store(in: &cancellables)
+#endif
 
         // The picker no longer routes through `pendingImageImport`
         // for the toolbar path — UIKit-direct presentation
@@ -511,12 +501,14 @@ final class LibraryViewModel: ObservableObject {
         // `pendingImageImport = nil` resets in place anyway so the
         // canvas-tap path (which still uses
         // `LibraryView.sheet(item:)`) continues to work.
+#if os(iOS)
         NotificationCenter.default.publisher(for: .imageImportCompleted)
             .sink { [weak self] _ in self?.pendingImageImport = nil }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .imageImportCancelled)
             .sink { [weak self] _ in self?.pendingImageImport = nil }
             .store(in: &cancellables)
+#endif
     }
 
     // MARK: Derived
@@ -1157,7 +1149,13 @@ final class LibraryViewModel: ObservableObject {
         ) else { return nil }
         // PDF-imported notebooks don't surface the floating Customise
         // pill — the user picked a file, not a cover/template.
+        // Guarded because `EditorViewModel` lives in the iOS UI
+        // target; Mac's editor is a distinct implementation and
+        // doesn't render the floating pill, so the suppression is
+        // an iOS-only presentation hint.
+        #if canImport(UIKit)
         EditorViewModel.suppressCustomisePill(for: notebook.id)
+        #endif
 
         // Seed page 1's PDFPageContent + PageElement, then create
         // remaining pages and seed each one. The first canvas
@@ -1199,7 +1197,15 @@ final class LibraryViewModel: ObservableObject {
             dlog("[LibraryVM] PDF import SAVE FAILED notebookId=\(notebook.id) pageCount=\(pageCount): \(error)")
             #endif
         }
-        NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
+        // `pdfPageElementsChanged` is defined on the iOS
+        // `PDFPageElementsOverlayView` (Mac uses a distinct overlay
+        // renderer). The notification is a UI-refresh nudge; posting
+        // the raw name works cross-platform without pulling the
+        // overlay view into the Mac target.
+        NotificationCenter.default.post(
+            name: Notification.Name("pdfPageElementsChanged"),
+            object: nil
+        )
 
         return notebook
     }

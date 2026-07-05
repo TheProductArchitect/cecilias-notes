@@ -1,6 +1,8 @@
 import SwiftUI
 import Combine
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - ThemeManager
 
@@ -90,11 +92,13 @@ public final class ThemeManager: ObservableObject {
     /// composition here so that when Midnight icon variants ship later
     /// the swap point is already correct.
     private func updateAppIcon() {
+#if os(iOS)
         // Route through the shared reconcile path so the swap is
         // gated (scene/keyboard settled) and self-healing, rather
         // than an ungated one-shot. `reconcileAppIcon()` reads the
         // user name and no-ops when the icon already matches.
         reconcileAppIcon()
+#endif
     }
 }
 

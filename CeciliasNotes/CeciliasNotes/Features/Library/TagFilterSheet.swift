@@ -39,6 +39,7 @@ struct TagFilterSheet: View {
                 }
             }
             .navigationTitle("filter by tag")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if viewModel.isTagFilterActive {
@@ -54,9 +55,31 @@ struct TagFilterSheet: View {
                         .foregroundStyle(theme.accent)
                 }
             }
+            #else
+            // macOS toolbar placements are different from iOS. `.cancellationAction`
+            // routes to the leading edge, `.confirmationAction` to trailing —
+            // same visual layout as iPad without needing the iOS-only
+            // `topBarLeading` / `topBarTrailing` cases.
+            .toolbar {
+                if viewModel.isTagFilterActive {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("clear") {
+                            viewModel.clearTagFilters()
+                        }
+                        .foregroundStyle(theme.accent)
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("done") { dismiss() }
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            #endif
         }
+        #if os(iOS)
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
+        #endif
     }
 
     private func tagRow(_ tag: String) -> some View {

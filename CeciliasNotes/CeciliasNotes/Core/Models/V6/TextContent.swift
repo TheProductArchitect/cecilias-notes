@@ -1,6 +1,12 @@
 import Foundation
 import SwiftData
+#if canImport(UIKit)
 import UIKit
+typealias PlatformTextFontWeight = UIFont.Weight
+#else
+import AppKit
+typealias PlatformTextFontWeight = NSFont.Weight
+#endif
 
 /// Where this text came from. Used by analytics and AI features
 /// that want to bias prompts based on provenance ("summarise the
@@ -30,7 +36,7 @@ enum TextSize: String, Codable, CaseIterable {
         }
     }
 
-    var fontWeight: UIFont.Weight {
+    var fontWeight: PlatformTextFontWeight {
         switch self {
         case .small, .body:  return .regular
         case .heading:       return .semibold

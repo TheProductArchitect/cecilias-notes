@@ -18,7 +18,7 @@ import UniformTypeIdentifiers
 struct LibraryHeaderView: View {
 
     @ObservedObject var viewModel: LibraryViewModel
-    @AppStorage(PersonalIdentity.nameKey) private var userName: String = ""
+    @AppStorage("app.user.name") private var userName: String = ""
     @Environment(\.theme) private var theme
 
     @State private var greeting: String = ""
@@ -26,7 +26,9 @@ struct LibraryHeaderView: View {
     @State private var isShowingPDFImporter = false
     @State private var isShowingTagFilter = false
     @State private var isShowingAskSheet = false
+#if os(iOS)
     @StateObject private var intelligence = IntelligenceService.shared
+#endif
 
     /// Greeting only renders when the user has set a name AND that name
     /// is short enough not to need the right zone for breathing room.
@@ -118,11 +120,17 @@ struct LibraryHeaderView: View {
         .sheet(isPresented: $isShowingTagFilter) {
             TagFilterSheet(viewModel: viewModel)
         }
+#if os(iOS)
         .sheet(isPresented: $isShowingAskSheet) {
             AskMyNotesView(libraryViewModel: viewModel)
         }
+#endif
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
-        .onAppear { greeting = GreetingPicker.pick() }
+        .onAppear {
+#if os(iOS)
+            greeting = GreetingPicker.pick()
+#endif
+        }
     }
 
     // MARK: Left zone
@@ -239,9 +247,7 @@ struct LibraryHeaderView: View {
             .accessibilityLabel("Sort")
 
             // Ask My Notes — conversational on-device search.
-            // Surfaces only when Apple Intelligence is available
-            // AND the user hasn't disabled it in Settings. Graceful
-            // absence — no disabled state, no upgrade prompt.
+#if os(iOS)
             if intelligence.canRun {
                 Button {
                     isShowingAskSheet = true
@@ -255,6 +261,7 @@ struct LibraryHeaderView: View {
                 .buttonStyle(.ceciliasNotesPressable)
                 .accessibilityLabel("Ask your notes")
             }
+#endif
 
             // Tag filter — opens a half-sheet of every unique tag
             // in the current context. The icon turns brand-blue when

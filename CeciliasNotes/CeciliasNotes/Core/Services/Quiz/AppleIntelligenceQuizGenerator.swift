@@ -15,7 +15,14 @@ import FoundationModels
 struct AppleIntelligenceQuizGenerator {
 
     /// True when the foundation model is usable right now.
-    var isAvailable: Bool { IntelligenceService.shared.canRun }
+    nonisolated var isAvailable: Bool {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return SystemLanguageModel.default.availability == .available
+        }
+        #endif
+        return false
+    }
 
     // MARK: - Generation
 
@@ -283,7 +290,7 @@ struct AppleIntelligenceQuizGenerator {
 
     private func respond(to prompt: String) async -> String? {
         #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             do {
                 #if DEBUG
                 let promptPreview = prompt.prefix(200)

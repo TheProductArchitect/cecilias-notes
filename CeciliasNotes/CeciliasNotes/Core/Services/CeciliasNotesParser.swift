@@ -1,5 +1,13 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+private typealias ParserColor = UIColor
+private typealias ParserFont = UIFont
+#elseif canImport(AppKit)
+import AppKit
+private typealias ParserColor = NSColor
+private typealias ParserFont = NSFont
+#endif
 
 /// Parses a `.inkbook` JSON file off disk into a structured value
 /// (`CeciliasNotesFile`) and renders each block into a single
@@ -113,25 +121,58 @@ nonisolated enum CeciliasNotesParser {
 
     // MARK: Block rendering
 
-    private static let bodyColor    = UIColor(red: 0.20, green: 0.20, blue: 0.20, alpha: 1.0)
-    private static let headingColor = UIColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1.0)
-    private static let muteColor    = UIColor(red: 0.40, green: 0.40, blue: 0.40, alpha: 1.0)
-    private static let codeBackground = UIColor(white: 0.96, alpha: 1.0)
-    private static let calloutBackground = UIColor(white: 0.97, alpha: 1.0)
+    private static let bodyColor    = ParserColor(red: 0.20, green: 0.20, blue: 0.20, alpha: 1.0)
+    private static let headingColor = ParserColor(red: 0.04, green: 0.04, blue: 0.04, alpha: 1.0)
+    private static let muteColor    = ParserColor(red: 0.40, green: 0.40, blue: 0.40, alpha: 1.0)
+    private static let codeBackground = ParserColor(white: 0.96, alpha: 1.0)
+    private static let calloutBackground = ParserColor(white: 0.97, alpha: 1.0)
+
+    private static func regularFont(size: CGFloat) -> ParserFont {
+#if os(iOS)
+        ParserFont.systemFont(ofSize: size, weight: .regular)
+#else
+        ParserFont.systemFont(ofSize: size)
+#endif
+    }
+
+    private static func weightedFont(size: CGFloat, weight: ParserFont.Weight) -> ParserFont {
+#if os(iOS)
+        ParserFont.systemFont(ofSize: size, weight: weight)
+#else
+        ParserFont.systemFont(ofSize: size, weight: weight)
+#endif
+    }
+
+    private static func monospacedFont(size: CGFloat) -> ParserFont {
+#if os(iOS)
+        ParserFont.monospacedSystemFont(ofSize: size, weight: .regular)
+#else
+        ParserFont.monospacedSystemFont(ofSize: size, weight: .regular)
+#endif
+    }
+
+    private static func italicFont(size: CGFloat) -> ParserFont {
+#if os(iOS)
+        ParserFont.italicSystemFont(ofSize: size)
+#else
+        let base = ParserFont.systemFont(ofSize: size)
+        return NSFontManager.shared.convert(base, toHaveTrait: .italicFontMask)
+#endif
+    }
 
     private static func render(_ block: CeciliasNotesFile.Block) -> NSAttributedString {
         switch block {
         case .heading(let content, let level):
             let size: CGFloat   = level == 1 ? 22 : (level == 2 ? 18 : 15)
-            let weight: UIFont.Weight = level == 1 ? .bold : .semibold
+            let weight: ParserFont.Weight = level == 1 ? .bold : .semibold
             return NSAttributedString(string: content, attributes: [
-                .font: UIFont.systemFont(ofSize: size, weight: weight),
+                .font: weightedFont(size: size, weight: weight),
                 .foregroundColor: headingColor
             ])
 
         case .paragraph(let content):
             return NSAttributedString(string: content, attributes: [
-                .font: UIFont.systemFont(ofSize: 15, weight: .regular),
+                .font: regularFont(size: 15),
                 .foregroundColor: bodyColor
             ])
 
@@ -143,27 +184,27 @@ nonisolated enum CeciliasNotesParser {
                 }
             }
             return NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
-                .font: UIFont.systemFont(ofSize: 15, weight: .regular),
+                .font: regularFont(size: 15),
                 .foregroundColor: bodyColor
             ])
 
         case .code(let content, _):
             return NSAttributedString(string: content, attributes: [
-                .font: UIFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                .font: monospacedFont(size: 13),
                 .foregroundColor: headingColor,
                 .backgroundColor: codeBackground
             ])
 
         case .divider:
             return NSAttributedString(string: "──────────────────────────", attributes: [
-                .font: UIFont.systemFont(ofSize: 15, weight: .regular),
+                .font: regularFont(size: 15),
                 .foregroundColor: muteColor
             ])
 
         case .quote(let content, let attribution):
             let text = attribution.map { "\(content)\n— \($0)" } ?? content
             return NSAttributedString(string: text, attributes: [
-                .font: UIFont.italicSystemFont(ofSize: 15),
+                .font: italicFont(size: 15),
                 .foregroundColor: muteColor
             ])
 
@@ -176,7 +217,7 @@ nonisolated enum CeciliasNotesParser {
                 }
             }()
             return NSAttributedString(string: prefix + content, attributes: [
-                .font: UIFont.systemFont(ofSize: 14, weight: .regular),
+                .font: regularFont(size: 14),
                 .foregroundColor: bodyColor,
                 .backgroundColor: calloutBackground
             ])

@@ -401,20 +401,24 @@ struct MoveNotebooksSheet: View {
                             Text(subject.name).foregroundColor(theme.foreground)
                         } icon: {
                             Circle()
-                                .fill(Color(UIColor(hex: subject.colorHex)))
+                                .fill(Color(hex: subject.colorHex))
                                 .frame(width: 12, height: 12)
                         }
                     }
                 }
             }
             .navigationTitle("Move to")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
         }
+        #if os(iOS)
         .presentationDetents([.medium])
+        #endif
     }
 }

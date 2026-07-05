@@ -1,6 +1,5 @@
 import Foundation
 import PencilKit
-import UIKit
 import Vision
 
 /// On-device OCR over a `PKDrawing`. Routes through Vision's
@@ -59,7 +58,7 @@ enum HandwritingOCRService {
         return await withCheckedContinuation { (cont: CheckedContinuation<Output, Never>) in
             DispatchQueue.global(qos: .utility).async {
                 let uiImage = drawing.image(from: imageRect, scale: scale)
-                guard let cg = uiImage.cgImage else {
+                guard let cg = PlatformImageFactory.cgImage(from: uiImage) else {
                     cont.resume(returning: Output(lines: [], joined: ""))
                     return
                 }
