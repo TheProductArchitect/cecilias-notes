@@ -1,0 +1,1173 @@
+# User Flows — machine-queryable
+#
+# Companion to USER_FLOWS.md. Same content, structured for grep / jq / LLM queries.
+#
+# Schema (per flow):
+#   id            stable dot-notation id ("editor.pages.add")
+#   domain        one of: onboarding, library_nav, library_notebooks,
+#                 library_subjects, library_quizzes, library_trash,
+#                 library_search, library_ask, editor_open, editor_strokes,
+#                 editor_text, editor_media, editor_pdf, editor_audio,
+#                 editor_highlights, editor_ai, editor_customise,
+#                 editor_export, settings, sync, handoff, widgets,
+#                 system_integrations, accessibility, mac_capture
+#   name          short label
+#   trigger       what starts the flow
+#   devices:
+#     ipad|iphone|mac:
+#       status    implemented|partial|stub|missing|n_a
+#       ux        one-line UX note (may be omitted if trivial)
+#       reason    only when status == n_a — why this device doesn't offer it
+#   steps         ordered array of user-observable steps (iPad canonical)
+#   files         key files that implement or should implement the flow
+#   notifications names on the NotificationCenter bus that participate
+#   priority      only when any device is missing/stub: p0|p1|p2
+#
+# Query recipes:
+#   All Mac gaps:
+#     yq '.flows[] | select(.devices.mac.status == "missing" or .devices.mac.status == "stub")' USER_FLOWS.yaml
+#   Everything blocked on the notification bus:
+#     yq '.flows[] | select(.notifications | length > 0)' USER_FLOWS.yaml
+#   All p0 punchlist:
+#     yq '.flows[] | select(.priority == "p0")' USER_FLOWS.yaml
+
+version: 1
+generated_for_commit: HEAD
+ipad_is_source_of_truth: true
+mac_competitor_benchmark: granola
+
+flows:
+
+  # ---------- 1. Onboarding ----------
+  - id: onboarding.splash
+    domain: onboarding
+    name: Splash → onboarding
+    trigger: App cold launch, onboarding incomplete
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Skips splash; opens straight into onboarding sheet." }
+    files: [CeciliasNotes/CeciliasNotes/Features/Splash, CeciliasNotes/CeciliasNotes/Features/Onboarding]
+
+  - id: onboarding.name_entry
+    domain: onboarding
+    name: Enter name with live wordmark preview
+    trigger: First launch
+    devices:
+      ipad: { status: implemented, ux: "96pt BrandWordmark updates on every keystroke." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "TextField autofocused; Return advances." }
+    steps: [Show wordmark preview, User types name, Validate letters-only first-word, Mirror to App Group, Advance]
+    files: [Features/Onboarding/PersonalIdentity.swift, CeciliasNotesMac/Onboarding/MacOnboardingView.swift]
+
+  - id: onboarding.icloud_reminder
+    domain: onboarding
+    name: iCloud sign-in reminder
+    trigger: After name entry
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented }
+
+  - id: onboarding.handwriting_explainer
+    domain: onboarding
+    name: Handwriting-only-on-iPad explainer
+    devices:
+      ipad: { status: n_a, reason: "iPad has handwriting; explainer irrelevant." }
+      iphone: { status: partial, ux: "Recommend one-line copy in step 3." }
+      mac: { status: implemented }
+    priority: p2
+
+  - id: onboarding.rerun_from_settings
+    domain: onboarding
+    name: Re-run onboarding from Settings
+    trigger: Settings → Appearance → Show onboarding again
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Verify key reset behaviour." }
+
+  - id: onboarding.icon_picker
+    domain: onboarding
+    name: App icon picker
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: n_a, reason: "macOS does not support setAlternateIconName." }
+
+  # ---------- 2. Library — navigation ----------
+  - id: library_nav.open_home
+    domain: library_nav
+    name: Open library on launch
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented, ux: "Sidebar collapses to drawer." }
+      mac: { status: implemented }
+    files: [Features/Library/LibraryView.swift, CeciliasNotesMac/MacRootView.swift]
+
+  - id: library_nav.toggle_sidebar
+    domain: library_nav
+    name: Show / hide sidebar
+    devices:
+      ipad: { status: implemented, ux: "Always inline at 240pt." }
+      iphone: { status: implemented, ux: "Drawer via masthead icon." }
+      mac: { status: partial, ux: "Recommend ⌘⌥S shortcut to collapse." }
+    priority: p2
+
+  - id: library_nav.switch_subject
+    domain: library_nav
+    name: Switch selected subject
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented, ux: "Drawer auto-closes on selection." }
+      mac: { status: implemented, ux: "Add arrow-key navigation + ⌘1–⌘9 quick jumps." }
+    priority: p1
+
+  - id: library_nav.all_subjects
+    domain: library_nav
+    name: All-subjects overview
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: stub, ux: "Empty state — should render full grid." }
+    files: [Features/Library/AllSubjectsView.swift]
+    priority: p1
+
+  - id: library_nav.all_quizzes
+    domain: library_nav
+    name: All-quizzes overview
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: stub, ux: "Empty state — implement read+play, no Pencil needed." }
+    priority: p1
+
+  - id: library_nav.recent_notebooks
+    domain: library_nav
+    name: Recent notebooks jump list
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Tracker runs; add File → Open Recent (⌘⇧O)." }
+    priority: p1
+
+  # ---------- 3. Library — notebooks ----------
+  - id: library_notebooks.create
+    domain: library_notebooks
+    name: Create notebook
+    trigger: "+" in header / ⌘N
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented }
+    notifications: [macNewNotebook]
+
+  - id: library_notebooks.rename
+    domain: library_notebooks
+    name: Rename notebook
+    devices:
+      ipad: { status: implemented, ux: "Tap title → inline field." }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Double-click title inline; not a sheet." }
+    priority: p1
+
+  - id: library_notebooks.change_cover_tone
+    domain: library_notebooks
+    name: Change cover tone
+    devices:
+      ipad: { status: implemented, ux: "Long-press → tone picker (8 tones)." }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Right-click → Change cover → 8-tone palette." }
+    files: [Core/Models/V6/NotebookCoverTone.swift, Features/Library/Grid/CoverTextureCanvas.swift]
+    priority: p0
+
+  - id: library_notebooks.delete
+    domain: library_notebooks
+    name: Delete (soft) notebook
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Right-click → Delete; must soft-delete." }
+    priority: p1
+
+  - id: library_notebooks.duplicate
+    domain: library_notebooks
+    name: Duplicate notebook
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: missing }
+    priority: p2
+
+  - id: library_notebooks.move_to_subject
+    domain: library_notebooks
+    name: Move notebook to subject
+    devices:
+      ipad: { status: implemented, ux: "Drag onto sidebar row." }
+      iphone: { status: implemented, ux: "Long-press → Move to…" }
+      mac: { status: partial, ux: "Verify drag payload accepts internal UUIDs." }
+    priority: p1
+
+  - id: library_notebooks.reorder
+    domain: library_notebooks
+    name: Reorder in grid
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Add .dropDestination on the grid." }
+    priority: p2
+
+  - id: library_notebooks.tags_edit
+    domain: library_notebooks
+    name: Add / edit tags
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Right-click → Tags… menu entry." }
+    files: [Features/Library/TagFilterSheet.swift]
+    priority: p1
+
+  - id: library_notebooks.filter_by_tag
+    domain: library_notebooks
+    name: Filter grid by tag
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial }
+    priority: p1
+
+  - id: library_notebooks.pin_favorite
+    domain: library_notebooks
+    name: Pin / favourite notebook (top of grid)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing }
+    priority: p2
+
+  - id: library_notebooks.quick_look
+    domain: library_notebooks
+    name: Notebook preview / quick look
+    devices:
+      ipad: { status: implemented, ux: "Long-press peek." }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Space-bar quick-look on selected cell (Finder idiom)." }
+    priority: p1
+
+  # ---------- 4. Library — subjects ----------
+  - id: library_subjects.create
+    domain: library_subjects
+    name: Create subject
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Add ⌘⇧N." }
+    priority: p1
+
+  - id: library_subjects.rename
+    domain: library_subjects
+    name: Rename subject
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Right-click → Rename or double-click." }
+
+  - id: library_subjects.delete
+    domain: library_subjects
+    name: Delete subject with notebooks-reassignment prompt
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "NSAlert-style confirm; option to move notebooks to Unfiled." }
+    priority: p1
+
+  - id: library_subjects.reorder
+    domain: library_subjects
+    name: Reorder subjects
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial }
+
+  - id: library_subjects.color
+    domain: library_subjects
+    name: Assign subject colour
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial }
+
+  # ---------- 5. Library — quizzes ----------
+  - id: library_quizzes.create
+    domain: library_quizzes
+    name: Create quiz from notebook
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: stub, ux: "Nothing here needs Pencil; implement." }
+    priority: p1
+
+  - id: library_quizzes.play
+    domain: library_quizzes
+    name: Take quiz
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: stub }
+    priority: p1
+
+  - id: library_quizzes.history
+    domain: library_quizzes
+    name: View quiz history / retake
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: stub } }
+
+  - id: library_quizzes.delete
+    domain: library_quizzes
+    name: Delete quiz
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: stub } }
+
+  # ---------- 6. Library — trash ----------
+  - id: library_trash.open
+    domain: library_trash
+    name: Open trash
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: library_trash.restore
+    domain: library_trash
+    name: Restore item
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Right-click → Restore." }
+
+  - id: library_trash.empty
+    domain: library_trash
+    name: Empty trash
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Confirm dialog required." }
+
+  - id: library_trash.auto_purge
+    domain: library_trash
+    name: Auto-purge after N days
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: partial }
+    priority: p2
+
+  # ---------- 7. Search & tags ----------
+  - id: library_search.global
+    domain: library_search
+    name: Global search
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "⌘F opens SearchResultsView." }
+    files: [Features/Library/Search/SearchResultsView.swift, Core/Services/SearchIndexService.swift]
+
+  - id: library_search.within_notebook
+    domain: library_search
+    name: Search within a notebook
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: partial, ux: "⌘F inside MacEditorView scopes to open notebook." }
+    priority: p1
+
+  - id: library_search.spotlight
+    domain: library_search
+    name: Spotlight system search
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Verify Spotlight registration on Mac target." }
+    files: [Core/Services/SpotlightService.swift]
+
+  - id: library_search.suggestions
+    domain: library_search
+    name: Search suggestions / recents
+    devices: { ipad: { status: missing }, iphone: { status: missing }, mac: { status: missing } }
+    priority: p2
+
+  # ---------- 8. Ask My Notes ----------
+  - id: library_ask.open
+    domain: library_ask
+    name: Open Ask My Notes
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: partial }
+      mac: { status: missing, ux: "High-priority Granola-parity surface; text-only." }
+    files: [Features/Library/Ask/AskMyNotesView.swift]
+    priority: p0
+
+  - id: library_ask.enter_question
+    domain: library_ask
+    name: Enter question
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
+
+  - id: library_ask.grounded_answer
+    domain: library_ask
+    name: View grounded answer with citations
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
+
+  - id: library_ask.jump_to_citation
+    domain: library_ask
+    name: Tap citation → jump to source page
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+
+  - id: library_ask.followup
+    domain: library_ask
+    name: Follow-up / conversation
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
+    priority: p1
+
+  # ---------- 9. Editor — opening & pages ----------
+  - id: editor_open.notebook
+    domain: editor_open
+    name: Open notebook → editor
+    devices:
+      ipad: { status: implemented, ux: "Cover flip animation." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Currently a sheet; recommend promoting to a new window." }
+    priority: p1
+
+  - id: editor_open.add_page
+    domain: editor_open
+    name: Add page
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial, ux: "⌘⇧P" } }
+
+  - id: editor_open.delete_page
+    domain: editor_open
+    name: Delete page
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_open.duplicate_page
+    domain: editor_open
+    name: Duplicate page
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+
+  - id: editor_open.reorder_pages
+    domain: editor_open
+    name: Reorder pages in strip
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_open.minimap_jump
+    domain: editor_open
+    name: Jump to page via minimap
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: partial }
+      mac: { status: missing }
+    priority: p2
+
+  - id: editor_open.zoom
+    domain: editor_open
+    name: Zoom in / out
+    devices:
+      ipad: { status: implemented, ux: "Pinch." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Add trackpad pinch + ⌘0 reset." }
+
+  - id: editor_open.fit_to_page
+    domain: editor_open
+    name: Fit-to-page / actual size
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing, ux: "⌘0 reset zoom." } }
+    priority: p2
+
+  # ---------- 10. Editor — strokes (iPad only by design) ----------
+  - id: editor_strokes.draw
+    domain: editor_strokes
+    name: Draw with Apple Pencil
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: n_a, reason: "No Pencil on iPhone." }
+      mac: { status: n_a, reason: "No Pencil on Mac." }
+    files: [Features/Editor/Canvas/ContinuousCanvasView.swift]
+
+  - id: editor_strokes.change_tool
+    domain: editor_strokes
+    name: Change tool (pen / marker / pencil / highlighter / eraser)
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.change_color
+    domain: editor_strokes
+    name: Change tool colour
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.change_thickness
+    domain: editor_strokes
+    name: Change tool thickness
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.erase
+    domain: editor_strokes
+    name: Object eraser
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.lasso_select
+    domain: editor_strokes
+    name: Lasso select strokes
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.lasso_group_ops
+    domain: editor_strokes
+    name: Lasso group ops (move / resize / delete / recolour)
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.shape_recognition
+    domain: editor_strokes
+    name: Shape recognition
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.pencil_squeeze
+    domain: editor_strokes
+    name: Pencil squeeze quick action
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: editor_strokes.undo_redo
+    domain: editor_strokes
+    name: Undo / redo
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented, ux: "Applies to typed content only." }
+      mac: { status: implemented, ux: "⌘Z / ⌘⇧Z." }
+
+  # ---------- 11. Editor — text ----------
+  - id: editor_text.insert
+    domain: editor_text
+    name: Insert text element
+    devices:
+      ipad: { status: implemented, ux: "Toolbar → tap page." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Double-click on page + toolbar + ⌘T." }
+    notifications: [macInsertText, macInsertTextOnPage]
+
+  - id: editor_text.edit
+    domain: editor_text
+    name: Edit text
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Sheet today; consider inline editing." }
+    priority: p1
+
+  - id: editor_text.format
+    domain: editor_text
+    name: Text formatting (bold / italic / size / colour)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_text.move_resize
+    domain: editor_text
+    name: Move / resize text element
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_text.delete
+    domain: editor_text
+    name: Delete text element
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: editor_text.sticky_note
+    domain: editor_text
+    name: Insert sticky note
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_text.text_block
+    domain: editor_text
+    name: Insert text block
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  # ---------- 12. Editor — images / media ----------
+  - id: editor_media.photo_library
+    domain: editor_media
+    name: Insert image from Photos
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Fall back to NSOpenPanel." }
+
+  - id: editor_media.camera
+    domain: editor_media
+    name: Insert image from camera
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: n_a, reason: "No camera parity on Mac." }
+
+  - id: editor_media.files_drop
+    domain: editor_media
+    name: Insert via Files / drag-drop
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: implemented } }
+
+  - id: editor_media.transform
+    domain: editor_media
+    name: Move / resize / rotate image
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_media.crop
+    domain: editor_media
+    name: Crop image
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
+    priority: p2
+
+  - id: editor_media.ocr
+    domain: editor_media
+    name: OCR text out of image
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Verify Vision path on Mac." }
+    files: [Core/Services/HandwritingOCRService.swift]
+
+  # ---------- 13. Editor — PDF ----------
+  - id: editor_pdf.import_as_notebook
+    domain: editor_pdf
+    name: Import PDF as new notebook
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Add File → Import PDF… menu entry." }
+
+  - id: editor_pdf.import_as_pages
+    domain: editor_pdf
+    name: Import PDF pages into current notebook
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_pdf.annotate_strokes
+    domain: editor_pdf
+    name: Annotate PDF with strokes
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: n_a, reason: "No Pencil." }
+      mac: { status: n_a, reason: "No Pencil." }
+
+  - id: editor_pdf.text_over_pdf
+    domain: editor_pdf
+    name: Add text over PDF
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: editor_pdf.text_search
+    domain: editor_pdf
+    name: Search extracted PDF text
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: editor_pdf.rearrange_pages
+    domain: editor_pdf
+    name: Rearrange PDF pages
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
+    priority: p2
+
+  # ---------- 14. Editor — audio ----------
+  - id: editor_audio.voice_memo
+    domain: editor_audio
+    name: Voice memo on page
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Enable — Granola treats capture as first-class." }
+    priority: p1
+
+  - id: editor_audio.dictation
+    domain: editor_audio
+    name: Dictation into text element
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "System dictation should work; verify recording pill doesn't block." }
+    files: [Features/Editor/Recording/DictationFlowCommit.swift]
+
+  - id: editor_audio.lecture_mode
+    domain: editor_audio
+    name: Lecture mode — long-form + live transcription
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Highest-priority Granola-parity feature on Mac." }
+    files: [Features/Editor/Lecture/LectureRecorder.swift]
+    priority: p0
+
+  - id: editor_audio.playback
+    domain: editor_audio
+    name: Play back recording
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_audio.scrub_transcript
+    domain: editor_audio
+    name: Scrub / seek transcript
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+    priority: p1
+
+  - id: editor_audio.delete_recording
+    domain: editor_audio
+    name: Delete recording
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_audio.export_transcript
+    domain: editor_audio
+    name: Export transcript as text
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
+    priority: p1
+
+  # ---------- 15. Highlights, shapes, annotations ----------
+  - id: editor_highlights.highlight_text
+    domain: editor_highlights
+    name: Highlight text
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_highlights.shape_menu
+    domain: editor_highlights
+    name: Insert shape from menu (Mac non-Pencil affordance)
+    devices:
+      ipad: { status: implemented, ux: "Via drawing recognition." }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "Menu → Insert shape (rect / circle / arrow) for keyboard-first insert." }
+    priority: p2
+
+  - id: editor_highlights.annotations
+    domain: editor_highlights
+    name: Free annotation notes
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  # ---------- 16. Editor AI ----------
+  - id: editor_ai.summarize_page
+    domain: editor_ai
+    name: Summarize current page
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Portable — reuse SummarizePageView." }
+    files: [Features/Editor/AI/SummarizePageView.swift]
+    priority: p0
+
+  - id: editor_ai.ask_about_page
+    domain: editor_ai
+    name: Ask about page (contextual AI)
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
+    priority: p1
+
+  - id: editor_ai.generate_quiz
+    domain: editor_ai
+    name: Generate quiz from page(s)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+    priority: p1
+
+  - id: editor_ai.handwriting_to_text
+    domain: editor_ai
+    name: Rewrite handwriting to typed text
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+
+  # ---------- 17. Customisation ----------
+  - id: editor_customise.cover_editor
+    domain: editor_customise
+    name: Edit notebook cover
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "Sheet with 8 tones + title field." }
+    priority: p0
+
+  - id: editor_customise.page_template
+    domain: editor_customise
+    name: Change page template (grid / dot / blank / lined)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+    priority: p1
+
+  - id: editor_customise.background
+    domain: editor_customise
+    name: Change page background colour
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+    priority: p2
+
+  # ---------- 18. Export & share ----------
+  - id: editor_export.page_pdf
+    domain: editor_export
+    name: Export current page as PDF
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: editor_export.notebook_pdf
+    domain: editor_export
+    name: Export whole notebook as PDF
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: editor_export.png
+    domain: editor_export
+    name: Export page as PNG
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: editor_export.share_sheet
+    domain: editor_export
+    name: Share via system share sheet
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "NSSharingServicePicker." }
+
+  - id: editor_export.print
+    domain: editor_export
+    name: Print
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: missing, ux: "⌘P via NSPrintOperation." }
+    priority: p1
+
+  - id: editor_export.copy_as_image
+    domain: editor_export
+    name: Copy page as image to clipboard
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: missing, ux: "⌘⇧C." }
+    priority: p2
+
+  - id: editor_export.markdown
+    domain: editor_export
+    name: Export as Markdown (typed + transcript)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing, ux: "Big Granola-parity win." }
+    priority: p1
+
+  # ---------- 19. Settings ----------
+  - id: settings.open
+    domain: settings
+    name: Open Settings
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "⌘," }
+    notifications: [macOpenSettings]
+
+  - id: settings.appearance
+    domain: settings
+    name: Appearance (theme / contrast / motion)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.change_icon
+    domain: settings
+    name: Change app icon
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: n_a, reason: "macOS doesn't support alternate icons." }
+
+  - id: settings.pencil
+    domain: settings
+    name: Pencil settings
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: n_a, reason: "No Pencil." }
+      mac: { status: n_a, reason: "No Pencil." }
+
+  - id: settings.audio
+    domain: settings
+    name: Audio settings
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.intelligence
+    domain: settings
+    name: Intelligence / AI settings
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.cloud
+    domain: settings
+    name: Cloud settings
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.storage
+    domain: settings
+    name: Storage settings (used space, cache clear)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.about
+    domain: settings
+    name: About (version, credits)
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: settings.privacy_policy
+    domain: settings
+    name: Privacy policy
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+
+  - id: settings.debug
+    domain: settings
+    name: Debug menu
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.style_guide
+    domain: settings
+    name: Style guide inspector
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: settings.sign_out_reset
+    domain: settings
+    name: Sign out / reset iCloud
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+
+  - id: settings.multipeer_pairing
+    domain: settings
+    name: Multipeer pairing management
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+
+  # ---------- 20. Sync ----------
+  - id: sync.cloudkit
+    domain: sync
+    name: CloudKit background sync
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+    files: [Core/Services/CloudSyncManager.swift]
+
+  - id: sync.status_banner
+    domain: sync
+    name: Sync status banner
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented, ux: "Editorial hairline." } }
+
+  - id: sync.force_resync
+    domain: sync
+    name: Force resync
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: sync.multipeer_advertise
+    domain: sync
+    name: Multipeer discovery / advertise
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented } }
+    files: [Core/Services/MultipeerSyncService.swift]
+
+  - id: sync.peer_pairing
+    domain: sync
+    name: Peer pairing / trust
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    priority: p1
+
+  - id: sync.conflict_resolution
+    domain: sync
+    name: Conflict-resolution UI
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    priority: p1
+
+  # ---------- 21. Handoff & continuity ----------
+  - id: handoff.ipad_to_mac
+    domain: handoff
+    name: Handoff editing from iPad → Mac
+    devices:
+      ipad: { status: implemented, ux: "Publishes NSUserActivity." }
+      iphone: { status: partial }
+      mac: { status: implemented, ux: "MacAppDelegate receives + posts macOpenHandoffPage." }
+    notifications: [macOpenHandoffPage]
+
+  - id: handoff.mac_to_ipad
+    domain: handoff
+    name: Handoff editing from Mac → iPad
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial, ux: "Verify NSUserActivity publisher." } }
+    priority: p1
+
+  - id: handoff.universal_clipboard
+    domain: handoff
+    name: Universal clipboard (system)
+    devices: { ipad: { status: n_a }, iphone: { status: n_a }, mac: { status: n_a } }
+
+  - id: handoff.deep_link
+    domain: handoff
+    name: Deep link URL scheme to notebook / page
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing, ux: "ceciliasnotes://notebook/{id}/page/{id}." }
+    priority: p0
+
+  # ---------- 22. Widgets ----------
+  - id: widgets.home_recent
+    domain: widgets
+    name: Home-screen widget — recent notebooks
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: widgets.lock_screen
+    domain: widgets
+    name: Lock-screen widget
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: n_a }
+
+  - id: widgets.standby
+    domain: widgets
+    name: StandBy widget (charging landscape)
+    devices:
+      ipad: { status: n_a }
+      iphone: { status: partial }
+      mac: { status: n_a }
+
+  - id: widgets.deep_link
+    domain: widgets
+    name: Widget → deep link into notebook
+    devices: { ipad: { status: missing }, iphone: { status: missing }, mac: { status: missing } }
+    priority: p1
+
+  # ---------- 23. System integrations ----------
+  - id: system.spotlight
+    domain: system_integrations
+    name: Spotlight indexing
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: system.app_intents
+    domain: system_integrations
+    name: App Intents / Shortcuts
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing, ux: "New note / Open notebook / Ask my notes." }
+    priority: p0
+
+  - id: system.share_extension
+    domain: system_integrations
+    name: Share extension (receive text/URL from other apps)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: n_a, reason: "macOS uses Services menu instead." }
+    priority: p1
+
+  - id: system.services_menu
+    domain: system_integrations
+    name: macOS Services menu
+    devices:
+      ipad: { status: n_a }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "'New note from selection'." }
+    priority: p1
+
+  - id: system.files_provider
+    domain: system_integrations
+    name: Files provider (browse notebooks from Files.app)
+    devices: { ipad: { status: missing }, iphone: { status: missing }, mac: { status: missing } }
+    priority: p2
+
+  - id: system.drag_out
+    domain: system_integrations
+    name: Drag notebook / page out to another app
+    devices: { ipad: { status: partial }, iphone: { status: n_a }, mac: { status: partial } }
+    priority: p2
+
+  # ---------- 24. Accessibility & input ----------
+  - id: accessibility.voiceover
+    domain: accessibility
+    name: VoiceOver navigation of library + editor
+    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    priority: p1
+
+  - id: accessibility.dynamic_type
+    domain: accessibility
+    name: Dynamic Type scaling
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: accessibility.reduce_motion
+    domain: accessibility
+    name: Reduce Motion
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+
+  - id: accessibility.keyboard_only
+    domain: accessibility
+    name: Keyboard-only navigation
+    devices:
+      ipad: { status: partial }
+      iphone: { status: n_a }
+      mac: { status: partial, ux: "Full Tab loop through sidebar / grid / editor." }
+    priority: p1
+
+  - id: accessibility.shortcuts
+    domain: accessibility
+    name: Hardware keyboard shortcuts
+    devices:
+      ipad: { status: partial }
+      iphone: { status: n_a }
+      mac: { status: partial, ux: "Missing: ⌘F ⌘⇧F ⌘⌥S ⌘0 ⌘P ⌘⇧O ⌘⇧N ⌘K." }
+    priority: p0
+
+  - id: accessibility.trackpad_gestures
+    domain: accessibility
+    name: Trackpad gestures
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: partial, ux: "Add pinch-zoom on canvas." } }
+    priority: p1
+
+  # ---------- 25. Mac-only (Granola benchmark) ----------
+  - id: mac_capture.menu_bar_quick_capture
+    domain: mac_capture
+    name: Menu-bar quick capture popover
+    devices:
+      ipad: { status: n_a, reason: "No menu bar on iPadOS." }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "⌥⌘Space toggles a popover — title + body, saves to Unfiled." }
+    priority: p0
+
+  - id: mac_capture.global_hotkey
+    domain: mac_capture
+    name: Global hotkey — system-wide
+    devices:
+      ipad: { status: n_a }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "User-configurable in Settings; ⌥⌘Space default." }
+    priority: p0
+
+  - id: mac_capture.command_palette
+    domain: mac_capture
+    name: Command palette (⌘K)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "Search subjects/notebooks/pages + actions." }
+    priority: p0
+
+  - id: mac_capture.multi_window
+    domain: mac_capture
+    name: Multi-window (open two notebooks side-by-side)
+    devices:
+      ipad: { status: partial, ux: "iPadOS Stage Manager already supports it." }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "openWindow(id:value:) with notebook id." }
+    priority: p1
+
+  - id: mac_capture.calendar_link
+    domain: mac_capture
+    name: Calendar-linked notebooks (EventKit)
+    devices:
+      ipad: { status: missing, ux: "Optional; Granola-style meeting notes." }
+      iphone: { status: missing }
+      mac: { status: missing }
+    priority: p2
+
+  - id: mac_capture.templates
+    domain: mac_capture
+    name: New-from-template (meeting / lecture / journal)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing, ux: "Seeds first page with typed scaffolding." }
+    priority: p1
+
+  - id: mac_capture.smart_lists
+    domain: mac_capture
+    name: Sidebar smart lists (Today / This week / Untagged / Recording)
+    devices:
+      ipad: { status: missing }
+      iphone: { status: missing }
+      mac: { status: missing }
+    priority: p1
+
+  - id: mac_capture.focus_mode
+    domain: mac_capture
+    name: Focus mode — hide chrome
+    devices:
+      ipad: { status: partial }
+      iphone: { status: n_a }
+      mac: { status: missing, ux: "⌃⌘F hides sidebar + toolbar." }
+    priority: p2
+
+  - id: mac_capture.find_replace_text
+    domain: mac_capture
+    name: Find-and-replace inside text element
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: missing, ux: "⌘F inside text editor sheet." }
+    priority: p2

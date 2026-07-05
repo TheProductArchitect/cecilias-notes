@@ -3,6 +3,11 @@
 A reference document for the development team. Bullet points and short
 paragraphs are preferred over prose; this is a reference, not a tutorial.
 
+> **New here?** Start with [`PROJECT_STATE.md`](PROJECT_STATE.md) for the
+> current phase + debug playbook, then skim [`CODE_GRAPH.md`](CODE_GRAPH.md)
+> for the auto-generated file/type/notification map. Regenerate the graph
+> after structural changes with `python3 Documentation/tools/build_code_graph.py`.
+
 ---
 
 ## App overview
