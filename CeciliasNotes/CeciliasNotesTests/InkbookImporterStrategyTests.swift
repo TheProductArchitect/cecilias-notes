@@ -35,6 +35,7 @@ final class InkbookImporterStrategyTests: XCTestCase {
             page_size: nil,
             agent: nil,
             pages: pages,
+            origin: nil,
             mcp_action: action,
             base_updated_at: baseUpdatedAt
         )

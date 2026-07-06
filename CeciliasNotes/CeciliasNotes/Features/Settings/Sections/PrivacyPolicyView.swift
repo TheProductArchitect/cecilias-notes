@@ -24,7 +24,7 @@ struct PrivacyPolicyView: View {
         }
         .background(theme.surface)
         .navigationTitle("Privacy")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationBarTitle()
     }
 
     private var header: some View {
@@ -57,7 +57,7 @@ struct PrivacyPolicyView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("full policy")
             Button {
-                UIApplication.shared.open(Self.hostedURL)
+                PlatformApp.open(Self.hostedURL)
             } label: {
                 HStack(spacing: 6) {
                     Text(Self.hostedURL.absoluteString)

@@ -170,31 +170,46 @@ struct KeyboardShortcutsView: View {
     var body: some View {
         List {
             Section("Library") {
-                shortcutRow("New Notebook",   keys: "⌘N")
-                shortcutRow("Search",         keys: "⌘F")
-                shortcutRow("Settings",       keys: "⌘,")
+                shortcutRow("New Notebook",     keys: "⌘N")
+                shortcutRow("Search Library",   keys: "⌘F")
+                shortcutRow("Settings",         keys: "⌘,")
+                if DeviceCapabilities.supportsGridKeyboardNavigation {
+                    shortcutRow("Focus Notebook", keys: "↑ or ↓")
+                    shortcutRow("Open Notebook",  keys: "↩")
+                    shortcutRow("Open Notebook",  keys: "Space", footnote: "Library grid only")
+                }
             }
             Section("Editor") {
-                shortcutRow("Undo",           keys: "⌘Z")
-                shortcutRow("Redo",           keys: "⌘⇧Z")
-                shortcutRow("Export",         keys: "⌘E")
-                shortcutRow("Print",          keys: "⌘P")
-                shortcutRow("Previous Page",  keys: "⌘←")
-                shortcutRow("Next Page",      keys: "⌘→")
-                shortcutRow("Toggle Toolbar", keys: "Space")
-                shortcutRow("Close Editor",   keys: "Esc")
+                shortcutRow("Undo",               keys: "⌘Z")
+                shortcutRow("Redo",               keys: "⌘⇧Z")
+                shortcutRow("Export",             keys: "⌘⇧E")
+                shortcutRow("Find in Notebook",   keys: "⌘⇧F")
+                shortcutRow("Print",              keys: "⌘P")
+                shortcutRow("Close Notebook",     keys: "⌘W")
+                shortcutRow("Scroll Up",          keys: "⌘←", footnote: "One viewport in continuous canvas")
+                shortcutRow("Scroll Down",        keys: "⌘→", footnote: "One viewport in continuous canvas")
+                shortcutRow("Toggle Toolbar",     keys: "Space", footnote: "While editing")
+                shortcutRow("Focus Mode",         keys: "⌃⌘F")
+                shortcutRow("Close Editor",       keys: "Esc")
             }
-            Section("Tools") {
-                shortcutRow("Pen",            keys: "1")
-                shortcutRow("Highlighter",    keys: "2")
-                shortcutRow("Pencil",         keys: "3")
-                shortcutRow("Eraser",         keys: "4")
-                shortcutRow("Lasso",          keys: "5")
-                shortcutRow("Ruler",          keys: "6")
-                shortcutRow("Text Tool",      keys: "T")
-            }
-            Section("Settings") {
-                shortcutRow("Close",          keys: "⌘W or Esc")
+            if DeviceCapabilities.canDraw {
+                Section {
+                    Text("Number keys select tools; your colour and width settings are restored.")
+                        .font(.ceciliasNotesCaption)
+                        .foregroundColor(theme.foregroundMuted)
+                } header: {
+                    Text("Drawing Tools (iPad)")
+                }
+                shortcutRow("Pen",                keys: "1")
+                shortcutRow("Fountain Pen",       keys: "2")
+                shortcutRow("Brush",              keys: "3")
+                shortcutRow("Marker",             keys: "4")
+                shortcutRow("Pencil",             keys: "5")
+                shortcutRow("Highlighter",        keys: "6")
+                shortcutRow("Eraser",             keys: "7")
+                shortcutRow("Lasso",              keys: "8")
+                shortcutRow("Ruler",              keys: "9")
+                shortcutRow("Text Tool",          keys: "T")
             }
         }
         .listStyle(.insetGrouped)
@@ -202,19 +217,26 @@ struct KeyboardShortcutsView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func shortcutRow(_ name: String, keys: String) -> some View {
-        HStack {
-            Text(name)
-                .font(.ceciliasNotesBody)
-                .foregroundColor(theme.foreground)
-            Spacer()
-            Text(keys)
-                .font(.ceciliasNotesMono)
-                .foregroundColor(theme.foregroundMuted)
-                .padding(.horizontal, CeciliasNotes.Spacing.xs)
-                .padding(.vertical, CeciliasNotes.Spacing.micro)
-                .background(theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
+    private func shortcutRow(_ name: String, keys: String, footnote: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(name)
+                    .font(.ceciliasNotesBody)
+                    .foregroundColor(theme.foreground)
+                Spacer()
+                Text(keys)
+                    .font(.ceciliasNotesMono)
+                    .foregroundColor(theme.foregroundMuted)
+                    .padding(.horizontal, CeciliasNotes.Spacing.xs)
+                    .padding(.vertical, CeciliasNotes.Spacing.micro)
+                    .background(theme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: CeciliasNotes.Radius.sm, style: .continuous))
+            }
+            if let footnote {
+                Text(footnote)
+                    .font(.ceciliasNotesCaption)
+                    .foregroundColor(theme.foregroundMuted)
+            }
         }
     }
 }

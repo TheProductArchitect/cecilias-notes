@@ -38,11 +38,26 @@ enum ExportQuality {
 }
 
 struct ExportOptions {
+    var deliveryFormat:        ExportDeliveryFormat = .pdf
     var pageRange:             PageRange       = .all
     var quality:               ExportQuality   = .standard
     var includeTranscriptions: Bool            = false
     var includePageNumbers:    Bool            = true
     var includeCoverPage:      Bool            = true
+}
+
+enum ExportDeliveryFormat: String, CaseIterable, Identifiable {
+    case pdf
+    case markdown
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .pdf:       return "PDF"
+        case .markdown:  return "Markdown"
+        }
+    }
 }
 
 struct ExportResult {
@@ -173,6 +188,47 @@ final class ExportService {
             fileSizeBytes: fileSize,
             pageCount:     total,
             duration:      duration
+        )
+    }
+
+    func exportNotebookMarkdown(
+        _ notebook: Notebook,
+        pages allPages: [Page],
+        options: ExportOptions,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> ExportResult {
+        let start = Date()
+        let indices = options.pageRange.resolve(totalPages: allPages.count)
+        let exportPages = indices.map { allPages[$0] }
+        guard !exportPages.isEmpty else { throw ExportError.noPages }
+
+        progress(0.5)
+        let outputURL = try makeMarkdownOutputURL(for: notebook)
+        try NotebookMarkdownExport.write(
+            notebook: notebook,
+            pages: exportPages,
+            storage: StorageService.shared,
+            to: outputURL
+        )
+        progress(1)
+
+        let attrs = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+        let fileSize = (attrs[.size] as? Int64) ?? 0
+        let duration = Date().timeIntervalSince(start)
+        let record = ExportRecord(
+            notebookId: notebook.id,
+            notebookTitle: notebook.title,
+            fileURL: outputURL,
+            fileSizeBytes: fileSize,
+            pageCount: exportPages.count,
+            exportedAt: Date()
+        )
+        await ExportManifest.shared.append(record)
+        return ExportResult(
+            fileURL: outputURL,
+            fileSizeBytes: fileSize,
+            pageCount: exportPages.count,
+            duration: duration
         )
     }
 
@@ -474,6 +530,27 @@ final class ExportService {
         var suffix  = 2
         while FileManager.default.fileExists(atPath: url.path) {
             url = exportsDir.appendingPathComponent("\(base)_\(suffix).pdf")
+            suffix += 1
+        }
+        return url
+    }
+
+    private func makeMarkdownOutputURL(for notebook: Notebook) throws -> URL {
+        let exportsDir = Self.globalExportsDirectory
+        try FileManager.default.createDirectory(at: exportsDir, withIntermediateDirectories: true)
+
+        let safeTitle = notebook.title
+            .components(separatedBy: .init(charactersIn: "/\\:*?\"<>|"))
+            .joined(separator: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(60)
+
+        let dateStr = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let base = "\(safeTitle)_\(dateStr)"
+        var url = exportsDir.appendingPathComponent(base + ".md")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = exportsDir.appendingPathComponent("\(base)_\(suffix).md")
             suffix += 1
         }
         return url

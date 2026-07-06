@@ -1,9 +1,9 @@
 import UIKit
 import UniformTypeIdentifiers
 
-/// Cecilia's Notes share-extension entry point. Accepts PDFs and
-/// images from any host app (Files, Photos, Safari, Mail) and drops
-/// them into the shared app-group `ShareInbox` folder. The main app
+/// Cecilia's Notes share-extension entry point. Accepts PDFs, images,
+/// plain text, and URLs from any host app and routes them into the
+/// shared app-group `ShareInbox` folder (or `.cnshare` JSON for text).
 /// watches that folder on foreground / launch and ingests anything
 /// it finds.
 ///
@@ -140,7 +140,11 @@ final class ShareViewController: UIViewController {
             .flatMap { $0.attachments ?? [] } ?? []
 
         for provider in attachments {
-            if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
+            if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+                await ingestText(provider: provider, typeID: UTType.plainText.identifier, inbox: inboxURL)
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                await ingestURL(provider: provider, inbox: inboxURL)
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
                 await writeAttachment(
                     provider: provider,
                     typeID: UTType.pdf.identifier,
@@ -157,6 +161,64 @@ final class ShareViewController: UIViewController {
                 )
             }
         }
+    }
+
+    private func ingestURL(provider: NSItemProvider, inbox: URL) async {
+        let item: NSSecureCoding?
+        do {
+            item = try await provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil)
+        } catch {
+            return
+        }
+        let urlString: String?
+        if let url = item as? URL {
+            urlString = url.absoluteString
+        } else if let url = item as? NSURL {
+            urlString = url.absoluteString
+        } else if let data = item as? Data, let s = String(data: data, encoding: .utf8) {
+            urlString = s
+        } else {
+            urlString = nil
+        }
+        guard let link = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty else { return }
+        let title = URL(string: link)?.host ?? "Link"
+        writeCapturePayload(title: title, body: link, inbox: inbox)
+    }
+
+    private func ingestText(provider: NSItemProvider, typeID: String, inbox: URL) async {
+        let item: NSSecureCoding?
+        do {
+            item = try await provider.loadItem(forTypeIdentifier: typeID, options: nil)
+        } catch {
+            return
+        }
+        let text: String?
+        if let s = item as? String {
+            text = s
+        } else if let data = item as? Data {
+            text = String(data: data, encoding: .utf8)
+        } else if let attr = item as? NSAttributedString {
+            text = attr.string
+        } else {
+            text = nil
+        }
+        guard let body = text?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty else { return }
+        let title = body
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+        writeCapturePayload(
+            title: title.isEmpty ? "Shared note" : String(title.prefix(80)),
+            body: body,
+            inbox: inbox
+        )
+    }
+
+    private func writeCapturePayload(title: String, body: String, inbox: URL) {
+        let payload = ["title": title, "body": body]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        let file = inbox.appendingPathComponent("\(UUID().uuidString).cnshare")
+        try? data.write(to: file, options: .atomic)
     }
 
     private func writeAttachment(

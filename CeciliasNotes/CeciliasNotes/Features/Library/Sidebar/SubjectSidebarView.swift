@@ -41,16 +41,16 @@ struct SubjectSidebarView: View {
                 VStack(spacing: 0) {
                     subjectsSection
                     sectionDivider
+#if os(macOS)
+                    macSmartListsSection
+                    sectionDivider
+#endif
                     recentContextRow
                     trashContextRow
                     if quizEnabled {
                         sectionDivider
-#if os(iOS)
                         QuizListView(viewModel: viewModel)
                         allQuizzesRow
-#else
-                        macQuizPlaceholder
-#endif
                     }
                 }
                 .padding(.top, 24)
@@ -170,25 +170,6 @@ struct SubjectSidebarView: View {
         )
     }
 
-#if os(macOS)
-    private var macQuizPlaceholder: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("quizzes")
-                .font(.system(size: 7.5, weight: .regular))
-                .tracking(0.12)
-                .textCase(.uppercase)
-                .foregroundStyle(theme.recessiveSecondary)
-                .padding(.horizontal, Self.horizontalInset)
-                .padding(.bottom, 8)
-            Text("nothing yet.")
-                .font(.system(size: 11, weight: .regular).italic())
-                .foregroundStyle(theme.recessivePrimary)
-                .padding(.horizontal, Self.horizontalInset)
-                .padding(.vertical, 6)
-        }
-    }
-#endif
-
     private func subjectRow(for subject: Subject) -> some View {
         SubjectListRow(
             subject: subject,
@@ -197,6 +178,28 @@ struct SubjectSidebarView: View {
             isEditing: isEditingSubjects
         )
     }
+
+#if os(macOS)
+    private var macSmartListsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("smart lists")
+                .font(.system(size: 7.5, weight: .regular))
+                .tracking(0.08)
+                .textCase(.uppercase)
+                .foregroundStyle(theme.recessiveQuaternary)
+                .padding(.horizontal, Self.horizontalInset)
+                .padding(.bottom, 8)
+
+            ForEach(MacSmartList.allCases) { list in
+                MacSmartListRow(
+                    list: list,
+                    isSelected: viewModel.macSmartList == list,
+                    viewModel: viewModel
+                )
+            }
+        }
+    }
+#endif
 
     // MARK: Recent (context switcher)
 
@@ -216,7 +219,11 @@ struct SubjectSidebarView: View {
             && !viewModel.isShowingTrash
         return SidebarRow(
             isSelected: isSelected,
-            onTap: { viewModel.selectedContext = .recent }
+            onTap: {
+                viewModel.clearMacSmartList()
+                viewModel.selectedContext = .recent
+            },
+            accessibilityLabel: "Recently opened"
         ) {
             HStack(spacing: 0) {
                 Text("recent")
@@ -237,7 +244,10 @@ struct SubjectSidebarView: View {
         let isSelected = viewModel.isShowingTrash
         return SidebarRow(
             isSelected: isSelected,
-            onTap: { viewModel.isShowingTrash = true }
+            onTap: { viewModel.isShowingTrash = true },
+            accessibilityLabel: viewModel.trashCount > 0
+                ? "Trash, \(viewModel.trashCount) items"
+                : "Trash"
         ) {
             HStack(spacing: 0) {
                 Text("trash")
@@ -394,11 +404,13 @@ struct SubjectSidebarView: View {
 private struct SidebarRow<Content: View>: View {
     let isSelected: Bool
     let onTap: () -> Void
+    var accessibilityLabel: String?
+    var accessibilityHint: String?
     @ViewBuilder var content: () -> Content
     @Environment(\.theme) private var theme
 
     var body: some View {
-        content()
+        let base = content()
             .padding(.horizontal, 13)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -411,6 +423,17 @@ private struct SidebarRow<Content: View>: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onTap)
+
+        if let accessibilityLabel {
+            base
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityHint(accessibilityHint ?? "")
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        } else {
+            base
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        }
     }
 }
 
@@ -437,7 +460,11 @@ private struct AllNotesListRow: View {
     var body: some View {
         SidebarRow(
             isSelected: isSelected,
-            onTap: { viewModel.selectedContext = .allNotes }
+            onTap: {
+                viewModel.clearMacSmartList()
+                viewModel.selectedContext = .allNotes
+            },
+            accessibilityLabel: A11y.subjectLabel(name: "All notes", notebookCount: notebooks.count)
         ) {
             HStack(spacing: 0) {
                 Text("all notes")
@@ -458,7 +485,7 @@ private struct AllNotesListRow: View {
                 }
             }
             if landed { HapticManager.shared.dragReorderDropped() }
-            return true
+            return landed
         }
     }
 }
@@ -522,8 +549,11 @@ private struct SubjectListRow: View {
                 #if DEBUG
                 dlog("[Sidebar] subject tap id=\(subject.id) name=\(subject.name)")
                 #endif
+                viewModel.clearMacSmartList()
                 viewModel.selectedContext = .subject(subject.id)
-            }
+            },
+            accessibilityLabel: A11y.subjectLabel(name: subject.name, notebookCount: notebooks.count),
+            accessibilityHint: "Shows notebooks in this subject"
         ) {
             HStack(spacing: 4) {
                 // Edit-mode delete affordance — a standard iOS red
@@ -551,6 +581,12 @@ private struct SubjectListRow: View {
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(theme.accent)
                 }
+
+                Circle()
+                    .fill(Color(hex: subject.colorHex))
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+
                 // Inline rename when `viewModel.renamingSubjectId` matches.
                 // Driven by the context-menu "Rename" action and the
                 // auto-rename hand-off after a fresh `createSubject()`.
@@ -573,6 +609,11 @@ private struct SubjectListRow: View {
                         .font(.system(size: 11, weight: isSelected ? .bold : .regular))
                         .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
                         .lineLimit(1)
+                        #if os(macOS)
+                        .onTapGesture(count: 2) {
+                            viewModel.renamingSubjectId = subject.id
+                        }
+                        #endif
                 }
                 Spacer(minLength: 0)
                 Text("\(notebooks.count)")
@@ -620,24 +661,51 @@ private struct SubjectListRow: View {
             } label: {
                 Label("Rename", systemImage: "pencil")
             }
+            Menu("Color") {
+                ForEach(CeciliasNotesColorPresets.subjectColors, id: \.self) { hex in
+                    Button {
+                        viewModel.recolourSubject(subject, hex: hex)
+                    } label: {
+                        Label {
+                            Text(subject.colorHex == hex ? "selected" : "")
+                        } icon: {
+                            Image(systemName: "circle.fill")
+                                .foregroundStyle(Color(hex: hex))
+                        }
+                    }
+                }
+            }
             Button(role: .destructive) {
                 confirmDelete = true
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .alert("Delete \(subject.name)?", isPresented: $confirmDelete) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                HapticManager.shared.destructiveConfirmed()
-                viewModel.deleteSubject(subject)
+        .confirmationDialog(
+            "Delete \(subject.name)?",
+            isPresented: $confirmDelete,
+            titleVisibility: .visible
+        ) {
+            if notebooks.isEmpty {
+                Button("Delete Subject", role: .destructive) {
+                    HapticManager.shared.destructiveConfirmed()
+                    viewModel.deleteSubject(subject)
+                }
+            } else {
+                Button("Move \(notebooks.count) Notebook\(notebooks.count == 1 ? "" : "s") to Unfiled") {
+                    viewModel.deleteSubject(subject, moveNotebooksToUnfiled: true)
+                }
+                Button("Delete Subject and Notebooks", role: .destructive) {
+                    HapticManager.shared.destructiveConfirmed()
+                    viewModel.deleteSubject(subject)
+                }
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            let count = notebooks.count
-            if count == 0 {
+            if notebooks.isEmpty {
                 Text("This subject is empty. It will be moved to trash.")
             } else {
-                Text("This will also delete \(count) notebook\(count == 1 ? "" : "s") in this subject. Everything moves to trash; empty Trash to remove from iCloud.")
+                Text("Choose whether to keep the notebooks in Unfiled or delete them with the subject.")
             }
         }
     }
@@ -732,6 +800,36 @@ struct iCloudStatusView: View {
 }
 
 
+// MARK: - Mac smart list row
+
+#if os(macOS)
+private struct MacSmartListRow: View {
+    let list: MacSmartList
+    let isSelected: Bool
+    @ObservedObject var viewModel: LibraryViewModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        SidebarRow(
+            isSelected: isSelected,
+            onTap: { viewModel.selectMacSmartList(list) },
+            accessibilityLabel: "Smart list, \(list.label)",
+            accessibilityHint: "Filters notebooks in the grid"
+        ) {
+            HStack(spacing: 6) {
+                Image(systemName: list.systemImage)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessiveTertiary)
+                Text(list.label)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .regular))
+                    .foregroundStyle(isSelected ? theme.foreground : theme.recessivePrimary)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}
+#endif
+
 // MARK: - SubjectInlineRename
 
 /// Inline text-field editor used by both flows that surface
@@ -818,7 +916,10 @@ private struct AllSubjectsListRow: View {
     var body: some View {
         SidebarRow(
             isSelected: isSelected,
-            onTap: { viewModel.selectedContext = .allSubjects }
+            onTap: {
+                viewModel.clearMacSmartList()
+                viewModel.selectedContext = .allSubjects
+            }
         ) {
             HStack(spacing: 0) {
                 Text("all subjects")

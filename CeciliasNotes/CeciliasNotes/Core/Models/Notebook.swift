@@ -116,6 +116,16 @@ final class Notebook {
     /// leaf is portable. Used by the importer to dedupe re-imports.
     var sourceInkbookFilename: String?
 
+    // MARK: Origin (device + platform — CloudKit-safe additive columns)
+    //
+    // Set at creation and updated on every notebook mutation so the
+    // customise / info panels can show where the book was born and
+    // last edited. Nil on notebooks created before this field shipped.
+    var createdOnDevice: String?
+    var createdOnPlatform: String?
+    var lastModifiedOnDevice: String?
+    var lastModifiedOnPlatform: String?
+
     // MARK: Timestamps
     var createdAt: Date = Date()
     var updatedAt: Date = Date()

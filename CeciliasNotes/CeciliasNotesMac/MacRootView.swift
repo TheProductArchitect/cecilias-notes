@@ -1,109 +1,352 @@
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreSpotlight
 
 struct MacRootView: View {
     @Binding var showOnboarding: Bool
     @Environment(\.theme) private var theme
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var storageService: StorageService
     @EnvironmentObject private var cloudSync: CloudSyncManager
+    @EnvironmentObject private var deepLink: DeepLinkRouter
+    @EnvironmentObject private var libraryVM: LibraryViewModel
 
-    @StateObject private var libraryVM = LibraryViewModel()
-    @StateObject private var editorState = MacLibraryState()
-    @State private var editingNotebook: Notebook?
+    @State private var isSidebarVisible = true
+    @State private var isCommandPalettePresented = false
+    @State private var isLibraryFocusMode = false
+    @State private var isShowingRecentExports = false
+    @State private var importFeedback: MacImportFeedback?
 
     var body: some View {
-        // Full-plane composition mirroring the iPad `LibraryView`:
-        // masthead spans the full width above the sidebar/content
-        // split, sidebar sits inline (not a `NavigationSplitView`
-        // column so the 1.5pt hairline from `LibraryHeaderView` reads
-        // as one strict rule across identity + content). The editor
-        // opens as a `.sheet` — same "cover" affordance as the iPad,
-        // adapted to Mac's window model.
-        VStack(spacing: 0) {
-            LibraryHeaderView(viewModel: libraryVM)
-            // Sync banner slots between masthead and content — reads
-            // as a subtitle to the 1.5pt black rule the masthead ends
-            // with, not a floating warning stripe covering the title
-            // bar. Silent (EmptyView) when sync is healthy.
-            MacSyncBanner()
-            HStack(spacing: 0) {
-                SubjectSidebarView(viewModel: libraryVM)
-                    .frame(width: 240)
-                    .background(theme.surface)
-                libraryContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        macRootObservers(
+            macRootSheets(macRootCore)
+        )
+    }
+
+    private var macRootCore: some View {
+        Group {
+            if let inlineID = libraryVM.macInlineNotebookId {
+                MacNotebookEditorWindow(notebookID: inlineID) {
+                    libraryVM.macInlineNotebookId = nil
+                }
+                .onAppear { MacEditorPresentation.isInlineActive = true }
+                .onDisappear { MacEditorPresentation.isInlineActive = false }
+            } else {
+                libraryShell
             }
         }
         .background(theme.background)
         .onDrop(of: [.fileURL, .pdf], isTargeted: nil) { providers in
             handleLibraryDrop(providers)
         }
-        .sheet(item: $editingNotebook) { notebook in
-            MacEditorView(notebook: notebook, state: editorState)
-                .environmentObject(storageService)
-                .environmentObject(cloudSync)
-                .environment(\.theme, theme)
-                .frame(minWidth: 900, minHeight: 640)
-        }
-        .toolbar {
-            MacToolbarContent(libraryVM: libraryVM, editorState: editorState, editingNotebook: editingNotebook)
-        }
-        .sheet(isPresented: $editorState.isExportPresented) {
-            MacExportSheet(notebook: editingNotebook, state: editorState)
-                .environmentObject(storageService)
-                .environment(\.theme, theme)
-        }
-        .sheet(isPresented: $showOnboarding) {
-            MacOnboardingView(isPresented: $showOnboarding)
-                .environment(\.theme, theme)
-        }
-        .onAppear {
-            MacStateUpdates.deferred {
-                if let raw = UserDefaults.standard.string(forKey: "mac.export.defaultFormat"),
-                   let format = MacExportFormat(rawValue: raw) {
-                    editorState.exportFormat = format
+    }
+
+    private var libraryShell: some View {
+        VStack(spacing: 0) {
+            if !isLibraryFocusMode {
+                LibraryHeaderView(
+                    viewModel: libraryVM,
+                    isShowingRecentExports: $isShowingRecentExports
+                )
+            }
+            HStack(spacing: 0) {
+                if isSidebarVisible, !isLibraryFocusMode {
+                    SubjectSidebarView(viewModel: libraryVM)
+                        .frame(width: 240)
+                        .background(theme.surface)
                 }
-                storageService.purgeDuplicateRows()
-                storageService.reconcileSoftDeleteFlags()
-                Task { await SearchIndexService.shared.loadAsync() }
+                libraryContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onChange(of: libraryVM.selectedNotebookId) { _, id in
-            MacStateUpdates.deferred {
-                guard let id, let notebook = libraryVM.notebook(id: id) else { return }
-                editingNotebook = notebook
-                editorState.selectedNotebookID = notebook.id
-                RecentNotebooksTracker.markOpened(notebook.id)
+    }
+
+    @ViewBuilder
+    private func macRootSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $showOnboarding) {
+                MacOnboardingView(isPresented: $showOnboarding)
+                    .environment(\.theme, theme)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macShowOnboarding)) { _ in
+                showOnboarding = true
+            }
+            .sheet(isPresented: $isCommandPalettePresented) {
+                MacCommandPaletteView(libraryVM: libraryVM)
+                    .environment(\.theme, theme)
+            }
+            .sheet(isPresented: $libraryVM.isShowingQuizBuilder) {
+                QuizBuilderView(viewModel: libraryVM)
+                    .environment(\.theme, theme)
+                    .frame(minWidth: 520, minHeight: 560)
+            }
+            .sheet(isPresented: $isShowingRecentExports) {
+                MacRecentExportsView()
+                    .environment(\.theme, theme)
+                    .frame(minWidth: 420, minHeight: 360)
+            }
+            .alert(item: $importFeedback) { feedback in
+                Alert(
+                    title: Text(feedback.title),
+                    message: Text(feedback.message),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
+    }
+
+    @ViewBuilder
+    private func macRootObservers<Content: View>(_ content: Content) -> some View {
+        macRootMenuObservers(
+            macRootDeepLinkObservers(content)
+        )
+    }
+
+    @ViewBuilder
+    private func macRootDeepLinkObservers<Content: View>(_ content: Content) -> some View {
+        content
+            .onAppear(perform: macRootOnAppear)
+            .onChange(of: libraryVM.selectedNotebookId, perform: handleSelectedNotebookChange)
+            .onChange(of: libraryVM.macOpenInNewWindowId) { _, id in
+                guard let id else { return }
+                MacStateUpdates.deferred {
+                    openNotebookWindow(id: id)
+                    libraryVM.macOpenInNewWindowId = nil
+                }
+            }
+            .onChange(of: libraryVM.pendingExportNotebookId) { _, id in
+                guard let id else { return }
+                MacStateUpdates.deferred {
+                    libraryVM.pendingExportNotebookId = nil
+                    deepLink.pendingExport = true
+                    libraryVM.selectedNotebookId = id
+                }
+            }
+            .onChange(of: deepLink.openNotebookId, perform: handleDeepLinkNotebook)
+            .onChange(of: deepLink.openSettings, perform: handleDeepLinkSettings)
+            .onChange(of: deepLink.forceLibraryHome, perform: handleForceLibraryHome)
+            .onChange(of: deepLink.pendingQuickCapture, perform: handlePendingQuickCapture)
+            .onReceive(NotificationCenter.default.publisher(for: .macIncomingDeepLinkURL)) { note in
+                guard let url = note.userInfo?["url"] as? URL else { return }
+                MacStateUpdates.deferred {
+                    NSApp.activate(ignoringOtherApps: true)
+                    deepLink.handle(url)
+                }
+            }
+            .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                MacStateUpdates.deferred {
+                    guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                          let uuid = SpotlightService.notebookId(fromIdentifier: id) else { return }
+                    libraryVM.selectedNotebookId = uuid
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macOpenHandoffPage)) { note in
+                MacStateUpdates.deferred {
+                    guard let notebookID = note.userInfo?[MacHandoff.notebookIdKey] as? UUID else { return }
+                    if let pageId = note.userInfo?[MacHandoff.pageIdKey] as? UUID {
+                        libraryVM.deepLinkPageId = pageId
+                    }
+                    openNotebookInline(id: notebookID)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func macRootMenuObservers<Content: View>(_ content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .macToggleSidebar)) { _ in
+                MacStateUpdates.deferred { isSidebarVisible.toggle() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macToggleFocusMode)) { _ in
+                MacStateUpdates.deferred {
+                    guard !MacWindowFocus.isNotebookEditorKey else { return }
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                        isLibraryFocusMode.toggle()
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macOpenSearch)) { _ in
+                MacStateUpdates.deferred {
+                    withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                        libraryVM.isSearchActive = true
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macGenerateQuiz)) { note in
+                MacStateUpdates.deferred {
+                    guard !MacWindowFocus.isNotebookEditorKey else { return }
+                    if let id = note.userInfo?[CeciliasNotesIntentKeys.notebookId] as? UUID {
+                        libraryVM.quizBuilderPreselectedNotebookID = id
+                    }
+                    libraryVM.isShowingQuizBuilder = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macOpenCommandPalette)) { _ in
+                MacStateUpdates.deferred { isCommandPalettePresented = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macOpenNotebook)) { note in
+                MacStateUpdates.deferred {
+                    guard let id = note.userInfo?[MacHandoff.notebookIdKey] as? UUID else { return }
+                    libraryVM.selectedNotebookId = id
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macInsertText)) { _ in
+                MacStateUpdates.deferred {
+                    if MacWindowFocus.isNotebookEditorKey {
+                        NotificationCenter.default.post(name: .macInsertTextOnPage, object: nil)
+                        return
+                    }
+                    guard let id = MacMenuState.shared.recentNotebooks.first?.id else {
+                        NSSound.beep()
+                        return
+                    }
+                    libraryVM.selectedNotebookId = id
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 600_000_000)
+                        NotificationCenter.default.post(name: .macInsertTextOnPage, object: nil)
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macNewNotebook)) { _ in
+                MacStateUpdates.deferred { libraryVM.createNotebookWithFallback() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macNewFromTemplate)) { note in
+                MacStateUpdates.deferred {
+                    guard let raw = note.userInfo?[MacTemplateHandoff.templateKey] as? String,
+                          let template = MacNotebookTemplate(rawValue: raw) else { return }
+                    _ = MacNotebookTemplate.create(template, libraryVM: libraryVM, storage: storageService)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .macNewSubject)) { _ in
+                MacStateUpdates.deferred {
+                    libraryVM.createSubject()
+                    MacMenuState.shared.refresh()
+                }
+            }
+    }
+
+    private func openNotebookWindow(id: UUID) {
+        openWindow(id: "notebook-editor", value: id)
+        RecentNotebooksTracker.markOpened(id)
+        MacMenuState.shared.refresh()
+    }
+
+    private func openNotebookInline(id: UUID) {
+        guard libraryVM.notebook(id: id) != nil else { return }
+        libraryVM.macInlineNotebookId = id
+        RecentNotebooksTracker.markOpened(id)
+        MacMenuState.shared.refresh()
+        libraryVM.selectedNotebookId = nil
+    }
+
+    private func macRootOnAppear() {
+        MacStateUpdates.deferred {
+            reconcileAppIcon()
+            MacMenuState.shared.refresh()
+            storageService.purgeDuplicateRows()
+            storageService.reconcileSoftDeleteFlags()
+            libraryVM.refresh()
+            Task {
+                await SearchIndexService.shared.loadAsync()
+                SearchIndexService.shared.refreshAll()
+            }
+            if let pendingNotebookId = deepLink.openNotebookId {
+                routeDeepLinkNotebook(pendingNotebookId)
+            } else if deepLink.pendingQuickCapture {
+                handlePendingQuickCapture(true)
+            }
+            // Mac home is the library window. Resume state (last notebook /
+            // page) is restored when the user opens a notebook from the
+            // grid or Recents — see `MacNotebookEditorWindow`.
+        }
+    }
+
+    private func handleSelectedNotebookChange(_ id: UUID?) {
+        MacStateUpdates.deferred {
+            guard let id, libraryVM.notebook(id: id) != nil else { return }
+            var handoffUserInfo: [AnyHashable: Any]?
+            if let pageId = libraryVM.deepLinkPageId {
+                libraryVM.deepLinkPageId = nil
+                handoffUserInfo = [
+                    MacHandoff.notebookIdKey: id,
+                    MacHandoff.pageIdKey: pageId,
+                ]
+            }
+            openNotebookInline(id: id)
+            if let handoffUserInfo {
+                NotificationCenter.default.post(
+                    name: .macOpenHandoffPage,
+                    object: nil,
+                    userInfo: handoffUserInfo
+                )
             }
         }
-        .onChange(of: editorState.exportFormat) { _, format in
-            UserDefaults.standard.set(format.rawValue, forKey: "mac.export.defaultFormat")
+    }
+
+    private func handleDeepLinkNotebook(_ id: UUID?) {
+        guard let id else { return }
+        MacStateUpdates.deferred {
+            NSApp.activate(ignoringOtherApps: true)
+            routeDeepLinkNotebook(id)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macOpenHandoffPage)) { note in
-            MacStateUpdates.deferred {
-                guard let notebookID = note.userInfo?[MacHandoff.notebookIdKey] as? UUID else { return }
-                if let notebook = libraryVM.notebook(id: notebookID) {
-                    editingNotebook = notebook
-                    editorState.selectedNotebookID = notebookID
-                }
-                editorState.selectedPageID = note.userInfo?[MacHandoff.pageIdKey] as? UUID
-                if let zoom = note.userInfo?[MacHandoff.zoomKey] as? CGFloat {
-                    editorState.editorZoom = zoom
-                }
-                if let offset = note.userInfo?[MacHandoff.scrollOffsetKey] as? CGFloat {
-                    editorState.editorScrollOffset = offset
-                }
+    }
+
+    /// Opens a notebook from a widget / URL scheme. Retries briefly when
+    /// SwiftData hasn't finished loading the library yet (cold launch).
+    private func routeDeepLinkNotebook(_ id: UUID, attempt: Int = 0) {
+        if libraryVM.notebook(id: id) == nil {
+            libraryVM.refresh()
+        }
+        guard libraryVM.notebook(id: id) != nil else {
+            guard attempt < 8 else {
+                deepLink.openNotebookId = nil
+                return
             }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                routeDeepLinkNotebook(id, attempt: attempt + 1)
+            }
+            return
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macExport)) { _ in
-            MacStateUpdates.deferred { editorState.isExportPresented = true }
+        if let pageId = deepLink.openPageId {
+            libraryVM.deepLinkPageId = pageId
+            deepLink.openPageId = nil
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macInsertText)) { _ in
-            NotificationCenter.default.post(name: .macInsertTextOnPage, object: nil)
+        deepLink.openNotebookId = nil
+        RecentNotebooksTracker.markOpened(id)
+        libraryVM.selectedNotebookId = id
+    }
+
+    private func handleDeepLinkSettings(_ open: Bool) {
+        guard open else { return }
+        MacStateUpdates.deferred {
+            deepLink.openSettings = false
+            NotificationCenter.default.post(name: .macOpenSettings, object: nil)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macNewNotebook)) { _ in
-            MacStateUpdates.deferred { libraryVM.createNotebookWithFallback() }
+    }
+
+    private func handleForceLibraryHome(_ flag: Bool) {
+        guard flag else { return }
+        MacStateUpdates.deferred {
+            deepLink.forceLibraryHome = false
+            deepLink.openNotebookId = nil
+            deepLink.openPageId = nil
+            libraryVM.selectedNotebookId = nil
+            libraryVM.macInlineNotebookId = nil
+            NSApp.activate(ignoringOtherApps: true)
+            let libraryWindow = NSApp.windows.first { window in
+                window.canBecomeMain && window.identifier?.rawValue == "library-main"
+            } ?? NSApp.windows.first { $0.canBecomeMain }
+            libraryWindow?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func handlePendingQuickCapture(_ pending: Bool) {
+        guard pending else { return }
+        MacStateUpdates.deferred {
+            deepLink.pendingQuickCapture = false
+            NSApp.activate(ignoringOtherApps: true)
+            libraryVM.createUntitledNotebookAndOpen()
         }
     }
 
@@ -112,26 +355,14 @@ struct MacRootView: View {
         if libraryVM.isShowingTrash {
             TrashView(viewModel: libraryVM)
         } else if libraryVM.selectedContext == .allSubjects {
-            MacEmptyState(
-                icon: "folder",
-                title: "All subjects",
-                message: "Subject management is coming to Mac. Use your iPad to bulk-edit subjects."
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            AllSubjectsView(viewModel: libraryVM)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if libraryVM.selectedContext == .allQuizzes {
-            MacEmptyState(
-                icon: "checklist",
-                title: "All quizzes",
-                message: "Quizzes are iPad-first today. Open them on your iPad."
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if libraryVM.selectedQuizID != nil {
-            MacEmptyState(
-                icon: "checklist",
-                title: "Quiz detail",
-                message: "Take and edit quizzes on your iPad."
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            AllQuizzesView(viewModel: libraryVM)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if libraryVM.selectedQuizID != nil, let quizID = libraryVM.selectedQuizID {
+            QuizDetailView(quizID: quizID, viewModel: libraryVM)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             NotebookGridView(viewModel: libraryVM)
         }
@@ -144,21 +375,28 @@ struct MacRootView: View {
                     guard let data = item as? Data,
                           let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
                     Task { @MainActor in
-                        if url.pathExtension.lowercased() == "pdf" {
-                            if let id = await MacImportService.importPDFAsNotebook(
-                                from: url,
-                                subjectId: libraryVM.selectedContext.subjectId,
-                                storage: storageService
-                            ) {
+                            if url.pathExtension.lowercased() == "pdf" {
+                                let (notebookId, pages) = await MacPDFImport.importFromDrop(
+                                    url: url,
+                                    subjectId: libraryVM.selectedContext.subjectId,
+                                    storage: storageService
+                                )
                                 MacStateUpdates.deferred {
                                     libraryVM.refresh()
-                                    if let notebook = libraryVM.notebook(id: id) {
-                                        editingNotebook = notebook
-                                        editorState.selectedNotebookID = id
+                                    if let notebookId, pages > 0 {
+                                        libraryVM.selectedNotebookId = notebookId
+                                        importFeedback = MacImportFeedback(
+                                            title: "Notebook created",
+                                            message: "Imported \(pages) page\(pages == 1 ? "" : "s") from \(url.lastPathComponent). Text-based PDFs are editable; scanned PDFs appear as page images."
+                                        )
+                                    } else {
+                                        importFeedback = MacImportFeedback(
+                                            title: "Import failed",
+                                            message: "Could not import \(url.lastPathComponent). The file may be empty or protected."
+                                        )
                                     }
                                 }
                             }
-                        }
                     }
                 }
                 return true
@@ -168,64 +406,8 @@ struct MacRootView: View {
     }
 }
 
-/// Editorial hairline banner that reads the CloudKit container's
-/// resolved status and surfaces the two states the user should know
-/// about: local-only fallback (sign-in required) and first-run sync
-/// (progress). Everything else stays silent — the chrome should
-/// never scream at the user when things are working.
-///
-/// Visual language matches the sidebar's section labels: 8pt tracked
-/// uppercase, `theme.recessive*` colours, hairline separator on the
-/// bottom edge. Same aesthetic as `DateEyebrow` — the banner reads as
-/// a subtitle to the masthead rather than a warning strip.
-private struct MacSyncBanner: View {
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        Group {
-            switch CloudKitContainerState.status {
-            case .localOnlyFallback:
-                editorialRow(
-                    icon: "icloud.slash",
-                    tint: theme.recessiveTertiary,
-                    text: "not signed in to icloud — your notes won't sync"
-                )
-            case .uninitialized:
-                editorialRow(
-                    icon: "icloud",
-                    tint: theme.recessiveTertiary,
-                    text: "syncing library"
-                )
-            default:
-                EmptyView()
-            }
-        }
-    }
-
-    private func editorialRow(icon: String, tint: Color, text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .regular))
-                .foregroundStyle(tint)
-            Text(text)
-                .font(.system(size: 8, weight: .regular))
-                .tracking(0.12)
-                .textCase(.uppercase)
-                .foregroundStyle(tint)
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface.opacity(0.6))
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(theme.hairline)
-                .frame(height: 0.5)
-        }
-    }
-}
-
 extension Notification.Name {
     static let macCreateNotebook = Notification.Name("app.ceciliasnotes.mac.createNotebook")
+    static let macShowOnboarding = Notification.Name("app.ceciliasnotes.mac.showOnboarding")
     static let macInsertTextOnPage = Notification.Name("app.ceciliasnotes.mac.insertTextOnPage")
 }

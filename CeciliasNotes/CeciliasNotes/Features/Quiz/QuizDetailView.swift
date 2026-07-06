@@ -56,6 +56,7 @@ struct QuizDetailView: View {
             }
         }
         .background(theme.surface)
+#if os(iOS)
         .fullScreenCover(isPresented: $isTaking) {
             if let quiz {
                 QuizTakingView(
@@ -65,6 +66,18 @@ struct QuizDetailView: View {
                 )
             }
         }
+#else
+        .sheet(isPresented: $isTaking) {
+            if let quiz {
+                QuizTakingView(
+                    quiz: quiz,
+                    context: StorageService.shared.context,
+                    onClose: { isTaking = false }
+                )
+                .frame(minWidth: 640, minHeight: 520)
+            }
+        }
+#endif
         .alert("delete this quiz?", isPresented: $confirmDelete) {
             Button("delete", role: .destructive) { deleteQuiz() }
             Button("cancel", role: .cancel) {}

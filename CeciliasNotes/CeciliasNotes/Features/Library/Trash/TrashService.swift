@@ -135,7 +135,7 @@ final class TrashService {
                     restoreNotebookChain(notebook)
                 }
                 notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
-                notebook.updatedAt = Date()
+                notebook.markModified()
             }
         case .element(let element):
             element.deletedAt = nil
@@ -169,7 +169,7 @@ final class TrashService {
     private func restoreNotebookChain(_ notebook: Notebook) {
         notebook.isDeleted = false
         notebook.deletedAt = nil
-        notebook.updatedAt = Date()
+        notebook.markModified()
         if let folderId = notebook.folderId, let folder = folderById(folderId), folder.deletedAt != nil {
             clearDeleted(on: folder)
         }

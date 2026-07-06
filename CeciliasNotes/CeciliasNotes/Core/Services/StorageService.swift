@@ -414,32 +414,55 @@ extension StorageService {
         try context.save()
     }
 
-    /// Soft-deletes the subject AND every notebook that lived in
-    /// it. The previous behaviour orphaned notebooks (`subjectId = nil`)
-    /// which had three problems:
-    ///   1. Stand-alone notebooks contradict the "every notebook
-    ///      must live in a subject" rule the rest of the app now
-    ///      enforces.
-    ///   2. Orphans reappear when a new subject is created (the
-    ///      cover-tone assigner re-claims them), producing a
-    ///      "zombie notebooks coming back to life" UX bug.
-    ///   3. CloudKit re-syncs orphan records on other devices that
-    ///      then show notebooks the user thought they deleted.
-    ///
-    /// The new behaviour soft-deletes the children cascadingly. The
-    /// user is shown an explicit warning before this fires (see
-    /// `LibraryViewModel.deleteSubjectWithCascade`) so the blast
-    /// radius is opt-in.
-    func deleteSubject(_ subject: Subject) throws {
-        for notebook in (subject.notebooks ?? []) where !notebook.isDeleted {
-            notebook.isDeleted = true
-            notebook.deletedAt = Date()
-            notebook.updatedAt = Date()
+    /// Soft-deletes the subject. When `moveNotebooksToUnfiled` is true,
+    /// live notebooks are moved into the canonical Unfiled subject
+    /// instead of being soft-deleted with the subject.
+    func deleteSubject(_ subject: Subject, moveNotebooksToUnfiled: Bool = false) throws {
+        if moveNotebooksToUnfiled {
+            let unfiledId = try unfiledSubjectId()
+            for notebook in (subject.notebooks ?? []) where !notebook.isDeleted {
+                try moveNotebook(notebook, to: unfiledId)
+            }
+        } else {
+            for notebook in (subject.notebooks ?? []) where !notebook.isDeleted {
+                notebook.isDeleted = true
+                notebook.deletedAt = Date()
+                notebook.markModified()
+            }
         }
         subject.isDeleted = true
         subject.deletedAt = Date()
         subject.updatedAt = Date()
         try context.save()
+    }
+
+    /// Finds or creates the canonical "Unfiled" subject used by quick
+    /// capture and subject-delete reassignment.
+    func unfiledSubjectId() throws -> UUID {
+        let descriptor = FetchDescriptor<Subject>(
+            predicate: #Predicate { $0.isDeleted == false }
+        )
+        let subjects = try context.fetch(descriptor)
+        if let unfiled = subjects.first(where: { $0.name.lowercased() == "unfiled" }) {
+            return unfiled.id
+        }
+        let subject = Subject(
+            name: "Unfiled",
+            colorHex: CeciliasNotesColorPresets.subjectColors.first ?? "#7F7F7F",
+            sortOrder: subjects.count
+        )
+        context.insert(subject)
+        try context.save()
+        return subject.id
+    }
+
+    /// Notebook ids that contain at least one audio page element.
+    func notebookIdsContainingAudio() -> Set<UUID> {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate { $0.deletedAt == nil }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        return Set(elements.lazy.filter { $0.kind == .audio }.map(\.notebookId))
     }
 
     /// Count of non-deleted notebooks in a subject. Drives the
@@ -480,7 +503,7 @@ extension StorageService {
         let now = Date()
         for (index, notebook) in notebooks.enumerated() where notebook.sortOrder != index {
             notebook.sortOrder = index
-            notebook.updatedAt = now
+            notebook.markModified()
         }
         try context.save()
     }
@@ -606,8 +629,8 @@ extension StorageService {
     func deleteFolder(_ folder: Folder) throws {
         let notebooks = fetchNotebooks(inFolder: folder.id)
         for nb in notebooks {
-            nb.folderId  = folder.parentFolderId
-            nb.updatedAt = Date()
+            nb.folderId = folder.parentFolderId
+            nb.markModified()
         }
         let childFolders = fetchSubfolders(of: folder.id)
         for child in childFolders {
@@ -688,7 +711,7 @@ extension StorageService {
     /// folder is in the same subject as the notebook.
     func moveNotebook(_ notebook: Notebook, toFolder folderId: UUID?) throws {
         notebook.folderId  = folderId
-        notebook.updatedAt = Date()
+        notebook.markModified()
         try context.save()
     }
 
@@ -793,6 +816,7 @@ extension StorageService {
         context.insert(page)
         notebook.pages = (notebook.pages ?? []) + [page]
         notebook.totalPageCount = 1
+        NotebookOriginRecorder.stampCreation(on: notebook)
 
         try context.save()
         try ensureDir(notebookDir(notebook.id))
@@ -916,7 +940,7 @@ extension StorageService {
                 .map { String($0.prefix(TagValidator.maxTagLength)) }
             notebook.tags = Array(clamped)
         }
-        notebook.updatedAt = Date()
+        notebook.markModified()
         try context.save()
         scheduleSpotlightReindex(for: notebook)
         scheduleWidgetSnapshot()
@@ -936,7 +960,7 @@ extension StorageService {
         // Folders are scoped to a single subject — clear the folderId so
         // we never carry a stale reference across subjects.
         notebook.folderId  = nil
-        notebook.updatedAt = Date()
+        notebook.markModified()
 
         // Add to new subject relationship
         if let subjectId {
@@ -952,7 +976,7 @@ extension StorageService {
     func deleteNotebook(_ notebook: Notebook) throws {
         notebook.isDeleted = true
         notebook.deletedAt = Date()
-        notebook.updatedAt = Date()
+        notebook.markModified()
         try context.save()
         let id = notebook.id
         // Drop the in-memory search entry immediately; SpotlightService
@@ -974,6 +998,7 @@ extension StorageService {
         )
         copy.tags = notebook.tags
         copy.isPinned = false
+        NotebookOriginRecorder.stampCreation(on: copy)
         context.insert(copy)
 
         if let subjectId = notebook.subjectId {
@@ -999,10 +1024,6 @@ extension StorageService {
             // the retired `Page.strokeData` field.
             cloneStrokeContent(fromPageId: page.id, toPage: newPage)
 
-            // `deletedAt` check included because TextBlock's stored
-            // `isDeleted` collides with NSManagedObject's built-in
-            // and reads back false even after a soft delete — the
-            // flag alone resurrects soft-deleted blocks into copies.
             for block in (page.textBlocks ?? []) where !block.isDeleted && block.deletedAt == nil {
                 let newBlock = TextBlock(
                     pageId: newPage.id, x: block.x, y: block.y,
@@ -1017,19 +1038,7 @@ extension StorageService {
                 newPage.textBlocks = (newPage.textBlocks ?? []) + [newBlock]
             }
 
-            // Image attachments are V6 `PageElement(kind: .image)`
-            // rows (Step 4). Duplicating image elements on
-            // page-copy is unwired — fetching by pageId, cloning
-            // each element + ImageContent with fresh UUIDs, and
-            // copying the underlying file bytes is a follow-up.
-            // No callers rely on it today.
-            // Step 5: audio elements are V6 `PageElement(.audio)`
-            // rows. Notebook-copy doesn't clone them in this pass —
-            // same deferral as image elements above. A follow-up
-            // can fetch by pageId, clone each PageElement +
-            // AudioContent with fresh ids, and copy the bytes via
-            // `MediaStorage.url(for: .audio, id:)`. No callers
-            // rely on it today.
+            cloneV6PageElements(fromPageId: page.id, toPage: newPage, notebookId: copy.id)
         }
 
         copy.totalPageCount = (copy.pages ?? []).count
@@ -1043,7 +1052,7 @@ extension StorageService {
     func reorderNotebooks(_ notebooks: [Notebook], in subjectId: UUID?) throws {
         for (index, notebook) in notebooks.enumerated() {
             notebook.sortOrder = index
-            notebook.updatedAt = Date()
+            notebook.markModified()
         }
         try context.save()
     }
@@ -1051,7 +1060,7 @@ extension StorageService {
     func updateThumbnail(for notebook: Notebook, image: PlatformImage) throws {
         guard let data = PlatformImageFactory.jpegData(from: image, compressionQuality: 0.80) else { return }
         notebook.thumbnailData = data
-        notebook.updatedAt     = Date()
+        notebook.markModified()
         try context.save()
     }
 
@@ -1099,7 +1108,7 @@ extension StorageService {
         context.insert(newPage)
         notebook.pages = (notebook.pages ?? []) + [newPage]
         notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
-        notebook.updatedAt      = Date()
+        notebook.markModified()
         try context.save()
         return newPage
     }
@@ -1149,9 +1158,9 @@ extension StorageService {
         pair.content.updatedAt  = Date()
         pair.element.updatedAt  = Date()
         page.updatedAt = Date()
-        // Bump the parent notebook's updatedAt so the Library + widget reflect activity.
+        // Bump the parent notebook so Library, widget, and origin reflect activity.
         if let nb = notebookById(page.notebookId) {
-            nb.updatedAt = Date()
+            nb.markModified()
             scheduleSpotlightReindex(for: nb)
         }
         try context.save()
@@ -1161,11 +1170,6 @@ extension StorageService {
         scheduleWidgetSnapshot()
     }
 
-    /// Copy the source page's stroke singleton into a freshly-
-    /// created destination page. Used by `duplicatePage` /
-    /// `duplicateNotebook` after Step 8 retired the
-    /// `Page.strokeData` field that those code paths used to
-    /// shallow-copy. No-op if the source page has no strokes.
     func cloneStrokeContent(fromPageId source: UUID, toPage destination: Page) {
         guard let sourceElement = StrokeCommit.strokeElement(
             forPageId: source,
@@ -1184,6 +1188,154 @@ extension StorageService {
         pair.content.toolKind   = sourceContent.toolKind
         pair.content.updatedAt  = Date()
         pair.element.updatedAt  = Date()
+    }
+
+    /// Clone V6 page elements when duplicating a whole notebook.
+    /// Skips strokes (handled by `cloneStrokeContent`) and PDF
+    /// highlights (re-anchor is non-trivial).
+    func cloneV6PageElements(fromPageId sourcePageId: UUID, toPage destination: Page, notebookId: UUID) {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == sourcePageId && $0.deletedAt == nil
+            },
+            sortBy: [SortDescriptor(\.zIndex)]
+        )
+        guard let sourceElements = try? context.fetch(descriptor) else { return }
+
+        for source in sourceElements {
+            switch source.kind {
+            case .stroke, .pdfPage, .highlight:
+                continue
+            case .text:
+                guard let sc = source.textContent else { continue }
+                let element = PageElement(
+                    pageId: destination.id,
+                    notebookId: notebookId,
+                    kind: .text,
+                    normalizedX: source.normalizedX,
+                    normalizedY: source.normalizedY,
+                    normalizedWidth: source.normalizedWidth,
+                    normalizedHeight: source.normalizedHeight,
+                    zIndex: source.zIndex
+                )
+                element.rotation = source.rotation
+                element.opacity = source.opacity
+                let content = TextContent(
+                    text: sc.text,
+                    source: sc.source,
+                    size: sc.size,
+                    anchorAudioId: sc.anchorAudioId,
+                    attributedTextData: sc.attributedTextData
+                )
+                content.element = element
+                element.textContent = content
+                context.insert(element)
+            case .stickyNote:
+                guard let sc = source.stickyNoteContent else { continue }
+                let element = PageElement(
+                    pageId: destination.id,
+                    notebookId: notebookId,
+                    kind: .stickyNote,
+                    normalizedX: source.normalizedX,
+                    normalizedY: source.normalizedY,
+                    normalizedWidth: source.normalizedWidth,
+                    normalizedHeight: source.normalizedHeight,
+                    zIndex: source.zIndex
+                )
+                element.rotation = source.rotation
+                let content = StickyNoteContent(text: sc.text, colorVariant: sc.colorVariant)
+                content.element = element
+                element.stickyNoteContent = content
+                context.insert(element)
+            case .shape:
+                guard let sc = source.shapeContent else { continue }
+                let element = PageElement(
+                    pageId: destination.id,
+                    notebookId: notebookId,
+                    kind: .shape,
+                    normalizedX: source.normalizedX,
+                    normalizedY: source.normalizedY,
+                    normalizedWidth: source.normalizedWidth,
+                    normalizedHeight: source.normalizedHeight,
+                    zIndex: source.zIndex
+                )
+                element.rotation = source.rotation
+                let content = ShapeContent(
+                    shapeKind: sc.shapeKind,
+                    strokeColorHex: sc.strokeColorHex,
+                    strokeWidth: sc.strokeWidth,
+                    strokeStyle: sc.strokeStyle
+                )
+                content.element = element
+                element.shapeContent = content
+                context.insert(element)
+            case .image:
+                guard let sc = source.imageContent else { continue }
+                let newImageId = UUID()
+                let element = PageElement(
+                    pageId: destination.id,
+                    notebookId: notebookId,
+                    kind: .image,
+                    normalizedX: source.normalizedX,
+                    normalizedY: source.normalizedY,
+                    normalizedWidth: source.normalizedWidth,
+                    normalizedHeight: source.normalizedHeight,
+                    zIndex: source.zIndex
+                )
+                element.rotation = source.rotation
+                let content = ImageContent(
+                    id: newImageId,
+                    filename: "\(newImageId.uuidString).\(sc.fileFormat)",
+                    fileFormat: sc.fileFormat,
+                    originalPixelWidth: sc.originalPixelWidth,
+                    originalPixelHeight: sc.originalPixelHeight,
+                    imageData: sc.imageData
+                )
+                content.element = element
+                element.imageContent = content
+                context.insert(element)
+                if let data = sc.imageData {
+                    let url = MediaStorage.url(for: .images, id: newImageId, fileExtension: sc.fileFormat)
+                    try? data.write(to: url, options: .atomic)
+                } else {
+                    let src = sc.fileURL
+                    let dst = MediaStorage.url(for: .images, id: newImageId, fileExtension: sc.fileFormat)
+                    if FileManager.default.fileExists(atPath: src.path) {
+                        try? FileManager.default.copyItem(at: src, to: dst)
+                    }
+                }
+            case .audio:
+                guard let sc = source.audioContent else { continue }
+                let newAudioId = UUID()
+                let element = PageElement(
+                    pageId: destination.id,
+                    notebookId: notebookId,
+                    kind: .audio,
+                    normalizedX: source.normalizedX,
+                    normalizedY: source.normalizedY,
+                    normalizedWidth: source.normalizedWidth,
+                    normalizedHeight: source.normalizedHeight,
+                    zIndex: source.zIndex
+                )
+                element.rotation = source.rotation
+                let content = AudioContent(
+                    id: newAudioId,
+                    filename: "\(newAudioId.uuidString).m4a",
+                    durationSeconds: sc.durationSeconds,
+                    transcript: sc.transcript,
+                    timingMapData: sc.timingMapData,
+                    audioData: sc.audioData
+                )
+                content.element = element
+                element.audioContent = content
+                context.insert(element)
+                let src = sc.resolvedFileURL() ?? sc.fileURL
+                let dst = MediaStorage.url(for: .audio, id: newAudioId)
+                if FileManager.default.fileExists(atPath: src.path) {
+                    try? FileManager.default.copyItem(at: src, to: dst)
+                }
+            }
+        }
     }
 
     /// Read the active stroke blob for a page, or `nil` if the
@@ -1232,7 +1384,7 @@ extension StorageService {
         // Update notebook count
         if let nb = notebookById(notebookId) {
             nb.totalPageCount = (nb.pages ?? []).filter { !$0.isDeleted }.count
-            nb.updatedAt      = Date()
+            nb.markModified()
         }
         try context.save()
     }
@@ -1287,7 +1439,7 @@ extension StorageService {
         }
 
         notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
-        notebook.updatedAt      = Date()
+        notebook.markModified()
         try context.save()
         return newPage
     }
@@ -1377,6 +1529,16 @@ extension StorageService {
         // User-edit on the legacy text-block path → mirror must
         // reflect the new text rather than the inkbook stash.
         Page.clearInkbookStash(forPageId: block.pageId, context: context)
+        let pageId = block.pageId
+        let pageDescriptor = FetchDescriptor<Page>(
+            predicate: #Predicate { $0.id == pageId }
+        )
+        if let page = try? context.fetch(pageDescriptor).first {
+            page.updatedAt = Date()
+            if let nb = notebookById(page.notebookId) {
+                nb.markModified()
+            }
+        }
         try context.save()
     }
 

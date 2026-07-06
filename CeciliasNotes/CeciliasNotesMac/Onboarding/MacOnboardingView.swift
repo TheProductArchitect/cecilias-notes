@@ -206,6 +206,7 @@ struct MacOnboardingView: View {
             // wordmark picks up the possessive within a couple of
             // seconds — same call the iPad's `commit()` makes.
             PersonalIdentity.mirrorNameToAppGroup(firstWord)
+            updateAppIcon(for: firstWord)
             step = .sync
         }
     }
@@ -213,6 +214,7 @@ struct MacOnboardingView: View {
     private func finish() {
         UserDefaults.standard.set(true, forKey: PersonalIdentity.onboardingCompletedKey)
         UserDefaults.standard.synchronize()
+        reconcileAppIcon()
         isPresented = false
     }
 }

@@ -35,7 +35,7 @@ struct AudioSettingsView: View {
         }
         .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Audio & Transcription")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationBarTitle()
         .sheet(isPresented: $isShowingLocalePicker) {
             LocalePickerSheet(
                 selected: viewModel.transcriptionLocale,
@@ -229,7 +229,7 @@ private struct LocalePickerSheet: View {
             .listStyle(.plain)
             .searchable(text: $query, prompt: "Search languages")
             .navigationTitle("Language")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationBarTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onCancel() }

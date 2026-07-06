@@ -93,10 +93,8 @@ public final class ThemeManager: ObservableObject {
     /// the swap point is already correct.
     private func updateAppIcon() {
 #if os(iOS)
-        // Route through the shared reconcile path so the swap is
-        // gated (scene/keyboard settled) and self-healing, rather
-        // than an ungated one-shot. `reconcileAppIcon()` reads the
-        // user name and no-ops when the icon already matches.
+        reconcileAppIcon()
+#elseif os(macOS)
         reconcileAppIcon()
 #endif
     }

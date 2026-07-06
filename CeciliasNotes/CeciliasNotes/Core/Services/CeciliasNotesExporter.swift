@@ -184,6 +184,7 @@ final class CeciliasNotesExporter {
             : nil
 
         let tone = CoverToneStore.tone(for: notebook.id)
+        let origin = originBlock(for: notebook)
 
         return CeciliasNotesFile(
             schema: "https://ceciliasnotes.app/schemas/inkbook/v1.json",
@@ -198,6 +199,7 @@ final class CeciliasNotesExporter {
             page_size: CeciliasNotesFile.schemaString(for: notebook.pageSize),
             agent: agent,
             pages: pages.isEmpty ? [placeholderPage()] : pages,
+            origin: origin,
             // The app's exporter never participates in the MCP's
             // append concurrency loop — it writes the canonical
             // snapshot that *becomes* the next `base_updated_at`
@@ -207,6 +209,20 @@ final class CeciliasNotesExporter {
             // read-modify-write product.
             mcp_action: nil,
             base_updated_at: nil
+        )
+    }
+
+    private func originBlock(for notebook: Notebook) -> CeciliasNotesFile.Origin? {
+        guard notebook.createdOnDevice != nil
+            || notebook.createdOnPlatform != nil
+            || notebook.lastModifiedOnDevice != nil
+            || notebook.lastModifiedOnPlatform != nil
+        else { return nil }
+        return CeciliasNotesFile.Origin(
+            created_on_device: notebook.createdOnDevice,
+            created_on_platform: notebook.createdOnPlatform,
+            last_modified_on_device: notebook.lastModifiedOnDevice,
+            last_modified_on_platform: notebook.lastModifiedOnPlatform
         )
     }
 

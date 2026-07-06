@@ -381,14 +381,16 @@ final class IntelligenceService {
     func askMyNotesStream(
         question: String,
         context: String,
-        scopeTitle: String? = nil
+        scopeTitle: String? = nil,
+        priorConversation: String? = nil
     ) -> AsyncStream<String> {
         AsyncStream { continuation in
             guard canRun else { continuation.finish(); return }
             let prompt = askMyNotesPrompt(
                 question: question,
                 context: context,
-                scopeTitle: scopeTitle
+                scopeTitle: scopeTitle,
+                priorConversation: priorConversation
             )
             Task {
                 #if canImport(FoundationModels)
@@ -420,7 +422,8 @@ final class IntelligenceService {
     private func askMyNotesPrompt(
         question: String,
         context: String,
-        scopeTitle: String?
+        scopeTitle: String?,
+        priorConversation: String? = nil
     ) -> String {
         // The partial-match instruction is deliberate: the retrieval
         // path now stems the question and runs broader index queries,
@@ -436,8 +439,12 @@ final class IntelligenceService {
             guard let scopeTitle, !scopeTitle.isEmpty else { return "" }
             return "Search scoped to: \(scopeTitle). Answer based only on notes in this notebook.\n\n"
         }()
+        let priorLine: String = {
+            guard let priorConversation, !priorConversation.isEmpty else { return "" }
+            return "Prior conversation in this session:\n\(priorConversation)\n\n"
+        }()
         return """
-        \(scopeLine)You are answering a question based only on the user's personal \
+        \(scopeLine)\(priorLine)You are answering a question based only on the user's personal \
         notes. Answer based on the notes below. If the notes contain \
         information that is related to the question but not an exact \
         match, use it anyway and note that it may be relevant. If \

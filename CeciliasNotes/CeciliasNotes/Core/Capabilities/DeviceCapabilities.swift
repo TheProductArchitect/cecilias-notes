@@ -39,6 +39,18 @@ enum DeviceCapabilities {
     /// collapsed sidebar that surfaces via a drawer overlay.
     static var prefersTabletLayout: Bool { !isPhoneIdiom }
 
+    /// True when the library grid exposes arrow-key focus + Return/Space
+    /// shortcuts (iPad with external keyboard, Mac).
+    static var supportsGridKeyboardNavigation: Bool {
+#if os(macOS)
+        true
+#elseif canImport(UIKit)
+        prefersTabletLayout
+#else
+        false
+#endif
+    }
+
     // MARK: - Capabilities (what the user is allowed to do)
 
     /// True when the device may create / edit / delete content.

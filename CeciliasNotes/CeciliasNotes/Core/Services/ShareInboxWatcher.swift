@@ -21,6 +21,8 @@ import UIKit
 ///     LibraryView observes and presents the PDF page picker.
 ///   • image extensions → posts `.shareInboxImageArrived` with the
 ///     file URL. The existing image-import path takes over.
+///   • `.cnshare` → text / URL quick-capture JSON from the share
+///     extension → `.shareInboxCaptureArrived`.
 ///
 /// After a successful ingest the watcher deletes the file so the
 /// next sweep doesn't re-process it.
@@ -107,6 +109,12 @@ final class ShareInboxWatcher {
                     object: nil,
                     userInfo: ["fileURL": file]
                 )
+            case "cnshare":
+                NotificationCenter.default.post(
+                    name: .shareInboxCaptureArrived,
+                    object: nil,
+                    userInfo: ["fileURL": file]
+                )
             default:
                 // Unknown payload — leave it alone so we don't
                 // silently drop the user's content. They can clear
@@ -137,4 +145,5 @@ final class ShareInboxWatcher {
 extension Notification.Name {
     static let shareInboxPDFArrived = Notification.Name("ShareInbox.pdfArrived")
     static let shareInboxImageArrived = Notification.Name("ShareInbox.imageArrived")
+    static let shareInboxCaptureArrived = Notification.Name("ShareInbox.captureArrived")
 }

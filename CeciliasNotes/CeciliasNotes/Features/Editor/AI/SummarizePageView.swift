@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// Result sheet for the "Summarize this page" capability. Presented
 /// from the editor's more-menu via `ModalPresenter`. Owns the full
@@ -81,8 +80,10 @@ struct SummarizePageView: View {
             content
         }
         .background(theme.surface)
+#if os(iOS)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+#endif
         .task { await runSummary() }
     }
 
@@ -148,7 +149,7 @@ struct SummarizePageView: View {
 
                 HStack(spacing: CeciliasNotes.Spacing.sm) {
                     secondaryButton("Copy", systemImage: "doc.on.doc") {
-                        UIPasteboard.general.string = summary
+                        PlatformClipboard.copy(summary)
                     }
                     secondaryButton("Try Again", systemImage: "arrow.clockwise") {
                         Task { await runSummary() }

@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import UIKit
+import CoreGraphics
 
 /// Single commit path for new audio elements. Both the short-note
 /// recording flow (`EditorViewModel.stopRecording`) and the lecture
@@ -44,7 +44,10 @@ enum AudioElementCommit {
         notebookId: UUID,
         pageSize: CGSize,
         durationSeconds: Double,
-        transcript: String = ""
+        transcript: String = "",
+        normalizedY: Double? = nil,
+        normalizedX: Double? = nil,
+        normalizedWidth: Double? = nil
     ) -> PageElement? {
         let context = StorageService.shared.context
 
@@ -56,9 +59,9 @@ enum AudioElementCommit {
             pageId: pageId,
             notebookId: notebookId,
             kind: .audio,
-            normalizedX: defaultNormalizedX,
-            normalizedY: defaultNormalizedY,
-            normalizedWidth: defaultNormalizedWidth,
+            normalizedX: normalizedX ?? defaultNormalizedX,
+            normalizedY: normalizedY ?? defaultNormalizedY,
+            normalizedWidth: normalizedWidth ?? defaultNormalizedWidth,
             normalizedHeight: normalizedHeight,
             zIndex: baseZIndex
         )
@@ -238,4 +241,16 @@ enum AudioElementCommit {
         let elements = (try? context.fetch(descriptor)) ?? []
         return (elements.first?.zIndex ?? 0) + 1
     }
+}
+
+extension Notification.Name {
+    /// Posted when an audio element is inserted, updated, or soft-deleted.
+    static let audioElementsChanged = Notification.Name("audioElementsChanged")
+    /// Posted when transcript text requests a seek on a matching audio clip.
+    static let audioSeekRequested = Notification.Name("audioSeekRequested")
+}
+
+enum AudioSeekKey {
+    static let contentId = "contentId"
+    static let time = "time"
 }

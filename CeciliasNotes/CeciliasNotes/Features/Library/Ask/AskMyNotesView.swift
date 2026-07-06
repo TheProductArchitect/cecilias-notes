@@ -12,16 +12,24 @@ import SwiftUI
 /// assistant.
 struct AskMyNotesView: View {
     @ObservedObject var libraryViewModel: LibraryViewModel
+    var initialQuery: String? = nil
+    var submitOnAppear: Bool = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
+    private struct ConversationTurn: Identifiable {
+        let id = UUID()
+        let query: String
+        var answer: String = ""
+        var citations: [AskCitation] = []
+        var scopedNotebookId: UUID?
+    }
+
     @State private var query: String = ""
-    @State private var answer: String = ""
-    @State private var citations: [AskCitation] = []
+    @State private var turns: [ConversationTurn] = []
     @State private var hasSubmitted: Bool = false
     @State private var isStreaming: Bool = false
     @State private var noMatches: Bool = false
-    /// Tracks the most recent submit's scope. `nil` means
     /// search-everywhere; non-nil means the user picked a notebook
     /// from the empty-state picker and we re-ran scoped. Used to
     /// decide between the two empty-state copies.
@@ -32,6 +40,7 @@ struct AskMyNotesView: View {
     @State private var indexLoaded: Bool = SearchIndexService.shared.isLoaded
     @State private var streamTask: Task<Void, Never>?
     @FocusState private var inputFocused: Bool
+    @State private var submitWhenIndexReady = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,20 +65,31 @@ struct AskMyNotesView: View {
             }
         }
         .background(theme.surface)
+#if os(iOS)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+#endif
         .onAppear {
+            if let initialQuery, !initialQuery.isEmpty, query.isEmpty {
+                query = initialQuery
+            }
             inputFocused = true
-            // Re-read in case the index loaded between the parent
-            // showing this sheet and the sheet's first body
-            // evaluation. The notification observer below covers
-            // the live transition.
             indexLoaded = SearchIndexService.shared.isLoaded
+            if submitOnAppear, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if indexLoaded { submit() }
+                else { submitWhenIndexReady = true }
+            }
         }
         .onDisappear { streamTask?.cancel() }
         .onReceive(
             NotificationCenter.default.publisher(for: .searchIndexLoaded)
-        ) { _ in indexLoaded = true }
+        ) { _ in
+            indexLoaded = true
+            if submitWhenIndexReady {
+                submitWhenIndexReady = false
+                submit()
+            }
+        }
     }
 
     // MARK: Header
@@ -136,35 +156,14 @@ struct AskMyNotesView: View {
                             .foregroundStyle(theme.recessivePrimary)
                     }
                 } else {
-                    // Scope indicator + "search all notebooks" reset.
-                    // Shown only when the current submit is scoped to
-                    // a specific notebook — phase 4F.
-                    if let scopedId = lastSubmitScopedNotebookId,
-                       let scopedTitle = notebookTitle(for: scopedId) {
-                        scopeBanner(title: scopedTitle)
+                    ForEach(turns) { turn in
+                        turnView(turn)
                     }
 
-                    // Plain text response — 15pt regular, no bubble,
-                    // no card. Reads like prose, matches the editorial
-                    // tone of the rest of the chrome.
-                    Text(answer)
-                        .font(.system(size: 15))
-                        .foregroundStyle(theme.foreground)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-
-                    if !citations.isEmpty {
-                        citationsRow
-                    }
-
-                    // Narrow-to-notebook picker. Always available
-                    // after a successful unscoped submit so the user
-                    // can re-run scoped without first hitting a
-                    // miss. Suppressed when the current submit is
-                    // already scoped — that row instead surfaces the
-                    // "search all notebooks" banner above.
-                    if lastSubmitScopedNotebookId == nil {
-                        narrowPicker
+                    if isStreaming, let active = turns.last, active.answer.isEmpty {
+                        Text("…")
+                            .font(.system(size: 15))
+                            .foregroundStyle(theme.recessiveTertiary)
                     }
                 }
             }
@@ -248,7 +247,7 @@ struct AskMyNotesView: View {
 
     // MARK: Citations
 
-    private var citationsRow: some View {
+    private func citationsRow(for citations: [AskCitation]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("sources")
                 .font(.system(size: 8))
@@ -335,14 +334,9 @@ struct AskMyNotesView: View {
         #endif
         hasSubmitted = true
         noMatches    = false
-        answer       = ""
-        citations    = []
         isStreaming  = true
         lastSubmitScopedNotebookId = notebookId
 
-        // Retrieve relevant page-level context from the index.
-        // Scope filter is `nil` for the first submit; populated by
-        // the empty-state notebook picker for retries.
         let retrieved = AskRetrieval.retrieve(
             query: trimmed,
             limit: 5,
@@ -364,7 +358,7 @@ struct AskMyNotesView: View {
         // Map the retrieval result into citations for the source row
         // BEFORE the model starts streaming — they're already known
         // from the retrieval pass, no reason to wait.
-        citations = retrieved.map { hit in
+        let mappedCitations = retrieved.map { hit in
             AskCitation(
                 notebookId:    hit.notebookId,
                 notebookTitle: hit.notebookTitle,
@@ -373,13 +367,13 @@ struct AskMyNotesView: View {
             )
         }
 
-        // Explicit `[Notebook: <title>, Page <n>]: "<snippet>"` format
-        // — improves the model's ability to cite the right notebook
-        // and reduces cross-notebook contamination when several
-        // hits use similar phrasing. Header line tells the model
-        // where the context block begins; `IntelligenceService`
-        // pairs this with a system instruction to use partial
-        // matches when available.
+        turns.append(ConversationTurn(
+            query: trimmed,
+            citations: mappedCitations,
+            scopedNotebookId: notebookId
+        ))
+        let turnIndex = turns.count - 1
+
         let context = "Notes context:\n" + retrieved.map { hit in
             "[Notebook: \(hit.notebookTitle), Page \(hit.pageNumber)]: \"\(hit.snippet)\""
         }.joined(separator: "\n")
@@ -390,19 +384,53 @@ struct AskMyNotesView: View {
         // first token reads as "thinking" without any chrome.
         streamTask?.cancel()
         let scopeTitle: String? = notebookId.flatMap { notebookTitle(for: $0) }
+        let priorConversation = turns.dropLast().map { turn in
+            "Q: \(turn.query)\nA: \(turn.answer)"
+        }.joined(separator: "\n\n")
         streamTask = Task { @MainActor in
             let stream = IntelligenceService.shared.askMyNotesStream(
                 question:   trimmed,
                 context:    context,
-                scopeTitle: scopeTitle
+                scopeTitle: scopeTitle,
+                priorConversation: priorConversation.isEmpty ? nil : priorConversation
             )
             for await partial in stream {
-                answer = partial
+                turns[turnIndex].answer = partial
             }
             isStreaming = false
             #if DEBUG
-            dlog("[Ask] response length=\(answer.count) chars scope=\(scopeTitle ?? "global")")
+            dlog("[Ask] response length=\(turns[turnIndex].answer.count) chars scope=\(scopeTitle ?? "global")")
             #endif
+        }
+    }
+
+    @ViewBuilder
+    private func turnView(_ turn: ConversationTurn) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(turn.query)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.recessiveSecondary)
+
+            if let scopedId = turn.scopedNotebookId,
+               let scopedTitle = notebookTitle(for: scopedId) {
+                scopeBanner(title: scopedTitle)
+            }
+
+            if !turn.answer.isEmpty {
+                Text(turn.answer)
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.foreground)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+
+            if !turn.citations.isEmpty {
+                citationsRow(for: turn.citations)
+            }
+
+            if turn.scopedNotebookId == nil, turn.id == turns.last?.id, !isStreaming {
+                narrowPicker
+            }
         }
     }
 
@@ -530,6 +558,7 @@ enum AskRetrieval {
         let snippet:       String
     }
 
+    @MainActor
     static func retrieve(
         query: String,
         limit: Int,

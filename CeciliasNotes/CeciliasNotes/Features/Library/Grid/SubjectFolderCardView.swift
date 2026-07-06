@@ -107,6 +107,7 @@ struct SubjectFolderCardView: View {
                     viewModel.selectedSubjectIds.insert(subject.id)
                 }
             } else {
+                viewModel.clearMacSmartList()
                 viewModel.selectedContext = .subject(subject.id)
             }
         }
@@ -146,7 +147,7 @@ struct SubjectFolderCardView: View {
         guard !notebook.coverColorHex.isEmpty else {
             return theme.accent.opacity(0.35)
         }
-        return Color(uiColor: UIColor(hex: notebook.coverColorHex))
+        return Color(hex: notebook.coverColorHex)
     }
 
     @ViewBuilder

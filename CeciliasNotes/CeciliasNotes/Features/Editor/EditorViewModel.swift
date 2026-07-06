@@ -441,6 +441,8 @@ final class EditorViewModel: ObservableObject {
             else                    { endInteraction(.shareSheet) }
         }
     }
+    @Published var exportDeliveryFormat: ExportDeliveryFormat = .pdf
+    @Published var isShowingInNotebookSearch: Bool = false
 
     // MARK: Page navigation animation
     @Published var pageSwapInFlight: Bool = false        // shown only if swap exceeds 100ms
@@ -2490,6 +2492,7 @@ final class EditorViewModel: ObservableObject {
                 pageId:     page.id
             )
             IntelligenceService.shared.scheduleSummary(notebookId: page.notebookId)
+            MultipeerNotebookHint.broadcastNotebookChanged(notebookId: page.notebookId)
             maybeGenerateTitleSuggestion()
             maybeGenerateTagSuggestions()
         } catch {
@@ -2526,6 +2529,7 @@ final class EditorViewModel: ObservableObject {
                 pageId:     page.id
             )
             IntelligenceService.shared.scheduleSummary(notebookId: page.notebookId)
+            MultipeerNotebookHint.broadcastNotebookChanged(notebookId: page.notebookId)
             maybeGenerateTitleSuggestion()
             maybeGenerateTagSuggestions()
         } catch {

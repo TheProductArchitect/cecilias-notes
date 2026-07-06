@@ -21,6 +21,7 @@ struct EditorView: View {
     @State private var canRedo: Bool = false
     @State private var undoTimer: Timer?
     @State private var isShowingCoverPicker: Bool = false
+    @State private var isShowingNotebookInfo: Bool = false
     /// State for the "Summarize page" sheet. Earlier this routed
     /// through `ModalPresenter.shared.present(.sheet(...))`, which
     /// attaches at the LibraryView level — the cover-tone editor
@@ -33,6 +34,7 @@ struct EditorView: View {
     /// appears immediately, on top of the editor where the user
     /// expects it.
     @State private var isShowingSummarizeSheet: Bool = false
+    @State private var isShowingAskAboutSheet: Bool = false
     /// Queued PDF URL passed in by Library "Import PDF…". Consumed
     /// once on first appear and cleared so a re-render doesn't double
     /// import.
@@ -40,11 +42,6 @@ struct EditorView: View {
     /// Search-result deep link — opens the notebook scrolled to the
     /// page this id belongs to. Cleared after the first scroll.
     @State private var pendingDeepLinkPageId: UUID?
-
-    /// True while the one-shot agent-attribution banner is visible.
-    /// Initialised from `AgentBannerState` on appear so a previously-
-    /// dismissed banner stays dismissed across re-opens.
-    @State private var isShowingAgentBanner: Bool = false
 
     init(
         notebook: Notebook,
@@ -99,12 +96,7 @@ struct EditorView: View {
             viewModel.currentPageIndex = idx
             viewModel.pendingScrollPageIndex = idx
         }
-        .onAppear {
-            if viewModel.notebook.isAgentWritten,
-               !AgentBannerState.hasSeen(notebookId: viewModel.notebook.id) {
-                isShowingAgentBanner = true
-            }
-        }
+        .editorPageHandoff(viewModel)
     }
 
     private var editorBody: some View {
@@ -115,7 +107,7 @@ struct EditorView: View {
                     .ignoresSafeArea()
                     .onAppear { canvasFrame = proxy.frame(in: .global) }
                     .accessibilityLabel(A11y.canvasLabel(strokeCount: viewModel.strokeCount))
-                    .accessibilityHint(A11y.canvasHint)
+                    .accessibilityHint(A11y.canvasHintForCurrentDevice)
                     // Global lasso clear-on-tap: catches taps in the
                     // grey area AROUND the page (the per-page tap-to-
                     // clear inside `LassoOverlayView` only covers the
@@ -311,12 +303,18 @@ struct EditorView: View {
                             onShare: shareNotebook,
                             onTogglePageStrip: togglePageStrip,
                             onMoreMenuExportPDF: exportPDF,
+                            onMoreMenuExportMarkdown: exportMarkdown,
+                            onMoreMenuFindInNotebook: findInNotebook,
                             onMoreMenuPrint: printNotebook,
                             onMoreMenuDuplicatePage: duplicateCurrentPage,
                             onMoreMenuDeletePage: deleteCurrentPage,
                             onMoreMenuSummarizePage: summarizeCurrentPage,
+                            onMoreMenuAskAboutPage: askAboutCurrentPage,
+                            onMoreMenuCopyPageAsImage: copyCurrentPageAsImage,
+                            onMoreMenuActualSize: resetZoomToActualSize,
                             onMoreMenuPageSettings: showPageSettings,
                             onMoreMenuFullScreen: toggleFullScreen,
+                            onMoreMenuNotebookInfo: { isShowingNotebookInfo = true },
                             onMoreMenuInsertMedia: { viewModel.mediaInsertCoordinator.insertPhotos() },
                             onStartVoiceNote: { Task { await viewModel.startVoiceNoteRecording() } },
                             onStartDictation: { Task { await viewModel.startDictationRecording() } },
@@ -384,32 +382,6 @@ struct EditorView: View {
                         Spacer()
                     }
                     .zIndex(74)
-                }
-
-                // Agent-attribution banner — shown once per notebook the
-                // first time the user opens an agent-written `.inkbook`.
-                // Sits BELOW the toolbar so it doesn't cover the back
-                // chevron or other toolbar buttons. Its background fill
-                // would otherwise absorb every tap in its rect.
-                if isShowingAgentBanner {
-                    // Compact capsule, top-trailing — hugs its content
-                    // and sits in the same pill vocabulary as the
-                    // recording / undo-shape pills above it. Earlier
-                    // this was a full-width strip that read like an
-                    // OS banner.
-                    VStack {
-                        HStack {
-                            Spacer(minLength: 0)
-                            AgentBannerView(notebook: viewModel.notebook) {
-                                isShowingAgentBanner = false
-                            }
-                        }
-                        .padding(.trailing, 16)
-                        .padding(.top, proxy.safeAreaInsets.top + 60)
-                        Spacer(minLength: 0)
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                    .zIndex(76)
                 }
 
                 // 5z. Shape recognition "Undo Shape" pill — floats at the
@@ -751,6 +723,11 @@ struct EditorView: View {
             }
             .presentationDetents([.medium])
         }
+        .sheet(isPresented: $isShowingNotebookInfo) {
+            NotebookOriginInfoSheet(notebook: viewModel.notebook)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         // Summarize page — same in-editor presentation route as the
         // cover picker, for the same reason.
         .sheet(isPresented: $isShowingSummarizeSheet) {
@@ -759,6 +736,13 @@ struct EditorView: View {
                 notebookTitle: viewModel.notebook.title,
                 notebookId: viewModel.notebook.id,
                 onDismiss: { isShowingSummarizeSheet = false }
+            )
+        }
+        .sheet(isPresented: $isShowingAskAboutSheet) {
+            AskAboutPageView(
+                page: viewModel.currentPage,
+                notebookTitle: viewModel.notebook.title,
+                onDismiss: { isShowingAskAboutSheet = false }
             )
         }
         // Export sheet is presented LOCALLY off EditorView rather
@@ -770,6 +754,15 @@ struct EditorView: View {
         // and the export sheet flashes in then disappears. Mounting
         // the export sheet on EditorView puts it INSIDE the cover,
         // not in competition with it.
+        .sheet(isPresented: $viewModel.isShowingInNotebookSearch) {
+            InNotebookSearchView(notebook: viewModel.notebook) { pageId in
+                if let idx = viewModel.pages.firstIndex(where: { $0.id == pageId }) {
+                    viewModel.goToPage(index: idx)
+                }
+            } onDismiss: {
+                viewModel.isShowingInNotebookSearch = false
+            }
+        }
         .sheet(isPresented: $viewModel.isShowingExportSheet) {
             #if DEBUG
             let _ = dlog("[Share] viewBuilder invoked — about to render ExportOptionsView")
@@ -777,7 +770,8 @@ struct EditorView: View {
             ExportOptionsView(
                 notebook: viewModel.notebook,
                 pages: viewModel.pages,
-                currentIndex: viewModel.currentPageIndex
+                currentIndex: viewModel.currentPageIndex,
+                initialFormat: viewModel.exportDeliveryFormat
             ) {
                 viewModel.isShowingExportSheet = false
             }
@@ -884,6 +878,9 @@ struct EditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandExport)) { _ in
             exportPDF()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandFindInNotebook)) { _ in
+            viewModel.isShowingInNotebookSearch = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesCommandPrint)) { _ in
             printNotebook()
         }
@@ -911,7 +908,7 @@ struct EditorView: View {
                 Button("Toggle Toolbar") { viewModel.resetToolbarTimer() }
                     .keyboardShortcut(.space, modifiers: [])
                 Button("Focus Mode") { viewModel.toggleFocusMode() }
-                    .keyboardShortcut("f", modifiers: [.command, .shift])
+                    .keyboardShortcut("f", modifiers: [.command, .control])
                 // Tool shortcuts go through the identity-based selector so
                 // the user's per-tool persisted settings (colour/width/opacity)
                 // are restored, not reset to the default each time.
@@ -1055,6 +1052,19 @@ struct EditorView: View {
         isShowingSummarizeSheet = true
     }
 
+    private func askAboutCurrentPage() {
+        isShowingAskAboutSheet = true
+    }
+
+    private func copyCurrentPageAsImage() {
+        CopyPageService.copyPage(viewModel.currentPage)
+    }
+
+    private func resetZoomToActualSize() {
+        viewModel.zoomScale = 1.0
+        viewModel.resetToolbarTimer()
+    }
+
     // MARK: Top-edge gesture overlay (header reveal)
 
     /// Invisible 44pt-tall surface that catches taps and short downward
@@ -1087,7 +1097,17 @@ struct EditorView: View {
     }
 
     private func exportPDF() {
+        viewModel.exportDeliveryFormat = .pdf
         viewModel.isShowingExportSheet = true
+    }
+
+    private func exportMarkdown() {
+        viewModel.exportDeliveryFormat = .markdown
+        viewModel.isShowingExportSheet = true
+    }
+
+    private func findInNotebook() {
+        viewModel.isShowingInNotebookSearch = true
     }
 
     /// Routes through the export sheet so the user gets a real PDF + Share button

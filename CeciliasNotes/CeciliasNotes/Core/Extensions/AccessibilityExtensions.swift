@@ -41,6 +41,11 @@ enum A11y {
 
     static let canvasHint = "Use Apple Pencil to draw. Activate the text tool to type."
 
+    static var canvasHintForCurrentDevice: String {
+        if DeviceCapabilities.canDraw { return canvasHint }
+        return "Activate the text tool to type."
+    }
+
     static func toolLabel(name: String, isActive: Bool) -> String {
         isActive ? "\(name), selected" : name
     }

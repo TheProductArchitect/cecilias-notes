@@ -242,6 +242,10 @@ private struct TrashRow: View {
         }
         .padding(.horizontal, CeciliasNotes.Spacing.lg)
         .padding(.vertical, CeciliasNotes.Spacing.md)
+        .contextMenu {
+            Button("Restore", action: onRestore)
+            Button("Delete Forever", role: .destructive, action: onPermanentDelete)
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {

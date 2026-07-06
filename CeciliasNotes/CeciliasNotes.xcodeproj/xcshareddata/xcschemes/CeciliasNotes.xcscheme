@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "ABB82E1F2FAD01B300EAEC50"
-               BuildableName = "venu_bundle_1.app"
+               BuildableName = "CeciliasNotes.app"
                BlueprintName = "CeciliasNotes"
                ReferencedContainer = "container:CeciliasNotes.xcodeproj">
             </BuildableReference>
@@ -97,7 +97,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "ABB82E1F2FAD01B300EAEC50"
-            BuildableName = "venu_bundle_1.app"
+            BuildableName = "CeciliasNotes.app"
             BlueprintName = "CeciliasNotes"
             ReferencedContainer = "container:CeciliasNotes.xcodeproj">
          </BuildableReference>
@@ -114,7 +114,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "ABB82E1F2FAD01B300EAEC50"
-            BuildableName = "venu_bundle_1.app"
+            BuildableName = "CeciliasNotes.app"
             BlueprintName = "CeciliasNotes"
             ReferencedContainer = "container:CeciliasNotes.xcodeproj">
          </BuildableReference>

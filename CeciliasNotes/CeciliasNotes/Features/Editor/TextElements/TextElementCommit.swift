@@ -63,6 +63,8 @@ enum TextElementCommit {
             return nil
         }
 
+        NotebookOriginRecorder.markNotebookModified(notebookId: notebookId, context: context)
+
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
         return element
     }

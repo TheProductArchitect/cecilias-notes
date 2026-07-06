@@ -137,15 +137,16 @@ enum MultipeerPairingStore {
     /// - `localPeerName`: the iPad's display name (this device).
     /// - `remotePeerName`: the Mac's display name.
     ///
-    /// We bind the key derivation to both names so the same code
-    /// reused across different device pairs produces different keys.
+    /// We bind the key derivation to both peer names (sorted
+    /// lexicographically) so Mac and iPad land on the same HKDF
+    /// info string regardless of which side initiated pairing.
     static func derivedKey(
         fromCode code: String,
         localPeerName: String,
         remotePeerName: String
     ) -> SymmetricKey {
         let salt = "ceciliasnotes.multipeer.v1.salt".data(using: .utf8)!
-        let info = "\(localPeerName)|\(remotePeerName)".data(using: .utf8)!
+        let info = peerPairInfo(localPeerName: localPeerName, remotePeerName: remotePeerName)
         let inputKey = SymmetricKey(data: code.data(using: .utf8) ?? Data())
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: inputKey,
@@ -206,13 +207,20 @@ enum MultipeerPairingStore {
     ) -> SymmetricKey? {
         guard let household = householdKey() else { return nil }
         let salt = "ceciliasnotes.multipeer.v1.firstparty.salt".data(using: .utf8)!
-        let info = "\(localPeerName)|\(remotePeerName)".data(using: .utf8)!
+        let info = peerPairInfo(localPeerName: localPeerName, remotePeerName: remotePeerName)
         return HKDF<SHA256>.deriveKey(
             inputKeyMaterial: household,
             salt: salt,
             info: info,
             outputByteCount: 32
         )
+    }
+
+    /// Canonical HKDF info string — peer names sorted so both ends
+    /// derive identical keys.
+    static func peerPairInfo(localPeerName: String, remotePeerName: String) -> Data {
+        let ordered = [localPeerName, remotePeerName].sorted()
+        return "\(ordered[0])|\(ordered[1])".data(using: .utf8)!
     }
 
     private static func fetchHouseholdKeyBytes() -> Data? {

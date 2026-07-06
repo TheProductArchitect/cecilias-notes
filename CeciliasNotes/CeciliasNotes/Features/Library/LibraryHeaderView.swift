@@ -18,17 +18,21 @@ import UniformTypeIdentifiers
 struct LibraryHeaderView: View {
 
     @ObservedObject var viewModel: LibraryViewModel
+    /// Mac only — opens the Recent Exports sheet from the ⋯ menu.
+    var isShowingRecentExports: Binding<Bool>? = nil
     @AppStorage("app.user.name") private var userName: String = ""
     @Environment(\.theme) private var theme
+#if os(macOS)
+    @Environment(\.openSettings) private var openSettings
+#endif
 
     @State private var greeting: String = ""
     @State private var showMoveSheet = false
     @State private var isShowingPDFImporter = false
     @State private var isShowingTagFilter = false
     @State private var isShowingAskSheet = false
-#if os(iOS)
-    @StateObject private var intelligence = IntelligenceService.shared
-#endif
+    @State private var pendingAskQuery: String?
+    @State private var submitAskOnAppear = false
 
     /// Greeting only renders when the user has set a name AND that name
     /// is short enough not to need the right zone for breathing room.
@@ -120,16 +124,25 @@ struct LibraryHeaderView: View {
         .sheet(isPresented: $isShowingTagFilter) {
             TagFilterSheet(viewModel: viewModel)
         }
-#if os(iOS)
-        .sheet(isPresented: $isShowingAskSheet) {
-            AskMyNotesView(libraryViewModel: viewModel)
+        .sheet(isPresented: $isShowingAskSheet, onDismiss: {
+            pendingAskQuery = nil
+            submitAskOnAppear = false
+        }) {
+            AskMyNotesView(
+                libraryViewModel: viewModel,
+                initialQuery: pendingAskQuery,
+                submitOnAppear: submitAskOnAppear
+            )
         }
-#endif
+        .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesOpenAsk)) { note in
+            let query = note.userInfo?[CeciliasNotesIntentKeys.askQuery] as? String
+            pendingAskQuery = query
+            submitAskOnAppear = query.map { !$0.isEmpty } ?? false
+            isShowingAskSheet = true
+        }
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
         .onAppear {
-#if os(iOS)
             greeting = GreetingPicker.pick()
-#endif
         }
     }
 
@@ -244,11 +257,11 @@ struct LibraryHeaderView: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
+            .libraryToolbarMenuStyle()
             .accessibilityLabel("Sort")
 
             // Ask My Notes — conversational on-device search.
-#if os(iOS)
-            if intelligence.canRun {
+            if IntelligenceService.shared.canRun {
                 Button {
                     isShowingAskSheet = true
                 } label: {
@@ -261,7 +274,6 @@ struct LibraryHeaderView: View {
                 .buttonStyle(.ceciliasNotesPressable)
                 .accessibilityLabel("Ask your notes")
             }
-#endif
 
             // Tag filter — opens a half-sheet of every unique tag
             // in the current context. The icon turns brand-blue when
@@ -372,6 +384,38 @@ struct LibraryHeaderView: View {
             }
             .buttonStyle(.ceciliasNotesPressable)
             .accessibilityLabel(viewModel.isSelecting ? "Exit select" : "Select")
+
+#if os(macOS)
+            Button {
+                openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(theme.recessiveQuaternary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.ceciliasNotesPressable)
+            .accessibilityLabel("Settings")
+
+            if let exportsBinding = isShowingRecentExports {
+                Menu {
+                    Button {
+                        exportsBinding.wrappedValue = true
+                    } label: {
+                        Label("Recent Exports", systemImage: "doc.richtext")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(theme.recessiveQuaternary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .libraryToolbarMenuStyle()
+                .accessibilityLabel("More")
+            }
+#endif
         }
     }
 

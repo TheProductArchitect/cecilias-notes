@@ -31,14 +31,20 @@ struct SettingsView: View {
 
     var body: some View {
         Group {
+#if os(iOS)
             if DeviceCapabilities.isPhoneIdiom {
                 phoneBody
             } else {
                 tabletBody
             }
+#else
+            tabletBody
+#endif
         }
         .background(theme.surface)
+#if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
+#endif
         .background(
             VStack(spacing: 0) {
                 Button("Close") { onDismiss() }
@@ -74,12 +80,8 @@ struct SettingsView: View {
         }
     }
 
-    /// iPhone NavigationStack — sections render as a tappable list
-    /// at root, each push opens the detail full-width. The rail's
-    /// 220pt fixed width would leave only ~170pt for the detail on a
-    /// 390pt iPhone, which is what produced the clipped "ettings /
-    /// pearance / ple pencil" text you saw on the side-by-side
-    /// composition.
+    /// iPhone NavigationStack — iOS only.
+#if os(iOS)
     private var phoneBody: some View {
         NavigationStack {
             List {
@@ -96,7 +98,7 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .background(theme.surface)
             .navigationTitle("settings")
-            .navigationBarTitleDisplayMode(.large)
+            .largeNavigationBarTitle()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("done") { onDismiss() }
@@ -107,7 +109,7 @@ struct SettingsView: View {
                 phoneDetail(for: section)
                     .background(theme.surface)
                     .navigationTitle(section.rawValue.lowercased())
-                    .navigationBarTitleDisplayMode(.inline)
+                    .inlineNavigationBarTitle()
             }
         }
     }
@@ -124,6 +126,7 @@ struct SettingsView: View {
         case .about:        AboutSettingsView(viewModel: viewModel)
         }
     }
+#endif
 
     // MARK: Header (editorial)
 
@@ -134,6 +137,7 @@ struct SettingsView: View {
                 .tracking(-0.5)
                 .foregroundStyle(theme.foreground)
             Spacer()
+#if !os(macOS)
             Button {
                 onDismiss()
             } label: {
@@ -142,6 +146,7 @@ struct SettingsView: View {
                     .foregroundStyle(theme.accent)
             }
             .buttonStyle(.plain)
+#endif
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
@@ -161,7 +166,10 @@ struct SettingsView: View {
     /// availability. It used to be suppressed when Foundation Models
     /// was missing — that hid the quiz settings entirely.
     private var visibleSections: [SettingsSection] {
-        SettingsSection.allCases
+        SettingsSection.allCases.filter { section in
+            if section == .pencil, !DeviceCapabilities.canDraw { return false }
+            return true
+        }
     }
 
     private var rail: some View {
@@ -210,8 +218,13 @@ struct SettingsView: View {
         switch selectedSection {
         case .appearance:
             AppearanceSettingsView(viewModel: viewModel)
+#if os(iOS)
         case .pencil:
             PencilSettingsView(viewModel: viewModel)
+#else
+        case .pencil:
+            EmptyView()
+#endif
         case .audio:
             AudioSettingsView(viewModel: viewModel)
         case .cloud:

@@ -167,8 +167,10 @@ struct QuizBuilderView: View {
             footer
         }
         .background(theme.surface.ignoresSafeArea())
+#if os(iOS)
         .presentationDetents([.fraction(0.82), .large])
         .presentationDragIndicator(.visible)
+#endif
         .onAppear {
             seedDefaults()
             refreshEligibilityCache()
@@ -560,6 +562,12 @@ struct QuizBuilderView: View {
         if case .subject(let id) = viewModel.selectedContext {
             scopeType = .subject
             selectedSubjectID = id
+        }
+        if let notebookID = viewModel.quizBuilderPreselectedNotebookID {
+            scopeType = .notebook
+            selectedNotebookID = notebookID
+            step = .format
+            viewModel.quizBuilderPreselectedNotebookID = nil
         }
     }
 

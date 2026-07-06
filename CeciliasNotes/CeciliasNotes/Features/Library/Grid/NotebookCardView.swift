@@ -16,6 +16,13 @@ struct NotebookCardView: View {
 
     @State private var isHovered            = false
     @State private var isShowingCoverPicker = false
+    @State private var isShowingTagsSheet   = false
+    @State private var isShowingOriginInfo   = false
+#if os(macOS)
+    @State private var isRenamingTitle        = false
+    @State private var renameBuffer           = ""
+    @FocusState private var renameFieldFocused: Bool
+#endif
     // Inline title editing was retired — the card title is now
     // display-only. Renaming happens in the customise panel
     // (notebook → customise panel → name field), which is the
@@ -29,6 +36,14 @@ struct NotebookCardView: View {
 
     private var isSelected: Bool { viewModel.selectedNotebookIds.contains(notebook.id) }
     private var isDuplicating: Bool { viewModel.duplicatingIds.contains(notebook.id) }
+#if os(macOS)
+    private var isMacGridFocused: Bool { viewModel.macGridFocusedNotebookId == notebook.id }
+#else
+    private var isMacGridFocused: Bool {
+        DeviceCapabilities.supportsGridKeyboardNavigation
+            && viewModel.macGridFocusedNotebookId == notebook.id
+    }
+#endif
 
     /// True only for the single notebook the user opened most recently.
     /// Drives the blue accent dot in the top-right corner.
@@ -63,20 +78,48 @@ struct NotebookCardView: View {
             #if DEBUG
             dlog("[Library] card tap id=\(notebook.id) isSelecting=\(viewModel.isSelecting)")
             #endif
+            #if os(macOS)
             if viewModel.isSelecting {
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
                     viewModel.toggleSelection(notebook)
                 }
             } else {
+                viewModel.macGridFocusedNotebookId = notebook.id
+            }
+            #else
+            if viewModel.isSelecting {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy)) {
+                    viewModel.toggleSelection(notebook)
+                }
+            } else {
+                viewModel.macGridFocusedNotebookId = notebook.id
                 viewModel.selectedNotebookId = notebook.id
             }
+            #endif
         }
+#if os(macOS)
+        .onTapGesture(count: 2) {
+            guard !viewModel.isSelecting else { return }
+            viewModel.selectedNotebookId = notebook.id
+        }
+#endif
         .contextMenu { contextMenu }
         .popover(isPresented: $isShowingCoverPicker, arrowEdge: .top) {
             CoverTonePickerView(notebook: notebook) {
                 isShowingCoverPicker = false
                 viewModel.refresh()
             }
+        }
+        .sheet(isPresented: $isShowingTagsSheet) {
+            NotebookTagsSheet(notebook: notebook, viewModel: viewModel)
+        }
+        .sheet(isPresented: $isShowingOriginInfo) {
+            NotebookOriginInfoSheet(notebook: notebook)
+                .environment(\.theme, theme)
+#if os(iOS)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+#endif
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(A11y.notebookLabel(
@@ -296,6 +339,34 @@ struct NotebookCardView: View {
     /// keyboard surface — eliminates the keyboard-dismissal bug
     /// that survived two prior fix attempts at the field level.
     private var titleView: some View {
+#if os(macOS)
+        Group {
+            if isRenamingTitle {
+                TextField("title", text: $renameBuffer)
+                    .font(.system(size: 19, weight: .heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(tone.textColor)
+                    .textFieldStyle(.plain)
+                    .focused($renameFieldFocused)
+                    .submitLabel(.done)
+                    .onSubmit { commitTitleRename() }
+                    .onChange(of: renameFieldFocused) { _, focused in
+                        if !focused { commitTitleRename() }
+                    }
+            } else {
+                Text(notebook.title)
+                    .font(.system(size: 19, weight: .heavy))
+                    .tracking(-0.5)
+                    .foregroundStyle(tone.textColor)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onTapGesture(count: 2) { beginTitleRename() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+#else
         Text(notebook.title)
             .font(.system(size: 19, weight: .heavy))
             .tracking(-0.5)
@@ -306,7 +377,26 @@ struct NotebookCardView: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .allowsHitTesting(false)
+#endif
     }
+
+#if os(macOS)
+    private func beginTitleRename() {
+        renameBuffer = notebook.title
+        isRenamingTitle = true
+        DispatchQueue.main.async { renameFieldFocused = true }
+    }
+
+    private func commitTitleRename() {
+        defer {
+            isRenamingTitle = false
+            renameBuffer = ""
+        }
+        let trimmed = renameBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != notebook.title else { return }
+        viewModel.renameNotebook(notebook, newTitle: trimmed)
+    }
+#endif
 
     // MARK: Border
 
@@ -319,6 +409,10 @@ struct NotebookCardView: View {
         if isSelected {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(theme.accent, lineWidth: 1.5)
+        }
+        if isMacGridFocused && !isSelected {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(theme.accent.opacity(0.55), lineWidth: 1)
         }
     }
 
@@ -361,8 +455,23 @@ struct NotebookCardView: View {
         Button {
             viewModel.selectedNotebookId = notebook.id
         } label: {
-            Label("Open", systemImage: "arrow.up.right.square")
+            Label("Open", systemImage: "book")
         }
+
+#if os(macOS)
+        Button {
+            viewModel.macOpenInNewWindowId = notebook.id
+        } label: {
+            Label("Open in New Window", systemImage: "square.on.square")
+        }
+
+        Button {
+            viewModel.macGridFocusedNotebookId = notebook.id
+            viewModel.isMacQuickLookPresented = true
+        } label: {
+            Label("Quick Look", systemImage: "eye")
+        }
+#endif
 
         Button {
             // Rename / customise is now exclusively inside the
@@ -380,6 +489,18 @@ struct NotebookCardView: View {
             isShowingCoverPicker = true
         } label: {
             Label("Change Cover", systemImage: "paintpalette")
+        }
+
+        Button {
+            isShowingTagsSheet = true
+        } label: {
+            Label("Tags…", systemImage: "tag")
+        }
+
+        Button {
+            isShowingOriginInfo = true
+        } label: {
+            Label("Info…", systemImage: "info.circle")
         }
 
         Button {

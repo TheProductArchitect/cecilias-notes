@@ -78,11 +78,21 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         case receiving(peerName: String)
         case received(peerName: String, filename: String)
         case error(String)
+
+        var peerName: String? {
+            switch self {
+            case .connected(let name), .receiving(let name), .received(let name, _):
+                return name
+            default:
+                return nil
+            }
+        }
     }
 
     @Published private(set) var status: Status = .off
     @Published private(set) var isEnabled: Bool = false
     @Published private(set) var pairedPeerNames: [String] = []
+    @Published private(set) var connectedPeerNames: [String] = []
 
     // MARK: Storage keys
 
@@ -175,6 +185,25 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         refreshPairedPeerNames()
     }
 
+    /// Reload paired peer names from Keychain (e.g. after Mac-side pairing).
+    func reloadPairedPeers() {
+        refreshPairedPeerNames()
+    }
+
+    /// Notify paired, connected peers that a notebook changed so they
+    /// can refresh immediately while both apps are in the foreground.
+    func broadcastNotebookChanged(notebookId: UUID) {
+        guard isEnabled, let session else { return }
+        for peer in session.connectedPeers {
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { continue }
+            MultipeerNotebookHint.send(notebookId: notebookId, to: peer, session: session, key: key)
+        }
+    }
+
+    func isPeerConnected(_ name: String) -> Bool {
+        connectedPeerNames.contains(name)
+    }
+
     // MARK: Lifecycle
 
     private func start() {
@@ -195,12 +224,16 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         // routes through the manual flow.
         var discoveryInfo: [String: String] = [
             "app": "ceciliasnotes",
-            "platform": "ios",
             "v": "2"
         ]
         if let hash = MultipeerPairingStore.householdTokenHash() {
             discoveryInfo["householdHash"] = hash
         }
+        #if os(macOS)
+        discoveryInfo["platform"] = "macos"
+        #else
+        discoveryInfo["platform"] = "ios"
+        #endif
         let advertiser = MCNearbyServiceAdvertiser(
             peer: localPeerId,
             discoveryInfo: discoveryInfo,
@@ -224,6 +257,10 @@ final class MultipeerSyncService: NSObject, ObservableObject {
 
     private func refreshPairedPeerNames() {
         pairedPeerNames = MultipeerPairingStore.pairedPeerNames()
+    }
+
+    private func refreshConnectedPeerNames() {
+        connectedPeerNames = session?.connectedPeers.map(\.displayName).sorted() ?? []
     }
 
     // MARK: Payload handling
@@ -309,6 +346,19 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             }
             recentNonces.append((header.nonce, Date()))
             writeFileToInbox(filename: header.filename, body: bodyData, peer: peer)
+
+        case "notebook-changed":
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { return }
+            guard verifyHMAC(hmacBytes, message: signedRange, key: key) else { return }
+            recentNonces.append((header.nonce, Date()))
+            if let notebookId = MultipeerNotebookHint.notebookId(from: bodyData) {
+                NotificationCenter.default.post(
+                    name: MultipeerNotebookHint.changedNotification,
+                    object: nil,
+                    userInfo: ["notebookId": notebookId]
+                )
+                status = .connected(peerName: peer.displayName)
+            }
 
         case "ping":
             // Liveness probe — sender uses this to detect a
@@ -494,9 +544,17 @@ extension MultipeerSyncService: MCSessionDelegate {
             guard let self else { return }
             switch state {
             case .connected:
-                self.status = .connected(peerName: peerID.displayName)
+                self.refreshConnectedPeerNames()
+                if case .pairing = self.status {
+                    break
+                } else {
+                    self.status = .connected(peerName: peerID.displayName)
+                }
             case .notConnected:
-                if case .connected = self.status { self.status = .idle }
+                self.refreshConnectedPeerNames()
+                if self.status.peerName == peerID.displayName {
+                    self.status = .idle
+                }
             case .connecting:
                 self.status = .receiving(peerName: peerID.displayName)
             @unknown default:

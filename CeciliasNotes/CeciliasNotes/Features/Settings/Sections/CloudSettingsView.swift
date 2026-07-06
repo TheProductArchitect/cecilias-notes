@@ -1,7 +1,9 @@
 import CloudKit
 import SwiftData
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// Phase D + Phase 3 redesign — flat-white surface, editorial section
 /// labels, hairline-only rows. Toggle drives `CloudSyncManager`'s
@@ -48,8 +50,6 @@ struct CloudSettingsView: View {
         self.cloud     = viewModel.cloudSyncManager
     }
 
-    @ObservedObject private var multipeer = MultipeerSyncService.shared
-
     @State private var inboxEvents: [CeciliasNotesFileWatcher.InboxEvent] = []
     @State private var pendingFullReset: Bool = false
     @State private var resetInProgress: Bool = false
@@ -65,7 +65,8 @@ struct CloudSettingsView: View {
                     storageSection
                 }
                 inboxActivitySection
-                multipeerSection
+                MultipeerSettingsSection()
+                CloudConflictResolutionSection()
                 dangerZoneSection
             }
             .padding(.horizontal, 24)
@@ -324,9 +325,7 @@ struct CloudSettingsView: View {
                     .padding(.top, 2)
 
                 Button {
-                    if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
-                    }
+                    PlatformApp.openSystemSettings()
                 } label: {
                     Text("open settings")
                         .font(.system(size: 12))
@@ -567,152 +566,6 @@ struct CloudSettingsView: View {
         f.dateFormat = "HH:mm:ss"
         return f
     }()
-
-    /// Direct device-to-device intake from a Mac running
-    /// `cecilias-notes-mcp` on the same network. Sidesteps iCloud's
-    /// 30 sec – 5 min sync latency. Opt-in: when off, the iPad
-    /// never advertises or listens.
-    ///
-    /// Security: pairing-code-based handshake establishes a per-peer
-    /// shared secret (HKDF over the code); every payload after
-    /// pairing is HMAC-signed with that secret. Peer-name spoofing
-    /// on the local network is rejected at the HMAC layer.
-    private var multipeerSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("direct from mac")
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("receive on local network")
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.foreground)
-                    Text(multipeerCaption)
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.foregroundSubtle)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { multipeer.isEnabled },
-                    set: { multipeer.setEnabled($0) }
-                ))
-                .labelsHidden()
-                .tint(theme.accent)
-            }
-
-            if multipeer.isEnabled {
-                pairingControls
-                if !multipeer.pairedPeerNames.isEmpty {
-                    pairedDevicesList
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var pairingControls: some View {
-        if case .pairing(let code, _) = multipeer.status {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("enter this code on the mac:")
-                    .font(.system(size: 11))
-                    .foregroundStyle(theme.foregroundSubtle)
-                HStack(spacing: 8) {
-                    Text(code)
-                        .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                        .tracking(4)
-                        .foregroundStyle(theme.foreground)
-                    Spacer()
-                    Button {
-                        multipeer.cancelPairing()
-                        HapticManager.shared.toolSwitched()
-                    } label: {
-                        Text("cancel")
-                            .font(.system(size: 12))
-                            .foregroundStyle(theme.foregroundMuted)
-                    }
-                    .buttonStyle(.plain)
-                }
-                Text("expires in 90 seconds. only enter the code on a mac you trust.")
-                    .font(.system(size: 10).italic())
-                    .foregroundStyle(theme.foregroundSubtle)
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(theme.accent.opacity(0.08))
-            )
-        } else {
-            Button {
-                _ = multipeer.beginPairing()
-                HapticManager.shared.toolSwitched()
-            } label: {
-                Text("show pairing code")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.accent)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    @ViewBuilder
-    private var pairedDevicesList: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("paired devices")
-                .font(.system(size: 11))
-                .foregroundStyle(theme.foregroundSubtle)
-                .padding(.top, 8)
-            ForEach(multipeer.pairedPeerNames, id: \.self) { name in
-                HStack {
-                    Text(name)
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.foreground)
-                    Spacer()
-                    Button {
-                        multipeer.forgetPeer(name)
-                        HapticManager.shared.toolSwitched()
-                    } label: {
-                        Text("forget")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.danger)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.vertical, 6)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(theme.hairline).frame(height: 0.5)
-                }
-            }
-            Button {
-                multipeer.forgetAllPeers()
-                HapticManager.shared.toolSwitched()
-            } label: {
-                Text("forget all paired devices")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.foregroundMuted)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-        }
-    }
-
-    private var multipeerCaption: String {
-        switch multipeer.status {
-        case .off:
-            return "when on, an instance of cecilias-notes-mcp running on a mac on the same wi-fi can ship notebooks directly to this device. tap show pairing code and enter it on the mac to authorise a sender. all payloads are hmac-authenticated; unpaired peers can't send anything."
-        case .idle:
-            return "advertising. tap show pairing code to authorise a mac for the first time."
-        case .pairing:
-            return "waiting for the mac to connect with the code below."
-        case .connected(let name):
-            return "connected to \(name)."
-        case .receiving(let name):
-            return "receiving from \(name)…"
-        case .received(let name, let filename):
-            return "received \(filename) from \(name)."
-        case .error(let msg):
-            return msg
-        }
-    }
 
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 14) {

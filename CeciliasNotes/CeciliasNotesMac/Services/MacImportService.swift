@@ -62,7 +62,7 @@ enum MacImportService {
         element.imageContent = content
         context.insert(element)
         page.updatedAt = Date()
-        notebook.updatedAt = Date()
+        notebook.markModified()
         try? context.save()
         return true
     }
@@ -72,21 +72,15 @@ enum MacImportService {
         subjectId: UUID?,
         storage: StorageService
     ) async -> UUID? {
-        // Minimal path: create notebook and defer full PDF-as-notebook to a follow-up.
-        // For M3, create a notebook with a placeholder title from the filename.
-        let title = sourceURL.deletingPathExtension().lastPathComponent
-        do {
-            let notebook = try storage.createNotebook(
-                title: title.isEmpty ? "Imported PDF" : title,
-                subjectId: subjectId,
-                coverColorHex: "#FAFAF8",
-                coverTexture: .none,
-                pageSize: .a4,
-                template: .blank
-            )
-            return notebook.id
-        } catch {
-            return nil
-        }
+        await MacPDFImport.importAsNotebook(from: sourceURL, subjectId: subjectId, storage: storage)
+    }
+
+    static func importPDFIntoNotebook(
+        from sourceURL: URL,
+        notebook: Notebook,
+        after page: Page?,
+        storage: StorageService
+    ) async -> Int {
+        await MacPDFImport.importIntoNotebook(from: sourceURL, notebook: notebook, after: page, storage: storage)
     }
 }

@@ -3,7 +3,9 @@ import Accelerate
 import Combine
 import Foundation
 @preconcurrency import Speech
+#if canImport(UIKit)
 import UIKit
+#endif
 
 /// Step 5: `LectureRecorder.stop()` no longer returns a
 /// `LectureRecord` (entity removed in the audio-consolidation
@@ -264,6 +266,7 @@ final class LectureRecorder: ObservableObject {
         engine = nil
 
         await Task.detached(priority: .userInitiated) {
+#if os(iOS)
             do {
                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
                 #if DEBUG
@@ -274,6 +277,7 @@ final class LectureRecorder: ObservableObject {
                 dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
                 #endif
             }
+#endif
         }.value
 
         let url = outputURL ?? URL(fileURLWithPath: "lecture_\(recordId.uuidString).m4a")
@@ -790,10 +794,9 @@ final class LectureRecorder: ObservableObject {
         try? await Task.sleep(for: .milliseconds(120))
 
         guard isRecording, !isPaused else { return }
-        // Bail if we got backgrounded between callback fire and
-        // here — the foreground hook will restart us.
+#if os(iOS)
         guard UIApplication.shared.applicationState != .background else { return }
-
+#endif
         await startSpeechRecognition()
     }
 
@@ -929,6 +932,7 @@ final class LectureRecorder: ObservableObject {
     /// stalls a background task, and the dictation `withDictationTimeout`
     /// in `RecordingSession.startDictation` can recover the UI.
     private func configureAudioSession() async throws {
+#if os(iOS)
         try await Task.detached(priority: .userInitiated) {
             let session = AVAudioSession.sharedInstance()
             // `.voiceChat` activates Apple's built-in noise-suppression
@@ -946,6 +950,7 @@ final class LectureRecorder: ObservableObject {
             )
             try session.setActive(true)
         }.value
+#endif
     }
 
     /// Microphone permission is delivered via a system callback that
@@ -1009,16 +1014,13 @@ final class LectureRecorder: ObservableObject {
     // MARK: - Background / foreground
 
     private func registerLifecycleObservers() {
+#if os(iOS)
         let nc = NotificationCenter.default
         backgroundObserver = nc.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            // Audio keeps recording (UIBackgroundModes: audio).
-            // Speech recognition cannot run in background — Apple
-            // constraint — so we tear it down here and rely on the
-            // refinement pass to fill the gap when stop() fires.
             Task { @MainActor in await self?.endSpeechRecognition(commitFinal: true) }
         }
         foregroundObserver = nc.addObserver(
@@ -1031,6 +1033,7 @@ final class LectureRecorder: ObservableObject {
                 await self.startSpeechRecognition()
             }
         }
+#endif
     }
 
     private func unregisterLifecycleObservers() {

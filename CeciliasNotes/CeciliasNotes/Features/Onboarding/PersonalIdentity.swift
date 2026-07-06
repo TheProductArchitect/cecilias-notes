@@ -298,6 +298,26 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
     }
 }
 
+#elseif os(macOS)
+
+import AppKit
+
+@MainActor
+func reconcileAppIcon(preferredName: String? = nil) {
+    let name = preferredName
+        ?? UserDefaults.standard.string(forKey: PersonalIdentity.nameKey)
+        ?? ""
+    let letter = BrandIcon.variantKey(forName: name).flatMap(\.first) ?? "c"
+    let image = MacBrandIconRenderer.render(letter: letter, size: 512)
+    NSApplication.shared.applicationIconImage = image
+}
+
+@MainActor
+func updateAppIcon(for name: String) {
+    guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
+    reconcileAppIcon(preferredName: name)
+}
+
 #else
 
 /// macOS stub — the app icon lives in the bundle and isn't swappable

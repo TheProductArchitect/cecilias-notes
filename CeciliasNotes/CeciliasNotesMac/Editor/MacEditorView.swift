@@ -10,31 +10,36 @@ struct MacEditorView: View {
     @ObservedObject var state: MacLibraryState
     @ObservedObject var libraryVM: LibraryViewModel
     @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var storageService: StorageService
+    @EnvironmentObject private var deepLink: DeepLinkRouter
 
     @Query private var pages: [Page]
+    @StateObject private var richTextController = MacRichTextController()
     @State private var isShowingSummarize = false
-    @State private var isShowingCoverEditor = false
-    @StateObject private var lectureRecorder = LectureRecorder()
-    @State private var isLecturePresented = false
     @State private var isShowingAskAboutPage = false
     @State private var isShowingPageTemplate = false
     @State private var isShowingInNotebookSearch = false
-    @State private var isVoiceMemoPresented = false
+    @State private var isShowingPageOrder = false
+    @State private var isShowingNotebookInfo = false
+    @State private var isShowingQuizBuilder = false
     @State private var editingStickyElement: PageElement?
-    @StateObject private var textEditingController = MacTextEditingController()
+    @State private var transcriptionErrorMessage: String?
+    @State private var importFeedback: MacImportFeedback?
+    @ObservedObject private var recordingSession = MacRecordingSession.shared
 
-    /// Mac writing surface: `.doc` renders the notebook as a linear
-    /// Google-Docs-style document (default on Mac); `.canvas` mirrors the
-    /// iPad's page-with-floating-elements layout. Persisted per-user so
-    /// the preference survives launches, not per-notebook — a user who
-    /// prefers Doc Mode wants it everywhere.
-    @AppStorage("mac.editor.writingMode") private var writingMode: MacWritingMode = .doc
+    var onClose: (() -> Void)? = nil
 
-    init(notebook: Notebook, state: MacLibraryState, libraryVM: LibraryViewModel) {
+    init(
+        notebook: Notebook,
+        state: MacLibraryState,
+        libraryVM: LibraryViewModel,
+        onClose: (() -> Void)? = nil
+    ) {
         self.notebook = notebook
         self.state = state
         self.libraryVM = libraryVM
+        self.onClose = onClose
         let notebookID = notebook.id
         _pages = Query(
             filter: #Predicate<Page> { page in
@@ -49,25 +54,59 @@ struct MacEditorView: View {
     }
 
     private var editorMain: some View {
-        ZStack(alignment: .bottom) {
-            editorContent
-            if state.editingTextElement != nil {
-                MacFloatingTextToolbar(controller: textEditingController)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                editorTopChrome
+                MacDocModeView(
+                    notebook: notebook,
+                    pages: pages,
+                    selectedPageID: pageSelection,
+                    editingBlockID: $state.editingBlockID,
+                    selectedElementID: $state.selectedElementID,
+                    editorScrollOffset: $state.editorScrollOffset,
+                    pendingHandoffScrollOffset: $state.pendingHandoffScrollOffset,
+                    editorZoom: state.editorZoom,
+                    topChromeInset: documentTopInset,
+                    onWritingBegan: { state.notifyHeaderWritingBegan(notebook: notebook) }
+                )
+                .environmentObject(storageService)
+                .environmentObject(richTextController)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            if state.isCustomisePanelOpen {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        state.closeCustomisePanel(notebook: notebook)
+                    }
+                    .zIndex(73)
+
+                HStack(spacing: 0) {
+                    MacCustomisePanel(
+                        notebook: notebook,
+                        state: state,
+                        libraryVM: libraryVM
+                    )
+                    Spacer(minLength: 0)
+                        .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .zIndex(85)
+            }
+
+            MacFloatingRecordingControls(topInset: recordingControlsTopInset)
+                .zIndex(90)
         }
-        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: state.editingTextElement?.id)
-        .navigationTitle(notebook.title)
+        .navigationTitle("")
+        .background(MacWindowChromeFix())
         .accessibilityLabel(A11y.notebookLabel(
             title: notebook.title,
             subjectName: nil,
             pageCount: pages.count,
             modified: notebook.updatedAt
         ))
-        .toolbar(state.isFocusMode ? .hidden : .visible, for: .windowToolbar)
-        .toolbar { if !state.isFocusMode { editorToolbar } }
-        .background(theme.pageBackground.opacity(0.08))
+        .background(theme.background)
         .onAppear {
             MacStateUpdates.deferred {
                 if state.selectedPageID == nil {
@@ -82,7 +121,11 @@ struct MacEditorView: View {
         .onChange(of: state.editorZoom) { _, _ in
             MacStateUpdates.deferred { publishHandoff() }
         }
+        .onChange(of: state.editingBlockID) { _, blockID in
+            if blockID == nil { richTextController.detach() }
+        }
         .onDisappear {
+            richTextController.detach()
             publishHandoff()
         }
         .onDrop(of: [.fileURL, .image, .pdf], isTargeted: nil) { providers in
@@ -91,211 +134,119 @@ struct MacEditorView: View {
     }
 
     @ViewBuilder
-    private var editorContent: some View {
-        switch writingMode {
-        case .doc:
-            MacDocModeView(notebook: notebook, pages: pages)
-                .environmentObject(storageService)
-        case .canvas:
-            editorCanvasStack
-        }
-    }
+    private var editorTopChrome: some View {
+        VStack(spacing: 0) {
+            if !state.isFocusMode, !state.headerVisibility.isHeaderVisible {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(notebook.coverTone.background)
+                        .frame(height: 3)
+                    MacHeaderRevealOverlay(tone: notebook.coverTone) {
+                        state.revealHeaderManually()
+                    }
+                }
+            }
 
-    private var editorCanvasStack: some View {
-        ZStack(alignment: .bottomTrailing) {
-            HStack(spacing: 0) {
-                MacContinuousCanvasView(
+            if !state.isFocusMode, state.headerVisibility.isHeaderVisible {
+                MacEditorHeaderView(
                     notebook: notebook,
-                    pages: pages,
-                    zoom: $state.editorZoom,
-                    selectedPageID: $state.selectedPageID,
-                    selectedElementID: $state.selectedElementID,
-                    editingTextElementID: state.editingTextElement?.id,
-                    textEditingController: textEditingController,
-                    onEditText: { element in
-                        MacStateUpdates.deferred { beginTextEditing(element) }
-                    },
-                    onEndTextEditing: {
-                        MacStateUpdates.deferred { endTextEditing() }
-                    },
-                    onEditSticky: { element in
-                        MacStateUpdates.deferred { editingStickyElement = element }
-                    },
-                    onScrollOffsetCommit: { offset in
-                        state.editorScrollOffset = offset
-                    }
+                    state: state,
+                    pageCount: pages.count,
+                    onBack: closeEditor,
+                    onShare: { state.isExportPresented = true },
+                    onExportPDF: exportPDF,
+                    onExportMarkdown: exportMarkdown,
+                    onFindInNotebook: { isShowingInNotebookSearch = true },
+                    onPrint: printNotebook,
+                    onDuplicatePage: duplicateCurrentPage,
+                    onDeletePage: deleteCurrentPage,
+                    onSummarizePage: { isShowingSummarize = true },
+                    onAskAboutPage: { isShowingAskAboutPage = true },
+                    onCopyPageAsImage: copyCurrentPage,
+                    onResetZoom: { state.editorZoom = 1 },
+                    onPageTemplate: { isShowingPageTemplate = true },
+                    onToggleFocusMode: { state.isFocusMode.toggle() },
+                    onInsertImage: insertImageOnCurrentPage,
+                    onInsertSticky: insertStickyOnCurrentPage,
+                    onStartVoiceNote: startVoiceMemoRecording,
+                    onStartTranscription: startTranscriptionRecording,
+                    onAddPage: { addPage(afterCurrent: true) },
+                    onNotebookInfo: { isShowingNotebookInfo = true }
                 )
-
-                if !state.isFocusMode {
-                    MacPageStripView(
-                        notebook: notebook,
-                        pages: pages,
-                        selectedPageID: pageSelection,
-                        storage: storageService,
-                        onPagesChanged: { newPageID in
-                            if let newPageID {
-                                MacStateUpdates.deferred { state.selectedPageID = newPageID }
-                            }
-                        }
-                    )
-                    .frame(width: 88)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            if state.editorZoom > 1.25, !state.isFocusMode {
-                MacMinimapView(pages: pages, selectedPageID: pageSelection)
-                    .padding(16)
-                    .transition(.opacity)
+            if shouldShowFormatToolbar {
+                MacDockedTextFormatToolbar(
+                    controller: richTextController,
+                    onNeedsTextFocus: focusSelectedTextForFormatting
+                )
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            if recordingSession.mode.isTranscribing {
+                MacLiveTranscriptionBar()
+            }
+        }
+        .zIndex(75)
+    }
+
+    private var shouldShowFormatToolbar: Bool {
+        !state.isFocusMode
+            && !state.isCustomisePanelOpen
+            && !recordingSession.mode.isTranscribing
+    }
+
+    /// Breathing room above the first page — chrome lives in `editorTopChrome`.
+    private var documentTopInset: CGFloat {
+        state.isFocusMode ? 16 : 48
+    }
+
+    private var recordingControlsTopInset: CGFloat {
+        var inset: CGFloat = 8
+        if !state.isFocusMode, !state.headerVisibility.isHeaderVisible {
+            inset += MacEditorChromeMetrics.collapsedRevealHeight
+        } else if !state.isFocusMode, state.headerVisibility.isHeaderVisible {
+            inset += MacEditorChromeMetrics.headerHeight
+        }
+        if shouldShowFormatToolbar {
+            inset += MacEditorChromeMetrics.formatToolbarHeight
+        }
+        if recordingSession.mode.isTranscribing {
+            inset += 168
+        }
+        return inset
+    }
+
+    private func focusSelectedTextForFormatting() {
+        guard state.editingBlockID == nil else { return }
+        if let selected = state.selectedElementID {
+            state.editingBlockID = selected
+            return
+        }
+        guard let pageID = state.selectedPageID ?? pages.first?.id else { return }
+        let pid = pageID
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\PageElement.normalizedY)]
+        )
+        let elements = (try? storageService.context.fetch(descriptor)) ?? []
+        if let firstText = elements.first(where: { $0.kind == .text }) {
+            state.selectedElementID = firstText.id
+            state.editingBlockID = firstText.id
         }
     }
 
-    private func beginTextEditing(_ element: PageElement) {
-        if state.editingTextElement?.id != element.id {
-            endTextEditing(resignOnly: true)
+    private func closeEditor() {
+        publishHandoff()
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+            MacStateUpdates.deferred {
+                deepLink.forceLibraryHome = true
+            }
         }
-        state.selectedElementID = element.id
-        state.editingTextElement = element
-    }
-
-    private func endTextEditing(resignOnly: Bool = false) {
-        if let textView = textEditingController.activeTextView {
-            textView.window?.makeFirstResponder(nil)
-        }
-        if !resignOnly {
-            textEditingController.detach()
-            if state.editingTextElement?.kind == .text {
-                state.selectedElementID = nil
-            }
-            state.editingTextElement = nil
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var editorToolbar: some ToolbarContent {
-            ToolbarItemGroup(placement: .navigation) {
-                Picker("Mode", selection: $writingMode) {
-                    Text("doc").tag(MacWritingMode.doc)
-                    Text("canvas").tag(MacWritingMode.canvas)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 140)
-                .help("Doc mode: linear document. Canvas mode: iPad-style page layout.")
-                Button {
-                    MacDictationTrigger.start()
-                } label: {
-                    Label("Dictate", systemImage: "mic")
-                }
-                .keyboardShortcut("v", modifiers: [.command, .option])
-                .help("Start system dictation in the focused text block (⌥⌘V)")
-            }
-            ToolbarItem(placement: .automatic) {
-                Menu {
-                    Button("Insert Image…") { insertImageOnCurrentPage() }
-                    Button("Insert Sticky Note") { insertStickyOnCurrentPage() }
-                } label: {
-                    Label("Insert", systemImage: "plus.square.on.square")
-                }
-                .help("Insert image or sticky note")
-                .disabled(currentPage == nil)
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    MacStateUpdates.deferred { isShowingPageTemplate = true }
-                } label: {
-                    Label("Template", systemImage: "square.grid.2x2")
-                }
-                .help("Change page template")
-            }
-            ToolbarItem(placement: .automatic) {
-                if IntelligenceService.shared.canRun {
-                    Button {
-                        MacStateUpdates.deferred { isShowingAskAboutPage = true }
-                    } label: {
-                        Label("Ask Page", systemImage: "bubble.left.and.text.bubble.right")
-                    }
-                    .help("Ask about this page")
-                    .disabled(currentPage == nil)
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                Menu {
-                    Button("Rectangle") { insertShape(.rectangle) }
-                    Button("Ellipse") { insertShape(.ellipse) }
-                    Button("Arrow") { insertShape(.arrow) }
-                } label: {
-                    Label("Insert Shape", systemImage: "square.on.circle")
-                }
-                .help("Insert a shape on the current page")
-                .disabled(currentPage == nil)
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    MacStateUpdates.deferred { isShowingCoverEditor = true }
-                } label: {
-                    Label("Cover", systemImage: "paintpalette")
-                }
-                .help("Edit notebook cover and title")
-            }
-            ToolbarItem(placement: .automatic) {
-                if IntelligenceService.shared.canRun {
-                    Button {
-                        NotificationCenter.default.post(
-                            name: .macGenerateQuiz,
-                            object: nil,
-                            userInfo: [CeciliasNotesIntentKeys.notebookId: notebook.id]
-                        )
-                    } label: {
-                        Label("Generate Quiz", systemImage: "checklist")
-                    }
-                    .help("Generate a quiz from this notebook")
-                }
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    MacStateUpdates.deferred { isShowingInNotebookSearch = true }
-                } label: {
-                    Label("Find in Notebook", systemImage: "magnifyingglass")
-                }
-                .help("Search within this notebook (⌘⇧F)")
-            }
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    MacStateUpdates.deferred { copyCurrentPage() }
-                } label: {
-                    Label("Copy Page", systemImage: "doc.on.doc")
-                }
-                .help("Copy current page as image (⌘⇧C)")
-                .disabled(currentPage == nil)
-            }
-            ToolbarItemGroup(placement: .automatic) {
-                Button {
-                    MacStateUpdates.deferred { isVoiceMemoPresented = true }
-                } label: {
-                    Label("Voice Memo", systemImage: "waveform")
-                }
-                .help("Record a short voice memo on this page")
-                .disabled(currentPage == nil)
-
-                Button {
-                    Task { @MainActor in
-                        guard let page = currentPage else { return }
-                        do {
-                            try await lectureRecorder.start(pageId: page.id, notebookId: notebook.id)
-                            isLecturePresented = true
-                        } catch {
-                            #if DEBUG
-                            dlog("[MacLecture] start failed: \(error)")
-                            #endif
-                        }
-                    }
-                } label: {
-                    Label("Lecture", systemImage: "mic")
-                }
-                .help("Long-form recording with live transcript")
-                .disabled(currentPage == nil)
-            }
     }
 
     @ViewBuilder
@@ -314,10 +265,6 @@ struct MacEditorView: View {
                     onDismiss: { isShowingSummarize = false }
                 )
             }
-        }
-        .sheet(isPresented: $isShowingCoverEditor) {
-            MacNotebookCoverSheet(notebook: notebook, libraryVM: libraryVM)
-                .environment(\.theme, theme)
         }
         .sheet(isPresented: $isShowingPageTemplate) {
             MacPageTemplateSheet(notebook: notebook, page: currentPage)
@@ -341,37 +288,44 @@ struct MacEditorView: View {
             )
             .environment(\.theme, theme)
         }
-        .sheet(isPresented: $isLecturePresented) {
-            if let page = currentPage {
-                MacLectureRecordingView(
-                    page: page,
-                    notebook: notebook,
-                    recorder: lectureRecorder,
-                    onFinished: { isLecturePresented = false },
-                    onCancel: {
-                        Task { @MainActor in _ = await lectureRecorder.stop() }
-                        isLecturePresented = false
-                    }
-                )
+        .sheet(isPresented: $isShowingPageOrder) {
+            MacPageOrderSheet(notebook: notebook, selectedPageID: pageSelection)
+                .environmentObject(storageService)
                 .environment(\.theme, theme)
-            }
         }
-        .sheet(isPresented: $isVoiceMemoPresented) {
-            if let page = currentPage {
-                MacVoiceMemoRecordingView(
-                    page: page,
-                    notebook: notebook,
-                    onFinished: { isVoiceMemoPresented = false },
-                    onCancel: { isVoiceMemoPresented = false }
-                )
+        .sheet(isPresented: $isShowingNotebookInfo) {
+            NotebookOriginInfoSheet(notebook: notebook)
                 .environment(\.theme, theme)
-            }
+                .frame(width: 400, height: 320)
+        }
+        .sheet(isPresented: $isShowingQuizBuilder) {
+            QuizBuilderView(viewModel: libraryVM)
+                .environment(\.theme, theme)
+                .frame(minWidth: 520, minHeight: 560)
+                .onAppear {
+                    libraryVM.quizBuilderPreselectedNotebookID = notebook.id
+                }
+        }
+        .alert("Transcription", isPresented: Binding(
+            get: { transcriptionErrorMessage != nil },
+            set: { if !$0 { transcriptionErrorMessage = nil } }
+        )) {
+            Button("OK") { transcriptionErrorMessage = nil }
+        } message: {
+            Text(transcriptionErrorMessage ?? "")
+        }
+        .alert(item: $importFeedback) { feedback in
+            Alert(
+                title: Text(feedback.title),
+                message: Text(feedback.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
     @ViewBuilder
     private func attachEditorNotifications<V: View>(_ view: V) -> some View {
-        attachEditorNotificationsB(attachEditorNotificationsA(view))
+        attachEditorNotificationsC(attachEditorNotificationsB(attachEditorNotificationsA(view)))
     }
 
     @ViewBuilder
@@ -401,6 +355,15 @@ struct MacEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macDuplicatePage)) { _ in
             MacStateUpdates.deferred { duplicateCurrentPage() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macReorderPages)) { _ in
+            MacStateUpdates.deferred { isShowingPageOrder = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macMovePageUp)) { _ in
+            MacStateUpdates.deferred { moveCurrentPage(by: -1) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macMovePageDown)) { _ in
+            MacStateUpdates.deferred { moveCurrentPage(by: 1) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .macInsertShape)) { note in
             MacStateUpdates.deferred {
                 guard let raw = note.userInfo?[MacShapeHandoff.kindKey] as? String,
@@ -414,11 +377,41 @@ struct MacEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macCopyPage)) { _ in
             MacStateUpdates.deferred { copyCurrentPage() }
         }
+    }
+
+    @ViewBuilder
+    private func attachEditorNotificationsC<V: View>(_ view: V) -> some View {
+        view
         .onReceive(NotificationCenter.default.publisher(for: .macToggleFocusMode)) { _ in
             MacStateUpdates.deferred {
+                guard MacWindowFocus.isNotebookEditorKey else { return }
                 withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
                     state.isFocusMode.toggle()
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macGenerateQuiz)) { _ in
+            MacStateUpdates.deferred {
+                libraryVM.quizBuilderPreselectedNotebookID = notebook.id
+                isShowingQuizBuilder = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macOpenSearch)) { _ in
+            MacStateUpdates.deferred {
+                guard MacWindowFocus.isNotebookEditorKey else { return }
+                MacWindowFocus.bringLibraryForward(andPost: .macOpenSearch)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macOpenCommandPalette)) { _ in
+            MacStateUpdates.deferred {
+                guard MacWindowFocus.isNotebookEditorKey else { return }
+                MacWindowFocus.bringLibraryForward(andPost: .macOpenCommandPalette)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macToggleSidebar)) { _ in
+            MacStateUpdates.deferred {
+                guard MacWindowFocus.isNotebookEditorKey else { return }
+                MacWindowFocus.bringLibraryForward(andPost: .macToggleSidebar)
             }
         }
     }
@@ -444,9 +437,53 @@ struct MacEditorView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macImportPDFPages)) { _ in
             MacStateUpdates.deferred { importPDFIntoNotebook() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macTranscriptionStarted)) { note in
+            MacStateUpdates.deferred {
+                guard let pageID = note.userInfo?[MacHandoff.pageIdKey] as? UUID else { return }
+                let elementID = note.userInfo?[MacTranscriptionKeys.elementId] as? UUID
+                state.selectedPageID = pageID
+                state.selectedElementID = elementID
+                state.editingBlockID = nil
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macStartDictation)) { _ in
+            MacStateUpdates.deferred { startTranscriptionRecording() }
+        }
+        .onChange(of: recordingSession.lastErrorMessage) { _, message in
+            transcriptionErrorMessage = message
+        }
         .onReceive(NotificationCenter.default.publisher(for: .macCopyHandwritingOCR)) { _ in
             MacStateUpdates.deferred { Task { await copyHandwritingAsText() } }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macAskAIAboutElement)) { note in
+            MacStateUpdates.deferred {
+                guard let elementId = note.userInfo?["elementId"] as? UUID else { return }
+                state.selectedElementID = elementId
+                state.editingBlockID = elementId
+                isShowingAskAboutPage = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macRequestHandoffToIPad)) { note in
+            MacStateUpdates.deferred { publishHandoffToIPad(note) }
+        }
+    }
+
+    private func publishHandoffToIPad(_ note: Notification) {
+        guard let notebookID = note.userInfo?[MacHandoff.notebookIdKey] as? UUID,
+              let pageID = note.userInfo?[MacHandoff.pageIdKey] as? UUID else { return }
+        state.selectedPageID = pageID
+        let activity = NSUserActivity(activityType: PageHandoff.activityType)
+        activity.title = notebook.title
+        activity.userInfo = PageHandoff.userInfo(notebookId: notebookID, pageId: pageID)
+        activity.requiredUserInfoKeys = Set([PageHandoff.notebookIdKey, PageHandoff.pageIdKey])
+        activity.isEligibleForHandoff = true
+        activity.becomeCurrent()
+        let alert = NSAlert()
+        alert.messageText = "Continue on iPad"
+        alert.informativeText = "Open Cecilia's Notes on your nearby iPad to edit this page with Apple Pencil."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func copyHandwritingAsText() async {
@@ -466,30 +503,43 @@ struct MacEditorView: View {
         let pid = page.id
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.pageId == pid && $0.deletedAt == nil },
-            sortBy: [SortDescriptor(\.zIndex)]
+            sortBy: [
+                SortDescriptor(\PageElement.normalizedY),
+                SortDescriptor(\PageElement.normalizedX),
+                SortDescriptor(\PageElement.zIndex),
+            ]
         )
         let items = (try? storageService.context.fetch(descriptor)) ?? []
             .filter { $0.kind != .stroke && $0.kind != .highlight }
         guard !items.isEmpty else { return }
-        if let current = state.selectedElementID,
-           let idx = items.firstIndex(where: { $0.id == current }) {
-            let next = forward
+        let current = state.editingBlockID ?? state.selectedElementID
+        let next: PageElement
+        if let current, let idx = items.firstIndex(where: { $0.id == current }) {
+            next = forward
                 ? items[(idx + 1) % items.count]
                 : items[(idx - 1 + items.count) % items.count]
-            state.selectedElementID = next.id
         } else {
-            state.selectedElementID = forward ? items.first?.id : items.last?.id
+            next = forward ? items[0] : items[items.count - 1]
+        }
+        state.selectedPageID = page.id
+        state.selectedElementID = next.id
+        if next.kind == .text || next.kind == .stickyNote {
+            state.editingBlockID = next.id
+        } else {
+            state.editingBlockID = nil
         }
     }
 
     private func deleteSelectedElement() {
-        guard let id = state.selectedElementID else { return }
+        let id = state.editingBlockID ?? state.selectedElementID
+        guard let id else { return }
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.id == id }
         )
         guard let element = try? storageService.context.fetch(descriptor).first else { return }
         MacElementEditing.softDelete(element, context: storageService.context)
         state.selectedElementID = nil
+        state.editingBlockID = nil
     }
 
     private func importPDFIntoNotebook() {
@@ -498,12 +548,25 @@ struct MacEditorView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
-            _ = await MacImportService.importPDFIntoNotebook(
+            let count = await MacImportService.importPDFIntoNotebook(
                 from: url,
                 notebook: notebook,
                 after: currentPage,
                 storage: storageService
             )
+            await MainActor.run {
+                if count > 0 {
+                    importFeedback = MacImportFeedback(
+                        title: "Import complete",
+                        message: "Added \(count) page\(count == 1 ? "" : "s") after the current page. PDFs with a text layer import as editable notes; scanned pages import as images."
+                    )
+                } else {
+                    importFeedback = MacImportFeedback(
+                        title: "Import failed",
+                        message: "Could not read that PDF. Try a different file or check that it is not password-protected."
+                    )
+                }
+            }
         }
     }
 
@@ -579,6 +642,20 @@ struct MacEditorView: View {
         }
     }
 
+    private func exportPDF() {
+        state.exportFormat = .pdf
+        state.isExportPresented = true
+    }
+
+    private func exportMarkdown() {
+        state.exportFormat = .markdown
+        state.isExportPresented = true
+    }
+
+    private func printNotebook() {
+        MacPrintService.printNotebook(notebook, storage: storageService)
+    }
+
     private func addPage(afterCurrent: Bool) {
         let after = afterCurrent ? currentPage : pages.last
         if let newPage = MacPageEditing.addPage(in: notebook, after: after, storage: storageService) {
@@ -601,9 +678,37 @@ struct MacEditorView: View {
         MacStateUpdates.deferred { state.selectedPageID = copy.id }
     }
 
+    private func canMoveCurrentPage(by delta: Int) -> Bool {
+        guard let page = currentPage else { return false }
+        let target = page.pageNumber + delta
+        return target >= 1 && target <= pages.count
+    }
+
+    private func moveCurrentPage(by delta: Int) {
+        guard let page = currentPage else { return }
+        let target = page.pageNumber + delta
+        guard target >= 1, target <= pages.count else { return }
+        guard MacPageEditing.movePage(page, to: target, storage: storageService) else { return }
+        MacStateUpdates.deferred { state.selectedPageID = page.id }
+    }
+
     private func copyCurrentPage() {
         guard let page = currentPage else { return }
         MacCopyPageService.copyPage(page, notebook: notebook, storage: storageService)
+    }
+
+    private func startVoiceMemoRecording() {
+        guard let page = currentPage else { return }
+        Task {
+            await MacRecordingSession.shared.startVoiceMemo(page: page, notebook: notebook)
+        }
+    }
+
+    private func startTranscriptionRecording() {
+        guard let page = currentPage else { return }
+        Task {
+            _ = await recordingSession.startTranscription(page: page, notebook: notebook)
+        }
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
@@ -627,459 +732,4 @@ struct MacEditorView: View {
         }
         return false
     }
-}
-
-struct MacPageStripView: View {
-    let notebook: Notebook
-    let pages: [Page]
-    @Binding var selectedPageID: UUID?
-    let storage: StorageService
-    var onPagesChanged: (UUID?) -> Void
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { index, page in
-                    MacPageThumbnail(page: page, index: index + 1, isSelected: selectedPageID == page.id)
-                        .onTapGesture {
-                            MacStateUpdates.deferred { selectedPageID = page.id }
-                        }
-                        .draggable(MacPageDragItem(pageId: page.id, fromPageNumber: page.pageNumber))
-                        .dropDestination(for: MacPageDragItem.self) { items, _ in
-                            guard let item = items.first,
-                                  item.pageId != page.id,
-                                  let source = pages.first(where: { $0.id == item.pageId })
-                            else { return false }
-                            guard MacPageEditing.movePage(source, to: page.pageNumber, storage: storage) else {
-                                return false
-                            }
-                            onPagesChanged(source.id)
-                            return true
-                        }
-                        .contextMenu {
-                            Button("Insert Page After") {
-                                if let newPage = MacPageEditing.addPage(in: notebook, after: page, storage: storage) {
-                                    onPagesChanged(newPage.id)
-                                }
-                            }
-                            Button("Duplicate Page") {
-                                if let copy = MacPageEditing.duplicatePage(page, storage: storage) {
-                                    onPagesChanged(copy.id)
-                                }
-                            }
-                            Divider()
-                            Button("Delete Page", role: .destructive) {
-                                guard MacPageEditing.deletePage(page, notebook: notebook, storage: storage) else { return }
-                                let remaining = storage.fetchPages(in: notebook)
-                                onPagesChanged(remaining.first?.id)
-                            }
-                            .disabled(pages.count <= 1)
-                        }
-                }
-
-                Button {
-                    if let newPage = MacPageEditing.addPage(in: notebook, after: pages.last, storage: storage) {
-                        onPagesChanged(newPage.id)
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 14))
-                        .frame(width: 64, height: 32)
-                        .background(theme.hairline.opacity(0.4))
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                }
-                .buttonStyle(.plain)
-                .help("Add page")
-            }
-            .padding(8)
-        }
-        .background(theme.surface)
-    }
-}
-
-private struct MacPageDragItem: Transferable, Codable {
-    let pageId: UUID
-    let fromPageNumber: Int
-
-    static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .data)
-    }
-}
-
-private struct MacPageThumbnail: View {
-    let page: Page
-    let index: Int
-    let isSelected: Bool
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: 4)
-                .fill(theme.pageBackground)
-                .frame(width: 64, height: 84)
-                .shadow(radius: isSelected ? 2 : 0)
-            Text("\(index)")
-                .font(.caption2)
-                .padding(4)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 4)
-                .stroke(isSelected ? theme.accent : Color.clear, lineWidth: 2)
-        }
-        .accessibilityLabel("Page \(index)")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-    }
-}
-
-struct MacContinuousCanvasView: View {
-    let notebook: Notebook
-    let pages: [Page]
-    @Binding var zoom: CGFloat
-    @Binding var selectedPageID: UUID?
-    @Binding var selectedElementID: UUID?
-    var editingTextElementID: UUID?
-    @ObservedObject var textEditingController: MacTextEditingController
-    var onEditText: (PageElement) -> Void
-    var onEndTextEditing: () -> Void
-    var onEditSticky: (PageElement) -> Void
-    var onScrollOffsetCommit: (CGFloat) -> Void
-
-    @State private var localScrollOffset: CGFloat = 0
-    @State private var pinchBaseZoom: CGFloat = 1
-
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(spacing: 24) {
-                    ForEach(pages) { page in
-                        MacPageView(
-                            notebook: notebook,
-                            page: page,
-                            zoom: zoom,
-                            selectedElementID: elementSelection,
-                            editingTextElementID: editingTextElementID,
-                            textEditingController: textEditingController,
-                            onEditText: onEditText,
-                            onEndTextEditing: onEndTextEditing,
-                            onEditSticky: onEditSticky
-                        )
-                        .id(page.id)
-                    }
-                }
-                .padding()
-            }
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { scale in
-                        zoom = min(4, max(0.25, pinchBaseZoom * scale))
-                    }
-                    .onEnded { _ in
-                        pinchBaseZoom = zoom
-                    }
-            )
-            .onAppear { pinchBaseZoom = zoom }
-            .onChange(of: zoom) { _, newValue in
-                if abs(newValue - pinchBaseZoom) > 0.001 {
-                    pinchBaseZoom = newValue
-                }
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y
-            } action: { _, offset in
-                localScrollOffset = offset
-            }
-            .onChange(of: selectedPageID) { _, pageID in
-                guard let pageID else { return }
-                withAnimation { proxy.scrollTo(pageID, anchor: .top) }
-            }
-            .onDisappear {
-                onScrollOffsetCommit(localScrollOffset)
-            }
-        }
-    }
-
-    private var elementSelection: Binding<UUID?> {
-        Binding(
-            get: { selectedElementID },
-            set: { id in
-                MacStateUpdates.deferred { selectedElementID = id }
-            }
-        )
-    }
-}
-
-struct MacPageView: View {
-    let notebook: Notebook
-    let page: Page
-    let zoom: CGFloat
-    @Binding var selectedElementID: UUID?
-    var editingTextElementID: UUID?
-    @ObservedObject var textEditingController: MacTextEditingController
-    var onEditText: (PageElement) -> Void
-    var onEndTextEditing: () -> Void
-    var onEditSticky: (PageElement) -> Void
-    @Environment(\.theme) private var theme
-    @EnvironmentObject private var storageService: StorageService
-
-    @Query private var elements: [PageElement]
-
-    init(
-        notebook: Notebook,
-        page: Page,
-        zoom: CGFloat,
-        selectedElementID: Binding<UUID?>,
-        editingTextElementID: UUID?,
-        textEditingController: MacTextEditingController,
-        onEditText: @escaping (PageElement) -> Void,
-        onEndTextEditing: @escaping () -> Void,
-        onEditSticky: @escaping (PageElement) -> Void
-    ) {
-        self.notebook = notebook
-        self.page = page
-        self.zoom = zoom
-        _selectedElementID = selectedElementID
-        self.editingTextElementID = editingTextElementID
-        self.textEditingController = textEditingController
-        self.onEditText = onEditText
-        self.onEndTextEditing = onEndTextEditing
-        self.onEditSticky = onEditSticky
-        let pageID = page.id
-        _elements = Query(
-            filter: #Predicate<PageElement> { element in
-                element.pageId == pageID && element.deletedAt == nil
-            },
-            sort: \PageElement.zIndex
-        )
-    }
-
-    private var pageSize: CGSize {
-        let base = page.pageSize.pointSize
-        return CGSize(width: base.width * zoom, height: base.height * zoom)
-    }
-
-    private var pdfParents: [UUID: PageElement] {
-        Dictionary(uniqueKeysWithValues: elements.compactMap { el -> (UUID, PageElement)? in
-            guard el.kind == .pdfPage, let id = el.pdfPageContent?.id else { return nil }
-            return (id, el)
-        })
-    }
-
-    private func elementFrame(for element: PageElement) -> CGRect {
-        CGRect(
-            x: element.normalizedX * pageSize.width,
-            y: element.normalizedY * pageSize.height,
-            width: max(1, element.normalizedWidth * pageSize.width),
-            height: max(1, element.normalizedHeight * pageSize.height)
-        )
-    }
-
-    private func topElement(at location: CGPoint) -> PageElement? {
-        elements
-            .filter { $0.kind != .highlight }
-            .reversed()
-            .first { elementFrame(for: $0).contains(location) }
-    }
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(theme.pageBackground)
-                .shadow(radius: 2)
-
-            MacTemplateBackground(template: page.backgroundTemplate, theme: theme)
-                .clipShape(RoundedRectangle(cornerRadius: 2))
-
-            ForEach(elements.filter { $0.kind != .highlight }) { element in
-                MacElementView(
-                    element: element,
-                    pageSize: pageSize,
-                    pdfParents: pdfParents,
-                    isSelected: selectedElementID == element.id,
-                    isEditingText: editingTextElementID == element.id,
-                    editingTextController: textEditingController,
-                    onSelect: { id in
-                        MacStateUpdates.deferred {
-                            if editingTextElementID != nil, editingTextElementID != id {
-                                onEndTextEditing()
-                            }
-                            selectedElementID = id
-                        }
-                    },
-                    onEditText: onEditText,
-                    onEndTextEditing: onEndTextEditing,
-                    onEditSticky: onEditSticky
-                )
-            }
-
-            ForEach(elements.filter { $0.kind == .highlight }) { element in
-                MacElementView(
-                    element: element,
-                    pageSize: pageSize,
-                    pdfParents: pdfParents,
-                    isSelected: selectedElementID == element.id,
-                    isEditingText: false,
-                    editingTextController: nil,
-                    onSelect: { id in
-                        MacStateUpdates.deferred {
-                            if editingTextElementID != nil {
-                                onEndTextEditing()
-                            }
-                            selectedElementID = id
-                        }
-                    },
-                    onEditText: onEditText,
-                    onEndTextEditing: onEndTextEditing,
-                    onEditSticky: onEditSticky
-                )
-            }
-
-            if let strokeData = storageService.strokeData(for: page), !strokeData.isEmpty,
-               let drawing = try? PKDrawing(data: strokeData) {
-                let scale = max(2, zoom * 2)
-                let rendered = drawing.image(from: CGRect(origin: .zero, size: pageSize), scale: scale)
-                Image(nsImage: rendered)
-                    .resizable()
-                    .frame(width: pageSize.width, height: pageSize.height)
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Handwriting")
-                    .accessibilityHint("Read only on Mac. Edit on iPad.")
-                    .accessibilityAddTraits(.isImage)
-            }
-
-            // Empty-page hint. When the page has zero elements the user
-            // needs a signal that Mac IS a typing surface — the hint
-            // sits at the standard text-element insertion point (8%
-            // from top, 8% from left) so a double-click there lands
-            // exactly where the hint reads.
-            if elements.isEmpty {
-                Text("click to type — handwriting stays on iPad")
-                    .font(.system(size: 11, weight: .regular).italic())
-                    .foregroundStyle(theme.foregroundSubtle)
-                    .padding(.leading, pageSize.width * 0.08)
-                    .padding(.top, pageSize.width * 0.08)
-                    .allowsHitTesting(false)
-            }
-        }
-        .frame(width: pageSize.width, height: pageSize.height)
-        .contentShape(Rectangle())
-        .onTapGesture { location in
-            if let editingId = editingTextElementID,
-               let editing = elements.first(where: { $0.id == editingId }),
-               elementFrame(for: editing).contains(location) {
-                return
-            }
-            if editingTextElementID != nil {
-                onEndTextEditing()
-                return
-            }
-            guard topElement(at: location) == nil else { return }
-            insertTextElement(at: location)
-        }
-        .onExitCommand {
-            if editingTextElementID != nil {
-                onEndTextEditing()
-            }
-        }
-    }
-
-    /// Insert a new text element and start inline editing immediately.
-    private func insertTextElement(at location: CGPoint) {
-        let normalizedY = min(max(0.05, location.y / pageSize.height), 0.88)
-        let width = 0.84
-        let rect = CGRect(
-            x: (1 - width) / 2,
-            y: normalizedY,
-            width: width,
-            height: 0.12
-        )
-        guard let element = TextElementCommit.create(
-            text: "",
-            source: .typed,
-            pageId: page.id,
-            notebookId: notebook.id,
-            normalizedRect: rect,
-            context: storageService.context
-        ) else { return }
-        MacStateUpdates.deferred {
-            selectedElementID = element.id
-            onEditText(element)
-        }
-    }
-}
-
-struct MacTemplateBackground: View {
-    let template: PageTemplate
-    let theme: Theme
-
-    var body: some View {
-        switch template {
-        case .blank:
-            theme.pageBackground
-        case .narrowRuled, .wideRuled, .collegeRuled, .twoColumn:
-            ruledBackground(spacing: 24)
-        case .dotGrid5, .dotGrid10, .isoDots:
-            dotBackground(spacing: 24)
-        case .squareGrid5, .squareGrid10, .engineeringGrid:
-            gridBackground(spacing: 24)
-        default:
-            theme.pageBackground
-        }
-    }
-
-    private func ruledBackground(spacing: CGFloat) -> some View {
-        Canvas { context, size in
-            var y = spacing
-            while y < size.height {
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(path, with: .color(theme.pageLines), lineWidth: 0.5)
-                y += spacing
-            }
-        }
-    }
-
-    private func dotBackground(spacing: CGFloat) -> some View {
-        Canvas { context, size in
-            var y = spacing
-            while y < size.height {
-                var x = spacing
-                while x < size.width {
-                    let dot = Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2))
-                    context.fill(dot, with: .color(theme.pageDots))
-                    x += spacing
-                }
-                y += spacing
-            }
-        }
-    }
-
-    private func gridBackground(spacing: CGFloat) -> some View {
-        Canvas { context, size in
-            var y = spacing
-            while y < size.height {
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: size.width, y: y))
-                context.stroke(path, with: .color(theme.pageLines.opacity(0.8)), lineWidth: 0.5)
-                y += spacing
-            }
-            var x = spacing
-            while x < size.width {
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
-                context.stroke(path, with: .color(theme.pageLines.opacity(0.8)), lineWidth: 0.5)
-                x += spacing
-            }
-        }
-    }
-}
-
-/// Persisted writing surface preference for the Mac editor.
-enum MacWritingMode: String, CaseIterable {
-    case doc
-    case canvas
 }

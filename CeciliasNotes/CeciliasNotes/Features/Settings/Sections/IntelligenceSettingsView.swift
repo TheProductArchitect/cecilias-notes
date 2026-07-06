@@ -9,9 +9,10 @@ import SwiftUI
 /// Editorial style matches the rest of Settings: eyebrow + heavy title +
 /// hairline rule, 8pt tracked uppercase section labels, no card fills.
 struct IntelligenceSettingsView: View {
-    @ObservedObject private var intelligence = IntelligenceService.shared
     @ObservedObject private var mcp = MCPStatusMonitor.shared
     @Environment(\.theme) private var theme
+
+    private var intelligence: IntelligenceService { IntelligenceService.shared }
 
     // Quiz preference keys (read by QuizGenerationService / the builder).
     @AppStorage("ceciliasnotes.quiz.enabled")

@@ -47,6 +47,11 @@ struct CeciliasNotesCommands: Commands {
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
 
+            Button("Find in Notebook…") {
+                NotificationCenter.default.post(name: .ceciliasNotesCommandFindInNotebook, object: nil)
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+
             Button("Print…") {
                 NotificationCenter.default.post(name: .ceciliasNotesCommandPrint, object: nil)
             }
@@ -62,5 +67,7 @@ extension Notification.Name {
     static let ceciliasNotesCommandSearch        = Notification.Name("ceciliasnotes.command.search")
     static let ceciliasNotesCommandCloseNotebook = Notification.Name("ceciliasnotes.command.closeNotebook")
     static let ceciliasNotesCommandExport        = Notification.Name("ceciliasnotes.command.export")
+    static let ceciliasNotesCommandFindInNotebook = Notification.Name("ceciliasnotes.command.findInNotebook")
     static let ceciliasNotesCommandPrint         = Notification.Name("ceciliasnotes.command.print")
+    static let ceciliasNotesQuickCapture         = Notification.Name("ceciliasnotes.command.quickCapture")
 }

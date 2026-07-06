@@ -13,6 +13,28 @@ public typealias PlatformImage = NSImage
 public typealias PlatformColor = NSColor
 #endif
 
+/// Cross-platform string clipboard — avoids `UIPasteboard` / `NSPasteboard`
+/// branching at every call site.
+public enum PlatformClipboard {
+    public static func copy(_ string: String) {
+#if canImport(UIKit)
+        UIPasteboard.general.string = string
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+#endif
+    }
+
+    public static func copyImage(_ image: PlatformImage) {
+#if canImport(UIKit)
+        UIPasteboard.general.image = image
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
+#endif
+    }
+}
+
 public enum PlatformImageFactory {
     // Design note — thread-safety under Swift 6.
     //
@@ -96,5 +118,61 @@ public enum PlatformImageFactory {
         CGImageDestinationAddImage(dest, cgImage, options as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { return nil }
         return mutableData as Data
+    }
+}
+
+// MARK: - Cross-platform app / workspace helpers
+
+public enum PlatformApp {
+    public static func open(_ url: URL) {
+#if canImport(UIKit)
+        UIApplication.shared.open(url)
+#elseif canImport(AppKit)
+        NSWorkspace.shared.open(url)
+#endif
+    }
+
+    /// Opens the app's on-disk container in Finder (Mac) or Files (iOS).
+    public static func revealDocumentsFolder() {
+#if canImport(AppKit)
+        let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
+#elseif canImport(UIKit)
+        if let url = URL(string: "shareddocuments://") {
+            UIApplication.shared.open(url)
+        }
+#endif
+    }
+
+    public static func openSystemSettings() {
+#if canImport(UIKit)
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
+#elseif canImport(AppKit)
+        if let url = URL(string: "x-apple.systempreferences:") {
+            NSWorkspace.shared.open(url)
+        }
+#endif
+    }
+}
+
+extension View {
+    @ViewBuilder
+    public func inlineNavigationBarTitle() -> some View {
+#if os(iOS)
+        self.navigationBarTitleDisplayMode(.inline)
+#else
+        self
+#endif
+    }
+
+    @ViewBuilder
+    public func largeNavigationBarTitle() -> some View {
+#if os(iOS)
+        self.navigationBarTitleDisplayMode(.large)
+#else
+        self
+#endif
     }
 }

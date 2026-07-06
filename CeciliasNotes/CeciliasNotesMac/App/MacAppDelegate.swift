@@ -5,7 +5,11 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
     private var settingsObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Route the `⌘,` command through `NSApp.sendAction` for the
+        MacQuickCaptureController.shared.install()
+        NSApp.servicesProvider = self
+        NSUpdateDynamicServices()
+        startMultipeerBackgroundReconnectIfNeeded()
+        Task { @MainActor in reconcileAppIcon() }
         // `Settings…` menu item — SwiftUI's `Settings { }` scene
         // registers this selector at launch; posting it here means
         // any part of the app can programmatically open Settings
@@ -25,42 +29,72 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
+    }
+
+    private func startMultipeerBackgroundReconnectIfNeeded() {
+        Task { @MainActor in
+            let hasPairedPeers = !MultipeerPairingStore.pairedPeerNames().isEmpty
+            let receiveEnabled = UserDefaults.standard.bool(forKey: "ceciliasnotes.multipeer.enabled")
+            if hasPairedPeers || receiveEnabled {
+                MultipeerSendService.shared.startBackgroundReconnect()
+            }
+        }
+    }
+
     deinit {
         if let token = settingsObserver {
             NotificationCenter.default.removeObserver(token)
         }
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "ceciliasnotes" {
+            NotificationCenter.default.post(
+                name: .macIncomingDeepLinkURL,
+                object: nil,
+                userInfo: ["url": url]
+            )
+        }
+    }
+
     func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
-        guard userActivity.activityType == MacHandoff.activityType,
-              let notebookIdString = userActivity.userInfo?[MacHandoff.notebookIdKey] as? String,
-              let notebookId = UUID(uuidString: notebookIdString),
-              let pageIdString = userActivity.userInfo?[MacHandoff.pageIdKey] as? String,
-              let pageId = UUID(uuidString: pageIdString)
+        guard userActivity.activityType == PageHandoff.activityType,
+              let payload = PageHandoff.parse(userActivity.userInfo)
         else { return false }
 
         NotificationCenter.default.post(
             name: .macOpenHandoffPage,
             object: nil,
             userInfo: [
-                MacHandoff.notebookIdKey: notebookId,
-                MacHandoff.pageIdKey: pageId,
-                MacHandoff.scrollOffsetKey: userActivity.userInfo?[MacHandoff.scrollOffsetKey] as? CGFloat ?? 0,
-                MacHandoff.zoomKey: userActivity.userInfo?[MacHandoff.zoomKey] as? CGFloat ?? 1,
+                PageHandoff.notebookIdKey: payload.notebookId,
+                PageHandoff.pageIdKey: payload.pageId,
+                PageHandoff.scrollOffsetKey: payload.scrollOffset,
+                PageHandoff.zoomKey: payload.zoom,
             ]
         )
         return true
     }
 }
 
-extension Notification.Name {
-    static let macOpenHandoffPage = Notification.Name("app.ceciliasnotes.mac.handoff")
+extension MacAppDelegate {
+    @objc func newNoteFromSelection(
+        _ pboard: NSPasteboard,
+        userData: String,
+        error: NSErrorPointer
+    ) {
+        guard let text = pboard.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return }
+        Task { @MainActor in
+            MacServicesImport.createNote(from: text)
+        }
+    }
 }
 
-enum MacHandoff {
-    static let activityType = "app.ceciliasnotes.page"
-    static let notebookIdKey = "notebookId"
-    static let pageIdKey = "pageId"
-    static let scrollOffsetKey = "scrollOffset"
-    static let zoomKey = "zoom"
+extension Notification.Name {
+    static let macOpenHandoffPage = Notification.Name("app.ceciliasnotes.mac.handoff")
+    /// Widget / external `ceciliasnotes://` opens delivered via `NSApplicationDelegate`.
+    static let macIncomingDeepLinkURL = Notification.Name("app.ceciliasnotes.mac.incomingDeepLinkURL")
 }

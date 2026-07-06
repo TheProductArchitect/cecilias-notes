@@ -209,22 +209,56 @@ struct ImageCropSheet: View {
     // MARK: - Load / commit
 
     private func loadSource() async {
+        if let inline = content.imageData, !inline.isEmpty {
+            let loaded: UIImage? = await Task.detached(priority: .userInitiated) {
+                UIImage(data: inline)
+            }.value
+            await MainActor.run {
+                self.sourceImage = loaded
+                seedCropRectIfNeeded()
+            }
+            return
+        }
+
         let url = content.fileURL
+        switch UbiquitousFileStatus.currentState(at: url) {
+        case .local:
+            await loadFromFile(url)
+        case .downloading:
+            _ = UbiquitousFileStatus.requestDownload(at: url)
+            await pollUntilDownloaded(url: url)
+            await loadFromFile(url)
+        case .notUbiquitous:
+            await loadFromFile(url)
+        }
+    }
+
+    private func loadFromFile(_ url: URL) async {
         let path = url.path
-        let raw: UIImage? = await Task.detached(priority: .userInitiated) {
+        let loaded: UIImage? = await Task.detached(priority: .userInitiated) {
             UIImage(contentsOfFile: path)
         }.value
         await MainActor.run {
-            self.sourceImage = raw
-            // Seed the crop rect from any existing crop on the row
-            // so re-editing picks up where the user left off.
-            if let x = content.cropOriginX,
-               let y = content.cropOriginY,
-               let w = content.cropWidth,
-               let h = content.cropHeight,
-               w > 0, h > 0 {
-                self.cropRect = CGRect(x: x, y: y, width: w, height: h)
-            }
+            self.sourceImage = loaded
+            seedCropRectIfNeeded()
+        }
+    }
+
+    private func seedCropRectIfNeeded() {
+        if let x = content.cropOriginX,
+           let y = content.cropOriginY,
+           let w = content.cropWidth,
+           let h = content.cropHeight,
+           w > 0, h > 0 {
+            cropRect = CGRect(x: x, y: y, width: w, height: h)
+        }
+    }
+
+    private func pollUntilDownloaded(url: URL) async {
+        for _ in 0..<60 {
+            try? await Task.sleep(for: .seconds(1))
+            if Task.isCancelled { return }
+            if case .local = UbiquitousFileStatus.currentState(at: url) { return }
         }
     }
 

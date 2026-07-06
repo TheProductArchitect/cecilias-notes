@@ -42,9 +42,76 @@ struct NotebookGridView: View {
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSearchActive)
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.isSelecting)
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.snappy), value: viewModel.folderPath.map(\.id))
+#if os(macOS)
+        .sheet(isPresented: $viewModel.isMacQuickLookPresented) {
+            if let id = viewModel.macGridFocusedNotebookId,
+               let notebook = viewModel.notebook(id: id) {
+                MacNotebookQuickLookView(notebook: notebook) {
+                    viewModel.selectedNotebookId = notebook.id
+                }
+            }
+        }
+#endif
+        .background {
+            if DeviceCapabilities.supportsGridKeyboardNavigation {
+                gridKeyboardShortcuts
+            }
+        }
     }
 
-    // MARK: Grid
+    @ViewBuilder
+    private var gridKeyboardShortcuts: some View {
+        ZStack {
+#if os(macOS)
+            Button {
+                guard viewModel.macGridFocusedNotebookId != nil else { return }
+                viewModel.isMacQuickLookPresented = true
+            } label: { EmptyView() }
+            .keyboardShortcut(.space, modifiers: [])
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+#else
+            Button {
+                guard let id = viewModel.macGridFocusedNotebookId else { return }
+                viewModel.selectedNotebookId = id
+            } label: { EmptyView() }
+            .keyboardShortcut(.space, modifiers: [])
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+#endif
+
+            Button {
+                guard let id = viewModel.macGridFocusedNotebookId else { return }
+                viewModel.selectedNotebookId = id
+            } label: { EmptyView() }
+            .keyboardShortcut(.return, modifiers: [])
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
+
+            Button { navigateFocusedNotebook(-1) } label: { EmptyView() }
+            .keyboardShortcut(.upArrow, modifiers: [])
+            .frame(width: 0, height: 0)
+            .opacity(0)
+
+            Button { navigateFocusedNotebook(1) } label: { EmptyView() }
+            .keyboardShortcut(.downArrow, modifiers: [])
+            .frame(width: 0, height: 0)
+            .opacity(0)
+        }
+    }
+
+    private func navigateFocusedNotebook(_ delta: Int) {
+        let notebooks = levelNotebooks
+        guard !notebooks.isEmpty else { return }
+        let currentIndex = notebooks.firstIndex { $0.id == viewModel.macGridFocusedNotebookId } ?? 0
+        let nextIndex = min(max(0, currentIndex + delta), notebooks.count - 1)
+        viewModel.macGridFocusedNotebookId = notebooks[nextIndex].id
+    }
+
+    // MARK: Grid (continued)
 
     /// Items at the current browser level. Folders render first, then notebooks
     /// — the same convention Files uses, and what users expect when "drill
@@ -84,7 +151,23 @@ struct NotebookGridView: View {
             // the SwiftUI-native path that doesn't conflict with
             // PencilKit or other gesture recognisers downstream.
             .scrollDismissesKeyboard(.immediately)
+            .onAppear { seedGridKeyboardFocusIfNeeded() }
+            .onChange(of: levelNotebooks.map(\.id)) { _, _ in seedGridKeyboardFocusIfNeeded() }
         }
+    }
+
+    private func seedGridKeyboardFocusIfNeeded() {
+        guard DeviceCapabilities.supportsGridKeyboardNavigation else { return }
+        let notebooks = levelNotebooks
+        guard !notebooks.isEmpty else {
+            viewModel.macGridFocusedNotebookId = nil
+            return
+        }
+        if let focused = viewModel.macGridFocusedNotebookId,
+           notebooks.contains(where: { $0.id == focused }) {
+            return
+        }
+        viewModel.macGridFocusedNotebookId = notebooks[0].id
     }
 
     /// One notebook tile. Carries the cross-subject move drag

@@ -329,6 +329,10 @@ struct TextElementView: View {
                 context: StorageService.shared.context
             )
         }
+        NotebookOriginRecorder.markNotebookModified(
+            notebookId: element.notebookId,
+            context: StorageService.shared.context
+        )
     }
 
     private func makeAttributed(from plain: String) -> NSAttributedString {

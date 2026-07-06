@@ -1,7 +1,6 @@
 import Foundation
 import SwiftData
 import SwiftUI
-import UIKit
 
 /// SwiftData commit helpers specific to the Dictation flow. The
 /// session (`RecordingSession`) holds the high-level state machine;

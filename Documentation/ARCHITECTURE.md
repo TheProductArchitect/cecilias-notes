@@ -388,4 +388,27 @@ CeciliasNotes/CeciliasNotes/                    Main app target
 
 CeciliasNotes/CeciliasNotesWidget/              Widget extension target
 └── NewNoteWidget.swift     The five widget configurations
+
+CeciliasNotes/CeciliasNotesMac/                 Mac companion target
+├── CeciliasNotesMacApp.swift   @main scene
+├── MacRootView.swift           library shell + masthead
+├── MacToolbar.swift            CommandGroup + menu notifications
+├── Editor/
+│   ├── MacEditorView.swift     continuous canvas, page strip, focus mode
+│   ├── MacRendering.swift      element overlays (text, image, sticky, audio, PDF)
+│   ├── MacEditing.swift        insert helpers + text/sticky editor sheets
+│   ├── MacRichTextEditor.swift NSTextView + MacRichTextCodec (shared archive)
+│   ├── MacElementTransform.swift  drag + corner-resize
+│   └── MacMinimapView.swift    zoom minimap
+├── Export/                     MacExportSheet (+ NSSharingServicePicker share)
+└── Services/                   MacImportService, MacHandoff, …
 ```
+
+Shared Core / DesignSystem / Library / Sync folders compile into both
+targets via `PBXFileSystemSynchronizedRootGroup` with per-folder
+`membershipExceptions` (iPad-only overlays excluded on Mac). Mac never
+authors strokes — PencilKit canvas is read-only; typed text, stickies,
+images, shapes, audio, and PDF elements are editable.
+
+See [`MAC_APP_PRD.md`](MAC_APP_PRD.md) and [`PROJECT_STATE.md`](PROJECT_STATE.md)
+for rollout status and debug playbook.

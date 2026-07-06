@@ -149,25 +149,4 @@ struct AudioElementsOverlayView: View {
     }
 }
 
-// MARK: - Notification names
-
-extension Notification.Name {
-    /// Posted by the recording commit paths (short-note + lecture
-    /// flows) and this overlay's soft-delete handler whenever an
-    /// audio element is inserted, updated, or soft-deleted. The
-    /// overlay refetches; the notification is a "now would be a
-    /// good time to refetch" hint, not a payload carrier.
-    static let audioElementsChanged = Notification.Name("audioElementsChanged")
-
-    /// Posted by the text element overlay when the user taps a word
-    /// in a dictated transcript. The receiver (`AudioElementView`)
-    /// matches `userInfo[AudioSeekKey.contentId]` against its own
-    /// `content.id` and calls `player.seek(to:)` on a match.
-    static let audioSeekRequested = Notification.Name("audioSeekRequested")
-}
-
-/// userInfo keys for `.audioSeekRequested`.
-enum AudioSeekKey {
-    static let contentId = "contentId"   // UUID
-    static let time      = "time"        // Double (seconds)
-}
+// AudioSeekKey + .audioSeekRequested live in AudioElementCommit.swift

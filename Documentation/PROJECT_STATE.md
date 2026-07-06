@@ -2,27 +2,38 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-05
+Last updated: 2026-07-06
 
 ## Elevator pitch
 
 Cecilia's Notes is a Zara-editorial handwriting-first note-taking app. Two Xcode targets share one SwiftUI codebase over a SwiftData + CloudKit store, with MultipeerConnectivity for local peer sync:
 
 - `CeciliasNotes` — iPad + iPhone (primary; handwriting on iPad only)
-- `CeciliasNotesMac` — Mac companion (read strokes, edit everything else)
+- `CeciliasNotesMac` — Mac companion (read strokes, edit typed content + media)
 
 Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit container `iCloud.app.ceciliasnotes`, shared App Group `group.app.ceciliasnotes`.
 
 ## Current phase
 
-**Mac companion, verification pass.** Build is green on both targets. Awaiting user smoke test of four recent fixes:
+**Mac editor parity + accessibility pass.** Both targets build green. Recent Mac editor work:
 
-1. **Onboarding personalisation** — 3-step Mac flow (`name → sync → done`) using the shared `PersonalIdentity.nameKey`, `validateName`, `mirrorNameToAppGroup`. Live `BrandWordmark` preview. Same possessive contract as iPad.
-2. **Editorial sync banner** — replaced the intrusive floating "not signed in" strip with an inline 8pt tracked-uppercase hairline between masthead and content, matching `DateEyebrow` aesthetic.
-3. **Settings** — `⌘,` opens `Settings { MacSettingsView() }` via `CommandGroup(replacing: .appSettings)` + a `.macOpenSettings` `NotificationCenter` hop that `MacAppDelegate` routes to `NSApp.sendAction(Selector(("showSettingsWindow:")))`.
-4. **Typing on Mac** — double-click on an empty page inserts a text element at the click point; italic hint "double-click to type — handwriting stays on iPad" while page is empty. Existing `⌘T` still works.
+1. **Rich text** — `MacRichTextEditor` + `MacRichTextFormatBar` read/write `TextContent.attributedTextData` (same keyed archive as iPad).
+2. **Element transform** — `MacElementTransform` drag + corner-resize for selected text, image, sticky, shape elements.
+3. **Sticky notes** — insert via toolbar/menu; double-tap to edit in `MacStickyNoteEditorSheet`.
+4. **Image insert** — `NSOpenPanel` + `MacImportService` from toolbar, menu, and drag-drop.
+5. **Export share** — `MacExportSheet` offers **Share…** via `NSSharingServicePicker` after save.
+6. **Accessibility** — element labels on `MacElementView`, page-strip thumbnails, audio play/pause labels; focus mode (⌃⌘F), minimap when zoomed.
 
-Deleted the "Handwriting is iPad-only" toolbar pill — a permanent Post-It in the chrome. That constraint now lives in the empty-state hint and Settings → About only.
+Still partial on Mac (p2 / platform limits): image crop on iPad, per-page custom paper hex, Files provider, full Tab-through-chrome loop, widgets deep link polish.
+
+## Production checklist — Mac (2026-07-06)
+
+- **Icons** — `CeciliasNotesMac/Resources/Assets.xcassets` (16–512 @1x/@2x) generated from iPad `AppIcon-1024.png`
+- **Build** — `CURRENT_PROJECT_VERSION = 2` aligned with iOS; Universal Purchase bundle `app.ceciliasnotes`
+- **Entitlements** — iCloud, App Group, hardened runtime, local network + Bonjour for Multipeer
+- **Privacy strings** — microphone, speech, local network in `Info.plist`
+- **App Store copy** — see `APP_STORE_COPY.md` Mac subtitle + description block
+- **Human smoke test** — drag PDF onto library, open notebook, edit text/image, export + share, handoff from iPad
 
 ## Repo shape (source of truth in [`CODE_GRAPH.md`](CODE_GRAPH.md))
 
@@ -52,7 +63,12 @@ CeciliasNotes/                     Xcode project root
     ├── MacRootView.swift          full-plane masthead + sidebar + content composition
     ├── MacToolbar.swift           toolbar + CommandGroup for ⌘N/⌘E/⌘T/⌘,
     ├── App/MacAppDelegate.swift   handoff + settings observer
-    ├── Editor/MacEditorView.swift Mac page editor (no strokes, typed text + PDF only)
+    ├── Editor/MacEditorView.swift Mac page editor (strokes read-only; typed + media editing)
+    ├── Editor/MacRichTextEditor.swift   NSTextView rich text + format bar
+    ├── Editor/MacElementTransform.swift drag/resize handles for page elements
+    ├── Editor/MacMinimapView.swift      scroll minimap when zoomed
+    ├── Editor/MacEditing.swift          insert/edit helpers + sheets
+    ├── Editor/MacRendering.swift        element views + accessibility labels
     ├── Onboarding/                MacOnboardingView (name → sync → done)
     ├── Settings/                  MacSettingsView (⌘, target)
     ├── Export/                    Mac export sheet
@@ -113,6 +129,7 @@ Documentation index:
 | Adjust multipeer sync | `Core/Services/MultipeerSyncService.swift`, `Core/Services/MultipeerPairingStore.swift` |
 | Add a new SwiftData model | `Core/Models/V6/*` (bump migration if breaking) |
 | Wire a new Mac command | `CeciliasNotesMac/MacToolbar.swift` `MacAppCommands` |
+| Mac rich text / element editing | `CeciliasNotesMac/Editor/MacRichTextEditor.swift`, `MacElementTransform.swift`, `MacEditing.swift` |
 | Debug a NotificationCenter miss | `CODE_GRAPH.md § Notification bus` — post/observe callsites are enumerated |
 | Understand cross-target exceptions | Search `CeciliasNotes.xcodeproj/project.pbxproj` for `PBXFileSystemSynchronizedBuildFileExceptionSet` |
 

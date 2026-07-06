@@ -9,6 +9,7 @@ struct ExportOptionsView: View {
     let notebook:     Notebook
     let pages:        [Page]
     let currentIndex: Int
+    var initialFormat: ExportDeliveryFormat = .pdf
     let onDismiss:    () -> Void
     @Environment(\.theme) private var theme
 
@@ -40,7 +41,7 @@ struct ExportOptionsView: View {
                 case .error:      errorContent
                 }
             }
-            .navigationTitle(exportState == .options ? "Export PDF" : "")
+            .navigationTitle(exportState == .options ? optionsTitle : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if exportState == .options {
@@ -55,10 +56,29 @@ struct ExportOptionsView: View {
         // medium detent forced the user to scroll past the toggles.
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
-        .onAppear { schedulePreview() }
+        .onAppear {
+            options.deliveryFormat = initialFormat
+            if options.deliveryFormat == .pdf {
+                schedulePreview()
+            }
+        }
+        .onChange(of: options.deliveryFormat) { _, format in
+            if format == .pdf {
+                schedulePreview()
+            } else {
+                previewTask?.cancel()
+                previewImage = nil
+            }
+        }
         .onChange(of: options.quality)    { _, _ in schedulePreview() }
-        .onChange(of: options.pageRange)  { _, _ in schedulePreview() }
-        .onChange(of: options.includeCoverPage) { _, _ in schedulePreview() }
+        .onChange(of: options.pageRange)  { _, _ in
+            guard options.deliveryFormat == .pdf else { return }
+            schedulePreview()
+        }
+        .onChange(of: options.includeCoverPage) { _, _ in
+            guard options.deliveryFormat == .pdf else { return }
+            schedulePreview()
+        }
         .onDisappear { previewTask?.cancel(); exportTask?.cancel() }
     }
 
@@ -71,10 +91,17 @@ struct ExportOptionsView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: CeciliasNotes.Spacing.lg) {
-                    previewSection
+                    formatSection
+                    if options.deliveryFormat == .pdf {
+                        previewSection
+                    } else {
+                        markdownInfoSection
+                    }
                     pageRangeSection
-                    qualitySection
-                    togglesSection
+                    if options.deliveryFormat == .pdf {
+                        qualitySection
+                        togglesSection
+                    }
                 }
                 .padding(CeciliasNotes.Spacing.lg)
             }
@@ -85,6 +112,44 @@ struct ExportOptionsView: View {
                 .padding(.horizontal, CeciliasNotes.Spacing.lg)
                 .padding(.vertical, CeciliasNotes.Spacing.md)
                 .background(theme.background)
+        }
+    }
+
+    // MARK: - Format
+
+    private var optionsTitle: String {
+        options.deliveryFormat == .pdf ? "Export PDF" : "Export Markdown"
+    }
+
+    private var formatSection: some View {
+        VStack(alignment: .leading, spacing: CeciliasNotes.Spacing.sm) {
+            sectionHeader("Format")
+            Picker("Format", selection: $options.deliveryFormat) {
+                ForEach(ExportDeliveryFormat.allCases) { format in
+                    Text(format.label).tag(format)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    private var markdownInfoSection: some View {
+        VStack(spacing: CeciliasNotes.Spacing.sm) {
+            ZStack {
+                RoundedRectangle(cornerRadius: CeciliasNotes.Radius.md, style: .continuous)
+                    .fill(theme.surface)
+                    .frame(height: 100)
+                VStack(spacing: 6) {
+                    Image(systemName: "doc.plaintext")
+                        .font(.system(size: 28))
+                        .foregroundColor(theme.accent)
+                    Text("Typed text, sticky notes, and audio transcripts")
+                        .font(.ceciliasNotesCaption)
+                        .foregroundColor(theme.foregroundMuted)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, CeciliasNotes.Spacing.md)
+            }
         }
     }
 
@@ -187,12 +252,16 @@ struct ExportOptionsView: View {
     // MARK: - Export button
 
     private var exportButton: some View {
-        CeciliasNotesButton("Export PDF", style: .primary) {
+        CeciliasNotesButton(exportButtonTitle, style: .primary) {
             guard rangeError == nil else { return }
             startExport()
         }
         .frame(maxWidth: .infinity)
         .disabled(rangeError != nil)
+    }
+
+    private var exportButtonTitle: String {
+        options.deliveryFormat == .pdf ? "Export PDF" : "Export Markdown"
     }
 
     // MARK: - Progress content
@@ -410,6 +479,9 @@ struct ExportOptionsView: View {
 
     @State private var completedPages = 0
     private var progressLabel: String {
+        if options.deliveryFormat == .markdown {
+            return "Building Markdown…"
+        }
         let total = options.pageRange.resolve(totalPages: pages.count).count
         return "Exporting… \(completedPages) / \(total) pages"
     }
@@ -419,7 +491,7 @@ struct ExportOptionsView: View {
     private func schedulePreview() {
         previewTask?.cancel()
         previewImage = nil
-        guard let page = firstPage else { return }
+        guard options.deliveryFormat == .pdf, let page = firstPage else { return }
         let opts = options
         let nb   = notebook
         previewTask = Task(priority: .userInitiated) {
@@ -444,12 +516,23 @@ struct ExportOptionsView: View {
         let totalPagesCount = pgs.count
         exportTask = Task {
             do {
-                let result = try await ExportService.shared.exportNotebook(
-                    nb, pages: pgs, options: opts
-                ) { prog in
-                    Task { @MainActor in
-                        exportProgress  = prog
-                        completedPages  = Int(prog * Double(opts.pageRange.resolve(totalPages: totalPagesCount).count))
+                let result: ExportResult
+                if opts.deliveryFormat == .markdown {
+                    result = try await ExportService.shared.exportNotebookMarkdown(
+                        nb, pages: pgs, options: opts
+                    ) { prog in
+                        Task { @MainActor in
+                            exportProgress = prog
+                        }
+                    }
+                } else {
+                    result = try await ExportService.shared.exportNotebook(
+                        nb, pages: pgs, options: opts
+                    ) { prog in
+                        Task { @MainActor in
+                            exportProgress  = prog
+                            completedPages  = Int(prog * Double(opts.pageRange.resolve(totalPages: totalPagesCount).count))
+                        }
                     }
                 }
                 await MainActor.run {

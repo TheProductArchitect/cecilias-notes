@@ -36,6 +36,7 @@ struct AudioElementView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var resizeDelta: ResizeDelta? = nil
     @State private var seekDragSeconds: Double? = nil
+    @State private var shareItem: ShareTextItem?
 
     private static let stripHeight: CGFloat = 50
     private static let handleSize: CGFloat = 10
@@ -133,6 +134,26 @@ struct AudioElementView: View {
             else { return }
             player.seek(to: time)
         }
+        .sheet(item: $shareItem) { item in
+            ShareTextActivityView(text: item.text)
+        }
+    }
+
+    private var trimmedTranscript: String {
+        content.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasTranscript: Bool { !trimmedTranscript.isEmpty }
+
+    private func copyTranscript() {
+        guard hasTranscript else { return }
+        PlatformClipboard.copy(trimmedTranscript)
+        HapticManager.shared.toolSwitched()
+    }
+
+    private func shareTranscript() {
+        guard hasTranscript else { return }
+        shareItem = ShareTextItem(text: trimmedTranscript)
     }
 
     /// Step 6: a placeholder strip created at the start of a Voice
@@ -176,6 +197,30 @@ struct AudioElementView: View {
                         .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
                 )
         )
+        .contextMenu {
+            if hasTranscript {
+                Button {
+                    copyTranscript()
+                } label: {
+                    Label("Copy Transcript", systemImage: "doc.on.doc")
+                }
+                Button {
+                    shareTranscript()
+                } label: {
+                    Label("Share Transcript…", systemImage: "square.and.arrow.up")
+                }
+            }
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete Recording", systemImage: "trash")
+            }
+        }
+        .accessibilityLabel(A11y.audioLabel(
+            duration: content.durationSeconds,
+            hasTranscription: hasTranscript
+        ))
+        .accessibilityHint(A11y.audioHint)
     }
 
     // MARK: - Recording strip (Step 6 Voice Note placeholder)
@@ -213,6 +258,8 @@ struct AudioElementView: View {
                         .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
                 )
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Recording in progress")
     }
 
     private var playPauseButton: some View {
@@ -394,6 +441,32 @@ struct AudioElementView: View {
             }
             .buttonStyle(.plain)
 
+            if hasTranscript {
+                Button {
+                    copyTranscript()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.foreground)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy transcript")
+
+                Button {
+                    shareTranscript()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(theme.foreground)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Share transcript")
+            }
+
             Button {
                 onDelete()
             } label: {
@@ -474,20 +547,36 @@ struct AudioElementView: View {
     private func clampNorm(_ v: Double) -> Double { max(0, min(1, v)) }
 }
 
+private struct ShareTextItem: Identifiable {
+    let id = UUID()
+    let text: String
+}
+
+private struct ShareTextActivityView: UIViewControllerRepresentable {
+    let text: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 /// Self-contained pulsing red dot. Used by the Voice Note inline
 /// strip during recording — same metaphor as the floating
 /// controls' dot.
 struct RecordingPulseDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsing: Bool = false
     var body: some View {
         Circle()
             .fill(Color.red)
-            .scaleEffect(pulsing ? 1.15 : 0.85)
+            .scaleEffect(reduceMotion ? 1.0 : (pulsing ? 1.15 : 0.85))
             .animation(
-                .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
+                reduceMotion ? nil : .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
                 value: pulsing
             )
-            .onAppear { pulsing = true }
+            .onAppear { if !reduceMotion { pulsing = true } }
             .onDisappear { pulsing = false }
     }
 }

@@ -1,10 +1,9 @@
 import PDFKit
-import PencilKit
 import SwiftData
 import SwiftUI
 import AppKit
 
-enum MacExportFormat: String, CaseIterable {
+enum MacExportFormat: String, CaseIterable, Equatable {
     case pdf
     case images
     case markdown
@@ -13,7 +12,7 @@ enum MacExportFormat: String, CaseIterable {
         switch self {
         case .pdf:       return "PDF"
         case .images:    return "Images (PNG)"
-        case .markdown:  return "Markdown bundle"
+        case .markdown:  return "Markdown"
         }
     }
 }
@@ -25,12 +24,29 @@ enum MacExportService {
         pages: [Page],
         format: MacExportFormat,
         storage: StorageService
-    ) async throws -> URL {
+    ) async throws -> MacExportResult {
+        let url: URL
         switch format {
-        case .pdf:      return try await exportPDF(notebook: notebook, pages: pages, storage: storage)
-        case .images:   return try await exportImages(notebook: notebook, pages: pages, storage: storage)
-        case .markdown: return try exportMarkdown(notebook: notebook, pages: pages, storage: storage)
+        case .pdf:
+            url = try await exportPDF(notebook: notebook, pages: pages, storage: storage)
+        case .images:
+            url = try await exportImages(notebook: notebook, pages: pages, storage: storage)
+        case .markdown:
+            url = try exportMarkdown(notebook: notebook, pages: pages, storage: storage)
         }
+
+        let size = Self.fileSize(at: url)
+        let result = MacExportResult(
+            url: url,
+            format: format,
+            pageCount: pages.count,
+            fileSizeBytes: size,
+            notebookId: notebook.id,
+            notebookTitle: notebook.title,
+            exportedAt: Date()
+        )
+        await ExportManifest.shared.append(result.exportRecord)
+        return result
     }
 
     private static func exportPDF(
@@ -45,7 +61,7 @@ enum MacExportService {
             pdf.insert(pdfPage, at: index)
         }
         guard pdf.pageCount > 0 else { throw MacExportError.noPages }
-        let url = outputURL(notebook: notebook, ext: "pdf")
+        let url = try uniqueOutputURL(notebook: notebook, extension: "pdf", isDirectory: false)
         pdf.write(to: url)
         return url
     }
@@ -55,7 +71,7 @@ enum MacExportService {
         pages: [Page],
         storage: StorageService
     ) async throws -> URL {
-        let folder = outputURL(notebook: notebook, ext: "").deletingPathExtension()
+        let folder = try uniqueOutputURL(notebook: notebook, extension: "png", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for (index, page) in pages.enumerated() {
             guard let image = await renderPage(page, notebook: notebook, storage: storage, scale: 2),
@@ -73,34 +89,13 @@ enum MacExportService {
         pages: [Page],
         storage: StorageService
     ) throws -> URL {
-        var body = "# \(notebook.title)\n\n"
-        for page in pages.sorted(by: { $0.pageNumber < $1.pageNumber }) {
-            body += "## Page \(page.pageNumber + 1)\n\n"
-            let pid = page.id
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate { $0.pageId == pid && $0.deletedAt == nil }
-            )
-            let elements = (try? storage.context.fetch(descriptor)) ?? []
-            for element in elements {
-                switch element.kind {
-                case .text:
-                    if let text = element.textContent?.text, !text.isEmpty {
-                        body += text + "\n\n"
-                    }
-                case .stickyNote:
-                    if let text = element.stickyNoteContent?.text, !text.isEmpty {
-                        body += "> \(text)\n\n"
-                    }
-                default:
-                    break
-                }
-            }
-            if let strokeData = storage.strokeData(for: page), !strokeData.isEmpty {
-                body += "_[Handwritten content on this page — open on iPad to view strokes]_\n\n"
-            }
-        }
-        let url = outputURL(notebook: notebook, ext: "md")
-        try body.write(to: url, atomically: true, encoding: .utf8)
+        let url = try uniqueOutputURL(notebook: notebook, extension: "md", isDirectory: false)
+        try NotebookMarkdownExport.write(
+            notebook: notebook,
+            pages: pages,
+            storage: storage,
+            to: url
+        )
         return url
     }
 
@@ -110,78 +105,84 @@ enum MacExportService {
         storage: StorageService,
         scale: CGFloat
     ) async -> NSImage? {
-        let base = page.pageSize.pointSize
-        let pixelSize = CGSize(width: base.width * scale, height: base.height * scale)
         let pid = page.id
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { $0.pageId == pid && $0.deletedAt == nil },
-            sortBy: [SortDescriptor(\.zIndex)]
+            sortBy: [
+                SortDescriptor(\.normalizedY),
+                SortDescriptor(\.normalizedX),
+                SortDescriptor(\.zIndex),
+            ]
         )
         let elements = (try? storage.context.fetch(descriptor)) ?? []
-        let pdfMap = Dictionary(uniqueKeysWithValues: elements.compactMap { el -> (UUID, PageElement)? in
-            guard el.kind == .pdfPage, let id = el.pdfPageContent?.id else { return nil }
-            return (id, el)
-        })
+        let base = page.pageSize.pointSize
+        let displaySize = CGSize(width: base.width * scale, height: base.height * scale)
+        let theme = ThemeManager.shared.current
 
-        let image = NSImage(size: pixelSize)
-        image.lockFocus()
-        NSColor.white.setFill()
-        NSRect(origin: .zero, size: pixelSize).fill()
-
-        // Strokes
-        if let strokeData = storage.strokeData(for: page),
-           let drawing = try? PKDrawing(data: strokeData) {
-            let strokeImage = drawing.image(from: CGRect(origin: .zero, size: pixelSize), scale: 1)
-            strokeImage.draw(in: NSRect(origin: .zero, size: pixelSize))
-        }
-
-        // Rasterise SwiftUI elements via ImageRenderer
-        let content = MacExportPageSnapshot(
+        let content = MacDocExportPageView(
             page: page,
+            notebook: notebook,
             elements: elements,
-            pdfParents: pdfMap,
-            pageSize: pixelSize
+            displaySize: displaySize
         )
+        .environment(\.theme, theme)
+        .environmentObject(storage)
+
         let renderer = ImageRenderer(content: content)
         renderer.scale = 1
-        if let elementImage = renderer.nsImage {
-            elementImage.draw(in: NSRect(origin: .zero, size: pixelSize))
-        }
-
-        image.unlockFocus()
-        return image
+        return renderer.nsImage
     }
 
-    private static func outputURL(notebook: Notebook, ext: String) -> URL {
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
-        let sanitized = notebook.title
-            .replacingOccurrences(of: "/", with: "-")
+    private static func uniqueOutputURL(
+        notebook: Notebook,
+        extension ext: String,
+        isDirectory: Bool
+    ) throws -> URL {
+        let exportsDir = StorageService.globalExportsDirectory
+        try FileManager.default.createDirectory(at: exportsDir, withIntermediateDirectories: true)
+
+        let safeTitle = notebook.title
+            .components(separatedBy: .init(charactersIn: "/\\:*?\"<>|"))
+            .joined(separator: "_")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let base = sanitized.isEmpty ? "Notebook" : sanitized
-        if ext.isEmpty {
-            return downloads.appendingPathComponent("\(base)-export", isDirectory: true)
+            .prefix(60)
+        let baseName = safeTitle.isEmpty ? "Notebook" : String(safeTitle)
+        let dateStr = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+
+        if isDirectory {
+            var folder = exportsDir.appendingPathComponent("\(baseName)_\(dateStr)-pages", isDirectory: true)
+            var suffix = 2
+            while FileManager.default.fileExists(atPath: folder.path) {
+                folder = exportsDir.appendingPathComponent("\(baseName)_\(dateStr)-pages-\(suffix)", isDirectory: true)
+                suffix += 1
+            }
+            return folder
         }
-        return downloads.appendingPathComponent("\(base).\(ext)")
+
+        var url = exportsDir.appendingPathComponent("\(baseName)_\(dateStr).\(ext)")
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = exportsDir.appendingPathComponent("\(baseName)_\(dateStr)_\(suffix).\(ext)")
+            suffix += 1
+        }
+        return url
     }
-}
 
-private struct MacExportPageSnapshot: View {
-    let page: Page
-    let elements: [PageElement]
-    let pdfParents: [UUID: PageElement]
-    let pageSize: CGSize
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.white
-            ForEach(elements.filter { $0.kind != .stroke && $0.kind != .highlight }) { element in
-                MacElementView(element: element, pageSize: pageSize, pdfParents: pdfParents)
-            }
-            ForEach(elements.filter { $0.kind == .highlight }) { element in
-                MacElementView(element: element, pageSize: pageSize, pdfParents: pdfParents)
+    static func fileSize(at url: URL) -> Int64 {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .fileSizeKey]
+        guard let values = try? url.resourceValues(forKeys: keys) else { return 0 }
+        if values.isDirectory == true {
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.fileSizeKey],
+                options: [.skipsHiddenFiles]
+            ) else { return 0 }
+            return contents.reduce(Int64(0)) { partial, item in
+                let size = (try? item.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                return partial + size
             }
         }
-        .frame(width: pageSize.width, height: pageSize.height)
+        return Int64(values.fileSize ?? 0)
     }
 }
 

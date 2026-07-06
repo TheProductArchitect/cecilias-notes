@@ -262,3 +262,21 @@ If a TestFlight pass on iPad + iPhone is clean, the next step is:
 4. Fill in metadata using the doc at
    `Documentation/APP_STORE_COPY.md`.
 5. Submit for review.
+
+---
+
+## Update — 2026-07-06 (Mac companion production pass)
+
+### Mac target
+- **Icons** — `CeciliasNotesMac/Resources/Assets.xcassets/AppIcon.appiconset` (all macOS sizes from iPad 1024 master)
+- **Build** — Debug + Release green; `CURRENT_PROJECT_VERSION = 2` matches iOS
+- **Editor parity** — rotate/crop/OCR, PDF page import, find-replace, element keyboard nav
+- **Export** — share sheet via `NSSharingServicePicker`
+- **Copy** — `Documentation/APP_STORE_COPY.md` includes Mac subtitle + description
+
+### Mac App Store Connect (human)
+1. Upload Mac build from same Xcode archive (Universal Purchase)
+2. Add macOS screenshots (1280×800 or 1440×900 recommended)
+3. Confirm Mac category: Productivity
+4. Privacy nutrition labels match iOS (no data collection)
+5. Smoke test: iCloud sync, Multipeer with iPad, PDF import, export share

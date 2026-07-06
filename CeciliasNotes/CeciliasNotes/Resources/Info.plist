@@ -796,10 +796,14 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Cecilia's Notes transcribes your recordings locally on your device using Apple's speech recognition.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Cecilia's Notes uses the local network to receive notebooks dropped from a Mac running cecilias-notes-mcp on the same Wi-Fi — much faster than waiting for iCloud sync.</string>
+	<string>Cecilia's Notes uses the local network to sync notebooks with your nearby iPhone, iPad, or Mac — no cloud round-trip needed.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_cn-sync._tcp</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>app.ceciliasnotes.page</string>
 	</array>
 	<key>UIAppFonts</key>
 	<array/>
@@ -828,6 +832,12 @@
 	<false/>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleDefault</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

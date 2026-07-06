@@ -530,6 +530,12 @@ final class SearchIndexService {
         return keyword + semantic.filter { !seen.contains($0.notebookId) }
     }
 
+    /// Keyword + semantic search filtered to a single notebook.
+    func search(inNotebook notebookId: UUID, query: String) async -> [SearchResult] {
+        let results = await combinedSearch(query: query)
+        return results.filter { $0.notebookId == notebookId }
+    }
+
     func search(query: String) -> [SearchResult] {
         guard isLoaded else { return [] }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)

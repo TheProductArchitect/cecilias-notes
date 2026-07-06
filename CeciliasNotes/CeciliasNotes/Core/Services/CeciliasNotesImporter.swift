@@ -192,7 +192,14 @@ final class CeciliasNotesImporter {
             notebook.agentToolVersion = nil
         }
         notebook.sourceInkbookFilename = sourceFilename
-        notebook.updatedAt = Date()
+        let isNewNotebook = existing == nil
+        NotebookOriginRecorder.applyImport(from: file, to: notebook, isNew: isNewNotebook)
+        if let created = NotebookOriginRecorder.parseISO8601(file.created_at), isNewNotebook {
+            notebook.createdAt = created
+        }
+        if let updated = NotebookOriginRecorder.parseISO8601(file.updated_at) {
+            notebook.updatedAt = updated
+        }
 
         // Rebuild pages — behaviour depends on `strategy`:
         //   • `.replace` — `notebook.pages` was wiped above; insert
@@ -270,6 +277,28 @@ final class CeciliasNotesImporter {
             }
         }
         notebook.totalPageCount = (notebook.pages ?? []).count
+
+        if strategy == .append, let prior = existing {
+            let resolution: String
+            switch file.parsedMCPAction {
+            case .append:
+                if let base = file.base_updated_at, !base.isEmpty,
+                   Self.iso.string(from: prior.updatedAt) != base {
+                    resolution = "merged — notebook changed since agent read"
+                } else {
+                    resolution = "merged — preserved local pages"
+                }
+            case nil:
+                resolution = "merged — safe default for incoming file"
+            default:
+                resolution = "merged — preserved local pages"
+            }
+            SyncConflictLog.record(
+                notebookTitle: file.title,
+                sourceFilename: sourceFilename,
+                resolution: resolution
+            )
+        }
 
         try context.save()
 

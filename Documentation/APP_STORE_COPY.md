@@ -13,9 +13,15 @@ Cecilia's Notes
 
 ## Subtitle (limit 30 chars)
 ```
-Notebook for iPad and iPhone
+Notebook for iPhone & iPad
 ```
 *27 / 30*
+
+### Mac App Store subtitle (limit 30 chars)
+```
+Desktop companion for notes
+```
+*28 / 30*
 
 ## Promotional Text (limit 170 chars, updateable without app review)
 ```
@@ -25,7 +31,7 @@ Write with Apple Pencil, type, or let AI agents help you. Organise by subject. I
 
 ## Description (limit 4000 chars)
 ```
-Cecilia's Notes is an editorial-feeling notebook app for iPad and iPhone. Write with Apple Pencil, type with the keyboard, drop in a PDF or a photo, record dictation. Organise notebooks by subject, jump between them from a single library home.
+Cecilia's Notes is an editorial-feeling notebook app for iPhone, iPad, and Mac. Write with Apple Pencil on iPad, type with the keyboard everywhere, drop in a PDF or a photo, record dictation. Organise notebooks by subject, jump between them from a single library home.
 
 Write & Draw
   • Apple Pencil with palm rejection, full PencilKit stack
@@ -71,11 +77,24 @@ Personalised to You
   • A few delightful, hidden surprises wait on the splash screen
   • Hyper-personalised, totally private, and runs entirely on-device with no backend
 
-Made for iPad and iPhone
+Made for iPhone, iPad, and Mac
   • Full editor on iPad with Apple Pencil
   • Compact layout on iPhone with finger input
-  • iCloud sync keeps both in step
+  • Mac companion for typing, review, export, and search
+  • iCloud sync keeps every device in step
   • Settings adapt to dark mode and your accent colour
+```
+
+### Mac companion description (App Store Connect → macOS)
+```
+Cecilia's Notes for Mac is the desktop companion to your iPhone and iPad notebooks. Read handwriting from iPad, edit typed text, images, PDFs, stickies, and audio. Search, quiz, export, and ask your notes — all synced through the same iCloud library.
+
+  • Universal Purchase — one subscription unlocks iPad, iPhone, and Mac
+  • Read iPad handwriting; edit everything else on Mac
+  • Import PDFs as full notebooks or append pages to the open notebook
+  • Rich text editing with find-and-replace, bold/italic/colour
+  • Menu-bar quick capture, Services menu, Spotlight deep links
+  • Multipeer sync with a nearby iPad when iCloud is slow
 ```
 
 ## Keywords (limit 100 chars, comma-separated)
@@ -85,18 +104,14 @@ notes,notebook,handwriting,apple pencil,pdf,quiz,dictation,study,ipad,ai,mcp,age
 *87 / 100 chars*
 
 ## What's New (limit 4000 chars, per-release)
-For the iphone-support branch's first release:
+For version 3.0 — Mac compatibility + universal platform:
 ```
-• Full iPhone support: compact masthead, drawer sidebar, single-column editor, finger-first writing
-• Shapes tool: drag-to-create rectangles, ellipses, triangles, lines, arrows, stars, hearts, callouts
-• AI agent compatibility: agents on your Mac can read and write to your notebooks via MCP
-• Local network sync (Multipeer) for instant updates from agents on your network
-• Drag-and-drop reorder pages anywhere in the page strip
-• iCloud sync banner explains exactly when sync is off (and opens settings)
-• Quizzes can be renamed
-• PDFs preserve their original filename on import
-• Images stay in their actual aspect ratio when selected
-• Pencil Pro double-tap and squeeze gestures
+• Native Mac app — type, review, search, quiz, and export on the desktop
+• Universal Purchase — one app unlocks iPhone, iPad, and Mac
+• iPhone + iPad + Mac stay in sync through iCloud
+• Read iPad handwriting on Mac; edit typed text, PDFs, images, and audio everywhere
+• Local network sync (Multipeer) between iPhone, iPad, and Mac on the same Wi-Fi
+• Full iPhone layout: compact masthead, drawer sidebar, finger-first writing
 ```
 
 ## Category
@@ -141,6 +156,12 @@ Capture on a real device with the status bar set to clean values
 in the simulator.
 
 ## Submission Checklist
+- [ ] **Two binaries**: archive `CeciliasNotes` for the iOS App Store (iPhone + iPad)
+      and `CeciliasNotesMac` for the Mac App Store.
+- [ ] In App Store Connect → iOS app → Pricing and Availability, enable
+      **Universal Purchase** and link the macOS app record.
+- [ ] iOS listing device support should show **iPhone and iPad** after
+      uploading build 3+ (`TARGETED_DEVICE_FAMILY = 1,2` + iPhone orientations).
 - [ ] Privacy manifest (`PrivacyInfo.xcprivacy`) declares the
       required-reason APIs the app uses (UserDefaults, file
       timestamps, CloudKit).

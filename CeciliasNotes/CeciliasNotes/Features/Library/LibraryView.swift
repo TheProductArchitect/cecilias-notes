@@ -32,6 +32,7 @@ struct LibraryView: View {
 
     @State private var isShowingRecentExports = false
     @State private var isShowingSettings      = false
+    @State private var isICloudBannerDismissed  = false
     @State private var reExportNotebookId: UUID?
     /// PDF from the share extension's inbox, presented through the
     /// shared `PDFPagePickerSheet` in library mode. Wrapped in an
@@ -86,6 +87,10 @@ struct LibraryView: View {
             }
             .onChange(of: deepLink.openNotebookId) { _, id in
                 guard let id, let notebook = viewModel.notebook(id: id) else { return }
+                if let pageId = deepLink.openPageId {
+                    viewModel.deepLinkPageId = pageId
+                    deepLink.openPageId = nil
+                }
                 DispatchQueue.main.async { deepLink.openNotebookId = nil }
                 editingNotebook = notebook
             }
@@ -156,12 +161,32 @@ struct LibraryView: View {
                 DispatchQueue.main.async { deepLink.pendingQuickCapture = false }
                 viewModel.createUntitledNotebookAndOpen()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesQuickCapture)) { _ in
+                Task { @MainActor in
+                    deepLink.pendingQuickCapture = true
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesOpenNotebook)) { note in
+                guard let id = note.userInfo?[CeciliasNotesIntentKeys.notebookId] as? UUID else { return }
+                Task { @MainActor in deepLink.openNotebookId = id }
+            }
             .task { handleQuickCaptureOnLaunch() }
     }
 
     private var contentLayer: some View {
         VStack(spacing: 0) {
             actionStrip
+            if let message = viewModel.error?.errorDescription {
+                MediaErrorBanner(message: message) { viewModel.error = nil }
+                    .padding(.horizontal, CeciliasNotes.Spacing.md)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if showsICloudUnavailableBanner {
+                iCloudUnavailableBanner
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             LibraryHeaderView(viewModel: viewModel)
             ZStack(alignment: .leading) {
                 HStack(spacing: 0) {
@@ -225,25 +250,6 @@ struct LibraryView: View {
                     }
                 }
         )
-        .overlay(alignment: .top) {
-            VStack(spacing: 8) {
-                if let message = viewModel.error?.errorDescription {
-                    MediaErrorBanner(message: message) { viewModel.error = nil }
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                // Surface CloudKit fall-back to the user — without
-                // this the iPhone install that can't reach iCloud
-                // looks like "the app has no data" with no
-                // explanation. Single-line, dismissable-via-Settings;
-                // no auto-dismiss so the user notices it.
-                if CloudKitContainerState.status == .localOnlyFallback {
-                    iCloudUnavailableBanner
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .padding(.top, CeciliasNotes.Spacing.md)
-            .zIndex(99)
-        }
         .overlay(alignment: .bottom) {
             if viewModel.isImporting {
                 HStack(spacing: 10) {
@@ -275,6 +281,7 @@ struct LibraryView: View {
             Text(err.errorDescription ?? "Some PDFs couldn't be imported.")
         }
         .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: viewModel.error)
+        .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: showsICloudUnavailableBanner)
         .background(theme.background)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(.container, edges: .bottom)
@@ -468,6 +475,12 @@ struct LibraryView: View {
                 editingNotebook = nil
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .shareInboxCaptureArrived)
+        ) { note in
+            guard let url = note.userInfo?["fileURL"] as? URL else { return }
+            ingestShareCaptureFile(url)
+        }
         // When the editor cover dismisses, drain any inbox arrival
         // that came in while it was up. One runloop tick of slack so
         // SwiftUI finishes the cover's dismiss transition before we
@@ -552,45 +565,86 @@ struct LibraryView: View {
         }
     }
 
+    private func ingestShareCaptureFile(_ url: URL) {
+        guard let data = try? Data(contentsOf: url),
+              let payload = try? JSONDecoder().decode(ShareCapturePayload.self, from: data),
+              let notebookId = QuickCaptureSave.save(title: payload.title, body: payload.body)
+        else { return }
+        ShareInboxWatcher.shared.consume(url)
+        viewModel.refresh()
+        if let notebook = viewModel.notebook(id: notebookId) {
+            if editingNotebook == nil {
+                editingNotebook = notebook
+            } else {
+                editingNotebook = nil
+                DispatchQueue.main.async {
+                    self.editingNotebook = notebook
+                }
+            }
+        }
+    }
+
     // MARK: iCloud unavailable banner
+
+    private var showsICloudUnavailableBanner: Bool {
+        CloudKitContainerState.status == .localOnlyFallback && !isICloudBannerDismissed
+    }
 
     /// User-visible explanation when the SwiftData CloudKit container
     /// failed to come up and the app is running on its local-only
-    /// fallback. Fixed an "empty library on new iPhone" mystery where
-    /// the user assumed the app had lost their iPad notebooks — they
-    /// were just not syncing because iCloud wasn't reachable. Tap
-    /// opens Settings so the user can verify iCloud sign-in.
+    /// fallback. Sits *below* the action strip so the settings gear
+    /// stays tappable — the old top overlay covered the whole strip.
     private var iCloudUnavailableBanner: some View {
-        Button {
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+        HStack(spacing: 8) {
+            Image(systemName: "icloud.slash")
+                .font(.system(size: 13, weight: .medium))
+                .accessibilityHidden(true)
+
+            Text("iCloud sync off — notes from other devices won't appear here.")
+                .font(.system(size: 12, weight: .regular))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                isShowingSettings = true
+            } label: {
+                Text("settings")
+                    .font(.system(size: 12, weight: .semibold))
+                    .textCase(.lowercase)
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "icloud.slash")
-                    .font(.system(size: 13, weight: .medium))
-                Text("iCloud sync unavailable — notes from other devices won't appear here. Tap to open Settings.")
-                    .font(.system(size: 12, weight: .regular))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
-                Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open settings")
+
+            Button {
+                withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth)) {
+                    isICloudBannerDismissed = true
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.recessiveTertiary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
             }
-            .foregroundStyle(theme.foreground)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(theme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(theme.danger.opacity(0.4), lineWidth: 1)
-                    )
-            )
-            .padding(.horizontal, CeciliasNotes.Spacing.md)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss iCloud sync notice")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("iCloud sync unavailable. Tap to open Settings.")
+        .foregroundStyle(theme.foreground)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(theme.danger.opacity(0.4), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, CeciliasNotes.Spacing.md)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("iCloud sync unavailable. Notes from other devices won't appear here.")
     }
 
     // MARK: Action strip (replaces the system nav bar)

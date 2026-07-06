@@ -37,7 +37,7 @@
 	  discovery on the same identifier.
 	-->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Cecilia's Notes uses the local network to sync notebooks directly with your nearby iPad — no cloud round-trip needed.</string>
+	<string>Cecilia's Notes uses the local network to sync notebooks with your nearby iPhone, iPad, or Mac — no cloud round-trip needed.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_cn-sync._tcp</string>

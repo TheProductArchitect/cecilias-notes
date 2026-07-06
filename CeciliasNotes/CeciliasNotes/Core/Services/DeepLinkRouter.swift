@@ -1,0 +1,69 @@
+import Combine
+import Foundation
+
+/// Single source of truth for deep-link targets. Library surfaces
+/// observe and react — iOS via `LibraryView`, Mac via `MacRootView`.
+@MainActor
+final class DeepLinkRouter: ObservableObject {
+
+    /// When set, the Library should open this notebook in the editor.
+    @Published var openNotebookId: UUID?
+
+    /// Optional page to scroll to when opening `openNotebookId`.
+    @Published var openPageId: UUID?
+
+    /// When true (and `openNotebookId` is also set), the editor should present
+    /// the export sheet immediately on appear.
+    @Published var pendingExport: Bool = false
+
+    /// When true, the Library should present the settings sheet.
+    @Published var openSettings: Bool = false
+
+    /// When true, the Library should immediately create a new playful-named
+    /// notebook and open it in the editor — the Quick Capture flow.
+    @Published var pendingQuickCapture: Bool = false
+
+    /// Pulsed when an inbound deep link explicitly targets
+    /// `ceciliasnotes://library`. The Library observes this and
+    /// dismisses any active editor cover so the user lands on the
+    /// home surface.
+    @Published var forceLibraryHome: Bool = false
+
+    /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://notebook/{id}/page/{id}`,
+    /// `ceciliasnotes://library`, `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
+    func handle(_ url: URL) {
+        guard url.scheme == "ceciliasnotes" else { return }
+        switch url.host {
+        case "open":
+            let raw = url.lastPathComponent
+            if let uuid = UUID(uuidString: raw) {
+                openNotebookId = uuid
+                openPageId = nil
+            }
+        case "notebook":
+            let parts = url.pathComponents.filter { $0 != "/" }
+            if let pageIndex = parts.firstIndex(of: "page"),
+               pageIndex > 0,
+               pageIndex + 1 < parts.count,
+               let notebookId = UUID(uuidString: parts[pageIndex - 1]),
+               let pageId = UUID(uuidString: parts[pageIndex + 1]) {
+                openNotebookId = notebookId
+                openPageId = pageId
+            } else if let first = parts.first, let notebookId = UUID(uuidString: first) {
+                openNotebookId = notebookId
+                openPageId = nil
+            }
+        case "settings":
+            openSettings = true
+        case "library":
+            openNotebookId = nil
+            openPageId = nil
+            openSettings = false
+            forceLibraryHome = true
+        case "quick-capture":
+            pendingQuickCapture = true
+        default:
+            break
+        }
+    }
+}

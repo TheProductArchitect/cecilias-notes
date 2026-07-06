@@ -10,6 +10,7 @@ import SwiftUI
 /// users can reach the same actions without knowing the slash idiom.
 struct MacDocSlashMenu: View {
     let onCommand: (Command) -> Void
+    var onDismiss: (() -> Void)? = nil
     @Environment(\.theme) private var theme
     @State private var highlighted: Int = 0
 
@@ -81,6 +82,36 @@ struct MacDocSlashMenu: View {
         .background(theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.hairline, lineWidth: 0.5))
+        .focusable()
+        .focusEffectDisabled()
+        .onAppear {
+            highlighted = 0
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
+        }
+        .onKeyPress(.upArrow) {
+            highlighted = max(0, highlighted - 1)
+            return .handled
+        }
+        .onKeyPress(.downArrow) {
+            highlighted = min(Command.allCases.count - 1, highlighted + 1)
+            return .handled
+        }
+        .onKeyPress(.return) {
+            selectHighlighted()
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            onDismiss?()
+            return .handled
+        }
+    }
+
+    private func selectHighlighted() {
+        let commands = Command.allCases
+        guard highlighted >= 0, highlighted < commands.count else { return }
+        onCommand(commands[highlighted])
     }
 }
 
@@ -89,8 +120,49 @@ struct MacDocSlashMenu: View {
 /// cost. On Apple Silicon this is on-device and near-real-time.
 @MainActor
 enum MacDictationTrigger {
+    private static weak var lastFocusedTextView: NSTextView?
+
+    static func register(_ textView: NSTextView) {
+        lastFocusedTextView = textView
+    }
+
+    static func focusRegisteredTextView() -> Bool {
+        guard let textView = lastFocusedTextView else { return false }
+        textView.window?.makeFirstResponder(textView)
+        return true
+    }
+
+    /// Focus the best available `NSTextView`, then ask macOS to start
+    /// system dictation on it. Sending `startDictation:` into the void
+    /// (`to: nil`) is unreliable and can wedge the app after the mic /
+    /// dictation permission sheet dismisses.
     static func start() {
-        NSApp.sendAction(NSSelectorFromString("startDictation:"), to: nil, from: nil)
+        guard let textView = resolveTargetTextView() else { return }
+        textView.window?.makeFirstResponder(textView)
+        DispatchQueue.main.async {
+            _ = NSApp.sendAction(
+                NSSelectorFromString("startDictation:"),
+                to: textView,
+                from: textView
+            )
+        }
+    }
+
+    private static func resolveTargetTextView() -> NSTextView? {
+        if let responder = NSApp.keyWindow?.firstResponder {
+            if let textView = responder as? NSTextView { return textView }
+            if let textView = findTextView(from: responder) { return textView }
+        }
+        return lastFocusedTextView
+    }
+
+    private static func findTextView(from responder: NSResponder) -> NSTextView? {
+        var current: NSResponder? = responder
+        while let node = current {
+            if let textView = node as? NSTextView { return textView }
+            current = node.nextResponder
+        }
+        return nil
     }
 }
 

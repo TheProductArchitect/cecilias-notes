@@ -101,6 +101,7 @@ struct CustomisePanel: View {
                     templateSection
                     behaviourSection
                     tagsSection
+                    originSection
                     annotationsSection
                 } else {
                     HStack(alignment: .top, spacing: 24) {
@@ -114,6 +115,7 @@ struct CustomisePanel: View {
                         VStack(alignment: .leading, spacing: 14) {
                             behaviourSection
                             tagsSection
+                            originSection
                             annotationsSection
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -675,6 +677,12 @@ struct CustomisePanel: View {
         .accessibilityLabel("Template \(template.displayName)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint(locked ? "Locked — set when you started writing" : "")
+    }
+
+    // MARK: Origin
+
+    private var originSection: some View {
+        NotebookOriginInfoView(notebook: viewModel.notebook)
     }
 
     // MARK: Annotations (PDF notebooks only)

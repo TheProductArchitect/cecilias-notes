@@ -14,14 +14,14 @@ public extension Font {
     static let ceciliasNotesSectionIcon: Font = .system(size: 20, weight: .light,   design: .default)
     static let ceciliasNotesLargeMetric: Font = .system(size: 28, weight: .light,   design: .default)
     static let ceciliasNotesMidIcon:    Font = .system(size: 18, weight: .light,    design: .default)
-    static let ceciliasNotesHeadline:   Font = .system(size: 17, weight: .semibold, design: .default)
-    static let ceciliasNotesBody:       Font = .system(size: 17, weight: .regular,  design: .default)
-    static let ceciliasNotesCallout:    Font = .system(size: 16, weight: .regular,  design: .default)
-    static let ceciliasNotesSubhead:    Font = .system(size: 15, weight: .regular,  design: .default)
+    static let ceciliasNotesHeadline:   Font = .headline
+    static let ceciliasNotesBody:       Font = .body
+    static let ceciliasNotesCallout:    Font = .callout
+    static let ceciliasNotesSubhead:    Font = .subheadline
     static let ceciliasNotesRowLabel:   Font = .system(size: 14, weight: .medium,   design: .default)
     static let ceciliasNotesRowSelected: Font = .system(size: 14, weight: .semibold, design: .default)
-    static let ceciliasNotesFootnote:   Font = .system(size: 13, weight: .regular,  design: .default)
-    static let ceciliasNotesCaption:    Font = .system(size: 12, weight: .regular,  design: .default)
+    static let ceciliasNotesFootnote:   Font = .footnote
+    static let ceciliasNotesCaption:    Font = .caption
     static let ceciliasNotesTag:        Font = .system(size: 12, weight: .medium,   design: .default)
     static let ceciliasNotesMono:       Font = .system(size: 13, weight: .regular,  design: .monospaced)
 }

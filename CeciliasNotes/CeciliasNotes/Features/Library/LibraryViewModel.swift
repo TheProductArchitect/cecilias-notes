@@ -105,6 +105,8 @@ final class LibraryViewModel: ObservableObject {
     /// Drives the quiz builder sheet, presented by `LibraryView` and
     /// raised by the sidebar's "+ new quiz" button.
     @Published var isShowingQuizBuilder: Bool = false
+    /// When set, the quiz builder opens scoped to this notebook.
+    @Published var quizBuilderPreselectedNotebookID: UUID?
 
     /// True when the library is showing the Trash surface instead
     /// of the notebook grid. Toggled by the sidebar's "trash" row.
@@ -150,6 +152,17 @@ final class LibraryViewModel: ObservableObject {
     }
 
     @Published var selectedNotebookId: UUID?
+#if os(macOS)
+    /// Notebook open in the main library window (default navigation).
+    @Published var macInlineNotebookId: UUID?
+    /// Opens a dedicated editor window (context menu / ⌘-click).
+    @Published var macOpenInNewWindowId: UUID?
+#endif
+    /// macOS grid keyboard focus for Space quick-look (Finder idiom).
+    @Published var macGridFocusedNotebookId: UUID?
+    @Published var isMacQuickLookPresented = false
+    /// macOS sidebar smart list filter (Today / This week / …).
+    @Published var macSmartList: MacSmartList?
     @Published var searchText: String = ""
     @Published var sortOrder: NotebookSortOrder = .lastModified
     @Published var isSelecting: Bool = false
@@ -402,6 +415,11 @@ final class LibraryViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        NotificationCenter.default.publisher(for: MultipeerNotebookHint.changedNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
+
         $sortOrder
             .dropFirst()
             .sink { [weak self] order in
@@ -594,6 +612,12 @@ final class LibraryViewModel: ObservableObject {
     /// row because that's its semantics.
     func refreshNotebooksOnly() {
         let raw: [Notebook]
+        if let smart = macSmartList {
+            let pool = storage.fetchAllNotebooks().filter { !$0.isDeleted }
+            let filtered = Self.notebooksMatching(smart, in: pool, storage: storage)
+            notebooks = dedupedById(sorted(applyTagFilter(filtered)))
+            return
+        }
         switch selectedContext {
         case .recent:
             raw = storage.fetchRecentNotebooks(limit: 12)
@@ -613,17 +637,43 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    /// Apply the active tag filter to a notebook pool. Returns
-    /// `pool` unchanged when no filter is active. Tags are stored
-    /// inside `tagsRaw` as a `\u{001F}`-joined string, which
-    /// SwiftData's `#Predicate` can't iterate as an array — so the
-    /// filter step runs in memory. With a few hundred notebooks
-    /// this is sub-millisecond; if the library scale grows past
-    /// thousands of notebooks the fix is a sidecar `Tag` model.
-    /// Drop any entries whose `id` we've already seen. First-wins,
-    /// stable order. Used to defend every collection that reaches a
-    /// SwiftUI `ForEach` — see `refresh()` for the call sites and
-    /// the underlying iOS 26 ForEach-on-duplicate-id crash.
+    func selectMacSmartList(_ list: MacSmartList) {
+        macSmartList = list
+        selectedContext = .allNotes
+        selectedQuizID = nil
+        isShowingTrash = false
+        refreshNotebooksOnly()
+    }
+
+    func clearMacSmartList() {
+        guard macSmartList != nil else { return }
+        macSmartList = nil
+        refreshNotebooksOnly()
+    }
+
+    private static func notebooksMatching(
+        _ list: MacSmartList,
+        in pool: [Notebook],
+        storage: StorageService
+    ) -> [Notebook] {
+        let calendar = Calendar.current
+        switch list {
+        case .today:
+            return pool.filter {
+                calendar.isDateInToday($0.updatedAt)
+                    || (RecentNotebooksTracker.lastOpened($0.id).map { calendar.isDateInToday($0) } ?? false)
+            }
+        case .thisWeek:
+            guard let weekAgo = calendar.date(byAdding: .day, value: -7, to: Date()) else { return pool }
+            return pool.filter { $0.updatedAt >= weekAgo }
+        case .untagged:
+            return pool.filter(\.tags.isEmpty)
+        case .recording:
+            let ids = storage.notebookIdsContainingAudio()
+            return pool.filter { ids.contains($0.id) }
+        }
+    }
+
     private func dedupedById<T: Identifiable>(_ items: [T]) -> [T] where T.ID: Hashable {
         var seen: Set<T.ID> = []
         var out: [T] = []
@@ -634,6 +684,8 @@ final class LibraryViewModel: ObservableObject {
         return out
     }
 
+    /// Apply the active tag filter to a notebook pool. Returns
+    /// `pool` unchanged when no filter is active.
     private func applyTagFilter(_ pool: [Notebook]) -> [Notebook] {
         guard !activeTagFilters.isEmpty else { return pool }
         let filters = activeTagFilters
@@ -716,6 +768,12 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func sorted(_ notebooks: [Notebook]) -> [Notebook] {
+        let pinned = notebooks.filter(\.isPinned)
+        let unpinned = notebooks.filter { !$0.isPinned }
+        return sortWithinGroup(pinned) + sortWithinGroup(unpinned)
+    }
+
+    private func sortWithinGroup(_ notebooks: [Notebook]) -> [Notebook] {
         switch sortOrder {
         case .lastModified:    return notebooks.sorted { $0.updatedAt > $1.updatedAt }
         case .created:         return notebooks.sorted { $0.createdAt > $1.createdAt }
@@ -725,10 +783,7 @@ final class LibraryViewModel: ObservableObject {
         case .alphabeticalZA:  return notebooks.sorted {
             $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending
         }
-        case .manual:          return notebooks.sorted {
-            if $0.isPinned != $1.isPinned { return $0.isPinned }
-            return $0.sortOrder < $1.sortOrder
-        }
+        case .manual:          return notebooks.sorted { $0.sortOrder < $1.sortOrder }
         }
     }
 
@@ -757,8 +812,14 @@ final class LibraryViewModel: ObservableObject {
         refresh()
     }
 
-    func deleteSubject(_ subject: Subject) {
-        try? storage.deleteSubject(subject)
+    func deleteSubject(_ subject: Subject, moveNotebooksToUnfiled: Bool = false) {
+        do {
+            try storage.deleteSubject(subject, moveNotebooksToUnfiled: moveNotebooksToUnfiled)
+        } catch {
+            showError(.storageFailed(action: "delete subject", underlying: error))
+            refresh()
+            return
+        }
         if selectedSubjectId == subject.id { selectedSubjectId = nil }
         refresh()
     }

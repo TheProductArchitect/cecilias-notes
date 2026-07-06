@@ -231,7 +231,14 @@ private struct LockRectangularView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .widgetURL(URL(string: "ceciliasnotes://quick-capture"))
+        .widgetURL(lockRectangularURL)
+    }
+
+    private var lockRectangularURL: URL? {
+        if let id = entry.primary?.id {
+            return URL(string: "ceciliasnotes://open/\(id.uuidString)")
+        }
+        return URL(string: "ceciliasnotes://quick-capture")
     }
 }
 

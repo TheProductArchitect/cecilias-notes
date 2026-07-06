@@ -44,7 +44,7 @@ struct PencilSettingsView: View {
         }
         .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Apple Pencil")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationBarTitle()
     }
 
     // MARK: Double-tap

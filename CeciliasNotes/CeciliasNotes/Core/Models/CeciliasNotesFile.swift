@@ -28,6 +28,14 @@ nonisolated struct CeciliasNotesFile: Codable {
     let agent: Agent?
     let pages: [PageNode]
 
+    // MARK: - Origin (v1.2 additive)
+    //
+    // Device + platform where the notebook was created and last
+    // edited. Round-trips through the iCloud mirror so MCP-created
+    // books show the agent writer on iPhone/iPad, and iPad edits
+    // show up correctly when the mirror is read back on Mac.
+    let origin: Origin?
+
     // MARK: - Optimistic concurrency (v1.1 additive)
     //
     // The MCP's append/edit tools follow a read-modify-write loop:
@@ -55,8 +63,15 @@ nonisolated struct CeciliasNotesFile: Codable {
     enum CodingKeys: String, CodingKey {
         case schema = "$schema"
         case version, id, title, subject, created_at, updated_at
-        case cover_tone, page_template, page_size, agent, pages
+        case cover_tone, page_template, page_size, agent, pages, origin
         case mcp_action, base_updated_at
+    }
+
+    struct Origin: Codable {
+        let created_on_device: String?
+        let created_on_platform: String?
+        let last_modified_on_device: String?
+        let last_modified_on_platform: String?
     }
 
     /// Parsed `mcp_action`. Unknown strings collapse to `nil`

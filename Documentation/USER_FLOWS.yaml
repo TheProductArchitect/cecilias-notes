@@ -121,7 +121,6 @@ flows:
       ipad: { status: implemented }
       iphone: { status: implemented, ux: "Drawer auto-closes on selection." }
       mac: { status: implemented, ux: "Add arrow-key navigation + ⌘1–⌘9 quick jumps." }
-    priority: p1
 
   - id: library_nav.all_subjects
     domain: library_nav
@@ -129,9 +128,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: stub, ux: "Empty state — should render full grid." }
+      mac: { status: implemented, ux: "Reuses AllSubjectsView + SubjectFolderCardView grid." }
     files: [Features/Library/AllSubjectsView.swift]
-    priority: p1
 
   - id: library_nav.all_quizzes
     domain: library_nav
@@ -139,8 +137,7 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: stub, ux: "Empty state — implement read+play, no Pencil needed." }
-    priority: p1
+      mac: { status: implemented, ux: "Reuses AllQuizzesView grid; quiz detail still iPad-first." }
 
   - id: library_nav.recent_notebooks
     domain: library_nav
@@ -148,8 +145,7 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Tracker runs; add File → Open Recent (⌘⇧O)." }
-    priority: p1
+      mac: { status: implemented, ux: "File → Open Recent submenu + ⌘⇧O opens most recent." }
 
   # ---------- 3. Library — notebooks ----------
   - id: library_notebooks.create
@@ -168,8 +164,8 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Tap title → inline field." }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Double-click title inline; not a sheet." }
-    priority: p1
+      mac: { status: implemented, ux: "Double-click card title for inline rename; single-click selects, double-click opens." }
+    files: [Features/Library/Grid/NotebookCardView.swift]
 
   - id: library_notebooks.change_cover_tone
     domain: library_notebooks
@@ -177,9 +173,8 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Long-press → tone picker (8 tones)." }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Right-click → Change cover → 8-tone palette." }
-    files: [Core/Models/V6/NotebookCoverTone.swift, Features/Library/Grid/CoverTextureCanvas.swift]
-    priority: p0
+      mac: { status: implemented, ux: "Right-click → Change Cover → CoverTonePickerView popover." }
+    files: [Core/Models/V6/NotebookCoverTone.swift, Features/Editor/Cover/CoverTonePickerView.swift]
 
   - id: library_notebooks.delete
     domain: library_notebooks
@@ -187,17 +182,15 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Right-click → Delete; must soft-delete." }
-    priority: p1
+      mac: { status: implemented, ux: "Right-click → Delete soft-deletes via shared NotebookCardView menu." }
 
   - id: library_notebooks.duplicate
     domain: library_notebooks
     name: Duplicate notebook
     devices:
-      ipad: { status: partial }
-      iphone: { status: partial }
-      mac: { status: missing }
-    priority: p2
+      ipad: { status: implemented, ux: "Context menu → Duplicate; clones strokes, text blocks, and V6 elements (typed, sticky, shape, image, audio)." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Right-click → Duplicate via shared NotebookCardView." }
 
   - id: library_notebooks.move_to_subject
     domain: library_notebooks
@@ -205,8 +198,8 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Drag onto sidebar row." }
       iphone: { status: implemented, ux: "Long-press → Move to…" }
-      mac: { status: partial, ux: "Verify drag payload accepts internal UUIDs." }
-    priority: p1
+      mac: { status: implemented, ux: "Drag notebook card onto sidebar subject row (NotebookTransferID payload)." }
+    files: [Features/Library/Grid/NotebookGridView.swift, Features/Library/Sidebar/SubjectSidebarView.swift]
 
   - id: library_notebooks.reorder
     domain: library_notebooks
@@ -214,8 +207,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Add .dropDestination on the grid." }
-    priority: p2
+      mac: { status: implemented, ux: "Manual sort mode → drag cards; shared NotebookGridView dropDestination." }
+    files: [Features/Library/Grid/NotebookGridView.swift]
 
   - id: library_notebooks.tags_edit
     domain: library_notebooks
@@ -223,9 +216,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Right-click → Tags… menu entry." }
-    files: [Features/Library/TagFilterSheet.swift]
-    priority: p1
+      mac: { status: implemented, ux: "Right-click → Tags… opens NotebookTagsSheet." }
+    files: [Features/Library/NotebookTagsSheet.swift, Features/Library/Grid/NotebookCardView.swift]
 
   - id: library_notebooks.filter_by_tag
     domain: library_notebooks
@@ -233,8 +225,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial }
-    priority: p1
+      mac: { status: implemented, ux: "LibraryHeaderView filter icon → TagFilterSheet." }
+    files: [Features/Library/TagFilterSheet.swift, Features/Library/LibraryHeaderView.swift]
 
   - id: library_notebooks.pin_favorite
     domain: library_notebooks
@@ -251,8 +243,8 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Long-press peek." }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Space-bar quick-look on selected cell (Finder idiom)." }
-    priority: p1
+      mac: { status: implemented, ux: "Select card → Space or context menu Quick Look; Return opens." }
+    files: [CeciliasNotesMac/Library/MacNotebookQuickLookView.swift, Features/Library/Grid/NotebookGridView.swift, Features/Library/Grid/NotebookCardView.swift]
 
   # ---------- 4. Library — subjects ----------
   - id: library_subjects.create
@@ -261,8 +253,7 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Add ⌘⇧N." }
-    priority: p1
+      mac: { status: implemented, ux: "File → New Subject (⌘⇧N)." }
 
   - id: library_subjects.rename
     domain: library_subjects
@@ -270,7 +261,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Right-click → Rename or double-click." }
+      mac: { status: implemented, ux: "Right-click → Rename or double-click subject name." }
+    files: [Features/Library/Sidebar/SubjectSidebarView.swift]
 
   - id: library_subjects.delete
     domain: library_subjects
@@ -278,8 +270,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "NSAlert-style confirm; option to move notebooks to Unfiled." }
-    priority: p1
+      mac: { status: implemented, ux: "confirmationDialog — move notebooks to Unfiled or delete all." }
+    files: [Features/Library/Sidebar/SubjectSidebarView.swift, Core/Services/StorageService.swift]
 
   - id: library_subjects.reorder
     domain: library_subjects
@@ -287,7 +279,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial }
+      mac: { status: implemented, ux: "Sidebar drag handle → SubjectTransferID drop on row." }
+    files: [Features/Library/Sidebar/SubjectSidebarView.swift]
 
   - id: library_subjects.color
     domain: library_subjects
@@ -295,7 +288,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial }
+      mac: { status: implemented, ux: "Right-click → Color menu; dot shows current colour on row." }
+    files: [Features/Library/Sidebar/SubjectSidebarView.swift]
 
   # ---------- 5. Library — quizzes ----------
   - id: library_quizzes.create
@@ -304,8 +298,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: stub, ux: "Nothing here needs Pencil; implement." }
-    priority: p1
+      mac: { status: implemented, ux: "Sidebar + editor toolbar Generate Quiz → QuizBuilderView sheet; notebook preselected from editor." }
+    files: [Features/Quiz/QuizBuilderView.swift, CeciliasNotesMac/MacRootView.swift]
 
   - id: library_quizzes.play
     domain: library_quizzes
@@ -313,18 +307,26 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: stub }
-    priority: p1
+      mac: { status: implemented, ux: "QuizDetailView in library pane; start quiz opens QuizTakingView sheet." }
+    files: [Features/Quiz/QuizDetailView.swift, Features/Quiz/QuizTakingView.swift]
 
   - id: library_quizzes.history
     domain: library_quizzes
     name: View quiz history / retake
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: stub } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Shared QuizDetailView attempt history section + retake." }
+    files: [Features/Quiz/QuizDetailView.swift]
 
   - id: library_quizzes.delete
     domain: library_quizzes
     name: Delete quiz
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: stub } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Shared QuizDetailView toolbar delete + confirm." }
+    files: [Features/Quiz/QuizDetailView.swift]
 
   # ---------- 6. Library — trash ----------
   - id: library_trash.open
@@ -338,7 +340,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Right-click → Restore." }
+      mac: { status: implemented, ux: "Restore button + context menu on TrashRow." }
+    files: [Features/Library/Trash/TrashView.swift]
 
   - id: library_trash.empty
     domain: library_trash
@@ -346,7 +349,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Confirm dialog required." }
+      mac: { status: implemented, ux: "Empty Trash → confirm alert." }
+    files: [Features/Library/Trash/TrashView.swift]
 
   - id: library_trash.auto_purge
     domain: library_trash
@@ -371,10 +375,10 @@ flows:
     domain: library_search
     name: Search within a notebook
     devices:
-      ipad: { status: partial }
-      iphone: { status: partial }
-      mac: { status: partial, ux: "⌘F inside MacEditorView scopes to open notebook." }
-    priority: p1
+      ipad: { status: implemented, ux: "More → Find in Notebook… or ⌘⇧F; opens InNotebookSearchView scoped to open notebook." }
+      iphone: { status: implemented, ux: "More → Find in Notebook…" }
+      mac: { status: implemented, ux: "⌘⇧F in editor opens MacInNotebookSearchView scoped to open notebook." }
+    files: [Features/Library/Search/InNotebookSearchView.swift, CeciliasNotesMac/Search/MacInNotebookSearchView.swift, Core/Services/SearchIndexService.swift]
 
   - id: library_search.spotlight
     domain: library_search
@@ -382,8 +386,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Verify Spotlight registration on Mac target." }
-    files: [Core/Services/SpotlightService.swift]
+      mac: { status: implemented, ux: "CSSearchableItemActionType → MacRootView selects notebook." }
+    files: [Core/Services/SpotlightService.swift, CeciliasNotesMac/MacRootView.swift]
 
   - id: library_search.suggestions
     domain: library_search
@@ -398,30 +402,31 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: partial }
-      mac: { status: missing, ux: "High-priority Granola-parity surface; text-only." }
+      mac: { status: implemented, ux: "Masthead bubble icon → AskMyNotesView sheet." }
     files: [Features/Library/Ask/AskMyNotesView.swift]
-    priority: p0
 
   - id: library_ask.enter_question
     domain: library_ask
     name: Enter question
-    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: implemented } }
 
   - id: library_ask.grounded_answer
     domain: library_ask
     name: View grounded answer with citations
-    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
+    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: implemented } }
 
   - id: library_ask.jump_to_citation
     domain: library_ask
     name: Tap citation → jump to source page
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented, ux: "Sets deepLinkPageId → opens editor sheet on page." } }
 
   - id: library_ask.followup
     domain: library_ask
     name: Follow-up / conversation
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "Ask sheet keeps prior Q&A turns visible; follow-ups include session history in the model prompt." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Shared AskMyNotesView — input bar persists; multi-turn history in scroll view." }
 
   # ---------- 9. Editor — opening & pages ----------
   - id: editor_open.notebook
@@ -430,28 +435,35 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Cover flip animation." }
       iphone: { status: implemented }
-      mac: { status: implemented, ux: "Currently a sheet; recommend promoting to a new window." }
-    priority: p1
+      mac: { status: implemented, ux: "Double-click card or Return → dedicated editor window (WindowGroup notebook-editor)." }
+    files: [CeciliasNotesMac/CeciliasNotesMacApp.swift, CeciliasNotesMac/Editor/MacNotebookEditorWindow.swift]
 
   - id: editor_open.add_page
     domain: editor_open
     name: Add page
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial, ux: "⌘⇧P" } }
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented, ux: "Page strip + button; ⌘⇧P; context menu Insert After." } }
 
   - id: editor_open.delete_page
     domain: editor_open
     name: Delete page
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: implemented, ux: "Page strip context menu + Page → Delete Page." } }
 
   - id: editor_open.duplicate_page
     domain: editor_open
     name: Duplicate page
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented, ux: "Page strip context menu + More → Duplicate Page." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Page strip context menu + Page → Duplicate Page." }
 
   - id: editor_open.reorder_pages
     domain: editor_open
     name: Reorder pages in strip
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Drag page thumbnails in MacPageStripView." }
+    files: [CeciliasNotesMac/Editor/MacEditorView.swift]
 
   - id: editor_open.minimap_jump
     domain: editor_open
@@ -459,8 +471,7 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: partial }
-      mac: { status: missing }
-    priority: p2
+      mac: { status: implemented, ux: "MacMinimapView overlay when zoom > 1.25×; tap segment to jump." }
 
   - id: editor_open.zoom
     domain: editor_open
@@ -468,13 +479,15 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Pinch." }
       iphone: { status: implemented }
-      mac: { status: implemented, ux: "Add trackpad pinch + ⌘0 reset." }
+      mac: { status: implemented, ux: "Toolbar ± zoom + trackpad pinch on canvas + ⌘0 reset." }
 
   - id: editor_open.fit_to_page
     domain: editor_open
     name: Fit-to-page / actual size
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing, ux: "⌘0 reset zoom." } }
-    priority: p2
+    devices:
+      ipad: { status: implemented, ux: "More → Actual Size; pinch + double-tap still work." }
+      iphone: { status: implemented, ux: "More → Actual Size; double-tap fit-to-width unchanged." }
+      mac: { status: implemented, ux: "View → Actual Size (⌘0) via macZoomReset." }
 
   # ---------- 10. Editor — strokes (iPad only by design) ----------
   - id: editor_strokes.draw
@@ -550,18 +563,26 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: implemented, ux: "Sheet today; consider inline editing." }
-    priority: p1
+      mac: { status: implemented, ux: "Click page or text block to type inline; floating movable format bar; auto-save; ⌘Z undo in text view." }
+    files: [CeciliasNotesMac/Editor/MacInlineTextEditing.swift, CeciliasNotesMac/Editor/MacRendering.swift]
 
   - id: editor_text.format
     domain: editor_text
     name: Text formatting (bold / italic / size / colour)
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacRichTextFormatBar — bold/italic/underline/size/colour." }
+    files: [CeciliasNotesMac/Editor/MacRichTextEditor.swift]
 
   - id: editor_text.move_resize
     domain: editor_text
     name: Move / resize text element
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Select element → drag to move; corner handle to resize." }
+    files: [CeciliasNotesMac/Editor/MacElementTransform.swift]
 
   - id: editor_text.delete
     domain: editor_text
@@ -571,12 +592,19 @@ flows:
   - id: editor_text.sticky_note
     domain: editor_text
     name: Insert sticky note
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Insert menu + toolbar; double-tap sticky to edit." }
+    files: [CeciliasNotesMac/Editor/MacEditing.swift, CeciliasNotesMac/Editor/MacRendering.swift]
 
   - id: editor_text.text_block
     domain: editor_text
     name: Insert text block
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Double-click page or ⌘T; rich text sheet." }
 
   # ---------- 12. Editor — images / media ----------
   - id: editor_media.photo_library
@@ -585,7 +613,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Fall back to NSOpenPanel." }
+      mac: { status: implemented, ux: "NSOpenPanel via Insert Image menu + toolbar." }
+    files: [CeciliasNotesMac/Editor/MacEditing.swift, CeciliasNotesMac/Services/MacImportService.swift]
 
   - id: editor_media.camera
     domain: editor_media
@@ -603,13 +632,20 @@ flows:
   - id: editor_media.transform
     domain: editor_media
     name: Move / resize / rotate image
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Drag, corner resize, rotate handle, context-menu 90°." }
+    files: [CeciliasNotesMac/Editor/MacElementTransform.swift, CeciliasNotesMac/Editor/MacRendering.swift]
 
   - id: editor_media.crop
     domain: editor_media
     name: Crop image
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
-    priority: p2
+    devices:
+      ipad: { status: partial }
+      iphone: { status: partial }
+      mac: { status: implemented, ux: "Context menu → Crop Image; MacImageCropSheet." }
+    files: [CeciliasNotesMac/Editor/MacImageCropSheet.swift]
 
   - id: editor_media.ocr
     domain: editor_media
@@ -617,8 +653,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Verify Vision path on Mac." }
-    files: [Core/Services/HandwritingOCRService.swift]
+      mac: { status: implemented, ux: "Image context menu + Copy Handwriting as Text (Vision)." }
+    files: [Core/Services/HandwritingOCRService.swift, Core/Services/ImageTextRecognitionService.swift]
 
   # ---------- 13. Editor — PDF ----------
   - id: editor_pdf.import_as_notebook
@@ -632,7 +668,11 @@ flows:
   - id: editor_pdf.import_as_pages
     domain: editor_pdf
     name: Import PDF pages into current notebook
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Edit → Import PDF Pages…; one PDF page per notebook page." }
+    files: [CeciliasNotesMac/Services/MacPDFImport.swift]
 
   - id: editor_pdf.annotate_strokes
     domain: editor_pdf
@@ -665,8 +705,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "Enable — Granola treats capture as first-class." }
-    priority: p1
+      mac: { status: implemented, ux: "Toolbar Voice Memo → MacVoiceMemoRecordingView; AudioRecorder + on-device transcript." }
+    files: [CeciliasNotesMac/Capture/MacVoiceMemoRecordingView.swift, Features/Editor/Audio/AudioRecorder.swift]
 
   - id: editor_audio.dictation
     domain: editor_audio
@@ -674,8 +714,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "System dictation should work; verify recording pill doesn't block." }
-    files: [Features/Editor/Recording/DictationFlowCommit.swift]
+      mac: { status: implemented, ux: "System dictation (fn fn); MacTextEditorSheet shows hint." }
+    files: [CeciliasNotesMac/Editor/MacEditing.swift]
 
   - id: editor_audio.lecture_mode
     domain: editor_audio
@@ -683,31 +723,43 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Highest-priority Granola-parity feature on Mac." }
-    files: [Features/Editor/Lecture/LectureRecorder.swift]
-    priority: p0
+      mac: { status: implemented, ux: "Editor toolbar → Lecture; MacLectureRecordingView + shared LectureRecorder." }
+    files: [Features/Editor/Lecture/LectureRecorder.swift, CeciliasNotesMac/Editor/MacLectureRecordingView.swift]
 
   - id: editor_audio.playback
     domain: editor_audio
     name: Play back recording
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacAudioElementView play/pause + progress via AVPlayer." }
+    files: [CeciliasNotesMac/Editor/MacRendering.swift]
 
   - id: editor_audio.scrub_transcript
     domain: editor_audio
     name: Scrub / seek transcript
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Drag progress bar or tap transcript line to seek." }
+    files: [CeciliasNotesMac/Editor/MacRendering.swift]
 
   - id: editor_audio.delete_recording
     domain: editor_audio
     name: Delete recording
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Audio strip context menu or toolbar Delete on selected element." }
 
   - id: editor_audio.export_transcript
     domain: editor_audio
     name: Export transcript as text
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "Long-press or select audio strip → Copy / Share Transcript." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Copy Transcript context menu on audio strip." }
+    files: [Features/Editor/AudioElements/AudioElementView.swift, CeciliasNotesMac/Editor/MacRendering.swift]
 
   # ---------- 15. Highlights, shapes, annotations ----------
   - id: editor_highlights.highlight_text
@@ -721,8 +773,7 @@ flows:
     devices:
       ipad: { status: implemented, ux: "Via drawing recognition." }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "Menu → Insert shape (rect / circle / arrow) for keyboard-first insert." }
-    priority: p2
+      mac: { status: implemented, ux: "Edit → Insert Shape (rectangle / ellipse / arrow) + toolbar menu." }
 
   - id: editor_highlights.annotations
     domain: editor_highlights
@@ -736,21 +787,26 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Portable — reuse SummarizePageView." }
+      mac: { status: implemented, ux: "View → Summarize Page menu; reuses SummarizePageView." }
     files: [Features/Editor/AI/SummarizePageView.swift]
-    priority: p0
 
   - id: editor_ai.ask_about_page
     domain: editor_ai
     name: Ask about page (contextual AI)
-    devices: { ipad: { status: implemented }, iphone: { status: partial }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "More → Ask About Page when AI available." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Toolbar Ask Page + Edit → Ask About Page; streams via PageContext." }
+    files: [Features/Editor/AI/AskAboutPageView.swift]
 
   - id: editor_ai.generate_quiz
     domain: editor_ai
     name: Generate quiz from page(s)
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Editor toolbar + Edit → Generate Quiz; opens QuizBuilderView with notebook preselected." }
+    files: [Features/Quiz/QuizBuilderView.swift, CeciliasNotesMac/Editor/MacEditorView.swift]
 
   - id: editor_ai.handwriting_to_text
     domain: editor_ai
@@ -764,20 +820,24 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "Sheet with 8 tones + title field." }
-    priority: p0
+      mac: { status: implemented, ux: "Editor toolbar Cover → MacNotebookCoverSheet (8 tones + title)." }
 
   - id: editor_customise.page_template
     domain: editor_customise
     name: Change page template (grid / dot / blank / lined)
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacPageTemplateSheet — all 18 templates; current page + notebook default." }
+    files: [CeciliasNotesMac/Editor/MacPageTemplateSheet.swift]
 
   - id: editor_customise.background
     domain: editor_customise
     name: Change page background colour
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: missing } }
-    priority: p2
+    devices:
+      ipad: { status: implemented, ux: "Follows app theme light/dark paper." }
+      iphone: { status: implemented, ux: "Follows app theme light/dark paper." }
+      mac: { status: implemented, ux: "Follows app theme; page template via MacPageTemplateSheet." }
 
   # ---------- 18. Export & share ----------
   - id: editor_export.page_pdf
@@ -793,7 +853,10 @@ flows:
   - id: editor_export.png
     domain: editor_export
     name: Export page as PNG
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Export sheet → Images format." }
 
   - id: editor_export.share_sheet
     domain: editor_export
@@ -801,7 +864,8 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: partial, ux: "NSSharingServicePicker." }
+      mac: { status: implemented, ux: "Share… button after export via NSSharingServicePicker." }
+    files: [CeciliasNotesMac/Export/MacExportSheet.swift]
 
   - id: editor_export.print
     domain: editor_export
@@ -809,26 +873,25 @@ flows:
     devices:
       ipad: { status: implemented }
       iphone: { status: implemented }
-      mac: { status: missing, ux: "⌘P via NSPrintOperation." }
-    priority: p1
+      mac: { status: implemented, ux: "⌘P prints all pages via MacPrintService + NSPrintOperation." }
+    files: [CeciliasNotesMac/Export/MacPrintService.swift]
 
   - id: editor_export.copy_as_image
     domain: editor_export
     name: Copy page as image to clipboard
     devices:
-      ipad: { status: partial }
-      iphone: { status: partial }
-      mac: { status: missing, ux: "⌘⇧C." }
-    priority: p2
+      ipad: { status: implemented, ux: "More → Copy Page as Image via CopyPageService + ExportService raster." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "⌘⇧C or Edit → Copy Page as Image; MacCopyPageService + PlatformClipboard." }
 
   - id: editor_export.markdown
     domain: editor_export
     name: Export as Markdown (typed + transcript)
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
-      mac: { status: missing, ux: "Big Granola-parity win." }
-    priority: p1
+      ipad: { status: implemented, ux: "More → Export as Markdown… or Export sheet format picker; typed text + audio transcripts per page." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Export sheet → Markdown bundle; typed text + audio transcripts per page." }
+    files: [Core/Services/NotebookMarkdownExport.swift, Features/Export/ExportOptionsView.swift, CeciliasNotesMac/Export/MacExportService.swift]
 
   # ---------- 19. Settings ----------
   - id: settings.open
@@ -843,7 +906,11 @@ flows:
   - id: settings.appearance
     domain: settings
     name: Appearance (theme / contrast / motion)
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacSettingsView Appearance tab — theme + resume." }
+    files: [CeciliasNotesMac/Settings/MacSettingsView.swift]
 
   - id: settings.change_icon
     domain: settings
@@ -864,22 +931,38 @@ flows:
   - id: settings.audio
     domain: settings
     name: Audio settings
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacSettingsView Audio tab — quality, save clips, auto-transcribe." }
+    files: [CeciliasNotesMac/Settings/MacSettingsView.swift, Core/Models/TranscriptionQuality.swift]
 
   - id: settings.intelligence
     domain: settings
     name: Intelligence / AI settings
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacSettingsView Intelligence tab — AI + quiz toggles." }
+    files: [CeciliasNotesMac/Settings/MacSettingsView.swift]
 
   - id: settings.cloud
     domain: settings
     name: Cloud settings
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacSettingsView iCloud tab — sync status + disable toggle." }
+    files: [CeciliasNotesMac/Settings/MacSettingsView.swift]
 
   - id: settings.storage
     domain: settings
     name: Storage settings (used space, cache clear)
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacSettingsView Storage tab — totals, clear exports, reveal documents." }
+    files: [CeciliasNotesMac/Settings/MacStorageSettingsView.swift]
 
   - id: settings.about
     domain: settings
@@ -894,12 +977,20 @@ flows:
   - id: settings.debug
     domain: settings
     name: Debug menu
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "DEBUG tab — synthetic data + wipe library." }
+    files: [CeciliasNotesMac/Settings/MacDebugSettingsView.swift]
 
   - id: settings.style_guide
     domain: settings
     name: Style guide inspector
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "DEBUG-only sheet from Settings → Style Guide." }
+    files: [CeciliasNotesMac/Settings/MacStyleGuideSheet.swift]
 
   - id: settings.sign_out_reset
     domain: settings
@@ -909,7 +1000,11 @@ flows:
   - id: settings.multipeer_pairing
     domain: settings
     name: Multipeer pairing management
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented, ux: "Settings → Cloud → paired devices + forget." }
+      iphone: { status: implemented, ux: "Settings → Cloud → paired devices + forget." }
+      mac: { status: implemented, ux: "Settings → iCloud — receive toggle, pair-with-iPad code entry, forget trusted receivers." }
+    files: [Features/Sync/MultipeerSettingsSection.swift, CeciliasNotesMac/Settings/MacMultipeerPairingSection.swift, CeciliasNotesMac/Services/MultipeerSendService.swift]
 
   # ---------- 20. Sync ----------
   - id: sync.cloudkit
@@ -926,7 +1021,10 @@ flows:
   - id: sync.force_resync
     domain: sync
     name: Force resync
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Settings → iCloud → sync now." }
 
   - id: sync.multipeer_advertise
     domain: sync
@@ -937,30 +1035,40 @@ flows:
   - id: sync.peer_pairing
     domain: sync
     name: Peer pairing / trust
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "Show pairing code + HMAC trust store; forget paired Macs." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Enter iPad code via MultipeerSendService browser; Mac can also advertise as receiver." }
+    files: [Core/Services/MultipeerSyncService.swift, Core/Services/MultipeerPairingStore.swift, CeciliasNotesMac/Services/MultipeerSendService.swift]
 
   - id: sync.conflict_resolution
     domain: sync
     name: Conflict-resolution UI
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "Settings → Cloud → Conflicts — LWW explainer + merge log from agent imports." }
+      iphone: { status: implemented }
+      mac: { status: implemented }
+    files: [Core/Services/SyncConflictLog.swift, Features/Sync/CloudConflictResolutionSection.swift]
 
   # ---------- 21. Handoff & continuity ----------
   - id: handoff.ipad_to_mac
     domain: handoff
     name: Handoff editing from iPad → Mac
     devices:
-      ipad: { status: implemented, ux: "Publishes NSUserActivity." }
-      iphone: { status: partial }
+      ipad: { status: implemented, ux: "Editor publishes PageHandoff NSUserActivity." }
+      iphone: { status: implemented, ux: "Same PageHandoff publisher in EditorView." }
       mac: { status: implemented, ux: "MacAppDelegate receives + posts macOpenHandoffPage." }
+    files: [Features/Sync/EditorPageHandoffModifier.swift, CeciliasNotesMac/App/MacAppDelegate.swift]
     notifications: [macOpenHandoffPage]
 
   - id: handoff.mac_to_ipad
     domain: handoff
     name: Handoff editing from Mac → iPad
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial, ux: "Verify NSUserActivity publisher." } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "onContinueUserActivity(PageHandoff) → DeepLinkRouter opens notebook + page." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "MacEditorView.publishHandoff on page/zoom change." }
+    files: [Core/Services/PageHandoff.swift, CeciliasNotesMac/Editor/MacEditorView.swift, App/CeciliasNotesApp.swift]
 
   - id: handoff.universal_clipboard
     domain: handoff
@@ -971,10 +1079,10 @@ flows:
     domain: handoff
     name: Deep link URL scheme to notebook / page
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
-      mac: { status: missing, ux: "ceciliasnotes://notebook/{id}/page/{id}." }
-    priority: p0
+      ipad: { status: implemented, ux: "ceciliasnotes://open/{id}, notebook/{id}/page/{id}, quick-capture, library, settings." }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "CFBundleURLSchemes + DeepLinkRouter via .onOpenURL." }
+    files: [Core/Services/DeepLinkRouter.swift, App/CeciliasNotesApp.swift, CeciliasNotesMac/CeciliasNotesMacApp.swift]
 
   # ---------- 22. Widgets ----------
   - id: widgets.home_recent
@@ -1001,32 +1109,39 @@ flows:
   - id: widgets.deep_link
     domain: widgets
     name: Widget → deep link into notebook
-    devices: { ipad: { status: missing }, iphone: { status: missing }, mac: { status: missing } }
-    priority: p1
+    devices:
+      ipad: { status: implemented, ux: "widgetURL / Link → ceciliasnotes://open/{id} and quick-capture." }
+      iphone: { status: implemented }
+      mac: { status: partial, ux: "Same widget extension; macOS widget tap opens app via shared URL scheme." }
+    files: [CeciliasNotesWidget/NewNoteWidget.swift, Core/Services/DeepLinkRouter.swift]
 
   # ---------- 23. System integrations ----------
   - id: system.spotlight
     domain: system_integrations
     name: Spotlight indexing
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
-
-  - id: system.app_intents
-    domain: system_integrations
-    name: App Intents / Shortcuts
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
-      mac: { status: missing, ux: "New note / Open notebook / Ask my notes." }
-    priority: p0
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "SearchIndexService.refreshAll donates on launch; MacRootView handles CSSearchableItemActionType." }
+    files: [Core/Services/SpotlightService.swift, Core/Services/SearchIndexService.swift, CeciliasNotesMac/MacRootView.swift]
 
   - id: system.share_extension
     domain: system_integrations
     name: Share extension (receive text/URL from other apps)
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
+      ipad: { status: implemented, ux: "Share → Cecilia's Notes — PDF/image/text/URL via ShareInbox." }
+      iphone: { status: implemented }
       mac: { status: n_a, reason: "macOS uses Services menu instead." }
-    priority: p1
+    files: [CeciliasNotesShareExtension/ShareViewController.swift, Core/Services/ShareInboxWatcher.swift, Core/Services/QuickCaptureSave.swift]
+
+  - id: system.app_intents
+    domain: system_integrations
+    name: App Intents / Shortcuts
+    devices:
+      ipad: { status: implemented, ux: "Create Notebook, Open Notebook, Quick Capture, Ask My Notes — Siri phrases + Shortcuts app." }
+      iphone: { status: implemented, ux: "Create Notebook, Open Notebook, Quick Capture, Ask My Notes — Siri phrases + Shortcuts app." }
+      mac: { status: implemented, ux: "Same four intents via CeciliasNotesShortcuts; notebook picker uses recent notebooks." }
+    files: [Core/AppIntents/CeciliasNotesIntents.swift]
 
   - id: system.services_menu
     domain: system_integrations
@@ -1034,8 +1149,8 @@ flows:
     devices:
       ipad: { status: n_a }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "'New note from selection'." }
-    priority: p1
+      mac: { status: implemented, ux: "Services → New Note from Selection saves selection via MacQuickCaptureSave." }
+    files: [CeciliasNotesMac/Services/MacServicesImport.swift, CeciliasNotesMac/App/MacAppDelegate.swift]
 
   - id: system.files_provider
     domain: system_integrations
@@ -1053,42 +1168,59 @@ flows:
   - id: accessibility.voiceover
     domain: accessibility
     name: VoiceOver navigation of library + editor
-    devices: { ipad: { status: partial }, iphone: { status: partial }, mac: { status: partial } }
+    devices:
+      ipad: { status: partial, ux: "Library, sidebar, notebook cards, audio strips labeled; Pencil canvas VO still partial." }
+      iphone: { status: partial, ux: "Library labeled; editor is typed-content only (no Pencil canvas)." }
+      mac: { status: implemented, ux: "Element labels, stroke read-only, audio controls, page strip." }
+    files:
+      - Features/Library/Sidebar/SubjectSidebarView.swift
+      - Features/Library/Grid/NotebookCardView.swift
+      - Features/Editor/AudioElements/AudioElementView.swift
+      - CeciliasNotesMac/Editor/MacEditorView.swift
+      - CeciliasNotesMac/Editor/MacRendering.swift
+      - Core/Extensions/AccessibilityExtensions.swift
     priority: p1
 
   - id: accessibility.dynamic_type
     domain: accessibility
     name: Dynamic Type scaling
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Body-tier tokens use semantic .body/.footnote/.caption; editorial chrome stays fixed." }
 
   - id: accessibility.reduce_motion
     domain: accessibility
     name: Reduce Motion
-    devices: { ipad: { status: implemented }, iphone: { status: implemented }, mac: { status: partial } }
+    devices:
+      ipad: { status: implemented }
+      iphone: { status: implemented }
+      mac: { status: implemented, ux: "Pressable style, sync spinner, recording pulse, and springs respect Reduce Motion." }
 
   - id: accessibility.keyboard_only
     domain: accessibility
     name: Keyboard-only navigation
     devices:
-      ipad: { status: partial }
+      ipad: { status: implemented, ux: "Grid ↑/↓ focus, Return/Space open; full Tab loop still partial." }
       iphone: { status: n_a }
-      mac: { status: partial, ux: "Full Tab loop through sidebar / grid / editor." }
+      mac: { status: implemented, ux: "Grid ↑/↓; ⌘⌥→/← cycle elements; ⌘⌫ delete selected." }
+    files: [CeciliasNotes/Features/Library/Grid/NotebookGridView.swift]
     priority: p1
 
   - id: accessibility.shortcuts
     domain: accessibility
     name: Hardware keyboard shortcuts
     devices:
-      ipad: { status: partial }
+      ipad: { status: implemented, ux: "Settings → About → Keyboard Shortcuts lists live bindings; ⌘⇧F find, ⌃⌘F focus mode." }
       iphone: { status: n_a }
-      mac: { status: partial, ux: "Missing: ⌘F ⌘⇧F ⌘⌥S ⌘0 ⌘P ⌘⇧O ⌘⇧N ⌘K." }
-    priority: p0
+      mac: { status: implemented, ux: "Settings → Shortcuts tab lists ⌘K ⌘⇧C ⌘F etc.; toolbar + grid bindings live." }
+    files: [Features/Settings/Sections/AboutSettingsView.swift, CeciliasNotesMac/Settings/MacKeyboardShortcutsView.swift, CeciliasNotesMac/MacToolbar.swift, CeciliasNotes/App/CeciliasNotesCommands.swift]
+    priority: p1
 
   - id: accessibility.trackpad_gestures
     domain: accessibility
     name: Trackpad gestures
-    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: partial, ux: "Add pinch-zoom on canvas." } }
-    priority: p1
+    devices: { ipad: { status: implemented }, iphone: { status: n_a }, mac: { status: implemented, ux: "Pinch-to-zoom on MacContinuousCanvasView." } }
 
   # ---------- 25. Mac-only (Granola benchmark) ----------
   - id: mac_capture.menu_bar_quick_capture
@@ -1097,8 +1229,8 @@ flows:
     devices:
       ipad: { status: n_a, reason: "No menu bar on iPadOS." }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "⌥⌘Space toggles a popover — title + body, saves to Unfiled." }
-    priority: p0
+      mac: { status: implemented, ux: "NSStatusItem popover — title + body, saves to Unfiled, opens notebook." }
+    files: [CeciliasNotesMac/Capture/MacQuickCaptureService.swift]
 
   - id: mac_capture.global_hotkey
     domain: mac_capture
@@ -1106,8 +1238,8 @@ flows:
     devices:
       ipad: { status: n_a }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "User-configurable in Settings; ⌥⌘Space default." }
-    priority: p0
+      mac: { status: implemented, ux: "Settings → Capture picker (⌥⌘Space default); NSEvent global monitor reloads on change." }
+    files: [CeciliasNotesMac/Capture/MacQuickCaptureService.swift, CeciliasNotesMac/Capture/MacCaptureHotkey.swift, CeciliasNotesMac/Settings/MacSettingsView.swift]
 
   - id: mac_capture.command_palette
     domain: mac_capture
@@ -1115,8 +1247,8 @@ flows:
     devices:
       ipad: { status: missing }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "Search subjects/notebooks/pages + actions." }
-    priority: p0
+      mac: { status: implemented, ux: "⌘K sheet — search subjects/notebooks + New Notebook / Quick Capture actions." }
+    files: [CeciliasNotesMac/Capture/MacCommandPaletteView.swift]
 
   - id: mac_capture.multi_window
     domain: mac_capture
@@ -1124,8 +1256,8 @@ flows:
     devices:
       ipad: { status: partial, ux: "iPadOS Stage Manager already supports it." }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "openWindow(id:value:) with notebook id." }
-    priority: p1
+      mac: { status: implemented, ux: "WindowGroup(id:notebook-editor, for: UUID); each notebook opens in its own window." }
+    files: [CeciliasNotesMac/CeciliasNotesMacApp.swift, CeciliasNotesMac/Editor/MacNotebookEditorWindow.swift, CeciliasNotesMac/MacRootView.swift]
 
   - id: mac_capture.calendar_link
     domain: mac_capture
@@ -1140,34 +1272,32 @@ flows:
     domain: mac_capture
     name: New-from-template (meeting / lecture / journal)
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
-      mac: { status: missing, ux: "Seeds first page with typed scaffolding." }
-    priority: p1
+      ipad: { status: n_a, reason: "Mac companion feature; templates live on Mac File → New from Template." }
+      iphone: { status: n_a }
+      mac: { status: implemented, ux: "File → New from Template seeds first page with typed scaffolding." }
+    files: [CeciliasNotesMac/Capture/MacNotebookTemplateService.swift, CeciliasNotesMac/MacToolbar.swift, CeciliasNotesMac/MacRootView.swift]
 
   - id: mac_capture.smart_lists
     domain: mac_capture
     name: Sidebar smart lists (Today / This week / Untagged / Recording)
     devices:
-      ipad: { status: missing }
-      iphone: { status: missing }
-      mac: { status: missing }
-    priority: p1
+      ipad: { status: n_a, reason: "Mac companion feature; smart lists filter via LibraryViewModel.macSmartList." }
+      iphone: { status: n_a }
+      mac: { status: implemented, ux: "Subject sidebar smart lists filter grid via LibraryViewModel.macSmartList." }
+    files: [CeciliasNotes/Features/Library/MacSmartList.swift, CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift, CeciliasNotes/Features/Library/LibraryViewModel.swift]
 
   - id: mac_capture.focus_mode
     domain: mac_capture
     name: Focus mode — hide chrome
     devices:
-      ipad: { status: partial }
+      ipad: { status: implemented, ux: "Editor focus mode (⌃⌘F); two-finger long-press also works." }
       iphone: { status: n_a }
-      mac: { status: missing, ux: "⌃⌘F hides sidebar + toolbar." }
-    priority: p2
+      mac: { status: implemented, ux: "⌃⌘F hides library masthead/sidebar or editor toolbar/page strip." }
 
   - id: mac_capture.find_replace_text
     domain: mac_capture
     name: Find-and-replace inside text element
     devices:
-      ipad: { status: partial }
+      ipad: { status: partial, ux: "Rich in-canvas text editor; no find bar yet." }
       iphone: { status: partial }
-      mac: { status: missing, ux: "⌘F inside text editor sheet." }
-    priority: p2
+      mac: { status: implemented, ux: "MacTextEditorSheet find + replace one/all." }

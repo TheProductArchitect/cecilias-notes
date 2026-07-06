@@ -36,7 +36,7 @@ struct StorageSettingsView: View {
         }
         .background(theme.surface.ignoresSafeArea())
         .navigationTitle("Storage")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationBarTitle()
         .refreshable { await viewModel.loadStorageMetrics() }
         // Always run a fresh calculation on appear. The view-model
         // pre-populates `storageInfo` from the UserDefaults cache
@@ -470,7 +470,6 @@ struct StorageSettingsView: View {
     }
 
     private func openInFiles() {
-        guard let url = URL(string: "shareddocuments://") else { return }
-        UIApplication.shared.open(url)
+        PlatformApp.revealDocumentsFolder()
     }
 }

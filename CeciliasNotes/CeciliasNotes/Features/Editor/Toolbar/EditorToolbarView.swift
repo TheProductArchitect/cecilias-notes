@@ -23,6 +23,8 @@ struct EditorToolbarView: View {
     let onShare: () -> Void
     let onTogglePageStrip: () -> Void
     let onMoreMenuExportPDF: () -> Void
+    let onMoreMenuExportMarkdown: () -> Void
+    let onMoreMenuFindInNotebook: () -> Void
     let onMoreMenuPrint:     () -> Void
     let onMoreMenuDuplicatePage: () -> Void
     let onMoreMenuDeletePage: () -> Void
@@ -30,8 +32,12 @@ struct EditorToolbarView: View {
     /// when `AIService.shared.canRun` — the menu item is absent
     /// otherwise (graceful-absence rule for AI surfaces).
     let onMoreMenuSummarizePage: () -> Void
+    let onMoreMenuAskAboutPage: () -> Void
+    let onMoreMenuCopyPageAsImage: () -> Void
+    let onMoreMenuActualSize: () -> Void
     let onMoreMenuPageSettings: () -> Void
     let onMoreMenuFullScreen: () -> Void
+    let onMoreMenuNotebookInfo: () -> Void
     let onMoreMenuInsertMedia: () -> Void
     /// Step 6 — two-mode recording entry points. Both route into
     /// `RecordingSession.shared` from `EditorView`. Replaces the
@@ -365,6 +371,10 @@ struct EditorToolbarView: View {
                 viewModel.openCustomisePanel()
             } label: { Label("Customise Notebook…", systemImage: "sparkles") }
 
+            Button { onMoreMenuNotebookInfo() } label: {
+                Label("Notebook Info…", systemImage: "info.circle")
+            }
+
             if let onOpenCoverPicker {
                 Button {
                     onOpenCoverPicker()
@@ -392,13 +402,25 @@ struct EditorToolbarView: View {
             if AIService.shared.canRun {
                 Button { onMoreMenuSummarizePage() }
                     label: { Label("Summarize Page", systemImage: "sparkles") }
+                Button { onMoreMenuAskAboutPage() }
+                    label: { Label("Ask About Page", systemImage: "bubble.left.and.text.bubble.right") }
 
                 Divider()
             }
         }
 
+        Button { onMoreMenuActualSize() }
+            label: { Label("Actual Size", systemImage: "arrow.up.left.and.arrow.down.right") }
+
+        Button { onMoreMenuCopyPageAsImage() }
+            label: { Label("Copy Page as Image", systemImage: "doc.on.doc") }
+
         Button { onMoreMenuExportPDF() }
             label: { Label("Export as PDF…", systemImage: "doc.richtext") }
+        Button { onMoreMenuExportMarkdown() }
+            label: { Label("Export as Markdown…", systemImage: "doc.plaintext") }
+        Button { onMoreMenuFindInNotebook() }
+            label: { Label("Find in Notebook…", systemImage: "text.magnifyingglass") }
         Button { onMoreMenuPrint() }
             label: { Label("Print…",         systemImage: "printer") }
 

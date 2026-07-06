@@ -1,5 +1,6 @@
 import AppKit
 import PDFKit
+import PencilKit
 import SwiftData
 import SwiftUI
 
@@ -10,7 +11,13 @@ struct MacDocBlock: View {
     @Bindable var element: PageElement
     let page: Page
     let notebook: Notebook
-    var isFocused: Bool
+    var isEditing: Bool
+    var isSelected: Bool
+    var onBeginEdit: () -> Void
+    var onEndEdit: () -> Void
+    var onSelect: () -> Void = {}
+    var onWritingBegan: () -> Void = {}
+    var pageDisplayHeight: CGFloat = 792
 
     @Environment(\.theme) private var theme
     @EnvironmentObject private var storage: StorageService
@@ -21,21 +28,45 @@ struct MacDocBlock: View {
             case .text:       textBlock
             case .stickyNote: stickyBlock
             case .image:      imageBlock
-            case .stroke:     inkBlock(label: "handwritten on iPad")
-            case .shape:      inkBlock(label: "drawn on iPad")
+            case .stroke:     inlineStrokeBlock
+            case .shape:      shapeBlock
             case .pdfPage:    pdfBlock
             case .audio:      audioBlock
             case .highlight:  highlightBlock
             }
         }
+        .overlay(alignment: .leading) {
+            if isSelected && !isEditing && element.kind != .text {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(theme.accent.opacity(0.6))
+                    .frame(width: 2)
+            }
+        }
+        .overlay {
+            if isSelected && !isEditing {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .stroke(theme.accent.opacity(element.kind == .text ? 0.35 : 0.55), lineWidth: 1.5)
+            }
+        }
+        .contentShape(Rectangle())
         .contextMenu { blockContextMenu }
     }
 
-    // MARK: - Text (editable rich text — system dictation works here)
+    // MARK: - Text (click to edit — growing field, no inner scroll)
 
     private var textBlock: some View {
-        MacDocTextEditor(element: element, isFocused: isFocused)
-            .padding(.vertical, 2)
+        MacDocTextBlock(
+            element: element,
+            notebook: notebook,
+            page: page,
+            pageDisplayHeight: pageDisplayHeight,
+            isEditing: isEditing,
+            isSelected: isSelected,
+            onSelect: onSelect,
+            onBeginEdit: onBeginEdit,
+            onEndEdit: onEndEdit,
+            onWritingBegan: onWritingBegan
+        )
     }
 
     // MARK: - Sticky note (editable, tinted background)
@@ -44,110 +75,138 @@ struct MacDocBlock: View {
         let tint = stickyTint(element.stickyNoteContent?.colorVariant ?? "yellow")
         return HStack(alignment: .top, spacing: 12) {
             RoundedRectangle(cornerRadius: 2).fill(tint).frame(width: 2)
-            MacDocStickyEditor(element: element, isFocused: isFocused)
+            MacDocStickyEditor(
+                element: element,
+                isEditing: isEditing,
+                onBeginEdit: onBeginEdit,
+                onEndEdit: onEndEdit
+            )
         }
         .padding(12)
         .background(tint.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 4))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isEditing { return }
+            if isSelected { onBeginEdit() } else { onSelect() }
+        }
     }
 
-    // MARK: - Image (inline, right-click delete)
+    // MARK: - Image (inline with crop + imageData)
+
+    @State private var isCroppingImage = false
 
     private var imageBlock: some View {
-        let url = element.imageContent.map { MediaStorage.url(for: .images, id: $0.id) }
-        return VStack(alignment: .leading, spacing: 4) {
-            if let url, let nsImage = NSImage(contentsOf: url) {
-                Image(nsImage: nsImage)
+        VStack(alignment: .leading, spacing: 4) {
+            if let content = element.imageContent, let image = docImage(for: content) {
+                Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: .infinity, maxHeight: 480, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .contextMenu {
+                        Button("Crop Image…") { isCroppingImage = true }
+                    }
             } else {
                 fallback("image unavailable", icon: "photo")
             }
         }
-    }
-
-    // MARK: - Ink (strokes / shapes — read only)
-
-    private func inkBlock(label: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            eyebrow(label)
-            HStack {
-                Image(systemName: "pencil.tip")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.recessiveTertiary)
-                Text("\(Int(element.normalizedWidth * 100))% × \(Int(element.normalizedHeight * 100))% region")
-                    .font(.system(size: 11).italic())
-                    .foregroundStyle(theme.foregroundSubtle)
-                Spacer()
-                Button("open on iPad") { publishHandoff() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .tracking(0.12)
-                    .textCase(.uppercase)
-                    .foregroundStyle(theme.recessiveTertiary)
+        .contentShape(Rectangle())
+        .onTapGesture { if !isEditing { onSelect() } }
+        .sheet(isPresented: $isCroppingImage) {
+            if let content = element.imageContent {
+                MacImageCropSheet(
+                    content: content,
+                    onDone: { isCroppingImage = false },
+                    onCancel: { isCroppingImage = false }
+                )
+                .environmentObject(storage)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(theme.surface.opacity(0.4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.hairline, lineWidth: 0.5))
         }
     }
 
-    // MARK: - PDF page
+    private func docImage(for content: ImageContent) -> NSImage? {
+        let url = MediaStorage.url(for: .images, id: content.id, fileExtension: content.fileFormat)
+        guard let raw = content.imageData.flatMap({ PlatformImageFactory.from(data: $0) })
+                ?? NSImage(contentsOf: url) else { return nil }
+        return MacImageCropMath.applyCrop(to: raw, content: content)
+    }
+
+    // MARK: - Ink / shapes (read-only inline)
+
+    private var inlineStrokeBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            eyebrow("handwriting from iPad")
+            if let image = strokePreviewImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: 320, alignment: .leading)
+            } else {
+                inkPlaceholder
+            }
+        }
+    }
+
+    private var shapeBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let content = element.shapeContent {
+                let aspect = max(0.25, element.normalizedWidth / max(0.1, element.normalizedHeight))
+                let width = min(520, 720 * element.normalizedWidth)
+                MacDocShapePreview(content: content)
+                    .frame(width: width, height: width / aspect)
+            } else {
+                inkPlaceholder
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { onSelect() }
+    }
+
+    private var strokePreviewImage: NSImage? {
+        guard let data = element.strokeContent?.strokeData,
+              !data.isEmpty,
+              let drawing = try? PKDrawing(data: data),
+              !drawing.bounds.isEmpty else { return nil }
+        return drawing.image(from: drawing.bounds, scale: 2)
+    }
+
+    private var inkPlaceholder: some View {
+        HStack {
+            Image(systemName: "pencil.tip")
+                .font(.system(size: 12))
+                .foregroundStyle(theme.recessiveTertiary)
+            Text("edit on iPad")
+                .font(.system(size: 11).italic())
+                .foregroundStyle(theme.foregroundSubtle)
+            Spacer()
+            Button("open on iPad") { publishHandoff() }
+                .buttonStyle(.plain)
+                .font(.system(size: 10))
+                .tracking(0.12)
+                .textCase(.uppercase)
+                .foregroundStyle(theme.recessiveTertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(theme.surface.opacity(0.4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(theme.hairline, lineWidth: 0.5))
+    }
+
+    // MARK: - PDF page (inline thumbnail)
 
     private var pdfBlock: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            eyebrow("pdf page")
-            HStack(spacing: 12) {
-                Image(systemName: "doc.richtext")
-                    .font(.system(size: 16))
-                    .foregroundStyle(theme.recessiveSecondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("PDF reference")
-                        .font(.system(size: 13, weight: .medium))
-                    Text("view in canvas mode for full page")
-                        .font(.system(size: 10).italic())
-                        .foregroundStyle(theme.recessiveTertiary)
-                }
-                Spacer()
-            }
-            .padding(12)
-            .background(theme.surface.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-        }
+        MacDocPDFBlock(element: element)
+            .contentShape(Rectangle())
+            .onTapGesture { onSelect() }
     }
 
-    // MARK: - Audio (mini player + transcript)
+    // MARK: - Audio (play + transcript)
 
     private var audioBlock: some View {
-        let audio = element.audioContent
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.recessiveSecondary)
-                Text(formatDuration(audio?.durationSeconds ?? 0))
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(theme.foregroundMuted)
-                Spacer()
-            }
-            if let transcript = audio?.transcript, !transcript.isEmpty {
-                Text(transcript)
-                    .font(.system(size: 13).italic())
-                    .foregroundStyle(theme.foreground)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("no transcript yet")
-                    .font(.system(size: 11).italic())
-                    .foregroundStyle(theme.recessiveTertiary)
-            }
-        }
-        .padding(12)
-        .background(theme.surface.opacity(0.4))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        MacDocAudioBlock(element: element)
+            .contentShape(Rectangle())
+            .onTapGesture { onSelect() }
     }
 
     // MARK: - Highlight
@@ -225,55 +284,250 @@ struct MacDocBlock: View {
     }
 }
 
-// MARK: - Editable text via NSTextView (system dictation supported)
+// MARK: - Doc-mode audio player
 
-private struct MacDocTextEditor: View {
-    @Bindable var element: PageElement
-    let isFocused: Bool
-    @EnvironmentObject private var storage: StorageService
-    @State private var attributed: NSAttributedString = .init()
+private struct MacDocAudioBlock: View {
+    let element: PageElement
+    @StateObject private var player = MacAudioPlayer()
     @Environment(\.theme) private var theme
+    @EnvironmentObject private var storage: StorageService
 
     var body: some View {
-        MacRichTextEditor(
-            attributedString: $attributed,
-            onPlainTextChange: { plain in
-                element.textContent?.text = plain
-            },
-            onTextViewCreated: { textView in
-                if isFocused { textView.window?.makeFirstResponder(textView) }
+        if let content = element.audioContent {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button {
+                        player.toggle(content: content)
+                    } label: {
+                        Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(player.isPlaying ? "Pause audio" : "Play audio")
+
+                    Text("\(format(player.currentTime)) / \(format(player.duration > 0 ? player.duration : content.durationSeconds))")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(theme.foregroundMuted)
+
+                    Spacer(minLength: 0)
+                }
+
+                progressTrack(content: content)
+
+                if !content.transcript.isEmpty {
+                    Text(content.transcript)
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.foregroundMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
-        )
-        .frame(minHeight: 22)
-        .onAppear {
-            if let content = element.textContent {
-                attributed = MacRichTextCodec.decode(from: content)
+            .padding(10)
+            .background(theme.surface.opacity(0.35))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .accessibilityLabel("Audio recording, \(format(content.durationSeconds))")
+            .onAppear { player.load(content: content) }
+            .onDisappear { player.pause() }
+        }
+    }
+
+    @ViewBuilder
+    private func progressTrack(content: AudioContent) -> some View {
+        GeometryReader { geo in
+            let total = player.duration > 0 ? player.duration : max(content.durationSeconds, 0.01)
+            let active = player.scrubPreview ?? player.currentTime
+            let fraction = min(1, max(0, active / total))
+            ZStack(alignment: .leading) {
+                Capsule().fill(theme.borderSubtle).frame(height: 3)
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(width: geo.size.width * fraction, height: 3)
+            }
+            .frame(height: 3)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let f = min(1, max(0, value.location.x / geo.size.width))
+                        player.scrubPreview = f * total
+                    }
+                    .onEnded { _ in
+                        if let target = player.scrubPreview {
+                            player.seek(to: target)
+                        }
+                        player.scrubPreview = nil
+                    }
+            )
+        }
+        .frame(height: 8)
+    }
+
+    private func format(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+// MARK: - Click-to-edit text block
+
+private struct MacDocTextBlock: View {
+    @Bindable var element: PageElement
+    let notebook: Notebook
+    let page: Page
+    let pageDisplayHeight: CGFloat
+    let isEditing: Bool
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onBeginEdit: () -> Void
+    let onEndEdit: () -> Void
+    var onWritingBegan: () -> Void = {}
+    @Environment(\.theme) private var theme
+    @EnvironmentObject private var storage: StorageService
+    @EnvironmentObject private var richTextController: MacRichTextController
+    @State private var columnWidth: CGFloat = 576
+
+    var body: some View {
+        Group {
+            if isEditing {
+                MacDocGrowingRichTextEditor(
+                    element: element,
+                    notebook: notebook,
+                    page: page,
+                    modelContext: storage.context,
+                    columnWidth: columnWidth,
+                    pageDisplayHeight: pageDisplayHeight,
+                    richTextController: richTextController,
+                    onWritingBegan: onWritingBegan,
+                    onEndEdit: onEndEdit
+                )
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                MacDocTextPreview(element: element)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 1, coordinateSpace: .local) { location in
+                        MacPendingTextCursor.set(elementId: element.id, clickYInBlock: location.y)
+                        onWritingBegan()
+                        onSelect()
+                        onBeginEdit()
+                    }
             }
         }
-        .onChange(of: attributed) { _, new in
-            guard let content = element.textContent else { return }
-            content.attributedTextData = try? NSKeyedArchiver.archivedData(
-                withRootObject: new, requiringSecureCoding: false
-            )
-            content.text = new.string
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 2)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear { columnWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, width in
+                        if width > 1 { columnWidth = width }
+                    }
+            }
+        )
+        .accessibilityLabel(isEditing ? "Editing text" : "Text block")
+    }
+}
+
+private struct MacDocTextPreview: View {
+    @Bindable var element: PageElement
+    @ObservedObject private var session = MacRecordingSession.shared
+    @Environment(\.theme) private var theme
+
+    private var isLiveTarget: Bool {
+        session.mode.isTranscribing && session.mode.textElementId == element.id
+    }
+
+    var body: some View {
+        Group {
+            if let content = element.textContent {
+                let attributed = MacRichTextCodec.decode(from: content)
+                if attributed.length > 0 {
+                    Text(AttributedString(attributed))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if !content.text.isEmpty {
+                    Text(content.text)
+                        .font(.system(size: 15))
+                        .foregroundStyle(theme.foreground)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if isLiveTarget {
+                    Text("Listening…")
+                        .font(.system(size: 14))
+                        .italic()
+                        .foregroundStyle(theme.recessiveTertiary)
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                } else {
+                    Text(" ")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.clear)
+                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                        .accessibilityHidden(true)
+                }
+            } else {
+                Text(" ")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.clear)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(4)
+        .background {
+            if isLiveTarget {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(theme.accent.opacity(0.06))
+            }
+        }
+        .overlay {
+            if isLiveTarget {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(theme.accent.opacity(0.45), lineWidth: 1.5)
+            }
         }
     }
 }
 
 private struct MacDocStickyEditor: View {
     @Bindable var element: PageElement
-    let isFocused: Bool
+    let isEditing: Bool
+    let onBeginEdit: () -> Void
+    let onEndEdit: () -> Void
+    @EnvironmentObject private var storage: StorageService
     @State private var text: String = ""
 
     var body: some View {
-        TextEditor(text: $text)
-            .font(.system(size: 14).italic())
-            .frame(minHeight: 20)
-            .scrollContentBackground(.hidden)
-            .onAppear { text = element.stickyNoteContent?.text ?? "" }
-            .onChange(of: text) { _, new in
-                element.stickyNoteContent?.text = new
+        Group {
+            if isEditing {
+                TextEditor(text: $text)
+                    .font(.system(size: 14).italic())
+                    .frame(minHeight: 28)
+                    .scrollContentBackground(.hidden)
+                    .onAppear { text = element.stickyNoteContent?.text ?? "" }
+                    .onChange(of: text) { _, new in
+                        element.stickyNoteContent?.text = new
+                        element.updatedAt = Date()
+                        try? storage.context.save()
+                        NotebookOriginRecorder.markNotebookModified(
+                            notebookId: element.notebookId,
+                            context: storage.context
+                        )
+                    }
+                    .onDisappear { onEndEdit() }
+            } else if let note = element.stickyNoteContent?.text, !note.isEmpty {
+                Text(note)
+                    .font(.system(size: 14).italic())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(" ")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.clear)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
             }
+        }
     }
 }
 
@@ -281,4 +535,88 @@ extension Notification.Name {
     static let macAskAIAboutElement = Notification.Name("app.ceciliasnotes.mac.askAI")
     static let macRequestHandoffToIPad = Notification.Name("app.ceciliasnotes.mac.handoffToIPad")
     static let macStartDictation = Notification.Name("app.ceciliasnotes.mac.startDictation")
+}
+
+private struct MacDocPDFBlock: View {
+    let element: PageElement
+    @Environment(\.theme) private var theme
+    @State private var image: NSImage?
+    @State private var failed = false
+
+    var body: some View {
+        GeometryReader { geo in
+            Group {
+                if let image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                } else if failed {
+                    Text("pdf unavailable")
+                        .font(.system(size: 12).italic())
+                        .foregroundStyle(theme.recessiveTertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 80)
+        .task(id: element.id) { await loadPDF() }
+    }
+
+    private func loadPDF() async {
+        guard let content = element.pdfPageContent else {
+            await MainActor.run { failed = true }
+            return
+        }
+        if let previewURL = content.previewImageURL,
+           let preview = NSImage(contentsOf: previewURL) {
+            await MainActor.run { image = preview }
+        }
+        let url = content.pdfFileURL
+        let pageIndex = content.pageIndex
+        let rendered = await MacPDFRenderer.renderPage(url: url, pageIndex: pageIndex, scale: 2)
+        await MainActor.run {
+            if let rendered { image = rendered }
+            else if image == nil { failed = true }
+        }
+    }
+}
+
+private struct MacDocShapePreview: View {
+    let content: ShapeContent
+
+    var body: some View {
+        GeometryReader { geo in
+            let path = ShapeKindPath.path(for: content.shapeKind, in: CGRect(origin: .zero, size: geo.size))
+            let strokeColor = MacElementPalette.color(fromHex: content.strokeColorHex)
+            let fillColor = content.fillColorHex.map {
+                MacElementPalette.color(fromHex: $0).opacity(content.fillOpacity)
+            }
+            ZStack {
+                path.fill(fillColor ?? .clear)
+                path.stroke(strokeColor, style: strokeStyle)
+                if let label = content.containedText, !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 13))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        }
+        .aspectRatio(4 / 3, contentMode: .fit)
+    }
+
+    private var strokeStyle: StrokeStyle {
+        let width = max(1, content.strokeWidth)
+        switch content.strokeStyle {
+        case .dashed: return StrokeStyle(lineWidth: width, dash: [6, 4])
+        case .dotted: return StrokeStyle(lineWidth: width, dash: [2, 3])
+        case .none:   return StrokeStyle(lineWidth: 0)
+        default:      return StrokeStyle(lineWidth: width)
+        }
+    }
 }

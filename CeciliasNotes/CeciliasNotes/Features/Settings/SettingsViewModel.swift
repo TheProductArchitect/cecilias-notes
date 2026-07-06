@@ -3,6 +3,9 @@ import Foundation
 import Speech
 import StoreKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Persisted enums
 
@@ -32,13 +35,6 @@ enum PressureSetting: String, CaseIterable {
     case soft   = "soft"
     case medium = "medium"
     case firm   = "firm"
-
-    var displayName: String { rawValue.capitalized }
-}
-
-enum TranscriptionQuality: String, CaseIterable {
-    case fast     = "fast"
-    case accurate = "accurate"
 
     var displayName: String { rawValue.capitalized }
 }
@@ -125,15 +121,13 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Pencil Pro squeeze (iOS 17.5+)
 
+#if os(iOS)
     /// User's choice for the Apple Pencil Pro squeeze gesture.
-    /// Registered with a `"palette"` default in `CeciliasNotesApp.init`; the
-    /// AppStorage default here is the same so a fresh field read
-    /// without the register-defaults still resolves correctly.
     @AppStorage("pencil.squeeze.action") var squeezeAction: SqueezeAction = .palette
 
     /// The tool to switch to when `squeezeAction == .tool`.
-    /// Defaults to `.eraser` per spec.
     @AppStorage("pencil.squeeze.tool") var squeezeTool: SqueezeToolChoice = .eraser
+#endif
 
     // MARK: General
 
@@ -307,10 +301,14 @@ final class SettingsViewModel: ObservableObject {
         guard StorageService.shared.notebookCount() >= 3,
               UserDefaults.standard.string(forKey: key) != currentVersion
         else { return }
+#if os(iOS)
         guard let scene = UIApplication.shared.connectedScenes
             .first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene
         else { return }
         SKStoreReviewController.requestReview(in: scene)
+#elseif os(macOS)
+        SKStoreReviewController.requestReview()
+#endif
         UserDefaults.standard.set(currentVersion, forKey: key)
     }
 

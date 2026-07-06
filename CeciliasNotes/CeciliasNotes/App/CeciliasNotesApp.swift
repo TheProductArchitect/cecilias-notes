@@ -372,6 +372,11 @@ struct CeciliasNotesApp: App {
                         deepLink.openNotebookId = uuid
                     }
                 }
+                .onContinueUserActivity(PageHandoff.activityType) { activity in
+                    guard let payload = PageHandoff.parse(activity.userInfo) else { return }
+                    deepLink.openNotebookId = payload.notebookId
+                    deepLink.openPageId = payload.pageId
+                }
                 // ceciliasnotes:// deep links
                 .onOpenURL { url in
                     deepLink.handle(url)
@@ -648,60 +653,5 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         #if DEBUG
         dlog("[Launch] applicationWillTerminate → stopped recording + marked shutdown clean + queued mirror refresh")
         #endif
-    }
-}
-
-// MARK: - DeepLinkRouter
-
-/// Single source of truth for deep-link target. Views observe and react.
-@MainActor
-final class DeepLinkRouter: ObservableObject {
-
-    /// When set, the Library should open this notebook in the editor.
-    @Published var openNotebookId: UUID?
-
-    /// When true (and `openNotebookId` is also set), the editor should present
-    /// the export sheet immediately on appear.
-    @Published var pendingExport: Bool = false
-
-    /// When true, the Library should present the settings sheet.
-    @Published var openSettings: Bool = false
-
-    /// When true, the Library should immediately create a new playful-named
-    /// notebook and open it in the editor — the Quick Capture flow.
-    /// Set on cold launch (via the launch URL), checked once by `LibraryView`.
-    @Published var pendingQuickCapture: Bool = false
-
-    /// Pulsed when an inbound deep link explicitly targets
-    /// `ceciliasnotes://library`. The Library observes this and
-    /// dismisses any active editor cover so the user lands on the
-    /// home surface, irrespective of which notebook they had open
-    /// before backgrounding. Drives the share-extension redirect
-    /// (the extension's deep link uses `://library`) so a share
-    /// always surfaces the import picker on home rather than
-    /// stranding the user inside an editor.
-    @Published var forceLibraryHome: Bool = false
-
-    /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://library`,
-    /// `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
-    func handle(_ url: URL) {
-        guard url.scheme == "ceciliasnotes" else { return }
-        switch url.host {
-        case "open":
-            let raw = url.lastPathComponent
-            if let uuid = UUID(uuidString: raw) {
-                openNotebookId = uuid
-            }
-        case "settings":
-            openSettings = true
-        case "library":
-            openNotebookId = nil
-            openSettings   = false
-            forceLibraryHome = true
-        case "quick-capture":
-            pendingQuickCapture = true
-        default:
-            break
-        }
     }
 }
