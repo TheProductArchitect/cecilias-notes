@@ -5428,9 +5428,12 @@
         "MacRichTextFormatBar"
       ],
       "extends": [],
-      "posts": [],
+      "posts": [
+        ".macSummarizePage",
+        ".macAskAboutPage"
+      ],
       "observes": [],
-      "lines": 191
+      "lines": 396
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacShapeHandoff.swift",
@@ -11265,7 +11268,8 @@
       {
         "name": "macAskAboutPage",
         "posted_in": [
-          "CeciliasNotes/CeciliasNotesMac/MacToolbar.swift"
+          "CeciliasNotes/CeciliasNotesMac/MacToolbar.swift",
+          "CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift"
         ],
         "observed_in": [
           "CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift"
@@ -11551,7 +11555,8 @@
       {
         "name": "macSummarizePage",
         "posted_in": [
-          "CeciliasNotes/CeciliasNotesMac/MacToolbar.swift"
+          "CeciliasNotes/CeciliasNotesMac/MacToolbar.swift",
+          "CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift"
         ],
         "observed_in": [
           "CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift"

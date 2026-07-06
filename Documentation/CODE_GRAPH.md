@@ -35,7 +35,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | `(root)/` | 3 | 695 |
 | `App/` | 2 | 110 |
 | `Capture/` | 6 | 666 |
-| `Editor/` | 15 | 3,786 |
+| `Editor/` | 15 | 3,991 |
 | `Export/` | 4 | 325 |
 | `Library/` | 2 | 134 |
 | `Onboarding/` | 1 | 219 |
@@ -114,7 +114,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | `keyboardWillShowNotification` | — | — | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | **`macAddPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macAskAIAboutElement`** | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | [`MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | — |
-| **`macAskAboutPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| **`macAskAboutPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacRichTextEditor.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift), [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macCaptureHotkeyChanged`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacSettingsView.swift`](../CeciliasNotes/CeciliasNotesMac/Settings/MacSettingsView.swift) | [`MacQuickCaptureService.swift`](../CeciliasNotes/CeciliasNotesMac/Capture/MacQuickCaptureService.swift) |
 | **`macCopyHandwritingOCR`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macCopyPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
@@ -146,7 +146,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | **`macSelectNextElement`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macSelectPreviousElement`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macStartDictation`** | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | — | — |
-| **`macSummarizePage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| **`macSummarizePage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacRichTextEditor.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift), [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macToggleFocusMode`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift), [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
 | **`macToggleSidebar`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
 | **`macZoomReset`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacNotebookEditorWindow.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacNotebookEditorWindow.swift), [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
