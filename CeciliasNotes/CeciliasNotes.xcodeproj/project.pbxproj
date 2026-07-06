@@ -133,12 +133,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				.gitkeep,
-				AllQuizzesView.swift,
-				AllSubjectsView.swift,
-				Ask/AskMyNotesView.swift,
 				Grid/CoverTextureCanvas.swift,
-				Grid/QuizFolderCardView.swift,
-				Grid/SubjectFolderCardView.swift,
 				LibraryView.swift,
 			);
 			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
@@ -176,12 +171,9 @@
 		C0A1A0A12FAD100000000029 /* Exceptions for "CeciliasNotes/Resources" folder in "CeciliasNotesMac" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				AppIcons,
 				Assets.xcassets,
-				CeciliasNotes.entitlements,
 				Info.plist,
 				PrivacyInfo.xcprivacy,
-				"SVG Graphics",
 			);
 			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
 		};
@@ -190,6 +182,22 @@
 			membershipExceptions = (
 				IconUpdateGate.swift,
 				OnboardingView.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD10000000003D /* Exceptions for "CeciliasNotes/Features/Editor/AudioElements" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AudioElementsOverlayView.swift,
+				AudioElementView.swift,
+				AudioPlaybackController.swift,
+			);
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+		};
+		C0A1A0A12FAD100000000040 /* Exceptions for "CeciliasNotes/Features/Editor/Audio" folder in "CeciliasNotesMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AudioFilePicker.swift,
 			);
 			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
 		};
@@ -304,6 +312,37 @@
 			path = CeciliasNotes/Features/Onboarding;
 			sourceTree = "<group>";
 		};
+		C0A1A0A12FAD10000000003A /* CeciliasNotes/Features/Editor/AI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotes/Features/Editor/AI;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD10000000003B /* CeciliasNotes/Features/Editor/Lecture */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotes/Features/Editor/Lecture;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD10000000003C /* CeciliasNotes/Features/Editor/AudioElements */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD10000000003D /* Exceptions for "CeciliasNotes/Features/Editor/AudioElements" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Editor/AudioElements;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD10000000003E /* CeciliasNotes/Features/Quiz */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotes/Features/Quiz;
+			sourceTree = "<group>";
+		};
+		C0A1A0A12FAD10000000003F /* CeciliasNotes/Features/Editor/Audio */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0A1A0A12FAD100000000040 /* Exceptions for "CeciliasNotes/Features/Editor/Audio" folder in "CeciliasNotesMac" target */,
+			);
+			path = CeciliasNotes/Features/Editor/Audio;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -374,6 +413,11 @@
 				C0A1A0A12FAD100000000035 /* CeciliasNotes/Features/Editor/TextElements */,
 				C0A1A0A12FAD100000000036 /* CeciliasNotes/Features/Sync */,
 				C0A1A0A12FAD100000000037 /* CeciliasNotes/Features/Editor/Cover */,
+				C0A1A0A12FAD10000000003A /* CeciliasNotes/Features/Editor/AI */,
+				C0A1A0A12FAD10000000003B /* CeciliasNotes/Features/Editor/Lecture */,
+				C0A1A0A12FAD10000000003C /* CeciliasNotes/Features/Editor/AudioElements */,
+				C0A1A0A12FAD10000000003E /* CeciliasNotes/Features/Quiz */,
+				C0A1A0A12FAD10000000003F /* CeciliasNotes/Features/Editor/Audio */,
 				C0A1A0A12FAD100000000038 /* CeciliasNotes/Resources */,
 				C0A1A0A12FAD100000000039 /* CeciliasNotes/Features/Onboarding */,
 			);
@@ -557,6 +601,11 @@
 				C0A1A0A12FAD100000000037 /* CeciliasNotes/Features/Editor/Cover */,
 				C0A1A0A12FAD100000000038 /* CeciliasNotes/Resources */,
 				C0A1A0A12FAD100000000039 /* CeciliasNotes/Features/Onboarding */,
+				C0A1A0A12FAD10000000003A /* CeciliasNotes/Features/Editor/AI */,
+				C0A1A0A12FAD10000000003B /* CeciliasNotes/Features/Editor/Lecture */,
+				C0A1A0A12FAD10000000003C /* CeciliasNotes/Features/Editor/AudioElements */,
+				C0A1A0A12FAD10000000003E /* CeciliasNotes/Features/Quiz */,
+				C0A1A0A12FAD10000000003F /* CeciliasNotes/Features/Editor/Audio */,
 			);
 			name = CeciliasNotesMac;
 			productName = CeciliasNotesMac;
@@ -1104,10 +1153,10 @@
 		C0A1A0A12FAD100000000012 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CeciliasNotesMac/Resources/CeciliasNotesMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 0;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1133,10 +1182,10 @@
 		C0A1A0A12FAD100000000013 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = CeciliasNotesMac/Resources/CeciliasNotesMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 0;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = W9559HJWN9;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = NO;
