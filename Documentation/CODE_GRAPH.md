@@ -11,10 +11,10 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 
 ## Snapshot
 
-- Swift files scanned: **313**
-- Types declared: **601**
-- `Notification.Name` declarations: **75**
-- Notification symbols referenced (post/observe): **89**
+- Swift files scanned: **316**
+- Types declared: **611**
+- `Notification.Name` declarations: **78**
+- Notification symbols referenced (post/observe): **92**
 
 ## Target layout
 
@@ -35,7 +35,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | `(root)/` | 3 | 695 |
 | `App/` | 2 | 110 |
 | `Capture/` | 6 | 666 |
-| `Editor/` | 12 | 3,157 |
+| `Editor/` | 15 | 3,786 |
 | `Export/` | 4 | 325 |
 | `Library/` | 2 | 134 |
 | `Onboarding/` | 1 | 219 |
@@ -57,7 +57,7 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | 1,274 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | 1,227 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift) |
 | 1,190 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
-| 1,047 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| 1,086 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | 966 | [`CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift) |
 | 947 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift) |
 | 921 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift) |
@@ -113,6 +113,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | `keyboardWillHideNotification` | — | — | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | `keyboardWillShowNotification` | — | — | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | **`macAddPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| **`macAskAIAboutElement`** | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | [`MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | — |
 | **`macAskAboutPage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macCaptureHotkeyChanged`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacSettingsView.swift`](../CeciliasNotes/CeciliasNotesMac/Settings/MacSettingsView.swift) | [`MacQuickCaptureService.swift`](../CeciliasNotes/CeciliasNotesMac/Capture/MacQuickCaptureService.swift) |
 | **`macCopyHandwritingOCR`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
@@ -140,9 +141,11 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | **`macPageTemplate`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macPrint`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacNotebookEditorWindow.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacNotebookEditorWindow.swift), [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
 | **`macQuickCaptureToggle`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacCommandPaletteView.swift`](../CeciliasNotes/CeciliasNotesMac/Capture/MacCommandPaletteView.swift), [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | — |
+| **`macRequestHandoffToIPad`** | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | [`MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | — |
 | **`macSearchInNotebook`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macSelectNextElement`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macSelectPreviousElement`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| **`macStartDictation`** | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) | — | — |
 | **`macSummarizePage`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | **`macToggleFocusMode`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift), [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
 | **`macToggleSidebar`** | [`CeciliasNotes/CeciliasNotesMac/MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacToolbar.swift`](../CeciliasNotes/CeciliasNotesMac/MacToolbar.swift) | [`MacRootView.swift`](../CeciliasNotes/CeciliasNotesMac/MacRootView.swift) |
@@ -178,7 +181,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`@unchecked Sendable`** — 9 conformers: `CapturedAudioBuffer`, `InputCapabilityDetector`, `LoadedPDF`, `Theme`, `UncheckedSendableBox`, `_MetadataQueryBox`, `_ObserverTokenBox`, `_PHPickerImageBox`, `_PickedImagesBox`
 - **`App`** — 2 conformers: `CeciliasNotesApp`, `CeciliasNotesMacApp`
 - **`AppIntent`** — 4 conformers: `AskMyNotesIntent`, `CreateNotebookIntent`, `OpenNotebookIntent`, `OpenQuickCaptureIntent`
-- **`CaseIterable`** — 43 conformers: `Category`, `Corner`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, `HeadingLevel`, `HighlightStyle`, `Identity`, `ImageToolVariant`, … +31
+- **`CaseIterable`** — 45 conformers: `Category`, `Command`, `Corner`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, `HeadingLevel`, `HighlightStyle`, `Identity`, … +33
 - **`Codable`** — 53 conformers: `AITier`, `Agent`, `Block`, `CalloutKind`, `CoverTexture`, `ElementKind`, `EraserMode`, `ExportRecord`, `FingerDrawingMode`, `FlashcardRating`, `HighlightStyle`, `Identity`, … +41
 - **`Commands`** — 2 conformers: `CeciliasNotesCommands`, `MacAppCommands`
 - **`Decodable`** — 4 conformers: `DeleteRequest`, `Header`, `ResponseEnvelope`, `ResponseQuestion`
@@ -194,13 +197,13 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`PDFAnnotation`** — 2 conformers: `ImageStampAnnotation`, `StrokeStampAnnotation`
 - **`PreferenceKey`** — 2 conformers: `CustomisePanelContentHeightKey`, `CustomisePanelRowWidthKey`
 - **`Sendable`** — 28 conformers: `AIProvider`, `CoverTexture`, `Diagnostics`, `ExportRecord`, `HighlightStyle`, `ImageFormat`, `Line`, `MediaType`, `NameValidationResult`, `NotebookCover`, `NotebookSummary`, `Output`, … +16
-- **`String`** — 51 conformers: `AITier`, `CalloutKind`, `Category`, `CloudKitContainerStatus`, `CodingKeys`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, `FlashcardRating`, … +39
+- **`String`** — 53 conformers: `AITier`, `CalloutKind`, `Category`, `CloudKitContainerStatus`, `CodingKeys`, `Command`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, … +41
 - **`Transferable`** — 4 conformers: `MacPageDragItem`, `NotebookTransferID`, `PageDragItem`, `SubjectTransferID`
 - **`UIView`** — 9 conformers: `AudioPassthroughContainer`, `CanvasHostView`, `ContentLayerGestureController`, `PageRenderer`, `PassthroughHostView`, `PassthroughTouchView`, `PassthroughView`, `RichTextToolbar`, `TwoFingerPassthroughView`
 - **`UIViewControllerRepresentable`** — 11 conformers: `ActivityView`, `AudioFilePicker`, `CameraPicker`, `CustomColorPickerSheet`, `DocumentScannerPicker`, `FilesPicker`, `IICameraPicker`, `IIFilesPicker`, `IIPhotosPicker`, `PhotoLibraryPicker`, `ShareTextActivityView`
 - **`UIViewRepresentable`** — 9 conformers: `ContinuousCanvasView`, `FourFingerTapDetector`, `PencilFingerDragSurface`, `PencilSqueezeDetector`, `SplashSVGView`, `StickyTextEditor`, `TextBlockView`, `TextEditorRepresentable`, `TwoFingerLongPressDetector`
 - **`VersionedSchema`** — 2 conformers: `CeciliasNotesSchemaV5`, `CeciliasNotesSchemaV6`
-- **`View`** — 174 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +162
+- **`View`** — 181 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +169
 - **`ViewModifier`** — 5 conformers: `CeciliasNotesCardModifier`, `EditorPageHandoffModifier`, `LassoRotationPreviewModifier`, `MacElementTransformModifier`, `ModalHostView`
 
 ## Entry points
@@ -223,6 +226,6 @@ Files that own app startup or top-level scene composition. Read these first if y
 ## Cross-target sharing
 
 - iOS target files: **269**
-- Mac target files: **44**
+- Mac target files: **47**
 - The Mac target compiles most iOS files directly via `PBXFileSystemSynchronizedRootGroup` synced folders with per-file exceptions. Search the pbxproj for `PBXFileSystemSynchronizedBuildFileExceptionSet` to see the exclusion lists.
 - Platform guards to look for: `#if canImport(UIKit)`, `#if canImport(AppKit)`, `#if os(iOS)`. Anything wrapped in these is asymmetric and worth an extra read when debugging cross-platform.
