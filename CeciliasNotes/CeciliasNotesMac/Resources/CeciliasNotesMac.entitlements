@@ -38,5 +38,14 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!--
+	  Audio input entitlement is separate from the privacy string on
+	  macOS sandboxed apps. Without it, AVAudioEngine + Speech recognition
+	  silently fail to receive audio and lecture mode / voice memo capture
+	  never records. The privacy string alone is only sufficient outside
+	  the sandbox.
+	-->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>
