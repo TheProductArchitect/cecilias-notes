@@ -1,0 +1,116 @@
+name: Build
+
+# Fast, no-signing builds of both targets on every PR + push to main.
+# We do not run signed builds in CI — those need Apple Developer secrets
+# and are gated to release workflows in a separate file. The goal here
+# is: does the code compile cleanly for iOS and macOS on a stock Xcode?
+#
+# This workflow is what a contributor's PR trips first. If it fails on
+# their branch, they see the same output locally on the next
+# `xcodebuild -quiet build`. No environment surprises.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Manual re-run from the Actions tab, handy after a runner-image bump.
+  workflow_dispatch:
+
+concurrency:
+  # Cancel in-progress runs for the same PR when a new commit lands —
+  # keeps queue times sane without dropping main-branch runs.
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ios:
+    name: iOS + iPadOS build
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        # Pin to the highest stable Xcode available on macos-15; adjust as
+        # runner images bump. This is the same Xcode the codebase compiles
+        # against locally.
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project CeciliasNotes/CeciliasNotes.xcodeproj \
+            -scheme CeciliasNotes \
+            -destination 'generic/platform=iOS' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet \
+            build
+
+  mac:
+    name: macOS build
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project CeciliasNotes/CeciliasNotes.xcodeproj \
+            -scheme CeciliasNotesMac \
+            -destination 'generic/platform=macOS' \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet \
+            build
+
+  graph:
+    name: Code graph freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Regenerate code graph
+        # Runs the same lexical scanner contributors run locally. If the
+        # committed CODE_GRAPH.md / .json don't match a fresh regen, the
+        # PR touched structure without refreshing the map — surface it so
+        # the map stays a source of truth, not a stale artifact.
+        run: |
+          python3 Documentation/tools/build_code_graph.py
+
+      - name: Fail if graph drifted
+        run: |
+          if ! git diff --quiet Documentation/CODE_GRAPH.md Documentation/CODE_GRAPH.json; then
+            echo "::error::Documentation/CODE_GRAPH.md or CODE_GRAPH.json is stale."
+            echo "Run: python3 Documentation/tools/build_code_graph.py"
+            echo "…then commit the regenerated files."
+            git diff --stat Documentation/CODE_GRAPH.md Documentation/CODE_GRAPH.json
+            exit 1
+          fi
