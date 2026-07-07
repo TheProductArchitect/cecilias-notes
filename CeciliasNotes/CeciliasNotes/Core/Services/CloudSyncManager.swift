@@ -40,6 +40,32 @@ final class CloudSyncManager: ObservableObject {
             self.lastSyncedAt = nil
         }
         if persisted { Task { await self.reconcileAfterLaunch() } }
+
+        // A paired peer just told us a notebook changed — its media
+        // assets (images, audio) travel via the ubiquity container,
+        // so kick a metadata pass now instead of waiting for the
+        // next scheduled one. Debounced: hint bursts (every stroke
+        // save broadcasts) collapse into one pass per 10 s.
+        NotificationCenter.default.publisher(for: MultipeerNotebookHint.changedNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, self.isEnabled else { return }
+                self.scheduleHintSync()
+            }
+            .store(in: &hintCancellables)
+    }
+
+    private var hintCancellables = Set<AnyCancellable>()
+    private var hintSyncTask: Task<Void, Never>?
+
+    private func scheduleHintSync() {
+        guard hintSyncTask == nil else { return }
+        hintSyncTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(10))
+            guard let self else { return }
+            self.hintSyncTask = nil
+            await self.syncNow()
+        }
     }
 
     /// Stamp `lastSyncedAt` and persist. Called whenever the manager
@@ -168,11 +194,11 @@ final class CloudSyncManager: ObservableObject {
     }
 
     private func reconcileAfterLaunch() async {
-        await MainActor.run { syncStatus = .checking }
+        syncStatus = .checking
 
         // Download any items marked as not downloaded by the OS
         guard let ubiquityURL = ubiquityDocumentsURL() else {
-            await MainActor.run { syncStatus = .error(CloudSyncError.iCloudUnavailable.localizedDescription) }
+            syncStatus = .error(CloudSyncError.iCloudUnavailable.localizedDescription)
             return
         }
 
@@ -196,7 +222,7 @@ final class CloudSyncManager: ObservableObject {
     }
 
     private func runMetadataQuery() async {
-        await MainActor.run { syncStatus = .checking }
+        syncStatus = .checking
         // Single NSMetadataQuery passes are snapshots — a file that is
         // 75% uploaded at gather time leaves the status frozen at
         // `.syncing(0.75)` forever. Re-poll until iCloud reports every
@@ -215,10 +241,8 @@ final class CloudSyncManager: ObservableObject {
         // (or the simulator's metadata never settles). Resolve to a
         // resting state instead of leaving the indicator spinning
         // forever; a later `syncNow()` will re-check.
-        await MainActor.run {
-            if case .syncing = syncStatus { syncStatus = .upToDate }
-            if case .checking = syncStatus { syncStatus = .upToDate }
-        }
+        if case .syncing = syncStatus { syncStatus = .upToDate }
+        if case .checking = syncStatus { syncStatus = .upToDate }
     }
 
     /// Runs one NSMetadataQuery gather and folds the result into

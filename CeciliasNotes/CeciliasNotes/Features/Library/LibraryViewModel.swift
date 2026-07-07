@@ -306,6 +306,55 @@ final class LibraryViewModel: ObservableObject {
         self.error = appError
     }
 
+    /// Transient success/info line (quiet cousin of the error
+    /// banner). Auto-clears after a few seconds.
+    @Published var infoFlash: String?
+    private var infoFlashTask: Task<Void, Never>?
+
+    func flashInfo(_ message: String) {
+        infoFlash = message
+        infoFlashTask?.cancel()
+        infoFlashTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            self?.infoFlash = nil
+        }
+    }
+
+    /// Ships a notebook to a paired device on this Wi-Fi (the
+    /// cross-Apple-Account share path — same-account devices sync
+    /// via iCloud and never appear in the send menu).
+    func sendNotebookToPeer(_ notebook: Notebook, peerName: String) {
+        switch MultipeerNotebookShare.send(notebook: notebook, toPeerNamed: peerName) {
+        case .sent:
+            flashInfo("Sent \u{201C}\(notebook.title)\u{201D} to \(peerName)")
+        case .tooLarge:
+            showError(.storageFailed(
+                action: "send \u{201C}\(notebook.title)\u{201D}",
+                underlying: NSError(
+                    domain: "CeciliasNotes.Multipeer", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The notebook is too large to send over the local network."]
+                )
+            ))
+        case .exportFailed:
+            showError(.storageFailed(
+                action: "send \u{201C}\(notebook.title)\u{201D}",
+                underlying: NSError(
+                    domain: "CeciliasNotes.Multipeer", code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "The notebook couldn't be packaged for sending."]
+                )
+            ))
+        case .notConnected:
+            showError(.storageFailed(
+                action: "send \u{201C}\(notebook.title)\u{201D}",
+                underlying: NSError(
+                    domain: "CeciliasNotes.Multipeer", code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "\(peerName) is no longer reachable on this network."]
+                )
+            ))
+        }
+    }
+
     // MARK: Internals
     private let storage: StorageService
     private var cancellables = Set<AnyCancellable>()

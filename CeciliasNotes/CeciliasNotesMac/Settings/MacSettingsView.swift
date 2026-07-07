@@ -46,6 +46,7 @@ struct MacSettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(minWidth: 520, minHeight: 420)
+        .macFormFocusChrome()
 #if DEBUG
         .sheet(isPresented: $isStyleGuidePresented) {
             MacStyleGuideSheet()

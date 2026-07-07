@@ -69,6 +69,16 @@ extension ModelContainer {
     /// container) is unaffected — that's managed by
     /// `CloudSyncManager`.
     static let swiftDataCloudKitDisabledKey = "ceciliasnotes.swiftdata.cloudkitDisabled"
+    static let dirtyLaunchStreakKey = "ceciliasnotes.swiftdata.dirtyLaunchStreak"
+
+    /// Clears the dirty-launch counter and user disable flag so the
+    /// next relaunch can open the CloudKit-backed container again.
+    static func prepareCloudKitRecoveryRelaunch() {
+        let defaults = UserDefaults.standard
+        defaults.set(0, forKey: dirtyLaunchStreakKey)
+        defaults.set(false, forKey: swiftDataCloudKitDisabledKey)
+        defaults.synchronize()
+    }
 
     static func ceciliasNotesContainer() throws -> ModelContainer {
         let storeURL = StorageService.ceciliasNotesDirectoryURL
@@ -91,7 +101,11 @@ extension ModelContainer {
         // Safe whether or not the file exists: the WAL sidecars
         // (`-wal`, `-shm`) sit next to the .sqlite and `wal_checkpoint`
         // is a no-op on a clean store.
-        let walURL = storeURL.appendingPathExtension("wal")
+        // SQLite sidecars use a dash suffix on the full filename
+        // (`ceciliasnotes.sqlite-wal`), NOT a path extension —
+        // `appendingPathExtension("wal")` would build `.sqlite.wal`,
+        // a file that never exists, silently disabling this gate.
+        let walURL = URL(fileURLWithPath: storeURL.path + "-wal")
         if FileManager.default.fileExists(atPath: walURL.path) {
             let walSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
             #if DEBUG
@@ -139,7 +153,18 @@ extension ModelContainer {
         // long enough to freeze the main thread past the test's timeout
         // budget. Force local-only so tests get a deterministic, fast
         // store with no network dependency.
-        let isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        var isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        // Unit-test hosts too: XCTest launches the real app as the
+        // test host, without `-uiTesting`. CI runs tests with code
+        // signing disabled, which strips the CloudKit entitlement —
+        // the DEBUG `CKContainer(identifier:)` diagnostic below then
+        // traps inside CloudKit and the runner dies before the first
+        // test ("crashed before establishing connection"). Tests
+        // should be hermetic anyway; force the local-only store.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil {
+            isUITesting = true
+        }
 
         // Escape hatch 1: user-set preference. A chronic stuck
         // CloudKit export loop is an iOS-side bug we can't recover
@@ -276,7 +301,7 @@ extension ModelContainer {
                 // sees a pristine directory.
                 for suffix in ["-shm", "-wal", "-journal"] {
                     try? FileManager.default.removeItem(
-                        at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+                        at: URL(fileURLWithPath: storeURL.path + suffix)
                     )
                 }
                 return try ModelContainer(

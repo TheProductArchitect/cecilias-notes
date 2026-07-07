@@ -1,6 +1,7 @@
 name: Build
 
 # Fast, no-signing builds of both targets on every PR + push to main.
+# Unit tests run on an iPad simulator after the iOS build path is green.
 # We do not run signed builds in CI — those need Apple Developer secrets
 # and are gated to release workflows in a separate file. The goal here
 # is: does the code compile cleanly for iOS and macOS on a stock Xcode?
@@ -55,6 +56,47 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             -quiet \
             build
+
+  unit-tests:
+    name: iOS unit tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Boot simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); devs=[x for xs in d['devices'].values() for x in xs if x.get('isAvailable') and 'iPad' in x.get('name','')]; print(devs[0]['udid'] if devs else '')")
+          if [ -z "$DEVICE" ]; then
+            echo "::error::No available iPad simulator on runner"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl boot "$DEVICE" || true
+          echo "SIMULATOR_UDID=$DEVICE" >> "$GITHUB_ENV"
+
+      - name: Run CeciliasNotesTests
+        run: |
+          xcodebuild \
+            -project CeciliasNotes/CeciliasNotes.xcodeproj \
+            -scheme CeciliasNotes \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -configuration Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:CeciliasNotesTests \
+            test
 
   mac:
     name: macOS build

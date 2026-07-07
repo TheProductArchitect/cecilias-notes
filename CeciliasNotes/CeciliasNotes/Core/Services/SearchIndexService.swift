@@ -117,7 +117,10 @@ final class SearchIndexService {
             return parsed
         }.value
         if let entries {
-            index = Dictionary(uniqueKeysWithValues: entries.map { ($0.notebookId, $0) })
+            index = Dictionary(
+                entries.map { ($0.notebookId, $0) },
+                uniquingKeysWith: { _, newer in newer }
+            )
         }
         isLoaded = true
         // Tell any view that's gating on readiness (currently the

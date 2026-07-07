@@ -36,13 +36,20 @@ struct MacMultipeerPairingSection: View {
 
             if !allPairedNames.isEmpty {
                 ForEach(allPairedNames, id: \.self) { name in
-                    HStack {
-                        Label(name, systemImage: isLive(name) ? "circle.fill" : "circle")
-                            .foregroundStyle(isLive(name) ? theme.accent : theme.foregroundSubtle)
-                        Spacer()
-                        Button("Forget", role: .destructive) {
-                            multipeer.forgetPeer(name)
-                            MultipeerPairingStore.forget(peerName: name)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Label(name, systemImage: isLive(name) ? "circle.fill" : "circle")
+                                .foregroundStyle(isLive(name) ? theme.accent : theme.foregroundSubtle)
+                            Spacer()
+                            Button("Forget", role: .destructive) {
+                                multipeer.forgetPeer(name)
+                                MultipeerPairingStore.forget(peerName: name)
+                            }
+                        }
+                        if let caption = householdCaption(for: name) {
+                            Text(caption)
+                                .font(.caption)
+                                .foregroundStyle(theme.foregroundSubtle)
                         }
                     }
                 }
@@ -96,5 +103,16 @@ struct MacMultipeerPairingSection: View {
 
     private func isLive(_ name: String) -> Bool {
         sender.isPeerConnected(name) || multipeer.isPeerConnected(name)
+    }
+
+    private func householdCaption(for name: String) -> String? {
+        switch MultipeerNotebookShare.isSameHousehold(peerName: name) {
+        case .some(true):
+            return "Same Apple Account — notebooks sync automatically via iCloud."
+        case .some(false):
+            return "Different Apple Account — notebooks won't sync. Right-click a notebook → Send to Device to share it."
+        case .none:
+            return nil
+        }
     }
 }

@@ -678,6 +678,21 @@ final class EditorViewModel: ObservableObject {
         // editor.
         resolvedStorage.markNotebookOpened(notebook)
 
+        // Live peer refresh: when a paired device announces a change
+        // to THIS notebook, re-fetch pages once CloudKit lands them.
+        // Guarded on `isDirty` — never yank state out from under an
+        // in-flight stroke save. Debounced: hint bursts (one per
+        // remote stroke save) collapse to one refresh per 2 s.
+        NotificationCenter.default.publisher(for: MultipeerNotebookHint.changedNotification)
+            .compactMap { $0.userInfo?["notebookId"] as? UUID }
+            .filter { [notebookId = notebook.id] in $0 == notebookId }
+            .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self, !self.isDirty else { return }
+                self.refreshPages()
+            }
+            .store(in: &cancellables)
+
         // Persist page navigation, debounced once per second to avoid UserDefaults churn
         // during fast multi-page jumps.
         $currentPageIndex

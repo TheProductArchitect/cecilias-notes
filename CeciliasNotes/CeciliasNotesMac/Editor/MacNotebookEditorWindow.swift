@@ -40,8 +40,13 @@ struct MacNotebookEditorWindow: View {
                 MacWindowTag(identifier: "notebook-editor")
             }
         }
+        .onChange(of: libraryVM.deepLinkPageId) { _, pageID in
+            guard pageID != nil else { return }
+            MacStateUpdates.deferred { applyPendingDeepLinkIfNeeded() }
+        }
         .onAppear {
             editorState.selectedNotebookID = notebookID
+            applyPendingDeepLinkIfNeeded()
             restoreResumePageIfNeeded()
             if let raw = UserDefaults.standard.string(forKey: "mac.export.defaultFormat"),
                let format = MacExportFormat(rawValue: raw) {
@@ -99,8 +104,17 @@ struct MacNotebookEditorWindow: View {
         editorState.editorZoom = min(2, max(0.75, editorState.editorZoom + delta))
     }
 
+    /// Search / Ask citations set `deepLinkPageId` before the editor mounts.
+    private func applyPendingDeepLinkIfNeeded() {
+        guard let pageID = libraryVM.deepLinkPageId else { return }
+        libraryVM.deepLinkPageId = nil
+        editorState.selectedPageID = pageID
+        persistResumeState(pageID: pageID)
+    }
+
     /// When resume is on, reopen the last page for this notebook.
     private func restoreResumePageIfNeeded() {
+        guard editorState.selectedPageID == nil else { return }
         let resumeOn = UserDefaults.standard.object(forKey: "ceciliasnotes.resume.enabled") as? Bool ?? true
         guard resumeOn,
               UserDefaults.standard.string(forKey: "ceciliasnotes.resume.lastNotebookId") == notebookID.uuidString,

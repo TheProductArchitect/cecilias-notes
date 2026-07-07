@@ -566,7 +566,8 @@ enum AskRetrieval {
     ) -> [Hit] {
         let storage = StorageService.shared
         let titleById = Dictionary(
-            uniqueKeysWithValues: storage.fetchAllNotebooks().map { ($0.id, $0.title) }
+            storage.fetchAllNotebooks().map { ($0.id, $0.title) },
+            uniquingKeysWith: { _, newer in newer }
         )
 
         // Expand the user's question into a small set of stem

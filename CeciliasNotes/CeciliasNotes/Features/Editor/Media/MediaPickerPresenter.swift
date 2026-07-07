@@ -384,17 +384,17 @@ private final class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
 /// — the lock is the actual safety guarantee.
 private final class _PickedImagesBox: @unchecked Sendable {
     private let lock = NSLock()
-    nonisolated(unsafe) private var images: [UIImage] = []
+    private var images: [UIImage] = []
 
-    nonisolated init() {}
+    init() {}
 
-    nonisolated func append(_ image: UIImage) {
+    func append(_ image: UIImage) {
         lock.lock()
         defer { lock.unlock() }
         images.append(image)
     }
 
-    nonisolated func snapshot() -> [UIImage] {
+    func snapshot() -> [UIImage] {
         lock.lock()
         defer { lock.unlock() }
         return images

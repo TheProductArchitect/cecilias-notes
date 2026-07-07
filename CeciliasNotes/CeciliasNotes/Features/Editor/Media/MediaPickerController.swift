@@ -170,17 +170,17 @@ struct DocumentScannerPicker: UIViewControllerRepresentable {
 /// `loadObject` callback writes through this reference box instead.
 private final class _PHPickerImageBox: @unchecked Sendable {
     private let lock = NSLock()
-    nonisolated(unsafe) private var images: [UIImage] = []
+    private var images: [UIImage] = []
 
-    nonisolated init() {}
+    init() {}
 
-    nonisolated func append(_ image: UIImage) {
+    func append(_ image: UIImage) {
         lock.lock()
         defer { lock.unlock() }
         images.append(image)
     }
 
-    nonisolated func snapshot() -> [UIImage] {
+    func snapshot() -> [UIImage] {
         lock.lock()
         defer { lock.unlock() }
         return images

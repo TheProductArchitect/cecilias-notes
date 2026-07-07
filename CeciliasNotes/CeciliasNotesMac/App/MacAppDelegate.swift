@@ -5,11 +5,30 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
     private var settingsObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        MainThreadWatchdog.install()
+        #endif
         MacQuickCaptureController.shared.install()
         NSApp.servicesProvider = self
         NSUpdateDynamicServices()
         startMultipeerBackgroundReconnectIfNeeded()
         Task { @MainActor in reconcileAppIcon() }
+        // Unlike iOS (which resets on every backgrounding), the Mac's
+        // only other reset point is applicationWillTerminate — which a
+        // crash or power loss never reaches. Without this, two abnormal
+        // shutdowns days apart (with healthy sessions in between) would
+        // wrongly trip the CloudKit dirty-launch auto-fallback. Surviving
+        // launch by 60s means the container came up fine.
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(60))
+            UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
+            // A healthy CloudKit launch also re-arms the library's
+            // "sync paused" banner — a dismissal should silence the
+            // current incident, not all future ones.
+            if CloudKitContainerState.status == .privateDatabase {
+                UserDefaults.standard.set(false, forKey: "ceciliasnotes.mac.icloudBannerDismissed")
+            }
+        }
         // `Settings…` menu item — SwiftUI's `Settings { }` scene
         // registers this selector at launch; posting it here means
         // any part of the app can programmatically open Settings
@@ -21,10 +40,14 @@ final class MacAppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { _ in
-            if #available(macOS 14, *) {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-            } else {
-                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+            // Observer is registered with `queue: .main`, so this
+            // closure always runs on the main actor.
+            MainActor.assumeIsolated {
+                if #available(macOS 14, *) {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                } else {
+                    NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+                }
             }
         }
     }

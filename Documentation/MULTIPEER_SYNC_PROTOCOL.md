@@ -1,4 +1,4 @@
-# Multipeer Sync — Wire Protocol (v2.2 — auto-pair via iCloud Keychain)
+# Multipeer Sync — Wire Protocol (v2.3 — household exchange + hardening)
 
 Direct device-to-device notebook delivery from a Mac running
 `cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
@@ -379,6 +379,35 @@ try session.send(fpayload, toPeers: [iPadPeer], with: .reliable)
 ```
 
 ---
+
+## v2.3 additions (all additive / optional)
+
+- **`householdHash` in pairing headers.** `pairing-hello` MAY carry
+  `"householdHash": "<16-hex-chars>"` (the sender's household token
+  hash, same value as the discoveryInfo key). A successful
+  `pairing-result {result: "ok"}` MAY carry the receiver's hash
+  back. Both sides record the peer's hash so UI can distinguish
+  "same Apple Account — notebooks sync via iCloud" from "different
+  Apple Account — use Send to Device". Old builds omit/ignore the
+  key; nothing breaks.
+- **Wrong-code attempt cap.** The receiver closes the pairing
+  window after **5** `pairing-hello` payloads that fail HMAC
+  verification (reply: `no_pairing_window`). Nonce/timestamp checks
+  don't slow a brute-forcer (it controls both fields); the cap
+  does. The legitimate user just taps "show pairing code" again.
+- **Payload size cap.** `file` payload bodies above **32 MB**
+  (`CeciliasNotesParser.maxFileBytes`) are rejected — matching the
+  importer's own cap, so an oversized send fails fast at the wire
+  instead of silently never importing.
+- **Bidirectional browsing.** Every platform now runs both the
+  advertiser AND the browser lane (previously only the Mac
+  browsed). Two same-household iOS devices form up to two
+  independent MCSessions (one per direction); receivers handle
+  payloads on both, and duplicate change-hints are harmless.
+- **`file` payloads flow both ways.** The in-app "Send to Device"
+  feature ships a notebook's `.inkbook` over the paired link from
+  ANY platform. The receiver treats it exactly like an MCP write:
+  Inbox → importer → merge-by-default.
 
 ## Versioning
 

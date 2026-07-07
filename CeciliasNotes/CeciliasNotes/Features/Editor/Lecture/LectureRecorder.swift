@@ -458,7 +458,12 @@ final class LectureRecorder: ObservableObject {
             // Copy off the AVAudioEngine queue. The actor will own
             // this copy; the engine is free to recycle the original.
             guard let copy = buffer.deepCopy() else { return }
-            let wrapped = CapturedAudioBuffer(buffer: copy)
+#if os(macOS)
+            let pcm = AudioPCMGain.boostedCopy(of: copy) ?? copy
+#else
+            let pcm = copy
+#endif
+            let wrapped = CapturedAudioBuffer(buffer: pcm)
             Task { await captureActor.handle(wrapped.buffer) }
         }
     }
@@ -1164,26 +1169,4 @@ actor AudioCaptureActor {
 /// promise to the compiler.
 private struct CapturedAudioBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
-}
-
-private extension AVAudioPCMBuffer {
-    /// Deep-copy the buffer's float channel data into a fresh buffer
-    /// that has no shared storage with the original. The engine is
-    /// free to recycle the source the moment the tap callback
-    /// returns, so anything we hand off to the actor must be a copy.
-    nonisolated func deepCopy() -> AVAudioPCMBuffer? {
-        guard let copy = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: frameCapacity
-        ) else { return nil }
-        copy.frameLength = frameLength
-        let channelCount = Int(format.channelCount)
-        let byteCount = Int(frameLength) * MemoryLayout<Float>.size
-        if let src = floatChannelData, let dst = copy.floatChannelData {
-            for ch in 0..<channelCount {
-                memcpy(dst[ch], src[ch], byteCount)
-            }
-        }
-        return copy
-    }
 }

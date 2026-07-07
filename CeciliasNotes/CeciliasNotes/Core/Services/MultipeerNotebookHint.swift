@@ -41,8 +41,6 @@ enum MultipeerNotebookHint {
     @MainActor
     static func broadcastNotebookChanged(notebookId: UUID) {
         MultipeerSyncService.shared.broadcastNotebookChanged(notebookId: notebookId)
-        #if os(macOS)
         MultipeerSendService.shared.broadcastNotebookChanged(notebookId: notebookId)
-        #endif
     }
 }

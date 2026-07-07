@@ -556,6 +556,22 @@ struct NotebookCardView: View {
             Label("Share as PDF…", systemImage: "square.and.arrow.up")
         }
 
+        // Cross-account sharing: paired devices on this Wi-Fi that
+        // DON'T share our Apple Account (same-account devices sync
+        // via iCloud on their own, so they're filtered out).
+        let sendablePeers = MultipeerNotebookShare.sendablePeers()
+        if !sendablePeers.isEmpty {
+            Menu {
+                ForEach(sendablePeers) { peer in
+                    Button(peer.name) {
+                        viewModel.sendNotebookToPeer(notebook, peerName: peer.name)
+                    }
+                }
+            } label: {
+                Label("Send to Device", systemImage: "wifi")
+            }
+        }
+
         Divider()
 
         Button(role: .destructive) {

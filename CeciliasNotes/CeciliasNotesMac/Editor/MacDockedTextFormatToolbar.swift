@@ -1,36 +1,52 @@
 import SwiftUI
 
-/// Full-width formatting strip — docked below the cover-tone header
-/// (Google Docs style). Notes scroll underneath, not behind it.
+/// Formatting strip aligned to the document column — sits below the
+/// cover-tone header with editorial chrome, not a full-width SaaS bar.
 struct MacDockedTextFormatToolbar: View {
+    let coverTone: NotebookCoverTone
+    var isEditingText: Bool
     @ObservedObject var controller: MacRichTextController
     var onNeedsTextFocus: () -> Void = {}
     @Environment(\.theme) private var theme
 
     var body: some View {
-        MacTextFormatToolbar(controller: controller, onNeedsTextFocus: onNeedsTextFocus)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
-            .background(theme.surfaceElevated)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(theme.hairline).frame(height: 0.5)
-            }
+        HStack(spacing: 0) {
+            Spacer(minLength: MacDocLayout.horizontalGutter)
+            MacTextFormatToolbar(
+                controller: controller,
+                isEditingText: isEditingText,
+                onNeedsTextFocus: onNeedsTextFocus
+            )
+            .frame(maxWidth: MacDocLayout.contentColumnWidth)
+            Spacer(minLength: MacDocLayout.horizontalGutter)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
+        .background(formatToolbarBackground)
+    }
+
+    @ViewBuilder
+    private var formatToolbarBackground: some View {
+        ZStack(alignment: .bottom) {
+            theme.background
+            coverTone.background.opacity(coverTone.isLight ? 0.05 : 0.08)
+            Rectangle()
+                .fill(theme.hairline)
+                .frame(height: 0.5)
+        }
     }
 }
 
-#if os(macOS)
-extension View {
-    /// Hides the default macOS keyboard-focus ring on toolbar controls.
-    func macSuppressFocusRing() -> some View {
-        focusEffectDisabled()
-    }
+/// Shared layout constants — keep toolbar and page column in register.
+enum MacDocLayout {
+    static let contentColumnWidth: CGFloat = 720
+    static let horizontalGutter: CGFloat = 88
 }
-#endif
 
 enum MacEditorChromeMetrics {
     static let headerHeight: CGFloat = 56
     static let collapsedRevealHeight: CGFloat = 28
-    static let formatToolbarHeight: CGFloat = 40
+    static let formatToolbarHeight: CGFloat = 44
 }
 
 enum MacDocPageLayout {

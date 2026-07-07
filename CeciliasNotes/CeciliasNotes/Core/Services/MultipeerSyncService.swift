@@ -126,12 +126,27 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     private var activePairingCode: String?
     private var pairingExpiresAt: Date?
 
+    /// Wrong-code hellos seen during the current pairing window.
+    /// The nonce/timestamp checks don't slow an attacker down (they
+    /// control both fields), so without this cap a LAN peer could
+    /// spray candidate-code HMACs and brute-force the 6-digit space
+    /// inside the 90-second window. A handful of failures closes
+    /// the window; the legitimate user just taps "show pairing
+    /// code" again.
+    private var pairingFailedAttempts = 0
+    private static let maxPairingFailedAttempts = 5
+
     /// Nonces seen in the replay window. Trimmed on every receive.
     private var recentNonces: [(nonce: String, seenAt: Date)] = []
 
     private override init() {
         super.init()
-        self.isEnabled = UserDefaults.standard.bool(forKey: Self.enabledKey)
+        // Default ON: same-Apple-Account devices should find each
+        // other with zero setup (auto-pair is gated on the iCloud
+        // household key; strangers still need the 6-digit code).
+        // Users who explicitly turned receive off stay off.
+        self.isEnabled = UserDefaults.standard
+            .object(forKey: Self.enabledKey) as? Bool ?? true
         refreshPairedPeerNames()
         if isEnabled { start() }
     }
@@ -152,6 +167,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         let expiry = Date().addingTimeInterval(Self.pairingModeWindow)
         activePairingCode = code
         pairingExpiresAt = expiry
+        pairingFailedAttempts = 0
         status = .pairing(code: code, expiresAt: expiry)
         // Auto-cancel after the window so the status reverts cleanly
         // even if no Mac connects.
@@ -197,6 +213,21 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         for peer in session.connectedPeers {
             guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { continue }
             MultipeerNotebookHint.send(notebookId: notebookId, to: peer, session: session, key: key)
+        }
+    }
+
+    /// Send a pre-built signed payload to a connected peer over the
+    /// receiver session. Returns false when the peer isn't connected
+    /// on this session (the caller can then try the browse session).
+    func sendPayload(_ payload: Data, toPeerNamed name: String) -> Bool {
+        guard let session,
+              let peer = session.connectedPeers.first(where: { $0.displayName == name })
+        else { return false }
+        do {
+            try session.send(payload, toPeers: [peer], with: .reliable)
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -303,6 +334,10 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             let filename: String?
             let timestamp: Int64
             let nonce: String
+            /// Sender's household token hash (additive, v2.1) — lets
+            /// the receiver tell "same Apple Account" pairings apart
+            /// from cross-account ones in Settings and share UI.
+            let householdHash: String?
         }
         guard let header = try? JSONDecoder().decode(Header.self, from: headerData) else {
             status = .error("Bad header from \(peer.displayName)")
@@ -397,6 +432,11 @@ final class MultipeerSyncService: NSObject, ObservableObject {
                 // First-party auto-pair succeeded.
                 recentNonces.append((header.nonce, Date()))
                 MultipeerPairingStore.store(key: firstPartyKey, forPeerName: peer.displayName)
+                // Verified against OUR household derivation → same account.
+                MultipeerNotebookShare.recordHouseholdHash(
+                    MultipeerPairingStore.householdTokenHash(),
+                    forPeerName: peer.displayName
+                )
                 refreshPairedPeerNames()
                 status = .connected(peerName: peer.displayName)
                 sendPairingResult(result: "ok", to: peer, key: firstPartyKey)
@@ -417,12 +457,27 @@ final class MultipeerSyncService: NSObject, ObservableObject {
                 remotePeerName: peer.displayName
             )
             guard verifyHMAC(hmacBytes, message: signedRange, key: candidate) else {
+                pairingFailedAttempts += 1
+                if pairingFailedAttempts >= Self.maxPairingFailedAttempts {
+                    activePairingCode = nil
+                    pairingExpiresAt = nil
+                    sendPairingResult(result: "no_pairing_window", to: peer, key: nil)
+                    status = .error("Too many wrong pairing codes — pairing closed. Show a new code to retry.")
+                    return
+                }
                 sendPairingResult(result: "wrong_code", to: peer, key: nil)
                 status = .error("Wrong pairing code from \(peer.displayName) — try again")
                 return
             }
             recentNonces.append((header.nonce, Date()))
             MultipeerPairingStore.store(key: candidate, forPeerName: peer.displayName)
+            // Manual-code pairing — remember the sender's household
+            // hash (when provided) so Settings can say whether this
+            // peer shares our Apple Account or needs Send to Device.
+            MultipeerNotebookShare.recordHouseholdHash(
+                header.householdHash,
+                forPeerName: peer.displayName
+            )
             refreshPairedPeerNames()
             // Pairing succeeded → exit pairing mode immediately so a
             // second attacker on the LAN can't reuse the window.
@@ -451,12 +506,18 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     private func sendPairingResult(result: String, to peer: MCPeerID, key: SymmetricKey?) {
         guard let session else { return }
         let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...UInt8.max) })
-        let header: [String: Any] = [
+        var header: [String: Any] = [
             "type": "pairing-result",
             "result": result,
             "timestamp": Int(Date().timeIntervalSince1970),
             "nonce": nonce.base64EncodedString()
         ]
+        // Additive v2.1: tell the successful sender which household
+        // we belong to, so both sides can distinguish same-account
+        // sync pairs from cross-account share pairs.
+        if result == "ok", let hash = MultipeerPairingStore.householdTokenHash() {
+            header["householdHash"] = hash
+        }
         guard let headerData = try? JSONSerialization.data(withJSONObject: header) else { return }
         let tag: Data
         if let key {
@@ -509,6 +570,10 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     }
 
     private func writeFileToInbox(filename: String?, body: Data, peer: MCPeerID) {
+        guard body.count <= CeciliasNotesParser.maxFileBytes else {
+            status = .error("File from \(peer.displayName) too large — rejected")
+            return
+        }
         let safeName = sanitizedFilename(filename ?? "")
         guard let inbox = CeciliasNotesFileWatcher.sharedInboxURL() else {
             status = .error("iCloud inbox unavailable — can't write the file")

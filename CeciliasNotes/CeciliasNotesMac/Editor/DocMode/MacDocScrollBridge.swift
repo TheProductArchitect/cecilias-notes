@@ -31,6 +31,7 @@ struct MacDocScrollBridge: NSViewRepresentable {
     final class Coordinator {
         @Binding private var scrollOffset: CGFloat
         private var boundsObserver: NSObjectProtocol?
+        private var pendingOffset: CGFloat?
 
         init(scrollOffset: Binding<CGFloat>) {
             _scrollOffset = scrollOffset
@@ -38,24 +39,60 @@ struct MacDocScrollBridge: NSViewRepresentable {
 
         func attach(to view: NSView) {
             Task { @MainActor [weak self, weak view] in
-                guard let self, let view, let scrollView = view.enclosingScrollView else { return }
-                let clipView = scrollView.contentView
-                clipView.postsBoundsChangedNotifications = true
-                self.boundsObserver = NotificationCenter.default.addObserver(
-                    forName: NSView.boundsDidChangeNotification,
-                    object: clipView,
-                    queue: .main
-                ) { [weak self] _ in
-                    Task { @MainActor in
-                        self?.scrollOffset = clipView.bounds.origin.y
+                guard let self, let view else { return }
+                for attempt in 0..<12 {
+                    if let scrollView = view.enclosingScrollView {
+                        self.installBoundsObserver(on: scrollView)
+                        if let pending = self.pendingOffset {
+                            self.applyScroll(scrollView, offset: pending)
+                            self.pendingOffset = nil
+                        }
+                        return
+                    }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    if attempt == 11 {
+                        // Last resort — view hierarchy may not be ready yet.
+                        _ = view
                     }
                 }
-                self.scrollOffset = clipView.bounds.origin.y
             }
         }
 
         func scroll(to offset: CGFloat, from view: NSView) {
-            guard let scrollView = view.enclosingScrollView else { return }
+            if let scrollView = view.enclosingScrollView {
+                applyScroll(scrollView, offset: offset)
+            } else {
+                pendingOffset = offset
+                Task { @MainActor [weak self, weak view] in
+                    guard let self, let view else { return }
+                    for _ in 0..<12 {
+                        try? await Task.sleep(nanoseconds: 50_000_000)
+                        guard let scrollView = view.enclosingScrollView else { continue }
+                        self.applyScroll(scrollView, offset: offset)
+                        self.pendingOffset = nil
+                        return
+                    }
+                }
+            }
+        }
+
+        private func installBoundsObserver(on scrollView: NSScrollView) {
+            guard boundsObserver == nil else { return }
+            let clipView = scrollView.contentView
+            clipView.postsBoundsChangedNotifications = true
+            boundsObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: clipView,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    self?.scrollOffset = clipView.bounds.origin.y
+                }
+            }
+            scrollOffset = clipView.bounds.origin.y
+        }
+
+        private func applyScroll(_ scrollView: NSScrollView, offset: CGFloat) {
             scrollView.contentView.scroll(to: NSPoint(x: 0, y: offset))
             scrollView.reflectScrolledClipView(scrollView.contentView)
             scrollOffset = offset

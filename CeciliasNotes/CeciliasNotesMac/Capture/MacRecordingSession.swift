@@ -57,7 +57,12 @@ final class MacRecordingSession: ObservableObject {
         let audioContentId: UUID
         let pageId: UUID
         let notebookId: UUID
+        /// Current live-write target — moves to the continuation
+        /// block after a page-overflow split.
         let textElementId: UUID
+        /// The block the transcription STARTED in — stable across
+        /// splits. The meeting summary is inserted above this one.
+        let firstTextElementId: UUID
         let startTime: Date
     }
 
@@ -70,6 +75,14 @@ final class MacRecordingSession: ObservableObject {
     private var lectureRecorder: LectureRecorder?
     private var cancellables = Set<AnyCancellable>()
     private var elapsedTimer: Timer?
+
+    /// UTF-16 length of the transcript already frozen into earlier
+    /// blocks by overflow splits. `liveTranscript` is cumulative
+    /// (committed + partial), so after a split only the tail beyond
+    /// this offset belongs to the current target block — writing the
+    /// full transcript again would duplicate everything already on
+    /// the previous page.
+    private var transcriptConsumedUTF16 = 0
 
     private init() {}
 
@@ -107,8 +120,7 @@ final class MacRecordingSession: ObservableObject {
         }
     }
 
-    /// Live speech-to-text for meetings — places text intelligently and
-    /// streams partial results to the page + live bar.
+    /// Live speech-to-text — streams words into an in-page text block.
     @discardableResult
     func startTranscription(page: Page, notebook: Notebook) async -> UUID? {
         guard case .idle = mode else { return nil }
@@ -145,10 +157,12 @@ final class MacRecordingSession: ObservableObject {
             pageId: anchor.page.id,
             notebookId: notebook.id,
             textElementId: textElementId,
+            firstTextElementId: textElementId,
             startTime: Date()
         ))
         liveTranscript = ""
-        subscribeLiveTranscript(recorder, textElementId: textElementId)
+        transcriptConsumedUTF16 = 0
+        subscribeLiveTranscript(recorder)
         startElapsedTimer()
 
         NotificationCenter.default.post(
@@ -161,6 +175,31 @@ final class MacRecordingSession: ObservableObject {
         )
         postScroll(to: anchor.page.id, elementId: textElementId)
         return textElementId
+    }
+
+    /// Move live transcript updates to a continuation block after an
+    /// overflow split. `consumedUTF16` is how much of the *current
+    /// target's* text stayed behind on the previous block; it extends
+    /// the session-wide consumed prefix.
+    func retargetTranscription(to elementId: UUID, consumedUTF16: Int) {
+        guard case .transcription(let ctx) = mode else { return }
+        transcriptConsumedUTF16 += max(0, consumedUTF16)
+        mode = .transcription(TranscriptionContext(
+            audioContentId: ctx.audioContentId,
+            pageId: ctx.pageId,
+            notebookId: ctx.notebookId,
+            textElementId: elementId,
+            firstTextElementId: ctx.firstTextElementId,
+            startTime: ctx.startTime
+        ))
+    }
+
+    /// The tail of `transcript` not yet frozen into earlier blocks.
+    private func unconsumedTail(of transcript: String) -> String {
+        guard transcriptConsumedUTF16 > 0 else { return transcript }
+        let ns = transcript as NSString
+        guard transcriptConsumedUTF16 < ns.length else { return "" }
+        return ns.substring(from: transcriptConsumedUTF16)
     }
 
     func stop() async {
@@ -178,18 +217,44 @@ final class MacRecordingSession: ObservableObject {
     private func stopVoiceMemo(_ ctx: VoiceMemoContext) async {
         guard let recorder = audioRecorder else { return }
         guard let result = try? await recorder.stop() else { return }
+
+        let saveAudio = UserDefaults.standard
+            .object(forKey: "ceciliasnotes.audio.saveClips") as? Bool ?? true
+        let autoTranscribe = UserDefaults.standard
+            .object(forKey: "ceciliasnotes.transcription.auto") as? Bool ?? true
+        let url = MediaStorage.url(for: .audio, id: ctx.audioContentId)
+
+        guard saveAudio || autoTranscribe else {
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+
+        guard saveAudio else {
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
+            let pageId = ctx.pageId
+            Task(priority: .utility) {
+                let transcript = await SpeechTranscriber.shared.transcribeFile(url: url)
+                try? FileManager.default.removeItem(at: url)
+                guard let text = transcript?.text, !text.isEmpty else { return }
+                await MainActor.run {
+                    guard let page = StorageService.shared.fetchPage(id: pageId) else { return }
+                    _ = try? StorageService.shared.createTextBlock(on: page, content: text)
+                }
+            }
+            return
+        }
+
         AudioElementCommit.finalizeVoiceNote(
             elementId: ctx.audioElementId,
             contentId: ctx.audioContentId,
             durationSeconds: result.duration
         )
-        let url = MediaStorage.url(for: .audio, id: ctx.audioContentId)
-        Task.detached(priority: .utility) {
-            if let transcript = await SpeechTranscriber.shared.transcribeFile(url: url)?.text,
-               !transcript.isEmpty {
-                await MainActor.run {
-                    AudioElementCommit.updateTranscript(contentId: ctx.audioContentId, transcript: transcript)
-                }
+
+        if autoTranscribe {
+            let contentId = ctx.audioContentId
+            Task.detached(priority: .utility) {
+                await SpeechTranscriber.shared.transcribe(url: url, annotationId: contentId)
             }
         }
     }
@@ -198,53 +263,108 @@ final class MacRecordingSession: ObservableObject {
         guard let recorder = lectureRecorder else { return }
         guard let result = await recorder.stop() else { return }
         let storage = StorageService.shared
-        let pageSize = storage.fetchPage(id: ctx.pageId)?.pageSize.pointSize ?? PageSize.a4.pointSize
 
-        let finalText = result.transcript.isEmpty ? liveTranscript : result.transcript
+        let fullTranscript = result.transcript.isEmpty ? liveTranscript : result.transcript
+        let finalText = unconsumedTail(of: fullTranscript)
         if !finalText.isEmpty {
             MacDictationFlowCommit.finalizeTextElement(elementId: ctx.textElementId, text: finalText)
         }
 
-        let textElementId = ctx.textElementId
+        // Finalizing can split once more — the live target in `mode` is
+        // authoritative for where the transcript actually ended.
+        let finalElementId = mode.textElementId ?? ctx.textElementId
         let textElement: PageElement? = {
             let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> { $0.id == textElementId }
+                predicate: #Predicate<PageElement> { $0.id == finalElementId }
             )
             return try? storage.context.fetch(descriptor).first
         }()
 
-        let marginX = MacDocPageLayout.normalizedHorizontalMargin(pageWidth: pageSize.width)
-        let contentWidth = MacDocPageLayout.normalizedContentWidth(pageWidth: pageSize.width)
-        let audioY: Double
-        if let textElement {
-            audioY = min(0.92, textElement.normalizedY + textElement.normalizedHeight + 0.02)
+        // After overflow splits the last block lives on a later page —
+        // anchor the audio strip there, not on the page dictation started.
+        let anchorPageId = textElement?.pageId ?? ctx.pageId
+        let pageSize = storage.fetchPage(id: anchorPageId)?.pageSize.pointSize ?? PageSize.a4.pointSize
+
+        let saveAudio = UserDefaults.standard
+            .object(forKey: "ceciliasnotes.audio.saveClips") as? Bool ?? true
+
+        var targetPageId = anchorPageId
+        if saveAudio {
+            let adopted = await MediaStorage.adoptAudio(at: result.audioURL, id: result.recordId)
+            guard adopted != nil else {
+                lastErrorMessage = "Recording couldn't be saved. Please check storage and try again."
+                try? FileManager.default.removeItem(at: result.audioURL)
+                return
+            }
+
+            let marginX = MacDocPageLayout.normalizedHorizontalMargin(pageWidth: pageSize.width)
+            let contentWidth = MacDocPageLayout.normalizedContentWidth(pageWidth: pageSize.width)
+            let audioHeight = AudioElementCommit.defaultStripHeight(forPagePoints: Double(pageSize.height))
+            var audioY: Double
+            if let textElement {
+                audioY = textElement.normalizedY + textElement.normalizedHeight + 0.02
+            } else {
+                audioY = MacDocPageLayout.normalizedTopMargin(pageHeight: pageSize.height)
+            }
+
+            if audioY + audioHeight > 0.92,
+               let page = storage.fetchPage(id: anchorPageId) {
+                let notebookId = ctx.notebookId
+                let notebookDescriptor = FetchDescriptor<Notebook>(
+                    predicate: #Predicate<Notebook> { $0.id == notebookId }
+                )
+                if let notebook = try? storage.context.fetch(notebookDescriptor).first,
+                   let newPage = MacPageEditing.addPage(in: notebook, after: page, storage: storage) {
+                    targetPageId = newPage.id
+                    audioY = MacDocPageLayout.normalizedTopMargin(pageHeight: newPage.pageSize.pointSize.height)
+                }
+            }
+
+            _ = AudioElementCommit.commit(
+                contentId: result.recordId,
+                pageId: targetPageId,
+                notebookId: ctx.notebookId,
+                pageSize: pageSize,
+                durationSeconds: result.durationSeconds,
+                transcript: "",
+                normalizedY: audioY,
+                normalizedX: marginX,
+                normalizedWidth: contentWidth
+            )
         } else {
-            audioY = MacDocPageLayout.normalizedTopMargin(pageHeight: pageSize.height)
+            try? FileManager.default.removeItem(at: result.audioURL)
         }
 
-        _ = AudioElementCommit.commit(
-            contentId: result.recordId,
-            pageId: ctx.pageId,
-            notebookId: ctx.notebookId,
-            pageSize: pageSize,
-            durationSeconds: result.durationSeconds,
-            transcript: "",
-            normalizedY: audioY,
-            normalizedX: marginX,
-            normalizedWidth: contentWidth
-        )
-
+        for pageId in Set([ctx.pageId, anchorPageId, targetPageId]) {
+            MacPageElementReflow.packVerticalLayout(pageId: pageId)
+        }
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
-        postScroll(to: ctx.pageId)
+        postScroll(to: targetPageId)
+
+        // Meeting-assistant tail: distill the whole transcript with
+        // on-device Apple Intelligence and place the summary above
+        // the first transcript block. No-op for short dictations or
+        // when Apple Intelligence isn't available on this Mac.
+        MacMeetingSummary.generateIfWorthwhile(
+            transcript: fullTranscript,
+            firstElementId: ctx.firstTextElementId,
+            notebookId: ctx.notebookId
+        )
     }
 
-    private func subscribeLiveTranscript(_ recorder: LectureRecorder, textElementId: UUID) {
+    private func subscribeLiveTranscript(_ recorder: LectureRecorder) {
         recorder.$liveTranscript
             .receive(on: DispatchQueue.main)
             .sink { [weak self] transcript in
-                guard let self else { return }
+                guard let self,
+                      case .transcription(let ctx) = self.mode else { return }
                 self.liveTranscript = transcript
-                MacDictationFlowCommit.updateText(elementId: textElementId, text: transcript)
+                let tail = self.unconsumedTail(of: transcript)
+                // An empty tail after a split means the recognizer
+                // revised the transcript shorter than the frozen
+                // prefix — don't blank the continuation block over it.
+                guard !tail.isEmpty || self.transcriptConsumedUTF16 == 0 else { return }
+                MacDictationFlowCommit.updateText(elementId: ctx.textElementId, text: tail)
             }
             .store(in: &cancellables)
     }
@@ -290,5 +410,6 @@ final class MacRecordingSession: ObservableObject {
         mode = .idle
         elapsedSeconds = 0
         liveTranscript = ""
+        transcriptConsumedUTF16 = 0
     }
 }

@@ -1,10 +1,17 @@
-#if os(macOS)
+import Combine
 import CryptoKit
 import Foundation
 @preconcurrency import MultipeerConnectivity
+#if canImport(UIKit)
+import UIKit
+#endif
 
-/// Mac-side multipeer browser — pairs with iPad/iPhone receivers and
-/// keeps reconnecting to known peers on the LAN automatically.
+/// Multipeer browser — discovers nearby Cecilia's Notes receivers,
+/// pairs (manual code or same-Apple-Account auto-pair) and keeps
+/// reconnecting to known peers on the LAN automatically. Runs on
+/// every platform: the Mac browses for iPads, and iPhones/iPads
+/// browse for each other so same-household devices form a live
+/// link without either side being "the Mac".
 @MainActor
 final class MultipeerSendService: NSObject, ObservableObject {
 
@@ -38,7 +45,11 @@ final class MultipeerSendService: NSObject, ObservableObject {
     @Published var selectedDeviceID: String?
 
     private let localPeerId: MCPeerID = {
+        #if canImport(UIKit)
+        let name = UIDevice.current.name
+        #else
         let name = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        #endif
         return MCPeerID(displayName: String(name.prefix(60)))
     }()
 
@@ -165,6 +176,22 @@ final class MultipeerSendService: NSObject, ObservableObject {
         connectedPeerNames.contains(name)
     }
 
+    /// Send a pre-built signed payload over the browse session.
+    /// Mirror of `MultipeerSyncService.sendPayload` — the share
+    /// facade tries both sessions since a peer may be connected on
+    /// either lane.
+    func sendPayload(_ payload: Data, toPeerNamed name: String) -> Bool {
+        guard let session,
+              let peer = session.connectedPeers.first(where: { $0.displayName == name })
+        else { return false }
+        do {
+            try session.send(payload, toPeers: [peer], with: .reliable)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private enum InviteReason {
         case manualCode
         case firstParty
@@ -212,11 +239,16 @@ final class MultipeerSendService: NSObject, ObservableObject {
     private func sendPairingHello(to peer: MCPeerID, key: SymmetricKey) {
         guard let session else { return }
         let nonce = Data((0..<16).map { _ in UInt8.random(in: 0...UInt8.max) })
-        let header: [String: Any] = [
+        var header: [String: Any] = [
             "type": "pairing-hello",
             "timestamp": Int(Date().timeIntervalSince1970),
             "nonce": nonce.base64EncodedString()
         ]
+        // Additive v2.1: identify our household so the receiver can
+        // tell same-account pairings from cross-account ones.
+        if let hash = MultipeerPairingStore.householdTokenHash() {
+            header["householdHash"] = hash
+        }
         guard let headerData = try? JSONSerialization.data(withJSONObject: header) else { return }
         let tag = Data(HMAC<SHA256>.authenticationCode(for: headerData, using: key))
         var payload = Data()
@@ -255,6 +287,7 @@ final class MultipeerSendService: NSObject, ObservableObject {
         struct Header: Decodable {
             let type: String
             let result: String?
+            let householdHash: String?
         }
         guard let header = try? JSONDecoder().decode(Header.self, from: headerData)
         else { return }
@@ -284,6 +317,10 @@ final class MultipeerSendService: NSObject, ObservableObject {
                 return
             }
             MultipeerPairingStore.store(key: key, forPeerName: peer.displayName)
+            MultipeerNotebookShare.recordHouseholdHash(
+                header.householdHash,
+                forPeerName: peer.displayName
+            )
             MultipeerSyncService.shared.reloadPairedPeers()
             pendingCode = nil
             pendingFirstParty = false
@@ -344,6 +381,15 @@ extension MultipeerSendService: MCNearbyServiceBrowserDelegate {
                 platform: platform,
                 householdHash: householdHash
             )
+            // Keep the household record fresh for peers we already
+            // trust — pairings older than the hash exchange learn
+            // their household this way, without re-pairing.
+            if MultipeerPairingStore.sharedKey(forPeerName: peerID.displayName) != nil {
+                MultipeerNotebookShare.recordHouseholdHash(
+                    householdHash,
+                    forPeerName: peerID.displayName
+                )
+            }
             if let index = discoveredDevices.firstIndex(where: { $0.id == device.id }) {
                 discoveredDevices[index] = device
             } else {
@@ -418,4 +464,3 @@ extension MultipeerSendService: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, didStartReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, with progress: Progress) {}
     nonisolated func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, at localURL: URL?, withError error: Error?) {}
 }
-#endif

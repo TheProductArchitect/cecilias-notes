@@ -117,19 +117,16 @@ final class ShapeDetectionTests: XCTestCase {
 
     // MARK: Tests
 
-    func test_recogniseRectangle() async {
+    func test_recogniseRectangle_isNotConverted() async {
+        // `ShapeRecognizer.recognize` intentionally accepts only lines
+        // and near-circular closed strokes — rectangle conversion was
+        // removed as unreliable in the wild (see ShapeRecognizer.swift).
         let stroke = roughRectangleStroke()
         let result = await ShapeRecognizer.recognize(stroke)
-        switch result {
-        case .rectangle, .square:
-            // Either is acceptable: rectangles with near-equal sides
-            // classify as square. The fixture is 200×120 so a rectangle
-            // is the expected outcome, but allow square as a tolerated
-            // result for borderline aspect.
-            break
-        default:
-            XCTFail("Expected rectangle/square, got \(String(describing: result))")
-        }
+        XCTAssertNil(
+            result,
+            "Rectangle auto-conversion is disabled; got \(String(describing: result))"
+        )
     }
 
     func test_recogniseCircle() async {

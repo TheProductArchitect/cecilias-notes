@@ -42,9 +42,9 @@ struct MacDocModeView: View {
                     }
                     addPageFooter
                 }
-                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: MacDocLayout.contentColumnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 88)
+                .padding(.horizontal, MacDocLayout.horizontalGutter)
                 .padding(.top, topChromeInset + 48)
                 .padding(.bottom, 64)
             }
@@ -280,7 +280,8 @@ private struct MacDocPageSection: View {
             .frame(width: displaySize.width, alignment: .topLeading)
         }
         .frame(width: displaySize.width)
-        .frame(minHeight: displaySize.height, alignment: .topLeading)
+        .frame(height: displaySize.height, alignment: .topLeading)
+        .clipped()
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
@@ -363,10 +364,11 @@ private struct MacDocStrokeBlock: View {
 
     private var renderedImage: NSImage? {
         guard let data = element.strokeContent?.strokeData,
-              !data.isEmpty,
-              let drawing = try? PKDrawing(data: data),
-              !drawing.bounds.isEmpty else { return nil }
-        return drawing.image(from: drawing.bounds, scale: 2)
+              !data.isEmpty else { return nil }
+        return MacStrokeThumbnailCache.image(
+            cacheKey: element.id.uuidString,
+            strokeData: data
+        )
     }
 }
 
@@ -394,10 +396,11 @@ private struct MacDocLegacyStrokeBlock: View {
 
     private var renderedImage: NSImage? {
         guard let data = storage.strokeData(for: page),
-              !data.isEmpty,
-              let drawing = try? PKDrawing(data: data),
-              !drawing.bounds.isEmpty else { return nil }
-        return drawing.image(from: drawing.bounds, scale: 2)
+              !data.isEmpty else { return nil }
+        return MacStrokeThumbnailCache.image(
+            cacheKey: "legacy-\(page.id.uuidString)",
+            strokeData: data
+        )
     }
 }
 

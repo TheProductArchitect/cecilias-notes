@@ -186,3 +186,5 @@ When touching any of: `CeciliasNotesFile`, `CeciliasNotesParser`,
 | Date | Change |
 |---|---|
 | 2026-07-03 | Doc created. Import pipeline serialized FIFO (out-of-order clobber fix). Documented blank-template rule, merge-by-default strategy, mirror guarantees, V6 text-layer limitation. |
+| 2026-07-07 | Hardening: parser rejects `.inkbook` files over 32 MB (`CeciliasNotesParser.maxFileBytes`) before reading them into memory; the same cap applies to multipeer file payloads and quiz MCP responses. Multipeer pairing window now closes after 5 wrong-code hellos (brute-force guard). No schema or write-semantics changes. |
+| 2026-07-07 | In-app "Send to Device": any platform can ship a notebook's `.inkbook` over the paired multipeer link (`MultipeerNotebookShare` → `"file"` payload → receiver Inbox → same importer, merge-by-default). Offered only for cross-Apple-Account peers — same-account devices sync via CloudKit and importing a mirror alongside it would duplicate the text layers. Pairing messages now exchange `householdHash` (additive) so both sides know which case they're in. MCP server 2.1.0 enforces the 32 MB cap at write time with an actionable error. |

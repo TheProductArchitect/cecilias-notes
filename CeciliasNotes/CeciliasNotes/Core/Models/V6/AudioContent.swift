@@ -110,6 +110,8 @@ final class AudioContent {
     func resolvedFileURL() -> URL? {
         let url = fileURL
         if FileManager.default.fileExists(atPath: url.path) { return url }
+        let lectureURL = MediaStorage.url(for: .lectures, id: id)
+        if FileManager.default.fileExists(atPath: lectureURL.path) { return lectureURL }
         guard let data = audioData, !data.isEmpty else { return nil }
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),

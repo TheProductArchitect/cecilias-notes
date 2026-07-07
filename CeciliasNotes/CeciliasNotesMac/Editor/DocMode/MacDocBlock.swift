@@ -43,9 +43,9 @@ struct MacDocBlock: View {
             }
         }
         .overlay {
-            if isSelected && !isEditing {
+            if isSelected && !isEditing && element.kind != .text {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(theme.accent.opacity(element.kind == .text ? 0.35 : 0.55), lineWidth: 1.5)
+                    .stroke(theme.accent.opacity(0.55), lineWidth: 1.5)
             }
         }
         .contentShape(Rectangle())
@@ -289,48 +289,78 @@ struct MacDocBlock: View {
 private struct MacDocAudioBlock: View {
     let element: PageElement
     @StateObject private var player = MacAudioPlayer()
+    @ObservedObject private var session = MacRecordingSession.shared
     @Environment(\.theme) private var theme
     @EnvironmentObject private var storage: StorageService
 
+    private var isRecordingThis: Bool {
+        guard case .voiceMemo(let ctx) = session.mode else { return false }
+        return ctx.audioElementId == element.id
+    }
+
     var body: some View {
         if let content = element.audioContent {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Button {
-                        player.toggle(content: content)
-                    } label: {
-                        Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(theme.accent)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(player.isPlaying ? "Pause audio" : "Play audio")
-
-                    Text("\(format(player.currentTime)) / \(format(player.duration > 0 ? player.duration : content.durationSeconds))")
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(theme.foregroundMuted)
-
-                    Spacer(minLength: 0)
-                }
-
-                progressTrack(content: content)
-
-                if !content.transcript.isEmpty {
-                    Text(content.transcript)
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.foregroundMuted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+            Group {
+                if isRecordingThis {
+                    recordingRow
+                } else {
+                    playbackRow(content: content)
                 }
             }
-            .padding(10)
-            .background(theme.surface.opacity(0.35))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .accessibilityLabel("Audio recording, \(format(content.durationSeconds))")
+            .padding(.vertical, 4)
             .onAppear { player.load(content: content) }
             .onDisappear { player.pause() }
+            .onChange(of: content.durationSeconds) { _, _ in
+                player.reload(content: content)
+            }
         }
+    }
+
+    private var recordingRow: some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(Color.red.opacity(0.9))
+                .frame(width: 6, height: 6)
+            Text(format(session.elapsedSeconds))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(theme.foregroundMuted)
+            Spacer(minLength: 0)
+            Button {
+                Task { await session.stop() }
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .background(Circle().fill(theme.surfaceElevated))
+                    .overlay(Circle().stroke(theme.hairline, lineWidth: 0.5))
+            }
+            .macEditorChromeButton()
+            .accessibilityLabel("Stop recording")
+        }
+    }
+
+    private func playbackRow(content: AudioContent) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                player.toggle(content: content)
+            } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(theme.accentMuted.opacity(0.35)))
+            }
+            .macEditorChromeButton()
+            .accessibilityLabel(player.isPlaying ? "Pause audio" : "Play audio")
+
+            Text("\(format(player.currentTime)) / \(format(player.duration > 0 ? player.duration : content.durationSeconds))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(theme.recessiveTertiary)
+
+            progressTrack(content: content)
+        }
+        .accessibilityLabel("Audio recording, \(format(content.durationSeconds))")
     }
 
     @ViewBuilder
@@ -340,12 +370,12 @@ private struct MacDocAudioBlock: View {
             let active = player.scrubPreview ?? player.currentTime
             let fraction = min(1, max(0, active / total))
             ZStack(alignment: .leading) {
-                Capsule().fill(theme.borderSubtle).frame(height: 3)
+                Capsule().fill(theme.hairline).frame(height: 2)
                 Capsule()
-                    .fill(theme.accent)
-                    .frame(width: geo.size.width * fraction, height: 3)
+                    .fill(theme.accent.opacity(0.7))
+                    .frame(width: max(0, geo.size.width * fraction), height: 2)
             }
-            .frame(height: 3)
+            .frame(height: 2)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -361,7 +391,7 @@ private struct MacDocAudioBlock: View {
                     }
             )
         }
-        .frame(height: 8)
+        .frame(height: 12)
     }
 
     private func format(_ seconds: Double) -> String {
@@ -386,32 +416,43 @@ private struct MacDocTextBlock: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject private var storage: StorageService
     @EnvironmentObject private var richTextController: MacRichTextController
+    @ObservedObject private var session = MacRecordingSession.shared
     @State private var columnWidth: CGFloat = 576
 
+    private var isLiveTarget: Bool {
+        session.mode.isTranscribing && session.mode.textElementId == element.id
+    }
+
     var body: some View {
-        Group {
-            if isEditing {
-                MacDocGrowingRichTextEditor(
-                    element: element,
-                    notebook: notebook,
-                    page: page,
-                    modelContext: storage.context,
-                    columnWidth: columnWidth,
-                    pageDisplayHeight: pageDisplayHeight,
-                    richTextController: richTextController,
-                    onWritingBegan: onWritingBegan,
-                    onEndEdit: onEndEdit
-                )
-                .fixedSize(horizontal: false, vertical: true)
-            } else {
-                MacDocTextPreview(element: element)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 1, coordinateSpace: .local) { location in
-                        MacPendingTextCursor.set(elementId: element.id, clickYInBlock: location.y)
-                        onWritingBegan()
-                        onSelect()
-                        onBeginEdit()
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            if isLiveTarget {
+                MacDocInlineRecordingChrome(elapsed: session.elapsedSeconds)
+            }
+
+            Group {
+                if isEditing {
+                    MacDocGrowingRichTextEditor(
+                        element: element,
+                        notebook: notebook,
+                        page: page,
+                        modelContext: storage.context,
+                        columnWidth: columnWidth,
+                        pageDisplayHeight: pageDisplayHeight,
+                        richTextController: richTextController,
+                        onWritingBegan: onWritingBegan,
+                        onEndEdit: onEndEdit
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    MacDocTextPreview(element: element)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 1, coordinateSpace: .local) { location in
+                            MacPendingTextCursor.set(elementId: element.id, clickYInBlock: location.y)
+                            onWritingBegan()
+                            onSelect()
+                            onBeginEdit()
+                        }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -429,14 +470,58 @@ private struct MacDocTextBlock: View {
     }
 }
 
+/// Minimal in-page recording controls — no duplicate header banner.
+private struct MacDocInlineRecordingChrome: View {
+    let elapsed: Double
+    @Environment(\.theme) private var theme
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(Color.red.opacity(0.9))
+                .frame(width: 6, height: 6)
+                .scaleEffect(pulsing ? 1.2 : 0.9)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulsing)
+                .onAppear { pulsing = true }
+
+            Text(format(elapsed))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(theme.recessiveTertiary)
+
+            Text("listening")
+                .font(.system(size: 9, weight: .medium))
+                .tracking(0.08)
+                .textCase(.uppercase)
+                .foregroundStyle(theme.recessiveQuaternary)
+
+            Spacer(minLength: 0)
+
+            Button {
+                Task { await MacRecordingSession.shared.stop() }
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(theme.surfaceElevated))
+                    .overlay(Circle().stroke(theme.hairline, lineWidth: 0.5))
+            }
+            .macEditorChromeButton()
+            .accessibilityLabel("Stop transcription")
+        }
+        .padding(.bottom, 2)
+    }
+
+    private func format(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
 private struct MacDocTextPreview: View {
     @Bindable var element: PageElement
-    @ObservedObject private var session = MacRecordingSession.shared
     @Environment(\.theme) private var theme
-
-    private var isLiveTarget: Bool {
-        session.mode.isTranscribing && session.mode.textElementId == element.id
-    }
 
     var body: some View {
         Group {
@@ -454,38 +539,19 @@ private struct MacDocTextPreview: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if isLiveTarget {
-                    Text("Listening…")
-                        .font(.system(size: 14))
-                        .italic()
-                        .foregroundStyle(theme.recessiveTertiary)
-                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
                 } else {
                     Text(" ")
                         .font(.system(size: 14))
                         .foregroundStyle(.clear)
-                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, minHeight: 20, alignment: .topLeading)
                         .accessibilityHidden(true)
                 }
             } else {
                 Text(" ")
                     .font(.system(size: 14))
                     .foregroundStyle(.clear)
-                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, minHeight: 20, alignment: .topLeading)
                     .accessibilityHidden(true)
-            }
-        }
-        .padding(4)
-        .background {
-            if isLiveTarget {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(theme.accent.opacity(0.06))
-            }
-        }
-        .overlay {
-            if isLiveTarget {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(theme.accent.opacity(0.45), lineWidth: 1.5)
             }
         }
     }

@@ -72,51 +72,81 @@ enum MacDictationFlowCommit {
         return elementId
     }
 
+    /// Streaming path — hops to the next runloop tick so partials arriving
+    /// mid view-update never publish synchronously.
     static func updateText(elementId: UUID, text: String) {
         DispatchQueue.main.async {
-            let context = StorageService.shared.context
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> { $0.id == elementId }
-            )
-            guard let element = try? context.fetch(descriptor).first,
-                  let content = element.textContent else { return }
-            guard content.text != text else { return }
-
-            content.text = text
-            content.updatedAt = Date()
-            let attrs = MacRichTextCodec.defaultTypingAttributes(size: content.size)
-            let attributed = NSAttributedString(string: text, attributes: attrs)
-            content.attributedTextData = MacRichTextCodec.encode(attributed)
-            element.updatedAt = Date()
-
-            let pageHeight = StorageService.shared.fetchPage(id: element.pageId)?
-                .pageSize.pointSize.height ?? PageSize.a4.pointSize.height
-            let measured = ceil(attributed.boundingRect(
-                with: CGSize(
-                    width: max(40, pageSizeContentWidth(for: element)),
-                    height: .greatestFiniteMagnitude
-                ),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).height)
-            let normH = min(0.88, max(0.08, Double((measured + 8) / pageHeight)))
-            if abs(element.normalizedHeight - normH) > 0.005 {
-                element.normalizedHeight = normH
-            }
-
-            Page.clearInkbookStash(forPageId: element.pageId, context: context)
-            try? context.save()
-            NotificationCenter.default.post(name: .textElementsChanged, object: nil)
-            NotificationCenter.default.post(
-                name: .macLiveTranscriptUpdated,
-                object: nil,
-                userInfo: [MacTranscriptionKeys.elementId: elementId]
-            )
+            applyTextUpdate(elementId: elementId, text: text)
         }
     }
 
+    /// Synchronous core — `stop()` uses this directly so everything after
+    /// it (audio placement, reflow) sees the final text and any overflow
+    /// split already applied.
+    static func applyTextUpdate(elementId: UUID, text: String) {
+        let context = StorageService.shared.context
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.id == elementId }
+        )
+        guard let element = try? context.fetch(descriptor).first,
+              let content = element.textContent else { return }
+        guard content.text != text else { return }
+
+        content.text = text
+        content.updatedAt = Date()
+        let attrs = MacRichTextCodec.defaultTypingAttributes(size: content.size)
+        let attributed = NSAttributedString(string: text, attributes: attrs)
+        content.attributedTextData = MacRichTextCodec.encode(attributed)
+        element.updatedAt = Date()
+
+        let pageHeight = StorageService.shared.fetchPage(id: element.pageId)?
+            .pageSize.pointSize.height ?? PageSize.a4.pointSize.height
+        let measured = ceil(attributed.boundingRect(
+            with: CGSize(
+                width: max(40, pageSizeContentWidth(for: element)),
+                height: .greatestFiniteMagnitude
+            ),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).height)
+        let normH = min(0.88, max(0.08, Double((measured + 8) / pageHeight)))
+        if abs(element.normalizedHeight - normH) > 0.005 {
+            element.normalizedHeight = normH
+        }
+
+        let originY = CGFloat(element.normalizedY) * pageHeight
+        if let split = MacTextElementSplitter.splitIfNeeded(
+            element: element,
+            content: content,
+            pageSize: CGSize(width: pageSizeContentWidth(for: element) + 2 * MacDocPageLayout.horizontalMargin, height: pageHeight),
+            originY: originY
+        ) {
+            MacRecordingSession.shared.retargetTranscription(
+                to: split.continuationElementId,
+                consumedUTF16: split.overflowStartUTF16
+            )
+        }
+
+        Page.clearInkbookStash(forPageId: element.pageId, context: context)
+        try? context.save()
+        NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+        NotificationCenter.default.post(
+            name: .macLiveTranscriptUpdated,
+            object: nil,
+            userInfo: [MacTranscriptionKeys.elementId: elementId]
+        )
+    }
+
     static func finalizeTextElement(elementId: UUID, text: String) {
-        updateText(elementId: elementId, text: text)
+        applyTextUpdate(elementId: elementId, text: text)
+        let context = StorageService.shared.context
+        let eid = elementId
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.id == eid }
+        )
+        if let pageId = try? context.fetch(descriptor).first?.pageId {
+            MacPageElementReflow.packVerticalLayout(pageId: pageId)
+        }
     }
 
     private static func pageSizeContentWidth(for element: PageElement) -> CGFloat {

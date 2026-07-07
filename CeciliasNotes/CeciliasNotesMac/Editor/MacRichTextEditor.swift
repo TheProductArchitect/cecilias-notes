@@ -502,12 +502,16 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
         func textDidBeginEditing(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             MacDictationTrigger.register(tv)
-            richTextController.attach(tv)
+            MacStateUpdates.deferred { [weak self] in
+                self?.richTextController.attach(tv)
+            }
             onWritingBegan()
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
-            richTextController.refresh()
+            MacStateUpdates.deferred { [weak self] in
+                self?.richTextController.refresh()
+            }
         }
 
         func textDidEndEditing(_ notification: Notification) {

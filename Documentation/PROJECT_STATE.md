@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-06
+Last updated: 2026-07-07
 
 ## Elevator pitch
 
@@ -15,7 +15,30 @@ Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit contai
 
 ## Current phase
 
-**Mac editor parity + accessibility pass.** Both targets build green. Recent Mac editor work:
+**Production push: cross-device sync UX + Mac meeting assistant (2026-07-07).**
+
+1. **Same-Apple-Account devices on one LAN feel live.** Every platform now
+   runs both multipeer lanes (advertise + browse — previously only the Mac
+   browsed), auto-pairs via the iCloud-Keychain household key, and receive
+   defaults ON. Notebook mutations broadcast `notebook-changed` hints; the
+   receiver refreshes the library, refreshes the open editor (guarded on
+   `isDirty`), and nudges `CloudSyncManager.syncNow()` for media. Content
+   truth stays CloudKit — the hint layer removes the "why isn't it here
+   yet" dead air. Do NOT ship notebook content over multipeer between
+   same-account devices: importing a mirror alongside CloudKit duplicates
+   the V5/V6 text layers.
+2. **Cross-Apple-Account share ("Send to Device").** Paired-but-different-
+   account peers get a context-menu send (`MultipeerNotebookShare` →
+   `"file"` payload → receiver Inbox → importer, merge-by-default).
+   Pairing messages exchange `householdHash` so Settings can explain which
+   case the user is in. Protocol v2.3 (see `MULTIPEER_SYNC_PROTOCOL.md`).
+3. **Mac meeting assistant.** "Meeting Transcription" streams words into
+   the page; on stop, `MacMeetingSummary` distills the transcript with
+   on-device Apple Intelligence (chunked map-reduce) and inserts a
+   "SUMMARY" block ABOVE the first transcript block. All failures degrade
+   to transcript-only, never an error state on the page.
+
+Previous phase — **Mac editor parity + accessibility pass.** Both targets build green. Recent Mac editor work:
 
 1. **Rich text** — `MacRichTextEditor` + `MacRichTextFormatBar` read/write `TextContent.attributedTextData` (same keyed archive as iPad).
 2. **Element transform** — `MacElementTransform` drag + corner-resize for selected text, image, sticky, shape elements.

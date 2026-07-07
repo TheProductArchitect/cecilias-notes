@@ -547,29 +547,23 @@ final class MacAudioPlayer: ObservableObject {
         guard let url = content.resolvedFileURL() else { return }
         let item = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: item)
+        player?.volume = 1
         duration = content.durationSeconds
         currentTime = 0
         isPlaying = false
-        removeTimeObserver()
-        timeObserver = player?.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
-            queue: .main
-        ) { [weak self] time in
-            Task { @MainActor in
-                guard let self else { return }
-                self.currentTime = time.seconds
-                if self.duration <= 0, let itemDuration = self.player?.currentItem?.duration.seconds, itemDuration.isFinite {
-                    self.duration = itemDuration
-                }
-            }
-        }
+        attachTimeObserver()
+    }
+
+    func reload(content: AudioContent) {
+        loadedContentId = nil
+        load(content: content)
     }
 
     func toggle(content: AudioContent) {
         if player == nil || loadedContentId != content.id {
             load(content: content)
         }
-        guard let player else { return }
+        guard let player, content.resolvedFileURL() != nil else { return }
         if isPlaying {
             player.pause()
             isPlaying = false
@@ -589,6 +583,24 @@ final class MacAudioPlayer: ObservableObject {
     func pause() {
         player?.pause()
         isPlaying = false
+    }
+
+    private func attachTimeObserver() {
+        removeTimeObserver()
+        timeObserver = player?.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            Task { @MainActor in
+                guard let self else { return }
+                self.currentTime = time.seconds
+                if self.duration <= 0,
+                   let itemDuration = self.player?.currentItem?.duration.seconds,
+                   itemDuration.isFinite {
+                    self.duration = itemDuration
+                }
+            }
+        }
     }
 
     private func removeTimeObserver() {

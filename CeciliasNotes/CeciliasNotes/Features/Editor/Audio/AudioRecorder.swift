@@ -169,8 +169,13 @@ final class AudioRecorder {
                     }
 
                     guard let copy = buffer.deepCopy() else { return }
+#if os(macOS)
+                    let pcm = AudioPCMGain.boostedCopy(of: copy) ?? copy
+#else
+                    let pcm = copy
+#endif
                     writeQueue.async {
-                        try? file.write(from: copy)
+                        try? file.write(from: pcm)
                     }
                 }
                 #if DEBUG
@@ -275,32 +280,5 @@ final class AudioRecorder {
         var rms: Float = 0
         vDSP_rmsqv(data, 1, &rms, frameCount)
         return min(rms * 10, 1.0)
-    }
-}
-
-// MARK: - AVAudioPCMBuffer deep copy
-
-private extension AVAudioPCMBuffer {
-    /// Returns a freshly-allocated buffer with float-channel data
-    /// copied from `self`. Used by the tap closure to hand a
-    /// reusable copy to the off-thread file-write queue —
-    /// AVAudioEngine recycles the tap buffer the moment the
-    /// callback returns, so any deferred consumer must own its
-    /// own bytes. Mirrors the private extension in
-    /// `LectureRecorder.swift`.
-    nonisolated func deepCopy() -> AVAudioPCMBuffer? {
-        guard let copy = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: frameCapacity
-        ) else { return nil }
-        copy.frameLength = frameLength
-        let channelCount = Int(format.channelCount)
-        let byteCount = Int(frameLength) * MemoryLayout<Float>.size
-        if let src = floatChannelData, let dst = copy.floatChannelData {
-            for ch in 0..<channelCount {
-                memcpy(dst[ch], src[ch], byteCount)
-            }
-        }
-        return copy
     }
 }

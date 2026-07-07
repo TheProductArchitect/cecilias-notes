@@ -103,30 +103,39 @@ struct MultipeerSettingsSection: View {
                 .foregroundStyle(theme.foregroundSubtle)
                 .padding(.top, 8)
             ForEach(multipeer.pairedPeerNames, id: \.self) { name in
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(multipeer.isPeerConnected(name) ? theme.accent : theme.recessiveTertiary)
-                        .frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
-                    Text(name)
-                        .font(.system(size: 13))
-                        .foregroundStyle(theme.foreground)
-                    Spacer()
-                    Text(multipeer.isPeerConnected(name) ? "live" : "offline")
-                        .font(.system(size: 10))
-                        .foregroundStyle(multipeer.isPeerConnected(name) ? theme.accent : theme.foregroundSubtle)
-                    Button {
-                        multipeer.forgetPeer(name)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(multipeer.isPeerConnected(name) ? theme.accent : theme.recessiveTertiary)
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                        Text(name)
+                            .font(.system(size: 13))
+                            .foregroundStyle(theme.foreground)
+                        Spacer()
+                        Text(multipeer.isPeerConnected(name) ? "live" : "offline")
+                            .font(.system(size: 10))
+                            .foregroundStyle(multipeer.isPeerConnected(name) ? theme.accent : theme.foregroundSubtle)
+                        Button {
+                            multipeer.forgetPeer(name)
 #if canImport(UIKit)
-                        HapticManager.shared.toolSwitched()
+                            HapticManager.shared.toolSwitched()
 #endif
-                    } label: {
-                        Text("forget")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.danger)
+                        } label: {
+                            Text("forget")
+                                .font(.system(size: 11))
+                                .foregroundStyle(theme.danger)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Forget paired device \(name)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Forget paired device \(name)")
+                    if let caption = householdCaption(for: name) {
+                        Text(caption)
+                            .font(.system(size: 10).italic())
+                            .foregroundStyle(theme.foregroundSubtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, 16)
+                    }
                 }
                 .padding(.vertical, 6)
                 .overlay(alignment: .bottom) {
@@ -145,6 +154,20 @@ struct MultipeerSettingsSection: View {
             }
             .buttonStyle(.plain)
             .padding(.top, 4)
+        }
+    }
+
+    /// Same Apple Account → notebooks sync on their own; different →
+    /// tell the user what does and doesn't happen. nil (unknown) →
+    /// say nothing rather than guess.
+    private func householdCaption(for name: String) -> String? {
+        switch MultipeerNotebookShare.isSameHousehold(peerName: name) {
+        case .some(true):
+            return "same apple account — notebooks sync automatically via icloud."
+        case .some(false):
+            return "different apple account — notebooks won't sync, but you can share one anytime: long-press it and choose send to device."
+        case .none:
+            return nil
         }
     }
 

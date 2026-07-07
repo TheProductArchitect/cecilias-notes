@@ -29,7 +29,17 @@ nonisolated enum CeciliasNotesParser {
         case malformedJSON(Error)
         case wrongSchema(String)
         case noPages
+        case fileTooLarge(bytes: Int)
     }
+
+    /// Hard ceiling on `.inkbook` size. The inbox is writable by any
+    /// process with access to the user's iCloud Drive, so the importer
+    /// must not trust file sizes — reading an arbitrarily large file
+    /// into `Data` before this check would let one junk file OOM the
+    /// app on every launch (the watcher re-fires until the file
+    /// changes). 32 MB is orders of magnitude above any real
+    /// text-block notebook.
+    static let maxFileBytes = 32 * 1024 * 1024
 
     /// Reads + decodes the file. Pure value work — safe to call from
     /// any thread. Explicitly nonisolated so detached parser tasks
@@ -44,6 +54,11 @@ nonisolated enum CeciliasNotesParser {
         var readError: Error?
 
         coordinator.coordinate(readingItemAt: url, options: [], error: &coordError) { readURL in
+            let size = (try? readURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size <= maxFileBytes else {
+                readError = ParseError.fileTooLarge(bytes: size)
+                return
+            }
             do { data = try Data(contentsOf: readURL) }
             catch { readError = error }
         }

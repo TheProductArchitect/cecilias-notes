@@ -182,6 +182,20 @@ struct LibraryView: View {
                     .padding(.bottom, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            if let info = viewModel.infoFlash {
+                Text(info)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.foregroundMuted)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(theme.surface)
+                            .overlay(Capsule().strokeBorder(theme.hairline, lineWidth: 0.5))
+                    )
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .accessibilityLabel(info)
+            }
             if showsICloudUnavailableBanner {
                 iCloudUnavailableBanner
                     .padding(.bottom, 8)

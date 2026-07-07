@@ -30,6 +30,12 @@ struct MacEditorView: View {
 
     var onClose: (() -> Void)? = nil
 
+    /// CloudKit can echo duplicate `Page` rows before the store sweep
+    /// converges — dedupe before any `ForEach` sees them.
+    private var displayPages: [Page] {
+        pages.dedupedById()
+    }
+
     init(
         notebook: Notebook,
         state: MacLibraryState,
@@ -59,7 +65,7 @@ struct MacEditorView: View {
                 editorTopChrome
                 MacDocModeView(
                     notebook: notebook,
-                    pages: pages,
+                    pages: displayPages,
                     selectedPageID: pageSelection,
                     editingBlockID: $state.editingBlockID,
                     selectedElementID: $state.selectedElementID,
@@ -95,22 +101,20 @@ struct MacEditorView: View {
                 .zIndex(85)
             }
 
-            MacFloatingRecordingControls(topInset: recordingControlsTopInset)
-                .zIndex(90)
         }
         .navigationTitle("")
         .background(MacWindowChromeFix())
         .accessibilityLabel(A11y.notebookLabel(
             title: notebook.title,
             subjectName: nil,
-            pageCount: pages.count,
+            pageCount: displayPages.count,
             modified: notebook.updatedAt
         ))
         .background(theme.background)
         .onAppear {
             MacStateUpdates.deferred {
                 if state.selectedPageID == nil {
-                    state.selectedPageID = pages.first?.id
+                    state.selectedPageID = displayPages.first?.id
                 }
                 publishHandoff()
             }
@@ -151,7 +155,7 @@ struct MacEditorView: View {
                 MacEditorHeaderView(
                     notebook: notebook,
                     state: state,
-                    pageCount: pages.count,
+                    pageCount: displayPages.count,
                     onBack: closeEditor,
                     onShare: { state.isExportPresented = true },
                     onExportPDF: exportPDF,
@@ -178,44 +182,24 @@ struct MacEditorView: View {
 
             if shouldShowFormatToolbar {
                 MacDockedTextFormatToolbar(
+                    coverTone: notebook.coverTone,
+                    isEditingText: state.editingBlockID != nil,
                     controller: richTextController,
                     onNeedsTextFocus: focusSelectedTextForFormatting
                 )
                     .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            if recordingSession.mode.isTranscribing {
-                MacLiveTranscriptionBar()
             }
         }
         .zIndex(75)
     }
 
     private var shouldShowFormatToolbar: Bool {
-        !state.isFocusMode
-            && !state.isCustomisePanelOpen
-            && !recordingSession.mode.isTranscribing
+        !state.isFocusMode && !state.isCustomisePanelOpen
     }
 
     /// Breathing room above the first page — chrome lives in `editorTopChrome`.
     private var documentTopInset: CGFloat {
         state.isFocusMode ? 16 : 48
-    }
-
-    private var recordingControlsTopInset: CGFloat {
-        var inset: CGFloat = 8
-        if !state.isFocusMode, !state.headerVisibility.isHeaderVisible {
-            inset += MacEditorChromeMetrics.collapsedRevealHeight
-        } else if !state.isFocusMode, state.headerVisibility.isHeaderVisible {
-            inset += MacEditorChromeMetrics.headerHeight
-        }
-        if shouldShowFormatToolbar {
-            inset += MacEditorChromeMetrics.formatToolbarHeight
-        }
-        if recordingSession.mode.isTranscribing {
-            inset += 168
-        }
-        return inset
     }
 
     private func focusSelectedTextForFormatting() {
@@ -224,7 +208,7 @@ struct MacEditorView: View {
             state.editingBlockID = selected
             return
         }
-        guard let pageID = state.selectedPageID ?? pages.first?.id else { return }
+        guard let pageID = state.selectedPageID ?? displayPages.first?.id else { return }
         let pid = pageID
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil },
@@ -593,8 +577,8 @@ struct MacEditorView: View {
     }
 
     private var currentPage: Page? {
-        guard let id = state.selectedPageID else { return pages.first }
-        return pages.first { $0.id == id } ?? pages.first
+        guard let id = state.selectedPageID else { return displayPages.first }
+        return displayPages.first { $0.id == id } ?? displayPages.first
     }
 
     private var pageSelection: Binding<UUID?> {
@@ -657,7 +641,7 @@ struct MacEditorView: View {
     }
 
     private func addPage(afterCurrent: Bool) {
-        let after = afterCurrent ? currentPage : pages.last
+        let after = afterCurrent ? currentPage : displayPages.last
         if let newPage = MacPageEditing.addPage(in: notebook, after: after, storage: storageService) {
             MacStateUpdates.deferred { state.selectedPageID = newPage.id }
         }
@@ -665,7 +649,7 @@ struct MacEditorView: View {
 
     private func deleteCurrentPage() {
         guard let page = currentPage else { return }
-        let pages = storageService.fetchPages(in: notebook)
+        let pages = storageService.fetchPages(in: notebook).dedupedById()
         guard MacPageEditing.deletePage(page, notebook: notebook, storage: storageService) else { return }
         let remaining = storageService.fetchPages(in: notebook)
         let next = remaining.first { $0.pageNumber >= page.pageNumber } ?? remaining.last
@@ -681,13 +665,13 @@ struct MacEditorView: View {
     private func canMoveCurrentPage(by delta: Int) -> Bool {
         guard let page = currentPage else { return false }
         let target = page.pageNumber + delta
-        return target >= 1 && target <= pages.count
+        return target >= 1 && target <= displayPages.count
     }
 
     private func moveCurrentPage(by delta: Int) {
         guard let page = currentPage else { return }
         let target = page.pageNumber + delta
-        guard target >= 1, target <= pages.count else { return }
+        guard target >= 1, target <= displayPages.count else { return }
         guard MacPageEditing.movePage(page, to: target, storage: storageService) else { return }
         MacStateUpdates.deferred { state.selectedPageID = page.id }
     }

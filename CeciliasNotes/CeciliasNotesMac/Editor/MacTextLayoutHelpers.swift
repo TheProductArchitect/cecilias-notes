@@ -46,15 +46,24 @@ enum MacPageAutoAdd {
 enum MacTextElementSplitter {
     private static let bottomPadding: CGFloat = 6
 
+    /// Outcome of an overflow split. `overflowStartUTF16` is the UTF-16
+    /// offset within the element's pre-split text where the continuation
+    /// begins — the live-transcription session uses it to keep writing
+    /// only the unconsumed tail into the continuation block.
+    struct SplitResult {
+        let continuationElementId: UUID
+        let overflowStartUTF16: Int
+    }
+
     @discardableResult
     static func splitIfNeeded(
         element: PageElement,
         content: TextContent,
         pageSize: CGSize,
         originY: CGFloat
-    ) -> Bool {
+    ) -> SplitResult? {
         let attributed = current(content)
-        guard attributed.length > 0 else { return false }
+        guard attributed.length > 0 else { return nil }
 
         let margin = MacDocPageLayout.horizontalMargin
         let contentWidth = max(40, pageSize.width - 2 * margin)
@@ -66,33 +75,43 @@ enum MacTextElementSplitter {
             context: nil
         ).height)
 
-        guard measured > availableHeight else { return false }
+        guard measured > availableHeight else { return nil }
 
         let splitIndex = findSplitIndex(
             attributed: attributed,
             width: contentWidth,
             available: availableHeight
         )
-        guard splitIndex > 0, splitIndex < attributed.length else { return false }
+        guard splitIndex > 0, splitIndex < attributed.length else { return nil }
 
         let snapped = snapToBoundary(attributed.string, near: splitIndex)
-        guard snapped > 0, snapped < attributed.length else { return false }
+        guard snapped > 0, snapped < attributed.length else { return nil }
 
         let fit = attributed.attributedSubstring(from: NSRange(location: 0, length: snapped))
         var overflowStart = snapped
-        let chars = Array(attributed.string)
-        while overflowStart < chars.count, (chars[overflowStart] == "\n" || chars[overflowStart] == " ") {
+        let nsText = attributed.string as NSString
+        while overflowStart < nsText.length {
+            let ch = nsText.character(at: overflowStart)
+            guard ch == 0x0A || ch == 0x20 else { break }
             overflowStart += 1
         }
-        guard overflowStart < attributed.length else { return false }
+        guard overflowStart < attributed.length else { return nil }
         let overflow = attributed.attributedSubstring(
             from: NSRange(location: overflowStart, length: attributed.length - overflowStart)
         )
 
         commit(attributed: fit, into: content)
         Page.clearInkbookStash(forPageId: element.pageId, context: StorageService.shared.context)
-        placeOverflow(overflow: overflow, afterPageId: element.pageId, notebookId: element.notebookId)
-        return true
+        guard let continuationId = placeOverflow(
+            overflow: overflow,
+            afterPageId: element.pageId,
+            notebookId: element.notebookId,
+            source: content.source
+        ) else { return nil }
+        return SplitResult(
+            continuationElementId: continuationId,
+            overflowStartUTF16: overflowStart
+        )
     }
 
     private static func current(_ content: TextContent) -> NSAttributedString {
@@ -111,8 +130,9 @@ enum MacTextElementSplitter {
     private static func placeOverflow(
         overflow: NSAttributedString,
         afterPageId: UUID,
-        notebookId: UUID
-    ) {
+        notebookId: UUID,
+        source: TextSource
+    ) -> UUID? {
         let storage = StorageService.shared
         let context = storage.context
 
@@ -121,7 +141,7 @@ enum MacTextElementSplitter {
         )
         guard let notebook = try? context.fetch(notebookDescriptor).first,
               let parentPage = storage.fetchPage(id: afterPageId) else {
-            return
+            return nil
         }
 
         let allPages = storage.fetchPages(in: notebook).sorted { $0.pageNumber < $1.pageNumber }
@@ -136,7 +156,7 @@ enum MacTextElementSplitter {
         ) {
             nextPage = made
         } else {
-            return
+            return nil
         }
 
         let pageWidth = nextPage.pageSize.pointSize.width
@@ -172,13 +192,14 @@ enum MacTextElementSplitter {
         )
         let content = TextContent(
             text: overflow.string,
-            source: .typed,
+            source: source,
             size: .body,
             attributedTextData: MacRichTextCodec.encode(overflow)
         )
         element.textContent = content
         context.insert(element)
         try? context.save()
+        return element.id
     }
 
     private static func findSplitIndex(
@@ -207,16 +228,27 @@ enum MacTextElementSplitter {
         return best
     }
 
+    /// Walks backwards (UTF-16 domain, matching `findSplitIndex`) looking
+    /// for the nearest newline, then the nearest whitespace, within a
+    /// 120-unit window. Returning UTF-16 offsets keeps the split ranges
+    /// aligned with `NSAttributedString` — mixing in `Character` indices
+    /// drifts on emoji and can cut a surrogate pair in half.
     private static func snapToBoundary(_ s: String, near index: Int) -> Int {
-        let chars = Array(s)
-        let safeIdx = min(max(0, index), chars.count)
+        let ns = s as NSString
+        let safeIdx = min(max(0, index), ns.length)
         let windowStart = max(0, safeIdx - 120)
-        if let nl = (windowStart..<safeIdx).reversed().first(where: { chars[$0] == "\n" }) {
-            return nl + 1
+        var whitespaceCandidate: Int?
+        var i = safeIdx - 1
+        while i >= windowStart {
+            let ch = ns.character(at: i)
+            if ch == 0x0A { return i + 1 }
+            if whitespaceCandidate == nil,
+               let scalar = Unicode.Scalar(ch),
+               CharacterSet.whitespaces.contains(scalar) {
+                whitespaceCandidate = i + 1
+            }
+            i -= 1
         }
-        if let ws = (windowStart..<safeIdx).reversed().first(where: { chars[$0].isWhitespace }) {
-            return ws + 1
-        }
-        return safeIdx
+        return whitespaceCandidate ?? safeIdx
     }
 }

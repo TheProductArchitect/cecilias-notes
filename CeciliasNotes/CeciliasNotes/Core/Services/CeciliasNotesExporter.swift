@@ -57,6 +57,17 @@ final class CeciliasNotesExporter {
         for nb in notebooks { export(nb) }
     }
 
+    /// Serialize `notebook` to `.inkbook` bytes in memory — used by
+    /// the multipeer "send to device" flow, which ships the same
+    /// schema the MCP mirror uses so the receiver's importer needs
+    /// no new code path.
+    func inkbookData(for notebook: Notebook) -> Data? {
+        let file = buildFile(for: notebook)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try? encoder.encode(file)
+    }
+
     // MARK: - File-system helpers (nonisolated)
 
     private static func mcpNotebooksURL() -> URL? {

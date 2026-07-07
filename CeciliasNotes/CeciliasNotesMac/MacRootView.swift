@@ -17,6 +17,8 @@ struct MacRootView: View {
     @State private var isLibraryFocusMode = false
     @State private var isShowingRecentExports = false
     @State private var importFeedback: MacImportFeedback?
+    @State private var isICloudBannerDismissed = UserDefaults.standard
+        .bool(forKey: "ceciliasnotes.mac.icloudBannerDismissed")
 
     var body: some View {
         macRootObservers(
@@ -44,6 +46,9 @@ struct MacRootView: View {
 
     private var libraryShell: some View {
         VStack(spacing: 0) {
+            if showsICloudUnavailableBanner {
+                macICloudUnavailableBanner
+            }
             if !isLibraryFocusMode {
                 LibraryHeaderView(
                     viewModel: libraryVM,
@@ -264,22 +269,10 @@ struct MacRootView: View {
     private func handleSelectedNotebookChange(_ id: UUID?) {
         MacStateUpdates.deferred {
             guard let id, libraryVM.notebook(id: id) != nil else { return }
-            var handoffUserInfo: [AnyHashable: Any]?
-            if let pageId = libraryVM.deepLinkPageId {
-                libraryVM.deepLinkPageId = nil
-                handoffUserInfo = [
-                    MacHandoff.notebookIdKey: id,
-                    MacHandoff.pageIdKey: pageId,
-                ]
-            }
             openNotebookInline(id: id)
-            if let handoffUserInfo {
-                NotificationCenter.default.post(
-                    name: .macOpenHandoffPage,
-                    object: nil,
-                    userInfo: handoffUserInfo
-                )
-            }
+            // `deepLinkPageId` is consumed by `MacNotebookEditorWindow`
+            // on appear so search hits land on the right page even when
+            // the inline editor wasn't mounted yet.
         }
     }
 
@@ -403,6 +396,55 @@ struct MacRootView: View {
             }
         }
         return false
+    }
+
+    private var showsICloudUnavailableBanner: Bool {
+        CloudKitContainerState.status == .localOnlyFallback && !isICloudBannerDismissed
+    }
+
+    private var macICloudUnavailableBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "icloud.slash")
+                .font(.system(size: 13, weight: .medium))
+                .accessibilityHidden(true)
+
+            Text("iCloud sync paused — notes from other devices won't appear until you restore sync.")
+                .font(.system(size: 12))
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("Settings") {
+                NotificationCenter.default.post(name: .macOpenSettings, object: nil)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .semibold))
+
+            Button {
+                withAnimation {
+                    isICloudBannerDismissed = true
+                    UserDefaults.standard.set(true, forKey: "ceciliasnotes.mac.icloudBannerDismissed")
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .foregroundStyle(theme.foreground)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(theme.danger.opacity(0.4), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 }
 

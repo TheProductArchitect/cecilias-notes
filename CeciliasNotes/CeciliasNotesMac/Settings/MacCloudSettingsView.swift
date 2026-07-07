@@ -2,7 +2,7 @@ import CloudKit
 import SwiftData
 import SwiftUI
 
-/// macOS iCloud settings — grouped form, short copy, advanced options tucked away.
+/// macOS iCloud settings — one clear status, separate iCloud vs nearby pairing.
 struct MacCloudSettingsView: View {
     @EnvironmentObject private var cloudSync: CloudSyncManager
     @Environment(\.theme) private var theme
@@ -13,11 +13,33 @@ struct MacCloudSettingsView: View {
         .bool(forKey: ModelContainer.swiftDataCloudKitDisabledKey)
     @State private var pendingDatabaseSyncRelaunch = false
     @State private var iCloudAccountStatus: CKAccountStatus?
-    @State private var showAdvanced = false
+    @State private var showTroubleshooting = false
+    @State private var pendingCloudKitRecoveryRelaunch = false
+
+    private var isDatabasePaused: Bool {
+        CloudKitContainerState.status == .localOnlyFallback
+    }
 
     var body: some View {
         Form {
             Section {
+                if isDatabasePaused {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Notebook sync paused", systemImage: "exclamationmark.icloud")
+                            .font(.headline)
+                            .foregroundStyle(theme.danger)
+                        Text("The app shut down uncleanly twice, so notebook syncing was paused to protect your data. Notes on this Mac are safe.")
+                            .font(.callout)
+                            .foregroundStyle(theme.foregroundMuted)
+                        Button("Restore & Relaunch") {
+                            pendingCloudKitRecoveryRelaunch = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .macSuppressFocusRing()
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 Toggle("Sync with iCloud", isOn: Binding(
                     get: { cloudSync.isEnabled },
                     set: { enabling in
@@ -26,47 +48,60 @@ struct MacCloudSettingsView: View {
                 ))
 
                 if cloudSync.isEnabled {
-                    LabeledContent("Files", value: fileSyncStatusLabel)
-                    LabeledContent("Database", value: databaseSyncStatusLabel)
+                    LabeledContent("Notebooks", value: databaseSyncStatusLabel)
+                    LabeledContent("Photos & files", value: fileSyncStatusLabel)
 
                     Button("Sync Now") {
                         Task { await cloudSync.syncNow() }
                     }
+                    .macSuppressFocusRing()
                 }
             } footer: {
-                Text("Notebooks and media stay in step across your Mac, iPad, and iPhone.")
-            }
-
-            Section("Nearby Devices") {
-                MacMultipeerPairingSection()
+                if isDatabasePaused {
+                    Text("Use Restore & Relaunch above — toggling iCloud off and on won't fix a paused database.")
+                } else {
+                    Text("Notebooks and media stay in step across your Mac, iPad, and iPhone.")
+                }
             }
 
             Section {
-                DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
-                    Toggle("Disable database sync", isOn: Binding(
-                        get: { swiftDataCloudKitDisabled },
-                        set: { newValue in
-                            swiftDataCloudKitDisabled = newValue
-                            let defaults = UserDefaults.standard
-                            defaults.set(newValue, forKey: ModelContainer.swiftDataCloudKitDisabledKey)
-                            defaults.synchronize()
-                            pendingDatabaseSyncRelaunch = true
-                        }
-                    ))
+                MacMultipeerPairingSection()
+            } header: {
+                Text("Send to iPad")
+            } footer: {
+                Text("Pair on the same Wi‑Fi to send pages to a nearby device. Separate from iCloud sync.")
+            }
 
-                    if CloudKitContainerState.status == .localOnlyFallback {
-                        Text("Database sync paused after unclean shutdowns. Turn this off and relaunch, or sign in to iCloud.")
+            Section {
+                DisclosureGroup("Troubleshooting", isExpanded: $showTroubleshooting) {
+                    if !isDatabasePaused {
+                        Toggle("Disable notebook database sync", isOn: Binding(
+                            get: { swiftDataCloudKitDisabled },
+                            set: { newValue in
+                                swiftDataCloudKitDisabled = newValue
+                                let defaults = UserDefaults.standard
+                                defaults.set(newValue, forKey: ModelContainer.swiftDataCloudKitDisabledKey)
+                                defaults.synchronize()
+                                pendingDatabaseSyncRelaunch = true
+                            }
+                        ))
+                        Text("Only if the app freezes on startup. Photos & files sync is unaffected.")
                             .font(.caption)
-                            .foregroundStyle(theme.danger)
+                            .foregroundStyle(theme.foregroundSubtle)
                     }
 
                     MacCloudConflictSummary()
                 }
             } footer: {
-                Text("Only change database sync if the app freezes on startup.")
+                if isDatabasePaused {
+                    Text("Notebook sync is already paused — use Restore & Relaunch in the section above.")
+                } else {
+                    Text("Leave database sync on unless support asks you to turn it off.")
+                }
             }
         }
         .formStyle(.grouped)
+        .macFormFocusChrome()
         .task { await refreshAccountStatus() }
         .alert("Enable iCloud sync?", isPresented: $pendingEnable) {
             Button("Cancel", role: .cancel) {}
@@ -88,6 +123,29 @@ struct MacCloudSettingsView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Quit and reopen Cecilia's Notes for this change to take effect.")
+        }
+        .alert("Restore sync and relaunch?", isPresented: $pendingCloudKitRecoveryRelaunch) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restore & Relaunch") {
+                ModelContainer.prepareCloudKitRecoveryRelaunch()
+                relaunchApp()
+            }
+        } message: {
+            Text("Cecilia's Notes will quit and reopen with notebook sync re-enabled. Unsaved edits are saved automatically first.")
+        }
+    }
+
+    /// Spawn a fresh instance, then terminate this one. The button
+    /// says "Relaunch" — making the user quit by hand after a promise
+    /// of relaunching reads as a broken button.
+    private func relaunchApp() {
+        let bundleURL = Bundle.main.bundleURL
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, _ in
+            DispatchQueue.main.async {
+                NSApp.terminate(nil)
+            }
         }
     }
 
@@ -149,6 +207,7 @@ private struct MacCloudConflictSummary: View {
                     refresh()
                 }
                 .font(.caption)
+                .macSuppressFocusRing()
             }
         }
         .onAppear(perform: refresh)

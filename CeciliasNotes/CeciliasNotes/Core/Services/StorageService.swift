@@ -107,6 +107,11 @@ final class StorageService: ObservableObject {
         do {
             let c = try ModelContainer.ceciliasNotesContainer()
             self.init(container: c)
+            // Must run before `LibraryViewModel.init` → `refresh()` —
+            // duplicate primary keys make `Dictionary(uniqueKeysWithValues:)`
+            // and SwiftUI `ForEach` fatal-error on the first frame.
+            purgeDuplicateRows()
+            reconcileSoftDeleteFlags()
         } catch {
             // Safe: SwiftData container init only fails when the on-disk SQLite
             // file is corrupt or Application Support is unwritable — unrecoverable
@@ -823,6 +828,7 @@ extension StorageService {
         scheduleSpotlightReindex(for: notebook)
         scheduleWidgetSnapshot()
         CeciliasNotesExporter.shared.export(notebook)
+        MultipeerNotebookHint.broadcastNotebookChanged(notebookId: notebook.id)
         return notebook
     }
 
@@ -887,7 +893,10 @@ extension StorageService {
             predicate: #Predicate { !$0.isDeleted && idSet.contains($0.id) }
         )
         let matched = (try? context.fetch(descriptor)) ?? []
-        let byId = Dictionary(uniqueKeysWithValues: matched.map { ($0.id, $0) })
+        let byId = Dictionary(
+            matched.map { ($0.id, $0) },
+            uniquingKeysWith: { $0.updatedAt >= $1.updatedAt ? $0 : $1 }
+        )
 
         var out: [Notebook] = []
         for id in recentIds {
@@ -945,6 +954,7 @@ extension StorageService {
         scheduleSpotlightReindex(for: notebook)
         scheduleWidgetSnapshot()
         CeciliasNotesExporter.shared.export(notebook)
+        MultipeerNotebookHint.broadcastNotebookChanged(notebookId: notebook.id)
     }
 
     func moveNotebook(_ notebook: Notebook, to subjectId: UUID?) throws {
@@ -985,6 +995,7 @@ extension StorageService {
         SearchIndexService.shared.removeNotebook(id: id)
         scheduleWidgetSnapshot()
         CeciliasNotesExporter.shared.removeExport(for: id)
+        MultipeerNotebookHint.broadcastNotebookChanged(notebookId: id)
     }
 
     func duplicateNotebook(_ notebook: Notebook) async throws -> Notebook {
@@ -1657,7 +1668,8 @@ extension StorageService {
             FetchDescriptor<Page>(predicate: #Predicate { $0.isDeleted == false })
         )) ?? []
         let pageToNotebook: [UUID: UUID] = Dictionary(
-            uniqueKeysWithValues: allPages.map { ($0.id, $0.notebookId) }
+            allPages.map { ($0.id, $0.notebookId) },
+            uniquingKeysWith: { first, _ in first }
         )
 
         // Notebook titles
@@ -2084,7 +2096,8 @@ extension StorageService {
     func scheduleWidgetSnapshot() {
         let recentIds = RecentNotebooksTracker.recentIdsNewestFirst()
         let byRecentRank: [UUID: Int] = Dictionary(
-            uniqueKeysWithValues: recentIds.enumerated().map { ($0.element, $0.offset) }
+            recentIds.enumerated().map { ($0.element, $0.offset) },
+            uniquingKeysWith: { first, _ in first }
         )
         let summaries: [NotebookSummary] = fetchAllNotebooks()
             .sorted { lhs, rhs in

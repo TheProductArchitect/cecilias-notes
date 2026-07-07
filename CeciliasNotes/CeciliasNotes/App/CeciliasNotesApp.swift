@@ -53,6 +53,7 @@ struct CeciliasNotesApp: App {
         // actually about. DEBUG-only.
         #if DEBUG
         HostingHierarchyDiagnostics.installOnce()
+        MainThreadWatchdog.install()
         #endif
 
         // Fix 2 — instantiate the icon-update gate at launch so its
@@ -286,6 +287,17 @@ struct CeciliasNotesApp: App {
                     // much faster than iCloud sync. No-op when the
                     // toggle is off.
                     _ = MultipeerSyncService.shared
+
+                    // Multipeer browse lane: when this device has
+                    // paired peers or is signed into iCloud (household
+                    // auto-pair), actively look for the other devices
+                    // instead of waiting to be found. This is what
+                    // lets an iPhone and an iPad on the same Wi-Fi
+                    // form the live link without a Mac in the room.
+                    if !MultipeerPairingStore.pairedPeerNames().isEmpty
+                        || MultipeerPairingStore.householdTokenHash() != nil {
+                        MultipeerSendService.shared.startBackgroundReconnect()
+                    }
 
                     // Share-extension ingest: watch the app-group
                     // ShareInbox for files dropped by the iOS share

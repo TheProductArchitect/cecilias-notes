@@ -21,6 +21,14 @@ final class QuizMCPImporter {
     private var processedRequests: Set<String> = []
 
     func importResponse(at url: URL) {
+        // Same trust boundary as `.inkbook` imports: anything with
+        // access to the user's iCloud Drive can write here, so cap
+        // the size before reading the file into memory.
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size <= CeciliasNotesParser.maxFileBytes else {
+            log("rejected oversized response \(url.lastPathComponent) (\(size) bytes)")
+            return
+        }
         guard let data = try? Data(contentsOf: url),
               let envelope = try? JSONDecoder().decode(ResponseEnvelope.self, from: data)
         else {

@@ -213,8 +213,8 @@ struct MacEditorHeaderView: View {
                     onStartTranscription()
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
-                        Label("Live Transcription", systemImage: "text.bubble")
-                        Text("Meeting notes — text appears as you speak")
+                        Label("Meeting Transcription", systemImage: "text.bubble")
+                        Text("Text appears as you speak — summary added on top when you stop")
                             .font(.system(size: 10))
                             .foregroundStyle(theme.recessiveTertiary)
                     }
@@ -222,7 +222,7 @@ struct MacEditorHeaderView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                 }
-                .buttonStyle(.plain)
+                .macEditorChromeButton()
 
                 Divider().padding(.horizontal, 10)
 
@@ -240,10 +240,11 @@ struct MacEditorHeaderView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                 }
-                .buttonStyle(.plain)
+                .macEditorChromeButton()
             }
             .padding(.vertical, 6)
             .frame(width: 260)
+            .macSuppressFocusRing()
         }
         .onChange(of: showRecordingPopover) { _, open in
             if open {

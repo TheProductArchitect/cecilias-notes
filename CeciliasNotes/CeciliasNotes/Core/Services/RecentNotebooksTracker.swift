@@ -64,7 +64,10 @@ enum RecentNotebooksTracker {
             let kept = map
                 .sorted { $0.value > $1.value }
                 .prefix(maxEntries)
-            map = Dictionary(uniqueKeysWithValues: kept.map { ($0.key, $0.value) })
+            map = Dictionary(
+                kept.map { ($0.key, $0.value) },
+                uniquingKeysWith: { first, _ in first }
+            )
         }
 
         writeMap(map, to: defaults)

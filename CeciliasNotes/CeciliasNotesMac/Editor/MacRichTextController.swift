@@ -181,10 +181,15 @@ final class MacRichTextController: ObservableObject {
     func attach(_ textView: NSTextView, defaultInk: NSColor = .labelColor) {
         self.textView = textView
         self.defaultInkColor = defaultInk
-        refresh()
+        MacStateUpdates.deferred { [weak self] in self?.refresh() }
         let pending = pendingActions
         pendingActions.removeAll()
-        pending.forEach { $0() }
+        guard !pending.isEmpty else { return }
+        MacStateUpdates.deferred { [weak self] in
+            guard let self else { return }
+            pending.forEach { $0() }
+            self.refresh()
+        }
     }
 
     func detach() {
@@ -193,10 +198,10 @@ final class MacRichTextController: ObservableObject {
         currentAttributes = MacRichTextAttributeSnapshot()
     }
 
-    /// Runs immediately when a text view is attached; otherwise queues until attach.
+    /// Runs on the next tick when a text view is attached; otherwise queues until attach.
     func performWhenReady(_ action: @escaping () -> Void) {
         if textView != nil {
-            action()
+            MacStateUpdates.deferred { action() }
         } else {
             pendingActions.append(action)
         }
@@ -389,9 +394,19 @@ final class MacRichTextController: ObservableObject {
             }
         }
         let newText = rebuilt.joined(separator: "\n")
-        storage.replaceCharacters(in: lineRange, with: newText)
-        storage.addAttribute(Self.listKey, value: mode.rawValue, range: NSRange(location: lineRange.location, length: newText.utf16.count))
-        refresh()
+        var seedAttrs: [NSAttributedString.Key: Any] = [:]
+        if storage.length > 0, lineRange.location < storage.length {
+            seedAttrs = storage.attributes(at: lineRange.location, effectiveRange: nil)
+        } else if !tv.typingAttributes.isEmpty {
+            seedAttrs = tv.typingAttributes
+        }
+        seedAttrs[Self.listKey] = mode.rawValue
+        storage.replaceCharacters(
+            in: lineRange,
+            with: NSAttributedString(string: newText, attributes: seedAttrs)
+        )
+        notifyDidChange()
+        refreshDeferred()
     }
 
     private func applyToSelection(_ mutate: ([NSAttributedString.Key: Any]) -> [NSAttributedString.Key: Any]) {
@@ -399,29 +414,66 @@ final class MacRichTextController: ObservableObject {
         let range = tv.selectedRange()
         if range.length == 0 {
             tv.typingAttributes = mutate(tv.typingAttributes)
-            refresh()
+            notifyDidChange()
+            refreshDeferred()
             return
         }
         storage.beginEditing()
-        storage.enumerateAttributes(in: range) { attrs, subRange, _ in
-            let next = mutate(attrs)
-            storage.setAttributes(next, range: subRange)
+        storage.enumerateAttributes(in: range, options: []) { attrs, subRange, _ in
+            storage.setAttributes(mutate(attrs), range: subRange)
         }
         storage.endEditing()
-        refresh()
+        notifyDidChange()
+        refreshDeferred()
     }
 
     private func applyToParagraph(_ mutate: ([NSAttributedString.Key: Any], NSRange) -> [NSAttributedString.Key: Any]) {
         guard let tv = textView, let storage = tv.textStorage else { return }
         let selection = tv.selectedRange()
+
+        if selection.length == 0, storage.length == 0 {
+            var current = tv.typingAttributes
+            current = mutate(current, NSRange(location: 0, length: 0))
+            tv.typingAttributes = current
+            notifyDidChange()
+            refreshDeferred()
+            return
+        }
+
         let nsText = storage.string as NSString
-        let paraRange = nsText.paragraphRange(for: selection)
+        let paragraphRange = nsText.paragraphRange(for: selection)
+
+        guard paragraphRange.length > 0, paragraphRange.location < storage.length else {
+            var current = tv.typingAttributes.isEmpty
+                ? MacRichTextCodec.defaultTypingAttributes()
+                : tv.typingAttributes
+            current = mutate(current, paragraphRange)
+            tv.typingAttributes = current
+            notifyDidChange()
+            refreshDeferred()
+            return
+        }
+
         storage.beginEditing()
-        var attrs = storage.attributes(at: paraRange.location, effectiveRange: nil)
-        attrs = mutate(attrs, paraRange)
-        storage.setAttributes(attrs, range: paraRange)
+        storage.enumerateAttributes(in: paragraphRange, options: []) { existing, subrange, _ in
+            storage.setAttributes(mutate(existing, subrange), range: subrange)
+        }
         storage.endEditing()
-        refresh()
+
+        var typing = tv.typingAttributes
+        typing = mutate(typing, selection)
+        tv.typingAttributes = typing
+        notifyDidChange()
+        refreshDeferred()
+    }
+
+    private func notifyDidChange() {
+        guard let tv = textView else { return }
+        NotificationCenter.default.post(name: NSText.didChangeNotification, object: tv)
+    }
+
+    private func refreshDeferred() {
+        MacStateUpdates.deferred { [weak self] in self?.refresh() }
     }
 
     private func snapshot(for tv: NSTextView) -> MacRichTextAttributeSnapshot {
@@ -520,36 +572,78 @@ final class MacRichTextController: ObservableObject {
 
 struct MacTextFormatToolbar: View {
     @ObservedObject var controller: MacRichTextController
+    var isEditingText: Bool
     var onNeedsTextFocus: () -> Void = {}
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isInkPopoverOpen = false
+    @State private var isHighlightPopoverOpen = false
 
     private var textSwatches: [NSColor] {
         MacRichTextColorPalette.textSwatches(isDark: colorScheme == .dark)
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            formatEyebrow
+            Spacer(minLength: 16)
+            toolRail
+            Spacer(minLength: 16)
+            formatStatus
+        }
+        .padding(.horizontal, 4)
+        .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
+    }
+
+    private var formatEyebrow: some View {
+        Text("format")
+            .font(.system(size: 9.5, weight: .regular))
+            .tracking(0.1)
+            .textCase(.uppercase)
+            .foregroundStyle(theme.recessiveTertiary)
+            .frame(width: 52, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var formatStatus: some View {
+        Group {
+            if isEditingText {
+                Circle()
+                    .fill(theme.accent)
+                    .frame(width: 5, height: 5)
+                    .accessibilityHidden(true)
+            } else {
+                Text("click text")
+                    .font(.system(size: 9.5, weight: .regular))
+                    .tracking(0.08)
+                    .textCase(.uppercase)
+                    .foregroundStyle(theme.recessiveQuaternary)
+            }
+        }
+        .frame(width: 52, alignment: .trailing)
+    }
+
+    private var toolRail: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 styleToggles
                 toolbarDivider
                 headingMenu
                 familyMenu
-                sizeMenu
+                sizePicker
                 toolbarDivider
                 alignmentPicker
                 listToggles
                 toolbarDivider
-                colorSwatches
+                inkControl
                 highlightControl
                 toolbarDivider
                 iconToggle("textformat", isOn: false) { applyFormat { controller.clearFormatting() } }
                     .accessibilityLabel("Clear formatting")
             }
-            .padding(.horizontal, 16)
-            .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
+            .frame(maxWidth: .infinity)
         }
-        .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
+        .frame(maxWidth: .infinity)
     }
 
     private var foregroundBinding: Binding<Color> {
@@ -560,17 +654,37 @@ struct MacTextFormatToolbar: View {
                 }
                 return Color.primary
             },
-            set: { color in applyFormat { controller.setForeground(NSColor(color)) } }
+            set: { color in
+                applyFormat { controller.setForeground(NSColor(color)) }
+            }
+        )
+    }
+
+    private var highlightBinding: Binding<Color> {
+        Binding(
+            get: {
+                if let bg = controller.currentAttributes.highlight {
+                    return Color(nsColor: bg)
+                }
+                return Color.yellow.opacity(0.35)
+            },
+            set: { color in
+                applyFormat { controller.setHighlight(NSColor(color)) }
+            }
         )
     }
 
     private func applyFormat(_ action: @escaping () -> Void) {
-        onNeedsTextFocus()
-        controller.performWhenReady(action)
+        MacStateUpdates.deferred {
+            onNeedsTextFocus()
+            MacStateUpdates.deferred {
+                controller.performWhenReady(action)
+            }
+        }
     }
 
     private var styleToggles: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             iconToggle("bold", isOn: controller.currentAttributes.isBold) { applyFormat { controller.toggleBold() } }
             iconToggle("italic", isOn: controller.currentAttributes.isItalic) { applyFormat { controller.toggleItalic() } }
             iconToggle("underline", isOn: controller.currentAttributes.isUnderline) { applyFormat { controller.toggleUnderline() } }
@@ -596,126 +710,139 @@ struct MacTextFormatToolbar: View {
                 }
             }
         } label: {
-            menuLabel(title: controller.currentAttributes.heading.label, width: 56)
+            menuLabel(title: controller.currentAttributes.heading.label, width: 52)
         }
         .menuStyle(.borderlessButton)
         .macSuppressFocusRing()
     }
 
-    private var sizeMenu: some View {
-        Menu {
-            ForEach(MacRichTextSize.allCases, id: \.self) { s in
-                Button { applyFormat { controller.setSize(s) } } label: {
-                    HStack {
-                        Text(sizeMenuLabel(s))
-                        if controller.currentAttributes.size == s {
-                            Spacer()
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-            }
-        } label: {
-            menuLabel(title: sizeMenuLabel(controller.currentAttributes.size), width: 52)
-        }
-        .menuStyle(.borderlessButton)
-        .macSuppressFocusRing()
-    }
-
-    private func sizeMenuLabel(_ size: MacRichTextSize) -> String {
-        switch size {
-        case .small:   return "Small"
-        case .regular: return "Medium"
-        case .large:   return "Large"
-        }
-    }
-
-    private var colorSwatches: some View {
-        HStack(spacing: 5) {
-            ForEach(Array(textSwatches.enumerated()), id: \.offset) { _, swatch in
-                Button {
-                    applyFormat { controller.setForeground(swatch) }
-                } label: {
-                    Circle()
-                        .fill(Color(nsColor: swatch))
-                        .frame(width: 18, height: 18)
-                        .overlay {
-                            Circle()
-                                .strokeBorder(theme.hairline, lineWidth: 0.5)
-                        }
-                        .overlay {
-                            if colorsMatch(swatch, controller.currentAttributes.foreground) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(contrastInk(for: swatch))
-                            }
-                        }
+    private var sizePicker: some View {
+        HStack(spacing: 0) {
+            ForEach(MacRichTextSize.allCases, id: \.self) { size in
+                Button { applyFormat { controller.setSize(size) } } label: {
+                    Text(size.label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(
+                            controller.currentAttributes.size == size
+                                ? theme.accent
+                                : theme.foregroundMuted
+                        )
+                        .frame(width: 26, height: 28)
+                        .background(
+                            controller.currentAttributes.size == size
+                                ? theme.accentMuted
+                                : Color.clear
+                        )
                 }
                 .buttonStyle(.plain)
                 .macSuppressFocusRing()
             }
-
-            Menu {
-                ColorPicker("Text color", selection: foregroundBinding, supportsOpacity: false)
-                Divider()
-                Button("Default color") { applyFormat { controller.setForeground(nil) } }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(theme.recessiveSecondary)
-                    .frame(width: 22, height: 22)
-            }
-            .menuStyle(.borderlessButton)
-            .macSuppressFocusRing()
-            .accessibilityLabel("More text colors")
         }
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(theme.recessiveQuinary.opacity(0.35))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(theme.hairline, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var inkControl: some View {
+        Button {
+            isInkPopoverOpen.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(currentInkColor)
+                    .frame(width: 14, height: 14)
+                    .overlay(Circle().strokeBorder(theme.hairline, lineWidth: 0.5))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(theme.recessiveSecondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(theme.recessiveQuinary.opacity(0.35))
+            )
+        }
+        .macEditorChromeButton()
+        .popover(isPresented: $isInkPopoverOpen, arrowEdge: .bottom) {
+            MacTextColorPopover(
+                title: "Text color",
+                selection: foregroundBinding,
+                swatches: textSwatches,
+                onDefault: { applyFormat { controller.setForeground(nil) } },
+                onPickSwatch: { swatch in applyFormat { controller.setForeground(swatch) } }
+            )
+            .padding(14)
+            .frame(width: 236)
+        }
+        .accessibilityLabel("Text color")
+    }
+
+    private var currentInkColor: Color {
+        if let fg = controller.currentAttributes.foreground {
+            return Color(nsColor: fg)
+        }
+        return theme.foreground
+    }
+
+    private func inkName(for swatch: NSColor) -> String {
+        guard let rgb = swatch.usingColorSpace(.sRGB) else { return "Color" }
+        if rgb.redComponent < 0.2, rgb.greenComponent < 0.2, rgb.blueComponent < 0.2 { return "Black" }
+        if rgb.redComponent > 0.75, rgb.greenComponent < 0.4 { return "Red" }
+        if rgb.greenComponent > 0.45, rgb.redComponent < 0.5 { return "Green" }
+        if rgb.blueComponent > 0.55, rgb.redComponent < 0.4 { return "Blue" }
+        return "Color"
     }
 
     private var highlightControl: some View {
-        HStack(spacing: 5) {
-            Button {
-                applyFormat { controller.setHighlight(nil) }
-            } label: {
-                ZStack {
-                    Circle()
-                        .strokeBorder(theme.hairline, lineWidth: 0.5)
-                        .background(Circle().fill(theme.recessiveQuinary.opacity(0.35)))
-                        .frame(width: 18, height: 18)
-                    Image(systemName: "nosign")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(theme.recessiveSecondary)
-                }
+        Button {
+            isHighlightPopoverOpen.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(currentHighlightColor)
+                    .frame(width: 14, height: 14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .strokeBorder(theme.hairline, lineWidth: 0.5)
+                    )
+                Image(systemName: "highlighter")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(theme.recessiveSecondary)
             }
-            .buttonStyle(.plain)
-            .macSuppressFocusRing()
-            .accessibilityLabel("Remove highlight")
-
-            ForEach(Array(MacRichTextColorPalette.highlights.enumerated()), id: \.offset) { _, swatch in
-                Button {
-                    applyFormat { controller.setHighlight(swatch) }
-                } label: {
-                    Circle()
-                        .fill(Color(nsColor: swatch))
-                        .frame(width: 18, height: 18)
-                        .overlay {
-                            Circle()
-                                .strokeBorder(theme.hairline, lineWidth: 0.5)
-                        }
-                        .overlay {
-                            if let active = controller.currentAttributes.highlight,
-                               colorsMatch(active, swatch) {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(Color.black.opacity(0.55))
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .macSuppressFocusRing()
-            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(theme.recessiveQuinary.opacity(0.35))
+            )
         }
-        .accessibilityElement(children: .contain)
+        .macEditorChromeButton()
+        .popover(isPresented: $isHighlightPopoverOpen, arrowEdge: .bottom) {
+            MacTextColorPopover(
+                title: "Highlight",
+                selection: highlightBinding,
+                swatches: MacRichTextColorPalette.highlights,
+                onDefault: { applyFormat { controller.setHighlight(nil) } },
+                onPickSwatch: { swatch in applyFormat { controller.setHighlight(swatch) } }
+            )
+            .padding(14)
+            .frame(width: 236)
+        }
         .accessibilityLabel("Highlight color")
+    }
+
+    private var currentHighlightColor: Color {
+        if let highlight = controller.currentAttributes.highlight {
+            return Color(nsColor: highlight)
+        }
+        return theme.recessiveQuinary.opacity(0.5)
     }
 
     private func colorsMatch(_ a: NSColor?, _ b: NSColor?) -> Bool {
@@ -726,12 +853,6 @@ struct MacTextFormatToolbar: View {
         }
     }
 
-    private func contrastInk(for swatch: NSColor) -> Color {
-        guard let rgb = swatch.usingColorSpace(.sRGB) else { return .white }
-        let luminance = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
-        return luminance > 0.6 ? .black : .white
-    }
-
     private func menuLabel(title: String, width: CGFloat? = nil) -> some View {
         HStack(spacing: 4) {
             Text(title)
@@ -740,11 +861,14 @@ struct MacTextFormatToolbar: View {
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .semibold))
         }
-        .foregroundStyle(theme.foreground)
+        .foregroundStyle(theme.foregroundMuted)
         .frame(minWidth: width ?? 0, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(theme.recessiveQuinary.opacity(0.5)))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(theme.recessiveQuinary.opacity(0.35))
+        )
     }
 
     private var familyMenu: some View {
@@ -761,7 +885,7 @@ struct MacTextFormatToolbar: View {
                 }
             }
         } label: {
-            menuLabel(title: controller.currentAttributes.family.label, width: 52)
+            menuLabel(title: controller.currentAttributes.family.label, width: 48)
         }
         .menuStyle(.borderlessButton)
         .macSuppressFocusRing()
@@ -772,18 +896,32 @@ struct MacTextFormatToolbar: View {
             ForEach(MacRichTextAlignment.allCases, id: \.self) { a in
                 Button { applyFormat { controller.setAlignment(a) } } label: {
                     Image(systemName: a.systemImage)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(controller.currentAttributes.alignment == a ? Color.white : theme.foreground)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(
+                            controller.currentAttributes.alignment == a
+                                ? theme.accent
+                                : theme.foregroundMuted
+                        )
                         .frame(width: 30, height: 28)
-                        .background(controller.currentAttributes.alignment == a ? theme.accent : Color.clear)
+                        .background(
+                            controller.currentAttributes.alignment == a
+                                ? theme.accentMuted
+                                : Color.clear
+                        )
                 }
                 .buttonStyle(.plain)
                 .macSuppressFocusRing()
             }
         }
-        .background(RoundedRectangle(cornerRadius: 6).fill(theme.recessiveQuinary.opacity(0.5)))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.hairline, lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(theme.recessiveQuinary.opacity(0.35))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(theme.hairline, lineWidth: 0.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var listToggles: some View {
@@ -796,16 +934,64 @@ struct MacTextFormatToolbar: View {
     private func iconToggle(_ systemImage: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isOn ? Color.white : theme.foreground)
-                .frame(width: 30, height: 28)
-                .background(RoundedRectangle(cornerRadius: 6).fill(isOn ? theme.accent : theme.recessiveQuinary.opacity(0.5)))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isOn ? theme.accent : theme.foregroundMuted)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(isOn ? theme.accentMuted : theme.recessiveQuinary.opacity(0.35))
+                )
         }
         .buttonStyle(.plain)
         .macSuppressFocusRing()
     }
 
     private var toolbarDivider: some View {
-        Rectangle().fill(theme.hairline).frame(width: 0.5, height: 22)
+        Rectangle()
+            .fill(theme.hairline)
+            .frame(width: 0.5, height: 20)
+    }
+}
+
+// MARK: - Color popover (Google Docs–style picker, not inline swatch row)
+
+private struct MacTextColorPopover: View {
+    let title: String
+    @Binding var selection: Color
+    let swatches: [NSColor]
+    var onDefault: () -> Void
+    var onPickSwatch: (NSColor) -> Void
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(theme.foregroundMuted)
+
+            ColorPicker("Custom", selection: $selection, supportsOpacity: false)
+                .labelsHidden()
+
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(28), spacing: 8), count: 4), spacing: 8) {
+                ForEach(Array(swatches.enumerated()), id: \.offset) { _, swatch in
+                    Button {
+                        onPickSwatch(swatch)
+                    } label: {
+                        Circle()
+                            .fill(Color(nsColor: swatch))
+                            .frame(width: 24, height: 24)
+                            .overlay(Circle().strokeBorder(theme.hairline, lineWidth: 0.5))
+                    }
+                    .macEditorChromeButton()
+                }
+            }
+
+            Button("Reset to default") {
+                onDefault()
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(theme.accent)
+            .macEditorChromeButton()
+        }
     }
 }
