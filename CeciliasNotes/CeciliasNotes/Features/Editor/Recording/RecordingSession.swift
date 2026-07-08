@@ -588,6 +588,19 @@ final class RecordingSession: ObservableObject {
                 transcript: transcript,
                 durationSeconds: durationSeconds
             )
+
+            // Meeting-assistant tail — same experience as the Mac:
+            // distill the transcript with on-device Apple
+            // Intelligence and place a SUMMARY block above the first
+            // transcript element. No-op for short dictations or when
+            // Apple Intelligence isn't available on this device.
+            if let firstTextId = textElementIds.first {
+                MeetingSummaryCommit.generateIfWorthwhile(
+                    transcript: transcript,
+                    firstElementId: firstTextId,
+                    notebookId: notebookId
+                )
+            }
         }
 
         resetSession()

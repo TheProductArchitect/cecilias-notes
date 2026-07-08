@@ -23,21 +23,14 @@ import SwiftData
 @MainActor
 enum MacMeetingSummary {
 
-    /// Below this the transcript IS the summary — don't add noise.
-    static let minimumTranscriptCharacters = 280
-
-    /// Per-chunk budget for the map phase. Sized against the same
-    /// conservative window `AIService.maxPromptCharacters` uses.
-    private static let chunkCharacters = 9_000
-
     static func generateIfWorthwhile(
         transcript: String,
         firstElementId: UUID,
         notebookId: UUID
     ) {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= minimumTranscriptCharacters else { return }
-        guard AIService.shared.canRun else { return }
+        guard trimmed.count >= MeetingSummarizer.minimumTranscriptCharacters else { return }
+        guard MeetingSummarizer.canRun else { return }
         guard let anchor = fetchElement(firstElementId) else { return }
 
         guard let placeholderId = insertSummaryBlock(
@@ -51,7 +44,7 @@ enum MacMeetingSummary {
         let pageId = anchor.pageId
         Task { @MainActor in
             do {
-                let summary = try await summarize(transcript: trimmed)
+                let summary = try await MeetingSummarizer.summarize(transcript: trimmed)
                 fill(elementId: placeholderId, attributed: renderSummary(body: summary, pending: false), plain: "Summary\n\(summary)")
             } catch {
                 removeElement(placeholderId)
@@ -59,67 +52,6 @@ enum MacMeetingSummary {
             MacPageElementReflow.packVerticalLayout(pageId: pageId)
             NotificationCenter.default.post(name: .textElementsChanged, object: nil)
         }
-    }
-
-    // MARK: - Summarization (map-reduce over the on-device model)
-
-    private static let mapSystemPrompt = """
-        You condense a segment of a meeting transcript. Extract only what matters: \
-        topics discussed, decisions made, action items with owners, open questions, \
-        and key facts or numbers. Write terse bullet lines, no preamble.
-        """
-
-    private static let reduceSystemPrompt = """
-        You write the final summary of a meeting from condensed notes. Structure it as: \
-        a 1-3 sentence overview paragraph, then a short list of key points, then \
-        "Decisions:" and "Action items:" lines when any exist (omit the label when \
-        there are none). Plain text only — no markdown symbols like # or *. Use \
-        "- " for list items. Be concise and specific; never invent details.
-        """
-
-    static func summarize(transcript: String) async throws -> String {
-        let provider = AIService.shared.provider
-
-        if transcript.count <= chunkCharacters {
-            return try await provider.complete(
-                systemPrompt: reduceSystemPrompt,
-                userPrompt: transcript,
-                maxTokens: 700,
-                temperature: 0.3
-            )
-        }
-
-        // Map: condense each slice independently.
-        var partials: [String] = []
-        var start = transcript.startIndex
-        while start < transcript.endIndex {
-            let end = transcript.index(
-                start, offsetBy: chunkCharacters, limitedBy: transcript.endIndex
-            ) ?? transcript.endIndex
-            let chunk = String(transcript[start..<end])
-            let partial = try await provider.complete(
-                systemPrompt: mapSystemPrompt,
-                userPrompt: chunk,
-                maxTokens: 400,
-                temperature: 0.3
-            )
-            partials.append(partial)
-            start = end
-        }
-
-        // Reduce: fold the condensed slices into one summary. If even
-        // the joined partials exceed the window (multi-hour meeting),
-        // recurse — each round shrinks the text by roughly 10×.
-        let joined = partials.joined(separator: "\n")
-        if joined.count > chunkCharacters {
-            return try await summarize(transcript: joined)
-        }
-        return try await provider.complete(
-            systemPrompt: reduceSystemPrompt,
-            userPrompt: joined,
-            maxTokens: 700,
-            temperature: 0.3
-        )
     }
 
     // MARK: - Page mutations
@@ -218,14 +150,15 @@ enum MacMeetingSummary {
         out.append(NSAttributedString(
             string: "SUMMARY\n",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+                .font: NoteTypography.eyebrowFont,
                 .foregroundColor: NSColor.secondaryLabelColor,
-                .kern: 1.6,
+                .kern: NoteTypography.eyebrowKern,
+                .paragraphStyle: NoteTypography.paragraphStyle(),
             ]
         ))
         var bodyAttributes = MacRichTextCodec.defaultTypingAttributes(size: .body)
         if pending {
-            bodyAttributes[.font] = NSFont.systemFont(ofSize: 15).withItalics()
+            bodyAttributes[.font] = NoteTypography.bodyFont.withItalics()
             bodyAttributes[.foregroundColor] = NSColor.tertiaryLabelColor
         }
         out.append(NSAttributedString(string: body, attributes: bodyAttributes))

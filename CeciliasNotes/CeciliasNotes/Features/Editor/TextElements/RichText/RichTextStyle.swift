@@ -19,7 +19,11 @@ enum RichTextHeading: String, Codable, CaseIterable {
     /// multiplier kicks in.
     var basePointSize: CGFloat {
         switch self {
-        case .body: return 17
+        // Body matches `NoteTypography.bodyPointSize` — a page is a
+        // fixed point space shared with the Mac editor, so the same
+        // note must not render at different physical sizes per
+        // device.
+        case .body: return NoteTypography.bodyPointSize
         case .h3:   return 20
         case .h2:   return 24
         case .h1:   return 30

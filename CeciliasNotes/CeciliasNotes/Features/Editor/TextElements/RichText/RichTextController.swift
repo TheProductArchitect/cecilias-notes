@@ -393,23 +393,23 @@ final class RichTextController: ObservableObject {
         size: RichTextSize = .regular,
         family: RichTextFontFamily = .sans
     ) -> [NSAttributedString.Key: Any] {
-        let para = NSMutableParagraphStyle()
-        para.alignment = .left
-        // Extra space after every hard return so user-pressed Enter
-        // visually separates paragraphs. Soft-wrap inside a paragraph
-        // stays tight — NSAttributedString defines a paragraph as a
-        // run ending in "\n", so only true Enter presses get the gap.
-        para.paragraphSpacing = 8
+        // Shared editorial voice (`NoteTypography`): airy leading,
+        // real paragraph space after a hard return (soft-wrap inside
+        // a paragraph stays tight), and role-matched tracking. The
+        // Mac editor consumes the same tokens, so a note reads
+        // identically on every device that wrote it.
+        let font = buildFont(
+            heading: heading,
+            size: size,
+            family: family,
+            bold: heading != .body,
+            italic: false
+        )
         return [
-            .font: buildFont(
-                heading: heading,
-                size: size,
-                family: family,
-                bold: heading != .body,
-                italic: false
-            ),
+            .font: font,
             .foregroundColor: ink,
-            .paragraphStyle: para,
+            .paragraphStyle: NoteTypography.paragraphStyle(isHeading: heading != .body),
+            .kern: NoteTypography.kern(forPointSize: font.pointSize),
             headingKey: heading.rawValue,
             sizeKey: size.rawValue,
         ]

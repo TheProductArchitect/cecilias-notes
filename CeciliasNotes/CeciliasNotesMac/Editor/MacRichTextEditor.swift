@@ -751,15 +751,25 @@ final class MacDocSlashCommandHandler {
 }
 
 enum MacRichTextCodec {
+    /// Note text carries the shared editorial voice (`NoteTypography`):
+    /// one page-space body size across every platform, airy leading,
+    /// real paragraph spacing, and role-matched tracking — bare
+    /// `systemFont` with default leading is what made typed and
+    /// dictated notes read like a 2005 text field against the rest
+    /// of the design.
     static func defaultTypingAttributes(size: TextSize = .body) -> [NSAttributedString.Key: Any] {
-        let font: NSFont = {
-            switch size {
-            case .heading: return .systemFont(ofSize: 22, weight: .semibold)
-            case .small:   return .systemFont(ofSize: 13)
-            default:       return .systemFont(ofSize: 15)
-            }
-        }()
-        return [.font: font, .foregroundColor: NSColor.labelColor]
+        let font: NSFont
+        switch size {
+        case .heading: font = NoteTypography.headingFont
+        case .small:   font = NoteTypography.smallFont
+        default:       font = NoteTypography.bodyFont
+        }
+        return [
+            .font: font,
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: NoteTypography.paragraphStyle(isHeading: size == .heading),
+            .kern: NoteTypography.kern(forPointSize: font.pointSize),
+        ]
     }
 
     static func decode(from content: TextContent) -> NSAttributedString {
@@ -767,14 +777,10 @@ enum MacRichTextCodec {
            let attr = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data) {
             return attr
         }
-        let font: NSFont = {
-            switch content.size {
-            case .heading: return .systemFont(ofSize: 22, weight: .semibold)
-            case .small:   return .systemFont(ofSize: 13)
-            default:       return .systemFont(ofSize: 15)
-            }
-        }()
-        return NSAttributedString(string: content.text, attributes: [.font: font])
+        return NSAttributedString(
+            string: content.text,
+            attributes: defaultTypingAttributes(size: content.size)
+        )
     }
 
     static func encode(_ value: NSAttributedString) -> Data? {

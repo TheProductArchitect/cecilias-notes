@@ -5,8 +5,8 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 345,
-    "types": 676,
+    "files": 348,
+    "types": 679,
     "notifications_declared": 89,
     "notification_symbols_referenced": 105
   },
@@ -638,6 +638,21 @@
       "posts": [],
       "observes": [],
       "lines": 124
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Services/AI/MeetingSummarizer.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation"
+      ],
+      "declared_types": [
+        "MeetingSummarizer"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 78
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/AI/PageContext.swift",
@@ -1970,7 +1985,24 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 68
+      "lines": 104
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/DesignSystem/NoteTypography.swift",
+      "module": "DesignSystem",
+      "target": "CeciliasNotes",
+      "imports": [
+        "AppKit",
+        "Foundation",
+        "UIKit"
+      ],
+      "declared_types": [
+        "NoteTypography"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 96
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/DesignSystem/NotebookCoverTone.swift",
@@ -3254,6 +3286,26 @@
       "lines": 125
     },
     {
+      "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
+      "module": "Features",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation",
+        "SwiftData",
+        "UIKit"
+      ],
+      "declared_types": [
+        "MeetingSummaryCommit"
+      ],
+      "extends": [],
+      "posts": [
+        ".textElementsChanged",
+        ".textElementsChanged"
+      ],
+      "observes": [],
+      "lines": 191
+    },
+    {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift",
       "module": "Features",
       "target": "CeciliasNotes",
@@ -3296,7 +3348,7 @@
       "observes": [
         "AVAudioSession.interruptionNotification"
       ],
-      "lines": 691
+      "lines": 704
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/PencilFingerDragSurface.swift",
@@ -3693,7 +3745,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 220
+      "lines": 224
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/RichText/TextElementSplitter.swift",
@@ -5329,7 +5381,7 @@
         ".textElementsChanged"
       ],
       "observes": [],
-      "lines": 241
+      "lines": 174
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Capture/MacNotebookTemplateService.swift",
@@ -5925,7 +5977,7 @@
         ".macAskAboutPage"
       ],
       "observes": [],
-      "lines": 886
+      "lines": 892
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacShapeHandoff.swift",
@@ -9423,6 +9475,18 @@
       ]
     },
     {
+      "name": "MeetingSummarizer",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/AI/MeetingSummarizer.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "MeetingSummaryCommit",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
+      "conforms_to": []
+    },
+    {
       "name": "MinimapView",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift",
@@ -9549,6 +9613,12 @@
       "name": "NewNotebookCustomiseTrigger",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/NewNotebookCustomiseTrigger.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "NoteTypography",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/DesignSystem/NoteTypography.swift",
       "conforms_to": []
     },
     {
@@ -13038,6 +13108,8 @@
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift",
+          "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
+          "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/RichText/TextElementSplitter.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift",
