@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 348,
-    "types": 681,
+    "types": 682,
     "notifications_declared": 89,
     "notification_symbols_referenced": 105
   },
@@ -157,13 +157,18 @@
       "imports": [
         "Foundation"
       ],
-      "declared_types": [],
+      "declared_types": [
+        "UpdatedAtStamped"
+      ],
       "extends": [
+        "Page",
+        "Notebook",
+        "Array",
         "Array"
       ],
       "posts": [],
       "observes": [],
-      "lines": 30
+      "lines": 64
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Extensions/CeciliasNotesSchemas.swift",
@@ -1629,7 +1634,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2262
+      "lines": 2291
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -2947,7 +2952,7 @@
       "observes": [
         ".AVAudioEngineConfigurationChange"
       ],
-      "lines": 1212
+      "lines": 1219
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageImportPicker.swift",
@@ -3300,11 +3305,10 @@
       ],
       "extends": [],
       "posts": [
-        ".textElementsChanged",
         ".textElementsChanged"
       ],
       "observes": [],
-      "lines": 191
+      "lines": 118
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift",
@@ -11607,6 +11611,12 @@
       ]
     },
     {
+      "name": "UpdatedAtStamped",
+      "kind": "protocol",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Extensions/Array+DedupedById.swift",
+      "conforms_to": []
+    },
+    {
       "name": "VoiceMemoContext",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotesMac/Capture/MacRecordingSession.swift",
@@ -13125,7 +13135,6 @@
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift",
-          "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/RichText/TextElementSplitter.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift",

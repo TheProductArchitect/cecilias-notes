@@ -633,7 +633,7 @@ final class EditorViewModel: ObservableObject {
         // (CloudKit echo / stale local replica) make `ForEach` on iOS 26
         // hard-crash with "NativeDictionary.swift:792: Fatal error:
         // Duplicate values for key…" the moment the editor mounts.
-        self.pages            = fetched.isEmpty ? [] : Self.dedupedById(fetched)
+        self.pages            = fetched.isEmpty ? [] : fetched.dedupedByIdNewestWins()
 
         // Restore the last viewed page if the resume feature is on AND the page
         // is still in range. The check happens once at init; subsequent changes
@@ -1898,7 +1898,7 @@ final class EditorViewModel: ObservableObject {
     func refreshPages() {
         let fetched = storage.fetchPages(in: notebook)
         guard !fetched.isEmpty else { return }
-        pages = Self.dedupedById(fetched)
+        pages = fetched.dedupedByIdNewestWins()
         currentPageIndex = max(0, min(currentPageIndex, pages.count - 1))
         refreshCurrentPageTextBlocks()
     }

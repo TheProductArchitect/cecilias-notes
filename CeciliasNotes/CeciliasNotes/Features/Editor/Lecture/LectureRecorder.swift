@@ -129,7 +129,14 @@ final class LectureRecorder: ObservableObject {
     /// utterance. Decided once when the utterance begins (from the
     /// measured pause) and reused on every recompose + at fold time,
     /// so the break doesn't flicker as partials revise.
-    private var currentUtteranceSeparator = "\n"
+    ///
+    /// Default is a SPACE: recogniser utterance boundaries are noisy
+    /// (hypothesis resets fire mid-sentence), so "not sure" must read
+    /// as continuous prose — a newline on every boundary produced
+    /// choppy one-line-per-phrase transcripts. Only a real pause
+    /// (`paragraphPauseSeconds`) breaks the flow, and then as a full
+    /// paragraph.
+    private var currentUtteranceSeparator = " "
 
     // MARK: Timer + lifecycle observers
 
@@ -715,18 +722,18 @@ final class LectureRecorder: ObservableObject {
             // measure the same pause-paragraph rule here.
             if !committedTranscript.isEmpty {
                 currentUtteranceSeparator =
-                    silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : "\n"
+                    silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : " "
             }
         } else if isHypothesisReset(previous: lastSessionPartial, current: partial) {
-            // The just-finished utterance becomes a committed line
-            // (joined with ITS separator); the new one starts fresh —
-            // as a paragraph when a real pause preceded it.
+            // The just-finished utterance folds into committed (with
+            // ITS separator); the new one continues the sentence —
+            // or opens a paragraph when a real pause preceded it.
             committedTranscript = Self.join(
                 committedTranscript, lastSessionPartial,
                 separator: currentUtteranceSeparator
             )
             currentUtteranceSeparator =
-                silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : "\n"
+                silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : " "
             #if DEBUG
             dlog("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
             #endif
@@ -738,12 +745,12 @@ final class LectureRecorder: ObservableObject {
         )
     }
 
-    /// Append `next` below `base`. Each utterance lands on a fresh
-    /// line; a long pause upgrades the break to a blank-line
+    /// Append `next` after `base`. Utterances continue the sentence
+    /// (space); a long pause upgrades the break to a blank-line
     /// paragraph (see `paragraphPauseSeconds`). Empty `base` → just
     /// `next`.
     private static func join(
-        _ base: String, _ next: String, separator: String = "\n"
+        _ base: String, _ next: String, separator: String = " "
     ) -> String {
         let b = base.trimmingCharacters(in: .whitespacesAndNewlines)
         let n = next.trimmingCharacters(in: .whitespacesAndNewlines)

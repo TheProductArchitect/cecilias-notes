@@ -33,7 +33,7 @@ struct MacEditorView: View {
     /// CloudKit can echo duplicate `Page` rows before the store sweep
     /// converges — dedupe before any `ForEach` sees them.
     private var displayPages: [Page] {
-        pages.dedupedById()
+        pages.dedupedByIdNewestWins()
     }
 
     init(
@@ -654,7 +654,7 @@ struct MacEditorView: View {
 
     private func deleteCurrentPage() {
         guard let page = currentPage else { return }
-        let pages = storageService.fetchPages(in: notebook).dedupedById()
+        let pages = storageService.fetchPages(in: notebook).dedupedByIdNewestWins()
         guard MacPageEditing.deletePage(page, notebook: notebook, storage: storageService) else { return }
         let remaining = storageService.fetchPages(in: notebook)
         let next = remaining.first { $0.pageNumber >= page.pageNumber } ?? remaining.last

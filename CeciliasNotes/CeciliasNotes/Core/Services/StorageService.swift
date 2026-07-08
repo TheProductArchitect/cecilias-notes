@@ -232,39 +232,68 @@ final class StorageService: ObservableObject {
     ///
     /// Called immediately after `purgeDuplicateRows` so the dedupe
     /// pass runs against a consistent view of soft-delete state.
+    /// Rows this session has already auto-fixed once. A row that
+    /// shows up needing the SAME fix again means something is
+    /// actively reverting it — re-fixing forever produced an
+    /// infinite churn loop on device (each fix saves → the save
+    /// posts NSPersistentStoreRemoteChange → the sweep reschedules
+    /// → fix again, every 2 s for the whole session). One fix per
+    /// row per launch converges; the repeat case logs loudly once
+    /// so the true reverter can be found instead of masked.
+    private var softDeleteReconciledOnce: Set<UUID> = []
+    private var softDeleteRevertWarned: Set<UUID> = []
+
     func reconcileSoftDeleteFlags() {
         var dirty = false
+
+        func fixOnce(_ id: UUID, _ apply: () -> Void, what: String) {
+            if softDeleteReconciledOnce.contains(id) {
+                if !softDeleteRevertWarned.contains(id) {
+                    softDeleteRevertWarned.insert(id)
+                    #if DEBUG
+                    dlog("[Storage] reconcileSoftDelete \(what) id=\(id) REVERTED after an earlier fix this session — leaving it alone; find what is un-deleting this row")
+                    #endif
+                }
+                return
+            }
+            softDeleteReconciledOnce.insert(id)
+            apply()
+            dirty = true
+        }
+
         let subjectDescriptor = FetchDescriptor<Subject>()
         let subjects = (try? context.fetch(subjectDescriptor)) ?? []
         for s in subjects {
             if s.isDeleted && s.deletedAt == nil {
-                s.deletedAt = Date()
-                dirty = true
-                #if DEBUG
-                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — stamped missing deletedAt")
-                #endif
+                fixOnce(s.id, {
+                    s.deletedAt = Date()
+                    #if DEBUG
+                    dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — stamped missing deletedAt")
+                    #endif
+                }, what: "subject")
             } else if !s.isDeleted, s.deletedAt != nil {
-                s.isDeleted = true
-                s.updatedAt = Date()
-                dirty = true
-                #if DEBUG
-                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — restored isDeleted (CloudKit echo)")
-                #endif
+                fixOnce(s.id, {
+                    s.isDeleted = true
+                    s.updatedAt = Date()
+                    #if DEBUG
+                    dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — restored isDeleted (CloudKit echo)")
+                    #endif
+                }, what: "subject")
             }
         }
         let notebookDescriptor = FetchDescriptor<Notebook>()
         let notebooks = (try? context.fetch(notebookDescriptor)) ?? []
         for n in notebooks {
             if n.isDeleted && n.deletedAt == nil {
-                n.deletedAt = Date()
-                dirty = true
+                fixOnce(n.id, { n.deletedAt = Date() }, what: "notebook")
             } else if !n.isDeleted, n.deletedAt != nil {
-                n.isDeleted = true
-                n.updatedAt = Date()
-                dirty = true
-                #if DEBUG
-                dlog("[Storage] reconcileSoftDelete notebook id=\(n.id) — restored isDeleted (CloudKit echo)")
-                #endif
+                fixOnce(n.id, {
+                    n.isDeleted = true
+                    n.updatedAt = Date()
+                    #if DEBUG
+                    dlog("[Storage] reconcileSoftDelete notebook id=\(n.id) — restored isDeleted (CloudKit echo)")
+                    #endif
+                }, what: "notebook")
             }
         }
         guard dirty else { return }
