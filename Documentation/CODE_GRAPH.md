@@ -24,7 +24,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | --- | ---: | ---: |
 | `App/` | 3 | 944 |
 | `Core/` | 95 | 16,161 |
-| `DesignSystem/` | 14 | 1,621 |
+| `DesignSystem/` | 14 | 1,625 |
 | `Features/` | 164 | 51,114 |
 | `Resources/` | 1 | 248 |
 
@@ -205,13 +205,13 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`Hashable`** — 13 conformers: `AnnotationListItem`, `AskCitation`, `InteractionReason`, `Key`, `LibraryContext`, `MacHeaderInteraction`, `NotebookSummary`, `PageCoordinateSpace`, `PageTemplate`, `TemplateCategory`, `Theme`, `TranscriptionSegment`, … +1
 - **`Identifiable`** — 28 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, `MacSmartList`, … +16
 - **`LocalizedError`** — 10 conformers: `AppError`, `AudioRecorderError`, `CeciliasNotesStorageError`, `CloudSyncError`, `Error`, `ExportError`, `ImageProcessingError`, `LectureRecorderError`, `MacExportError`, `PDFImportError`
-- **`NSObject`** — 11 conformers: `AudioPlaybackController`, `CameraPickerDelegate`, `CeciliasNotesAppDelegate`, `DocumentPickerDelegate`, `MacAppDelegate`, `MacQuickCaptureController`, `MultipeerSendService`, `MultipeerSyncService`, `PassThroughDelegate`, `PhotoPickerDelegate`, `Target`
+- **`NSObject`** — 12 conformers: `AudioPlaybackController`, `CameraPickerDelegate`, `CeciliasNotesAppDelegate`, `Coordinator`, `DocumentPickerDelegate`, `MacAppDelegate`, `MacQuickCaptureController`, `MultipeerSendService`, `MultipeerSyncService`, `PassThroughDelegate`, `PhotoPickerDelegate`, `Target`
 - **`NSView`** — 2 conformers: `MacDocTextContainer`, `MacInlineTextContainer`
 - **`NSViewRepresentable`** — 6 conformers: `MacDocGrowingRichTextEditor`, `MacDocScrollBridge`, `MacInlineTextEditor`, `MacRichTextEditor`, `MacWindowChromeFix`, `MacWindowTag`
 - **`ObservableObject`** — 30 conformers: `AudioPlaybackController`, `CloudSyncManager`, `DeepLinkRouter`, `EditorStateMachine`, `EditorViewModel`, `KeyboardObserver`, `LassoLiveDrag`, `LassoSelectionState`, `LectureRecorder`, `LibraryViewModel`, `MCPStatusMonitor`, `MacAudioPlayer`, … +18
 - **`PDFAnnotation`** — 2 conformers: `ImageStampAnnotation`, `StrokeStampAnnotation`
 - **`PreferenceKey`** — 3 conformers: `CustomisePanelContentHeightKey`, `CustomisePanelRowWidthKey`, `MacDocBlockHeightKey`
-- **`Sendable`** — 29 conformers: `AIProvider`, `CoverTexture`, `Diagnostics`, `ExportRecord`, `HighlightStyle`, `ImageFormat`, `Line`, `MacExportResult`, `MediaType`, `NameValidationResult`, `NotebookCover`, `NotebookSummary`, … +17
+- **`Sendable`** — 30 conformers: `AIProvider`, `Category`, `CoverTexture`, `Diagnostics`, `ExportRecord`, `HighlightStyle`, `ImageFormat`, `Line`, `MacExportResult`, `MediaType`, `NameValidationResult`, `NotebookCover`, … +18
 - **`String`** — 57 conformers: `AITier`, `CalloutKind`, `Category`, `CloudKitContainerStatus`, `CodingKeys`, `Command`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, … +45
 - **`Transferable`** — 3 conformers: `NotebookTransferID`, `PageDragItem`, `SubjectTransferID`
 - **`UIView`** — 9 conformers: `AudioPassthroughContainer`, `CanvasHostView`, `ContentLayerGestureController`, `PageRenderer`, `PassthroughHostView`, `PassthroughTouchView`, `PassthroughView`, `RichTextToolbar`, `TwoFingerPassthroughView`

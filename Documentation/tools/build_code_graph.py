@@ -115,7 +115,12 @@ def iter_swift_files() -> Iterable[Path]:
     for root in SRC_ROOTS:
         if not root.exists():
             continue
-        for p in root.rglob("*.swift"):
+        # Sorted: rglob yields in filesystem order, which differs
+        # between local APFS and CI runners — any output list built
+        # in scan order (notification posters, conformances, …)
+        # would otherwise churn between machines and trip the CI
+        # freshness gate on identical sources.
+        for p in sorted(root.rglob("*.swift")):
             if any(seg.startswith(".") for seg in p.parts):
                 continue
             yield p

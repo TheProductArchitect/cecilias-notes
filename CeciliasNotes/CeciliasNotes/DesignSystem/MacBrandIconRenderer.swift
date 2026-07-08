@@ -46,13 +46,17 @@ enum MacBrandIconRenderer {
         var leading: CGFloat = 0
         let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
 
+        // `lockFocus` yields a standard AppKit context: origin at the
+        // BOTTOM-left, y increasing upward — CoreText's native
+        // orientation. No flip transform: adding the UIKit-style
+        // translate+scale(1,-1) here (as the iOS renderer needs)
+        // mirrors every glyph vertically and ships an upside-down
+        // dock icon.
         let drawX = (size - width) / 2
-        let drawYBaseline = (size + ascent - descent) / 2
+        let baselineFromBottom = (size - ascent + descent) / 2
         ctx.saveGState()
         ctx.textMatrix = .identity
-        ctx.translateBy(x: 0, y: size)
-        ctx.scaleBy(x: 1, y: -1)
-        ctx.textPosition = CGPoint(x: drawX, y: size - drawYBaseline)
+        ctx.textPosition = CGPoint(x: drawX, y: baselineFromBottom)
         CTLineDraw(line, ctx)
         ctx.restoreGState()
 
