@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 348,
-    "types": 679,
+    "types": 681,
     "notifications_declared": 89,
     "notification_symbols_referenced": 105
   },
@@ -647,12 +647,13 @@
         "Foundation"
       ],
       "declared_types": [
-        "MeetingSummarizer"
+        "MeetingSummarizer",
+        "TranscriptStructurer"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 78
+      "lines": 141
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/AI/PageContext.swift",
@@ -2002,7 +2003,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 96
+      "lines": 101
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/DesignSystem/NotebookCoverTone.swift",
@@ -2946,7 +2947,7 @@
       "observes": [
         ".AVAudioEngineConfigurationChange"
       ],
-      "lines": 1173
+      "lines": 1212
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageImportPicker.swift",
@@ -3348,7 +3349,7 @@
       "observes": [
         "AVAudioSession.interruptionNotification"
       ],
-      "lines": 704
+      "lines": 709
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/PencilFingerDragSurface.swift",
@@ -3721,7 +3722,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 456
+      "lines": 459
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/RichText/RichTextStyle.swift",
@@ -5442,10 +5443,11 @@
       "posts": [
         ".macTranscriptionStarted",
         ".textElementsChanged",
+        ".textElementsChanged",
         ".macScrollToRecordingPage"
       ],
       "observes": [],
-      "lines": 416
+      "lines": 432
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Capture/MacVoiceMemoRecordingView.swift",
@@ -5656,7 +5658,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 71
+      "lines": 77
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacEditing.swift",
@@ -5691,12 +5693,13 @@
       ],
       "declared_types": [
         "MacEditorHeaderView",
+        "MacEditorActionCluster",
         "MacHeaderRevealOverlay"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 375
+      "lines": 389
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift",
@@ -5745,7 +5748,7 @@
         ".macAskAIAboutElement",
         ".macRequestHandoffToIPad"
       ],
-      "lines": 720
+      "lines": 725
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacElementTransform.swift",
@@ -5948,7 +5951,7 @@
         "NSText.didChangeNotification"
       ],
       "observes": [],
-      "lines": 998
+      "lines": 1016
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift",
@@ -5977,7 +5980,7 @@
         ".macAskAboutPage"
       ],
       "observes": [],
-      "lines": 892
+      "lines": 895
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Editor/MacShapeHandoff.swift",
@@ -8668,6 +8671,14 @@
       "name": "MacDockedTextFormatToolbar",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotesMac/Editor/MacDockedTextFormatToolbar.swift",
+      "conforms_to": [
+        "View"
+      ]
+    },
+    {
+      "name": "MacEditorActionCluster",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotesMac/Editor/MacEditorHeaderView.swift",
       "conforms_to": [
         "View"
       ]
@@ -11503,6 +11514,12 @@
       "conforms_to": []
     },
     {
+      "name": "TranscriptStructurer",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/AI/MeetingSummarizer.swift",
+      "conforms_to": []
+    },
+    {
       "name": "TranscriptionContext",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotesMac/Capture/MacRecordingSession.swift",
@@ -13117,6 +13134,7 @@
           "CeciliasNotes/CeciliasNotesMac/Capture/MacDictationFlowCommit.swift",
           "CeciliasNotes/CeciliasNotesMac/Capture/MacMeetingSummary.swift",
           "CeciliasNotes/CeciliasNotesMac/Capture/MacMeetingSummary.swift",
+          "CeciliasNotes/CeciliasNotesMac/Capture/MacRecordingSession.swift",
           "CeciliasNotes/CeciliasNotesMac/Capture/MacRecordingSession.swift",
           "CeciliasNotes/CeciliasNotesMac/Services/MacPDFImport.swift"
         ],

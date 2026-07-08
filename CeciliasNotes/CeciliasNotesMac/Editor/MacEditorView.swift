@@ -156,26 +156,7 @@ struct MacEditorView: View {
                     notebook: notebook,
                     state: state,
                     pageCount: displayPages.count,
-                    onBack: closeEditor,
-                    onShare: { state.isExportPresented = true },
-                    onExportPDF: exportPDF,
-                    onExportMarkdown: exportMarkdown,
-                    onFindInNotebook: { isShowingInNotebookSearch = true },
-                    onPrint: printNotebook,
-                    onDuplicatePage: duplicateCurrentPage,
-                    onDeletePage: deleteCurrentPage,
-                    onSummarizePage: { isShowingSummarize = true },
-                    onAskAboutPage: { isShowingAskAboutPage = true },
-                    onCopyPageAsImage: copyCurrentPage,
-                    onResetZoom: { state.editorZoom = 1 },
-                    onPageTemplate: { isShowingPageTemplate = true },
-                    onToggleFocusMode: { state.isFocusMode.toggle() },
-                    onInsertImage: insertImageOnCurrentPage,
-                    onInsertSticky: insertStickyOnCurrentPage,
-                    onStartVoiceNote: startVoiceMemoRecording,
-                    onStartTranscription: startTranscriptionRecording,
-                    onAddPage: { addPage(afterCurrent: true) },
-                    onNotebookInfo: { isShowingNotebookInfo = true }
+                    onBack: closeEditor
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -186,8 +167,32 @@ struct MacEditorView: View {
                     isEditingText: state.editingBlockID != nil,
                     controller: richTextController,
                     onNeedsTextFocus: focusSelectedTextForFormatting
-                )
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                ) {
+                    MacEditorActionCluster(
+                        notebook: notebook,
+                        state: state,
+                        onShare: { state.isExportPresented = true },
+                        onExportPDF: exportPDF,
+                        onExportMarkdown: exportMarkdown,
+                        onFindInNotebook: { isShowingInNotebookSearch = true },
+                        onPrint: printNotebook,
+                        onDuplicatePage: duplicateCurrentPage,
+                        onDeletePage: deleteCurrentPage,
+                        onSummarizePage: { isShowingSummarize = true },
+                        onAskAboutPage: { isShowingAskAboutPage = true },
+                        onCopyPageAsImage: copyCurrentPage,
+                        onResetZoom: { state.editorZoom = 1 },
+                        onPageTemplate: { isShowingPageTemplate = true },
+                        onToggleFocusMode: { state.isFocusMode.toggle() },
+                        onInsertImage: insertImageOnCurrentPage,
+                        onInsertSticky: insertStickyOnCurrentPage,
+                        onStartVoiceNote: startVoiceMemoRecording,
+                        onStartTranscription: startTranscriptionRecording,
+                        onAddPage: { addPage(afterCurrent: true) },
+                        onNotebookInfo: { isShowingNotebookInfo = true }
+                    )
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .zIndex(75)

@@ -408,7 +408,10 @@ final class RichTextController: ObservableObject {
         return [
             .font: font,
             .foregroundColor: ink,
-            .paragraphStyle: NoteTypography.paragraphStyle(isHeading: heading != .body),
+            .paragraphStyle: NoteTypography.paragraphStyle(
+                isHeading: heading != .body,
+                pointSize: font.pointSize
+            ),
             .kern: NoteTypography.kern(forPointSize: font.pointSize),
             headingKey: heading.rawValue,
             sizeKey: size.rawValue,

@@ -341,15 +341,31 @@ final class MacRecordingSession: ObservableObject {
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
         postScroll(to: targetPageId)
 
-        // Meeting-assistant tail: distill the whole transcript with
-        // on-device Apple Intelligence and place the summary above
-        // the first transcript block. No-op for short dictations or
-        // when Apple Intelligence isn't available on this Mac.
-        MacMeetingSummary.generateIfWorthwhile(
-            transcript: fullTranscript,
-            firstElementId: ctx.firstTextElementId,
-            notebookId: ctx.notebookId
-        )
+        // Meeting-assistant tail, in order: (1) restructure the
+        // transcript in place — paragraphs, topic headings, speaker
+        // labels, words verbatim — then (2) distill the summary and
+        // place it above the transcript. Restructuring only applies
+        // when the transcript stayed in one block; re-splitting
+        // already-overflowed pages around reformatted text isn't
+        // worth a mis-seamed transcript. Both steps no-op quietly
+        // when Apple Intelligence isn't available.
+        let firstElementId = ctx.firstTextElementId
+        let notebookId = ctx.notebookId
+        let startPageId = ctx.pageId
+        let singleBlock = transcriptConsumedUTF16 == 0
+        Task { @MainActor in
+            if singleBlock,
+               let structured = await TranscriptStructurer.structureIfFaithful(fullTranscript) {
+                MacDictationFlowCommit.applyTextUpdate(elementId: firstElementId, text: structured)
+                MacPageElementReflow.packVerticalLayout(pageId: startPageId)
+                NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+            }
+            MacMeetingSummary.generateIfWorthwhile(
+                transcript: fullTranscript,
+                firstElementId: firstElementId,
+                notebookId: notebookId
+            )
+        }
     }
 
     private func subscribeLiveTranscript(_ recorder: LectureRecorder) {

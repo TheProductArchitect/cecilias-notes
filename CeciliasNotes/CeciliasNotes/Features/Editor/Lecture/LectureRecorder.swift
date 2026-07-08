@@ -118,6 +118,18 @@ final class LectureRecorder: ObservableObject {
     /// and fold the prior text into `committedTranscript` instead of
     /// losing it. Reset to "" whenever a new task starts.
     private var lastSessionPartial: String = ""
+    /// Silence longer than this before a new utterance starts a new
+    /// PARAGRAPH in the transcript instead of just a new line — the
+    /// speaker moving to a new thought should read as one.
+    private static let paragraphPauseSeconds: TimeInterval = 2.5
+    /// When the last partial arrived — the gap to the next one is
+    /// the silence that separates utterances.
+    private var lastPartialArrivalAt: Date = .distantPast
+    /// Separator between `committedTranscript` and the CURRENT
+    /// utterance. Decided once when the utterance begins (from the
+    /// measured pause) and reused on every recompose + at fold time,
+    /// so the break doesn't flicker as partials revise.
+    private var currentUtteranceSeparator = "\n"
 
     // MARK: Timer + lifecycle observers
 
@@ -693,28 +705,51 @@ final class LectureRecorder: ObservableObject {
             #endif
             return
         }
-        if isHypothesisReset(previous: lastSessionPartial, current: partial),
-           !lastSessionPartial.isEmpty {
-            // The just-finished utterance becomes a committed line; the
-            // new one (the current partial) starts on its own line.
-            committedTranscript = Self.joinLine(committedTranscript, lastSessionPartial)
+        let now = Date()
+        let silenceGap = now.timeIntervalSince(lastPartialArrivalAt)
+        lastPartialArrivalAt = now
+
+        if lastSessionPartial.isEmpty {
+            // First partial of a fresh task (post-rotation) — the
+            // rotation itself was usually triggered by silence, so
+            // measure the same pause-paragraph rule here.
+            if !committedTranscript.isEmpty {
+                currentUtteranceSeparator =
+                    silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : "\n"
+            }
+        } else if isHypothesisReset(previous: lastSessionPartial, current: partial) {
+            // The just-finished utterance becomes a committed line
+            // (joined with ITS separator); the new one starts fresh —
+            // as a paragraph when a real pause preceded it.
+            committedTranscript = Self.join(
+                committedTranscript, lastSessionPartial,
+                separator: currentUtteranceSeparator
+            )
+            currentUtteranceSeparator =
+                silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : "\n"
             #if DEBUG
             dlog("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
             #endif
         }
         lastSessionPartial = partial
-        liveTranscript = Self.joinLine(committedTranscript, partial)
+        liveTranscript = Self.join(
+            committedTranscript, partial,
+            separator: currentUtteranceSeparator
+        )
     }
 
-    /// Append `next` below `base` on its own line. Each pause-separated
-    /// utterance lands on a fresh line so a long pause visually breaks
-    /// the transcript instead of running on. Empty `base` → just `next`.
-    private static func joinLine(_ base: String, _ next: String) -> String {
+    /// Append `next` below `base`. Each utterance lands on a fresh
+    /// line; a long pause upgrades the break to a blank-line
+    /// paragraph (see `paragraphPauseSeconds`). Empty `base` → just
+    /// `next`.
+    private static func join(
+        _ base: String, _ next: String, separator: String = "\n"
+    ) -> String {
         let b = base.trimmingCharacters(in: .whitespacesAndNewlines)
         let n = next.trimmingCharacters(in: .whitespacesAndNewlines)
         if b.isEmpty { return n }
         if n.isEmpty { return b }
-        return b + "\n" + n
+        return b + separator + n
     }
 
     /// True when `current` is a fresh hypothesis (the recogniser
@@ -764,8 +799,12 @@ final class LectureRecorder: ObservableObject {
         // `committedTranscript` regardless of what the new
         // session captures.
         if let finalSegment, !finalSegment.isEmpty {
-            // A finished task = a finished utterance → its own line.
-            committedTranscript = Self.joinLine(committedTranscript, finalSegment)
+            // A finished task = a finished utterance → its own line,
+            // joined with the separator this utterance opened with.
+            committedTranscript = Self.join(
+                committedTranscript, finalSegment,
+                separator: currentUtteranceSeparator
+            )
         } else if !liveTranscript.isEmpty {
             // The task ended WITHOUT a final result — a silence
             // timeout or a daemon error (`result == nil`). Its

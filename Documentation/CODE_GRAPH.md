@@ -12,7 +12,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 ## Snapshot
 
 - Swift files scanned: **348**
-- Types declared: **679**
+- Types declared: **681**
 - `Notification.Name` declarations: **89**
 - Notification symbols referenced (post/observe): **105**
 
@@ -23,9 +23,9 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | Module | Files | Lines |
 | --- | ---: | ---: |
 | `App/` | 3 | 944 |
-| `Core/` | 96 | 16,239 |
-| `DesignSystem/` | 15 | 1,757 |
-| `Features/` | 165 | 51,322 |
+| `Core/` | 96 | 16,302 |
+| `DesignSystem/` | 15 | 1,762 |
+| `Features/` | 165 | 51,369 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -34,9 +34,9 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | --- | ---: | ---: |
 | `(root)/` | 3 | 765 |
 | `App/` | 4 | 373 |
-| `Capture/` | 11 | 1,695 |
+| `Capture/` | 11 | 1,711 |
 | `DesignSystem/` | 1 | 23 |
-| `Editor/` | 25 | 7,227 |
+| `Editor/` | 25 | 7,273 |
 | `Export/` | 8 | 905 |
 | `Library/` | 3 | 178 |
 | `Onboarding/` | 1 | 221 |
@@ -57,17 +57,17 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | 1,396 | [`CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift`](../CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift) |
 | 1,244 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | 1,227 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift) |
-| 1,173 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
-| 998 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift) |
+| 1,212 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
+| 1,016 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift) |
 | 969 | [`CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift) |
 | 955 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift) |
 | 921 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift) |
-| 892 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift) |
+| 895 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift) |
 | 740 | [`CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift) |
 | 739 | [`CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
-| 720 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
+| 725 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
 | 718 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
-| 704 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
+| 709 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
 | 700 | [`CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift) |
 | 689 | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) |
 | 686 | [`CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift) |
@@ -218,7 +218,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`UIViewControllerRepresentable`** — 11 conformers: `ActivityView`, `AudioFilePicker`, `CameraPicker`, `CustomColorPickerSheet`, `DocumentScannerPicker`, `FilesPicker`, `IICameraPicker`, `IIFilesPicker`, `IIPhotosPicker`, `PhotoLibraryPicker`, `ShareTextActivityView`
 - **`UIViewRepresentable`** — 9 conformers: `ContinuousCanvasView`, `FourFingerTapDetector`, `PencilFingerDragSurface`, `PencilSqueezeDetector`, `SplashSVGView`, `StickyTextEditor`, `TextBlockView`, `TextEditorRepresentable`, `TwoFingerLongPressDetector`
 - **`VersionedSchema`** — 2 conformers: `CeciliasNotesSchemaV5`, `CeciliasNotesSchemaV6`
-- **`View`** — 198 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +186
+- **`View`** — 199 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +187
 - **`ViewModifier`** — 5 conformers: `CeciliasNotesCardModifier`, `EditorPageHandoffModifier`, `LassoRotationPreviewModifier`, `MacElementTransformModifier`, `ModalHostView`
 
 ## Entry points

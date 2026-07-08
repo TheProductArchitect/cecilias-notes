@@ -590,11 +590,16 @@ final class RecordingSession: ObservableObject {
             )
 
             // Meeting-assistant tail — same experience as the Mac:
-            // distill the transcript with on-device Apple
-            // Intelligence and place a SUMMARY block above the first
-            // transcript element. No-op for short dictations or when
-            // Apple Intelligence isn't available on this device.
+            // first restructure the transcript in place (paragraphs,
+            // topic headings, speaker labels — words verbatim; only
+            // when it stayed in a single block), then distill the
+            // summary above it. Both no-op quietly when Apple
+            // Intelligence isn't available on this device.
             if let firstTextId = textElementIds.first {
+                if textElementIds.count == 1,
+                   let structured = await TranscriptStructurer.structureIfFaithful(transcript) {
+                    DictationFlowCommit.updateText(elementId: firstTextId, text: structured)
+                }
                 MeetingSummaryCommit.generateIfWorthwhile(
                     transcript: transcript,
                     firstElementId: firstTextId,

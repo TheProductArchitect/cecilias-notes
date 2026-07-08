@@ -40,7 +40,11 @@ enum NoteTypography {
 
     /// Breathing room between wrapped lines — the single biggest
     /// lever in making body text feel considered instead of dense.
-    static let lineHeightMultiple: CGFloat = 1.28
+    /// Expressed as extra points per line (ratio of the font size),
+    /// NOT `lineHeightMultiple`: the multiple makes NSTextView draw
+    /// an oversized, oddly-anchored caret that jumps on empty lines.
+    /// `lineSpacing` gives the same rhythm with a normal caret.
+    static let lineSpacingRatio: CGFloat = 0.30
     /// Space after a hard return. Soft-wrapped lines stay tight.
     static let paragraphSpacing: CGFloat = 10
     /// Extra space above a heading paragraph.
@@ -58,11 +62,12 @@ enum NoteTypography {
 
     static func paragraphStyle(
         alignment: NSTextAlignment = .left,
-        isHeading: Bool = false
+        isHeading: Bool = false,
+        pointSize: CGFloat = bodyPointSize
     ) -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.alignment = alignment
-        style.lineHeightMultiple = lineHeightMultiple
+        style.lineSpacing = (pointSize * lineSpacingRatio).rounded()
         style.paragraphSpacing = paragraphSpacing
         if isHeading {
             style.paragraphSpacingBefore = headingSpacingBefore

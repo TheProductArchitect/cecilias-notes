@@ -207,6 +207,17 @@ final class MacRichTextController: ObservableObject {
         }
     }
 
+    /// A format action fired from preview state (no caret in the
+    /// text) means "format this block" — a zero-length selection
+    /// would silently mutate only typing attributes, which reads as
+    /// the toolbar doing nothing. Select everything so the action
+    /// has a visible target.
+    func selectAllIfNoSelection() {
+        guard let tv = textView, let storage = tv.textStorage else { return }
+        guard tv.selectedRange().length == 0, storage.length > 0 else { return }
+        tv.setSelectedRange(NSRange(location: 0, length: storage.length))
+    }
+
     func refresh() {
         guard let tv = textView else { return }
         let snap = snapshot(for: tv)
@@ -604,6 +615,9 @@ struct MacTextFormatToolbar: View {
             .frame(width: 52, alignment: .leading)
     }
 
+    /// Quiet editing indicator — a single accent dot while a block
+    /// has the caret, nothing otherwise. (This slot briefly said
+    /// "click text", which read as a broken button.)
     @ViewBuilder
     private var formatStatus: some View {
         Group {
@@ -613,11 +627,7 @@ struct MacTextFormatToolbar: View {
                     .frame(width: 5, height: 5)
                     .accessibilityHidden(true)
             } else {
-                Text("click text")
-                    .font(.system(size: 9.5, weight: .regular))
-                    .tracking(0.08)
-                    .textCase(.uppercase)
-                    .foregroundStyle(theme.recessiveQuaternary)
+                Color.clear.frame(width: 5, height: 5)
             }
         }
         .frame(width: 52, alignment: .trailing)
@@ -675,10 +685,18 @@ struct MacTextFormatToolbar: View {
     }
 
     private func applyFormat(_ action: @escaping () -> Void) {
+        // From preview state the click first has to focus a block;
+        // `performWhenReady` holds the action until the text view
+        // attaches. `wasEditing` is captured NOW — once focus lands
+        // the state always says "editing", but only a preview-state
+        // click should widen to the whole block.
+        let wasEditing = isEditingText
         MacStateUpdates.deferred {
             onNeedsTextFocus()
-            MacStateUpdates.deferred {
-                controller.performWhenReady(action)
+            controller.performWhenReady { [weak controller] in
+                guard let controller else { return }
+                if !wasEditing { controller.selectAllIfNoSelection() }
+                action()
             }
         }
     }

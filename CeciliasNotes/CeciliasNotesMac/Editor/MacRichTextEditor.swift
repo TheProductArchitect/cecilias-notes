@@ -767,7 +767,10 @@ enum MacRichTextCodec {
         return [
             .font: font,
             .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: NoteTypography.paragraphStyle(isHeading: size == .heading),
+            .paragraphStyle: NoteTypography.paragraphStyle(
+                isHeading: size == .heading,
+                pointSize: font.pointSize
+            ),
             .kern: NoteTypography.kern(forPointSize: font.pointSize),
         ]
     }

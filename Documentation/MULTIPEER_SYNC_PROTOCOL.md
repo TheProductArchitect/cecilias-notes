@@ -380,6 +380,16 @@ try session.send(fpayload, toPeers: [iPadPeer], with: .reliable)
 
 ---
 
+## Derivation info string — sorted, both flows
+
+BOTH key derivations (6-digit code and first-party household) build
+the HKDF info string from the two peer names sorted
+lexicographically: `sort(localName, remoteName).join("|")`. The
+receiver has always sorted (`MultipeerPairingStore.peerPairInfo`);
+sender implementations MUST sort too. (The MCP sidecar ≤2.1.0 used
+unsorted `local|remote`, which only matched when the Mac's peer
+name happened to sort first — fixed in 2.2.0.)
+
 ## v2.3 additions (all additive / optional)
 
 - **`householdHash` in pairing headers.** `pairing-hello` MAY carry

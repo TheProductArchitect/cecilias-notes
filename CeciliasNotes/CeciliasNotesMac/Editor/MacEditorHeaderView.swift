@@ -1,6 +1,11 @@
 import SwiftUI
 
-/// Cover-tone notebook header for Mac — mirrors iPad `EditorToolbarView`.
+/// Cover-tone notebook masthead for Mac — identity only: back +
+/// subject eyebrow, heavy title, ghost letter, page meta, sync.
+/// The action icons (mic / pin / share / more) live one row down in
+/// `MacEditorActionCluster`, docked at the right of the format
+/// toolbar — the masthead stays quiet brand surface, and the top of
+/// the window stops double-parking chrome.
 struct MacEditorHeaderView: View {
     @Bindable var notebook: Notebook
     @ObservedObject var state: MacLibraryState
@@ -8,30 +13,9 @@ struct MacEditorHeaderView: View {
     @Environment(\.theme) private var theme
 
     let onBack: () -> Void
-    let onShare: () -> Void
-    let onExportPDF: () -> Void
-    let onExportMarkdown: () -> Void
-    let onFindInNotebook: () -> Void
-    let onPrint: () -> Void
-    let onDuplicatePage: () -> Void
-    let onDeletePage: () -> Void
-    let onSummarizePage: () -> Void
-    let onAskAboutPage: () -> Void
-    let onCopyPageAsImage: () -> Void
-    let onResetZoom: () -> Void
-    let onPageTemplate: () -> Void
-    let onToggleFocusMode: () -> Void
-    let onInsertImage: () -> Void
-    let onInsertSticky: () -> Void
-    let onStartVoiceNote: () -> Void
-    let onStartTranscription: () -> Void
-    let onAddPage: () -> Void
-    let onNotebookInfo: () -> Void
 
     @State private var titleBuffer = ""
     @FocusState private var titleFocused: Bool
-    @State private var showRecordingPopover = false
-    @ObservedObject private var recordingSession = MacRecordingSession.shared
 
     private let toolbarHeight: CGFloat = 56
 
@@ -54,7 +38,6 @@ struct MacEditorHeaderView: View {
         HStack(alignment: .center, spacing: 0) {
             identityCluster
             Spacer(minLength: CeciliasNotes.Spacing.md)
-            actionCluster
             metaCluster
             SyncStatusIndicator()
                 .padding(.leading, CeciliasNotes.Spacing.sm)
@@ -157,9 +140,65 @@ struct MacEditorHeaderView: View {
         titleFocused = false
     }
 
-    // MARK: Actions
+    private var metaCluster: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
+                .font(.system(size: 8, weight: .regular))
+                .foregroundStyle(recessive(0.22))
+            if !lastOpenedLabel.isEmpty {
+                Text(lastOpenedLabel)
+                    .font(.system(size: 8, weight: .regular).italic())
+                    .foregroundStyle(recessive(0.15))
+            }
+        }
+        .padding(.leading, CeciliasNotes.Spacing.md)
+    }
 
-    private var actionCluster: some View {
+    private var lastOpenedLabel: String {
+        guard let date = RecentNotebooksTracker.lastOpened(notebook.id) else { return "" }
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "today" }
+        if cal.isDateInYesterday(date) { return "yesterday" }
+        let days = Int(Date().timeIntervalSince(date) / 86_400)
+        if days < 7 { return "\(days) days ago" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMM"
+        return f.string(from: date).lowercased()
+    }
+}
+
+/// Mic / pin / share / more — the editor's utility rail, docked at
+/// the right end of the format toolbar row (theme-coloured chrome,
+/// not cover-tone: it sits on the toolbar surface, not the masthead).
+struct MacEditorActionCluster: View {
+    @Bindable var notebook: Notebook
+    @ObservedObject var state: MacLibraryState
+    @Environment(\.theme) private var theme
+
+    let onShare: () -> Void
+    let onExportPDF: () -> Void
+    let onExportMarkdown: () -> Void
+    let onFindInNotebook: () -> Void
+    let onPrint: () -> Void
+    let onDuplicatePage: () -> Void
+    let onDeletePage: () -> Void
+    let onSummarizePage: () -> Void
+    let onAskAboutPage: () -> Void
+    let onCopyPageAsImage: () -> Void
+    let onResetZoom: () -> Void
+    let onPageTemplate: () -> Void
+    let onToggleFocusMode: () -> Void
+    let onInsertImage: () -> Void
+    let onInsertSticky: () -> Void
+    let onStartVoiceNote: () -> Void
+    let onStartTranscription: () -> Void
+    let onAddPage: () -> Void
+    let onNotebookInfo: () -> Void
+
+    @State private var showRecordingPopover = false
+    @ObservedObject private var recordingSession = MacRecordingSession.shared
+
+    var body: some View {
         HStack(spacing: 4) {
             recordingMicButton
             autoHidePinButton
@@ -170,7 +209,7 @@ struct MacEditorHeaderView: View {
                     Text("share")
                         .font(.system(size: 11, weight: .medium))
                 }
-                .foregroundStyle(recessive(0.55))
+                .foregroundStyle(theme.recessiveSecondary)
                 .padding(.horizontal, 8)
                 .frame(height: 32)
                 .contentShape(Rectangle())
@@ -182,7 +221,7 @@ struct MacEditorHeaderView: View {
             Menu { moreMenu } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(recessive(0.4))
+                    .foregroundStyle(theme.recessiveSecondary)
                     .frame(width: 32, height: 32)
             }
             .menuStyle(.borderlessButton)
@@ -201,7 +240,7 @@ struct MacEditorHeaderView: View {
         } label: {
             Image(systemName: recordingSession.mode.isActive ? "mic.fill" : "mic")
                 .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(recordingSession.mode.isActive ? theme.accent : recessive(0.4))
+                .foregroundStyle(recordingSession.mode.isActive ? theme.accent : theme.recessiveSecondary)
                 .frame(width: 32, height: 32)
         }
         .buttonStyle(.plain)
@@ -263,7 +302,7 @@ struct MacEditorHeaderView: View {
         } label: {
             Image(systemName: isAutoHideOn ? "pin.slash.fill" : "pin.fill")
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(isAutoHideOn ? theme.accent : recessive(0.4))
+                .foregroundStyle(isAutoHideOn ? theme.accent : theme.recessiveSecondary)
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
@@ -326,31 +365,6 @@ struct MacEditorHeaderView: View {
         }
     }
 
-    private var metaCluster: some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
-                .font(.system(size: 8, weight: .regular))
-                .foregroundStyle(recessive(0.22))
-            if !lastOpenedLabel.isEmpty {
-                Text(lastOpenedLabel)
-                    .font(.system(size: 8, weight: .regular).italic())
-                    .foregroundStyle(recessive(0.15))
-            }
-        }
-        .padding(.leading, CeciliasNotes.Spacing.md)
-    }
-
-    private var lastOpenedLabel: String {
-        guard let date = RecentNotebooksTracker.lastOpened(notebook.id) else { return "" }
-        let cal = Calendar.current
-        if cal.isDateInToday(date) { return "today" }
-        if cal.isDateInYesterday(date) { return "yesterday" }
-        let days = Int(Date().timeIntervalSince(date) / 86_400)
-        if days < 7 { return "\(days) days ago" }
-        let f = DateFormatter()
-        f.dateFormat = "d MMM"
-        return f.string(from: date).lowercased()
-    }
 }
 
 /// 44pt-tall tap target above the 3pt return bar when the header is hidden.

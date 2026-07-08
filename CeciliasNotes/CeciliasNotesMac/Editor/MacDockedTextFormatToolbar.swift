@@ -2,11 +2,15 @@ import SwiftUI
 
 /// Formatting strip aligned to the document column — sits below the
 /// cover-tone header with editorial chrome, not a full-width SaaS bar.
-struct MacDockedTextFormatToolbar: View {
+/// `trailing` docks the editor's utility rail (mic / pin / share /
+/// more) at the right edge, in the gutter the column doesn't use —
+/// one chrome row instead of two competing ones.
+struct MacDockedTextFormatToolbar<Trailing: View>: View {
     let coverTone: NotebookCoverTone
     var isEditingText: Bool
     @ObservedObject var controller: MacRichTextController
     var onNeedsTextFocus: () -> Void = {}
+    @ViewBuilder var trailing: () -> Trailing
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -18,7 +22,9 @@ struct MacDockedTextFormatToolbar: View {
                 onNeedsTextFocus: onNeedsTextFocus
             )
             .frame(maxWidth: MacDocLayout.contentColumnWidth)
-            Spacer(minLength: MacDocLayout.horizontalGutter)
+            Spacer(minLength: 12)
+            trailing()
+                .padding(.trailing, 14)
         }
         .frame(maxWidth: .infinity)
         .frame(height: MacEditorChromeMetrics.formatToolbarHeight)
