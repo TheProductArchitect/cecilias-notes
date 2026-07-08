@@ -507,22 +507,22 @@ _All iPad-only, by design. iPhone reads strokes but does not author (no Pencil).
 ### 14.1 Voice memo on a page
 - **iPad** `implemented` — `AudioElements/`.
 - **iPhone** `implemented` — recent `iphone-support` branch enabled this.
-- **Mac** `partial` — check `AVFoundation` availability + mic entitlement. **Recommendation:** enable on Mac — Granola treats audio capture as first-class.
+- **Mac** `implemented` — `MacRecordingSession` `.voiceMemo` mode; playback via `MacAudioPlayer` (`MacRendering.swift`, doc-mode `MacDocBlock`).
 
 ### 14.2 Dictation into text element
-- **iPad** `implemented` — `DictationFlowCommit`.
+- **iPad** `implemented` — `DictationFlowCommit`; on stop, `TranscriptStructurer` reflows the block (verbatim) and `MeetingSummaryCommit` prepends a SUMMARY into the transcript element.
 - **iPhone** `implemented` — post-fix.
-- **Mac** `partial` — macOS system dictation works in text fields; verify our recording pill is not blocking it.
+- **Mac** `implemented` — "Meeting Transcription" (`MacRecordingSession` `.transcription` mode) streams words into the page; on stop, structure + `MacMeetingSummary` block above the transcript.
 
 ### 14.3 Lecture mode (long-form recording + live transcription)
 - **iPad** `implemented` — `LectureRecorder`.
 - **iPhone** `implemented`.
-- **Mac** `missing` — **high-priority Granola parity**. Lecture-on-Mac is the single biggest Mac feature request in the target market.
+- **Mac** `implemented` — same `LectureRecorder` engine drives Meeting Transcription; utterances continue with a space, new paragraph only on a ≥2.5 s pause (shared behaviour, all platforms).
 
 ### 14.4 Play back recording
 - **iPad** `implemented`.
 - **iPhone** `implemented`.
-- **Mac** `partial` — verify playback path in `MacEditorView`.
+- **Mac** `implemented` — `MacAudioPlayer` on the audio strip (canvas + doc mode).
 
 ### 14.5 Scrub / seek transcript
 - **iPad** `implemented`.

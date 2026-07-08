@@ -1,7 +1,7 @@
 # Open issues — unresolved
 
 Status tracker for bugs and gaps that are **known but not yet
-fixed**. Last reviewed 2026-06-22 (branch `iphone-support`).
+fixed**. Last reviewed 2026-07-08 (branch `main`).
 Resolved items should be deleted from this file, not struck
 through — git history is the archive.
 
@@ -75,3 +75,29 @@ sites above were also identified that way).
 see whether any of the 12 warnings persist. If yes, capture
 `Thread.callStackSymbols` at the offending publish sites and
 defer only the genuinely-safe ones (never `state`).
+
+---
+
+## 3. Something un-deletes soft-deleted rows on device — MEDIUM
+
+**Symptom.** A 2026-07-07 device log showed six specific
+`TextContent`/`PageElement` rows flipping `isDeleted` back to
+`false` repeatedly — with CloudKit DB sync switched OFF in
+Settings, so the reverter is local, not a cloud echo.
+
+**In place now.** The visible damage is contained:
+`reconcileSoftDeleteFlags()` fixes each row at most once per
+session (`7a0a2e4`), so the sweep no longer loops (its own save
+re-fired `NSPersistentStoreRemoteChange` and rescheduled itself
+every 2 s). A row that reverts AFTER its one fix logs
+`REVERTED after an earlier fix this session — leaving it alone;
+find what is un-deleting this row`.
+
+**Why still open.** The guard stops the churn but the underlying
+writer is unidentified. Candidates: an importer merge that
+rebuilds elements without carrying `isDeleted`, or a relationship
+touch that resurrects tombstoned children on save.
+
+**Next step.** Collect the next device log; the warn-once line
+names the exact row + moment. Then breakpoint
+`willSave`/`didSave` on that row's ID and read the stack.

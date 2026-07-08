@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 ## Elevator pitch
 
@@ -32,11 +32,27 @@ Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit contai
    `"file"` payload → receiver Inbox → importer, merge-by-default).
    Pairing messages exchange `householdHash` so Settings can explain which
    case the user is in. Protocol v2.3 (see `MULTIPEER_SYNC_PROTOCOL.md`).
-3. **Mac meeting assistant.** "Meeting Transcription" streams words into
-   the page; on stop, `MacMeetingSummary` distills the transcript with
-   on-device Apple Intelligence (chunked map-reduce) and inserts a
-   "SUMMARY" block ABOVE the first transcript block. All failures degrade
-   to transcript-only, never an error state on the page.
+3. **Meeting assistant (Mac + iPad).** "Meeting Transcription" streams
+   words into the page; on stop, `TranscriptStructurer` restructures the
+   transcript in place (paragraphs, headings, speaker labels — words
+   verbatim, single-block sessions only), then `MeetingSummarizer`
+   distills it with on-device Apple Intelligence (chunked map-reduce).
+   Placement differs by canvas: the Mac inserts a "SUMMARY" block ABOVE
+   the transcript (doc-mode reflow handles geometry); the iPad PREPENDS
+   the summary INTO the transcript element (`MeetingSummaryCommit`) — a
+   separate element had to guess free-canvas geometry and overlapped ink.
+   All failures degrade to transcript-only, never an error state on the
+   page.
+4. **Dictation continues sentences.** Utterance boundaries from
+   `SFSpeechRecognizer` are noisy, so the fallback separator is a space —
+   the sentence continues; a new paragraph opens only after a real pause
+   (≥2.5 s, `LectureRecorder.paragraphPauseSeconds`).
+
+**Verified end-to-end 2026-07-08:** both app targets build, full unit
+suite green on the iOS 26.4 iPad simulator, MCP server tests pass, Swift
+sidecar builds, and the dictation → structure → summary → multipeer-hint
+chain plus the cross-account share path were re-traced call-site by
+call-site.
 
 Previous phase — **Mac editor parity + accessibility pass.** Both targets build green. Recent Mac editor work:
 
@@ -164,7 +180,9 @@ Documentation index:
 3. Confirm `PlatformImage` / `PlatformColor` shims from `Core/Utilities/PlatformKit.swift` are used instead of `UIImage`/`UIColor`.
 
 **When SwiftData behaves oddly:**
-- `StorageService.purgeDuplicateRows()` and `reconcileSoftDeleteFlags()` run on library appear — recent duplicate-ID crash was fixed by making every SwiftData-fed `ForEach` tolerate duplicates (see commit `d629830`).
+- `StorageService.purgeDuplicateRows()` and `reconcileSoftDeleteFlags()` run on init and library appear — recent duplicate-ID crash was fixed by making every SwiftData-fed `ForEach` tolerate duplicates (see commit `d629830`).
+- Duplicate-tolerant lists that feed the *editor* must keep the NEWEST row (`dedupedByIdNewestWins()` in `Array+DedupedById.swift`) — first-wins dedupe surfaced stale duplicate pages and read as phantom "undo".
+- `reconcileSoftDeleteFlags()` fixes each row at most once per session. `NSPersistentStoreRemoteChange` fires for LOCAL saves too, so a sweep that saves and reschedules unconditionally loops forever. If a row reverts after its one fix, the sweep logs `REVERTED after an earlier fix this session` — that log line names the row to root-cause, it is not the bug itself.
 
 **When a notification doesn't fire:**
 - The bus is stringly-typed. Check `CODE_GRAPH.md § Notification bus` — every declared `Notification.Name` is listed with its posters and observers. Zero observers usually means a rename drifted.
@@ -194,4 +212,4 @@ This rewrites `Documentation/CODE_GRAPH.md` and `Documentation/CODE_GRAPH.json`.
 - **Swift 6 strict concurrency is on.** `UIImage` is `@MainActor` — image encoding goes through `PlatformImageFactory` in `PlatformKit.swift` (ImageIO-backed) to avoid main-actor inference.
 - **Bundle ID `app.ceciliasnotes` is shared** between iOS and Mac targets for Universal Purchase — do not change it, and do not add per-target suffixes.
 - **The Zara editorial language is load-bearing.** 8pt tracked uppercase eyebrows, 11pt italic serif rows, SF Heavy wordmark, 96pt GhostLetter, 2pt selection rule. Chrome should be quiet — never a permanent floating warning strip.
-- **Note text typography has ONE source of truth**: `DesignSystem/NoteTypography.swift` (shared body size in page points, line-height multiple, paragraph spacing, role-matched kern, eyebrow tokens). `RichTextController.defaultAttributes` (iOS) and `MacRichTextCodec.defaultTypingAttributes` (Mac) both consume it — never hardcode a font for page text, and never let the platforms drift to different body sizes (a page is one shared point space).
+- **Note text typography has ONE source of truth**: `DesignSystem/NoteTypography.swift` (shared body size in page points, line spacing, paragraph spacing, role-matched kern, eyebrow tokens). `RichTextController.defaultAttributes` (iOS) and `MacRichTextCodec.defaultTypingAttributes` (Mac) both consume it — never hardcode a font for page text, and never let the platforms drift to different body sizes (a page is one shared point space). Use `lineSpacing` (ratio-based), never `lineHeightMultiple` — the multiplier inflates the caret and selection rects and reads as a broken cursor.
