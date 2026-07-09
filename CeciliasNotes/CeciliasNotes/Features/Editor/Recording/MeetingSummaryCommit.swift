@@ -39,7 +39,11 @@ enum MeetingSummaryCommit {
 
     // MARK: - Prepend into the transcript block
 
-    private static func prependSummary(
+    /// Internal (not private) so the unit suite can drive the commit
+    /// tail directly — `MeetingSummarizer.canRun` is always false in
+    /// simulators, so without this seam the entire post-summary write
+    /// path (archiving, geometry, save, notifications) ships untested.
+    static func prependSummary(
         _ summary: String,
         toElementId elementId: UUID,
         notebookId: UUID
@@ -87,18 +91,27 @@ enum MeetingSummaryCommit {
         element.updatedAt = Date()
 
         // Grow the element for the added lines so the block doesn't
-        // clip until the next edit re-measures it.
+        // clip until the next edit re-measures it. Every input is
+        // guarded: an element sitting below 92% page height makes
+        // `0.92 - normalizedY` NEGATIVE, and a zero page height makes
+        // `normalized` infinite — either writes poisoned geometry
+        // that every later render of this element inherits.
         let storage = StorageService.shared
         if let page = storage.fetchPage(id: element.pageId) {
             let pageSize = page.pageSize.pointSize
-            let contentWidth = max(40, CGFloat(element.normalizedWidth) * pageSize.width)
-            let measured = ceil(composed.boundingRect(
-                with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                context: nil
-            ).height)
-            let normalized = Double((measured + 10) / pageSize.height)
-            element.normalizedHeight = min(0.92 - element.normalizedY, max(element.normalizedHeight, normalized))
+            if pageSize.height > 0 {
+                let contentWidth = max(40, CGFloat(element.normalizedWidth) * pageSize.width)
+                let measured = ceil(composed.boundingRect(
+                    with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    context: nil
+                ).height)
+                let normalized = Double((measured + 10) / pageSize.height)
+                let cap = 0.92 - element.normalizedY
+                if normalized.isFinite, cap > element.normalizedHeight {
+                    element.normalizedHeight = min(cap, max(element.normalizedHeight, normalized))
+                }
+            }
         }
 
         Page.clearInkbookStash(forPageId: element.pageId, context: storage.context)

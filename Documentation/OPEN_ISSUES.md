@@ -123,3 +123,44 @@ certainly still exists in the latest submitted binary.
 **Next step.** Bump the build number, archive from current
 `main`, and resubmit. Any pre-`d360d2b` binary will keep
 crashing review on microphone use no matter what else changes.
+
+---
+
+## 5. Crash "post dictation and summary" (v3.0 report) — HIGH
+
+**Symptom.** User reports the app crashed after a dictation
+finished and the summary appeared, on a v3.0 build. No crash
+report is in Organizer yet (devices offline; Organizer sync
+lags), so the exact frame is unconfirmed.
+
+**Fixed candidates (2026-07-09).** Full audit of everything that
+runs in that window found two real defects, both fixed:
+
+1. *Poisoned geometry from the summary prepend.* An element
+   sitting below 92% page height made `0.92 - normalizedY`
+   negative, and a zero page height made the measured height
+   infinite — `prependSummary` wrote either straight into
+   `normalizedHeight`, corrupting every later render of the
+   block. Now clamped; `MeetingSummaryCommitTests` locks it in.
+2. *Deleted-instance renders after the duplicate purge.* The
+   debounced sweep fires ~2 s after any save burst — exactly the
+   finalize→structure→summary burst of a dictation stop — and
+   deleted stale duplicate rows WITHOUT telling the element
+   overlays, which fetch manually (not `@Query`). They kept
+   rendering the deleted `PageElement` instances; property access
+   on a deleted SwiftData model traps. `purgeDuplicateRows` now
+   posts every element-overlay refresh notification whenever it
+   actually deletes rows.
+
+**To confirm the true frame.** On the iPad: Settings → Privacy &
+Security → Analytics & Improvements → Analytics Data → search
+"CeciliasNotes" → share the newest `.ips`. Or connect the iPad
+and let Xcode's Organizer sync. If the log shows jetsam
+(EXC_RESOURCE / memory), the suspect shifts to model-inference
+memory pressure during summarization, not a code defect.
+
+**Known non-crash limitation in the same window.** If the user
+is actively editing the transcript block when the summary lands
+(~5–20 s after stop), the editor deliberately doesn't reload
+mid-edit, and the user's subsequent persist overwrites the
+summary — silent loss, not a crash. Revisit if reported.

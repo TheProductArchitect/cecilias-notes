@@ -183,36 +183,61 @@ final class StorageService: ObservableObject {
     /// duplicate Notebook row also drops its duplicate Page rows,
     /// duplicate Pages drop their PageElements, etc.
     func purgeDuplicateRows() {
-        purgeDuplicates(
+        var purgedContainers = 0
+        var purgedElements = 0
+        purgedContainers += purgeDuplicates(
             type: Notebook.self,
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
-        purgeDuplicates(
+        purgedContainers += purgeDuplicates(
             type: Page.self,
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
-        purgeDuplicates(
+        purgedElements += purgeDuplicates(
             type: PageElement.self,
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
-        purgeDuplicates(
+        purgedContainers += purgeDuplicates(
             type: Subject.self,
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
-        purgeDuplicates(
+        purgedContainers += purgeDuplicates(
             type: Folder.self,
             keyedBy: { $0.id },
             updatedAt: { $0.updatedAt }
         )
+        guard purgedContainers + purgedElements > 0 else { return }
         do {
             try context.save()
         } catch {
             #if DEBUG
             dlog("[Storage] purgeDuplicateRows SAVE FAILED: \(error)")
+            #endif
+        }
+
+        // The element overlays fetch manually (not @Query), so a
+        // purge that deletes rows MUST tell them to re-fetch. Without
+        // this, an overlay keeps rendering the deleted PageElement
+        // instance it fetched moments earlier, and the next property
+        // access on a deleted SwiftData model traps. The window this
+        // closes is real on device: the debounced sweep fires ~2 s
+        // after any save burst — e.g. right after a dictation stops
+        // and its finalize/structure/summary saves land — which is
+        // exactly when duplicate rows from CloudKit echoes exist.
+        if purgedElements > 0 || purgedContainers > 0 {
+            NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+            NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+            NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+            #if canImport(UIKit)
+            // Declared in iOS-only overlay files; the Mac editor
+            // redraws off .textElementsChanged alone.
+            NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
+            NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
+            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
             #endif
         }
     }
@@ -306,14 +331,18 @@ final class StorageService: ObservableObject {
         }
     }
 
+    /// Returns the number of stale rows deleted so the caller can
+    /// decide whether views need a re-fetch nudge.
+    @discardableResult
     private func purgeDuplicates<Model: PersistentModel>(
         type: Model.Type,
         keyedBy key: (Model) -> UUID,
         updatedAt: (Model) -> Date
-    ) {
+    ) -> Int {
         let descriptor = FetchDescriptor<Model>()
-        guard let rows = try? context.fetch(descriptor) else { return }
+        guard let rows = try? context.fetch(descriptor) else { return 0 }
         let grouped = Dictionary(grouping: rows, by: key)
+        var purged = 0
         for (_, copies) in grouped where copies.count > 1 {
             // Sort newest-first; keep the freshest copy, delete the
             // rest. We can't rely on insertion order across
@@ -321,11 +350,13 @@ final class StorageService: ObservableObject {
             let sorted = copies.sorted { updatedAt($0) > updatedAt($1) }
             for stale in sorted.dropFirst() {
                 context.delete(stale)
+                purged += 1
             }
             #if DEBUG
             dlog("[Storage] purged \(copies.count - 1) duplicate(s) of \(type) id=\(key(copies[0]))")
             #endif
         }
+        return purged
     }
 }
 

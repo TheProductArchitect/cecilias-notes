@@ -1629,12 +1629,18 @@
         "Notification.Name"
       ],
       "posts": [
+        ".textElementsChanged",
+        ".audioElementsChanged",
+        ".stickyNotesChanged",
+        ".shapeElementsChanged",
+        ".pdfPageElementsChanged",
+        ".mediaAttachmentsChanged",
         ".userDataReset",
         ".syntheticDataDidChange",
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2291
+      "lines": 2322
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -3308,7 +3314,7 @@
         ".textElementsChanged"
       ],
       "observes": [],
-      "lines": 118
+      "lines": 131
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift",
@@ -4704,7 +4710,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 329
+      "lines": 336
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Onboarding/YourNameCard.swift",
@@ -12215,6 +12221,7 @@
       {
         "name": "audioElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift",
@@ -12944,6 +12951,7 @@
       {
         "name": "mediaAttachmentsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageElementsOverlayView.swift",
@@ -12980,6 +12988,7 @@
       {
         "name": "pdfPageElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFPageElementsOverlayView.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFReferenceImporter.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFReferenceImporter.swift"
@@ -13051,6 +13060,7 @@
       {
         "name": "shapeElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
@@ -13092,6 +13102,7 @@
       {
         "name": "stickyNotesChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
@@ -13139,6 +13150,7 @@
       {
         "name": "textElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift",
