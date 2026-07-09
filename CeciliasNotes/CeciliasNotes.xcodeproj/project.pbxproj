@@ -44,6 +44,13 @@
 			remoteGlobalIDString = A9990A6A7CA431173D36636B;
 			remoteInfo = CeciliasNotesShareExtension;
 		};
+		C0A1MAC10000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ABB82E182FAD01B300EAEC50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0A1A0A12FAD100000000010;
+			remoteInfo = CeciliasNotesMac;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -73,6 +80,7 @@
 		ABB82F3D2FAD0C6100EAEC50 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		ABB82F3F2FAD0C6100EAEC50 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		BEBD418F864F793079F7B293 /* CeciliasNotesShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = CeciliasNotesShareExtension.entitlements; sourceTree = "<group>"; };
+		C0A1MAC100000000000002 /* CeciliasNotesMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CeciliasNotesMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CeciliasNotesMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -228,6 +236,11 @@
 				ABB82F552FAD0C6300EAEC50 /* Exceptions for "CeciliasNotesWidget" folder in "CeciliasNotesWidgetExtension" target */,
 			);
 			path = CeciliasNotesWidget;
+			sourceTree = "<group>";
+		};
+		C0A1MAC100000000000001 /* CeciliasNotesMacTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CeciliasNotesMacTests;
 			sourceTree = "<group>";
 		};
 		C0A1A0A12FAD100000000003 /* CeciliasNotesMac */ = {
@@ -391,6 +404,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A1MAC100000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -429,6 +449,7 @@
 			children = (
 				ABB82E222FAD01B300EAEC50 /* CeciliasNotes */,
 				C0A1A0A12FAD100000000003 /* CeciliasNotesMac */,
+				C0A1MAC100000000000001 /* CeciliasNotesMacTests */,
 				ABB82E302FAD01B400EAEC50 /* CeciliasNotesTests */,
 				ABB82E3A2FAD01B400EAEC50 /* CeciliasNotesUITests */,
 				ABB82F412FAD0C6100EAEC50 /* CeciliasNotesWidget */,
@@ -444,6 +465,7 @@
 			children = (
 				ABB82E202FAD01B300EAEC50 /* CeciliasNotes.app */,
 				C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */,
+				C0A1MAC100000000000002 /* CeciliasNotesMacTests.xctest */,
 				ABB82E2D2FAD01B400EAEC50 /* CeciliasNotesTests.xctest */,
 				ABB82E372FAD01B400EAEC50 /* CeciliasNotesUITests.xctest */,
 				ABB82F3B2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension.appex */,
@@ -612,6 +634,27 @@
 			productReference = C0A1A0A12FAD100000000001 /* CeciliasNotesMac.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0A1MAC100000000000003 /* CeciliasNotesMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0A1MAC100000000000007 /* Build configuration list for PBXNativeTarget "CeciliasNotesMacTests" */;
+			buildPhases = (
+				C0A1MAC100000000000004 /* Sources */,
+				C0A1MAC100000000000005 /* Frameworks */,
+				C0A1MAC100000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0A1MAC10000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C0A1MAC100000000000001 /* CeciliasNotesMacTests */,
+			);
+			name = CeciliasNotesMacTests;
+			productName = CeciliasNotesMacTests;
+			productReference = C0A1MAC100000000000002 /* CeciliasNotesMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -654,6 +697,7 @@
 			targets = (
 				ABB82E1F2FAD01B300EAEC50 /* CeciliasNotes */,
 				C0A1A0A12FAD100000000010 /* CeciliasNotesMac */,
+				C0A1MAC100000000000003 /* CeciliasNotesMacTests */,
 				ABB82E2C2FAD01B400EAEC50 /* CeciliasNotesTests */,
 				ABB82E362FAD01B400EAEC50 /* CeciliasNotesUITests */,
 				ABB82F3A2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension */,
@@ -699,6 +743,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C0A1A0A12FAD100000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0A1MAC100000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -751,6 +802,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A1MAC100000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -774,6 +832,11 @@
 			isa = PBXTargetDependency;
 			target = ABB82F3A2FAD0C6100EAEC50 /* CeciliasNotesWidgetExtension */;
 			targetProxy = ABB82F4F2FAD0C6300EAEC50 /* PBXContainerItemProxy */;
+		};
+		C0A1MAC10000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0A1A0A12FAD100000000010 /* CeciliasNotesMac */;
+			targetProxy = C0A1MAC10000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1229,6 +1292,46 @@
 			};
 			name = Release;
 		};
+		C0A1MAC100000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes.mac.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CeciliasNotesMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CeciliasNotesMac";
+			};
+			name = Debug;
+		};
+		C0A1MAC100000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = W9559HJWN9;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.ceciliasnotes.mac.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CeciliasNotesMac.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CeciliasNotesMac";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1291,6 +1394,15 @@
 			buildConfigurations = (
 				C0A1A0A12FAD100000000012 /* Debug */,
 				C0A1A0A12FAD100000000013 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0A1MAC100000000000007 /* Build configuration list for PBXNativeTarget "CeciliasNotesMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0A1MAC100000000000008 /* Debug */,
+				C0A1MAC100000000000009 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

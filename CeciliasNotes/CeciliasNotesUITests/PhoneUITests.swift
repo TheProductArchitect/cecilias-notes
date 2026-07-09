@@ -56,20 +56,25 @@ final class PhoneUITests: XCTestCase {
     /// the editor mounts — wait for its 'done', commit any focused
     /// title field with Return first, then confirm the panel left.
     private func dismissCustomisePanelIfPresent(in app: XCUIApplication) {
-        let done = app.buttons["done"].firstMatch
-        guard done.waitForExistence(timeout: 6) else { return }
+        Thread.sleep(forTimeInterval: 1.0)
         if app.keyboards.firstMatch.exists {
             app.typeText("\n")
+            Thread.sleep(forTimeInterval: 0.5)
         }
-        for _ in 0..<3 {
-            let hittable = app.buttons.matching(identifier: "done")
-                .allElementsBoundByIndex.first { $0.isHittable }
-            guard let hittable else { break }
-            hittable.tap()
-            // Panel gone when no hittable 'done' remains.
-            if !app.buttons["done"].firstMatch.waitForExistence(timeout: 2) { break }
+        let doneButtons = app.buttons.matching(
+            NSPredicate(format: "label ==[c] 'done'")
+        )
+        guard doneButtons.firstMatch.waitForExistence(timeout: 6) else { return }
+        for i in 0..<doneButtons.count {
+            let button = doneButtons.element(boundBy: i)
+            guard button.exists, button.frame.width > 1, button.frame.height > 1 else { continue }
+            // Coordinate tap — AX scroll-to-visible often fails on the
+            // sheet overlay and `isHittable` can throw when the
+            // activation point is off-screen mid-animation.
+            button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            break
         }
-        // Give the dismissal animation a beat before the page tap.
+        Thread.sleep(forTimeInterval: 1.0)
         _ = app.toolbars["Toolbar"].waitForExistence(timeout: 3)
     }
 
