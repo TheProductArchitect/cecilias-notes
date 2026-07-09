@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 348,
-    "types": 682,
+    "types": 683,
     "notifications_declared": 89,
     "notification_symbols_referenced": 105
   },
@@ -2952,7 +2952,7 @@
       "observes": [
         ".AVAudioEngineConfigurationChange"
       ],
-      "lines": 1219
+      "lines": 1236
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageImportPicker.swift",
@@ -3943,13 +3943,13 @@
       ],
       "declared_types": [
         "ColorPickerView",
-        "CustomColorPickerSheet",
-        "Coordinator"
+        "CustomColorPickerPresenter",
+        "PickerDelegate"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 261
+      "lines": 324
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/PencilProSupport.swift",
@@ -7386,12 +7386,10 @@
       ]
     },
     {
-      "name": "CustomColorPickerSheet",
-      "kind": "struct",
+      "name": "CustomColorPickerPresenter",
+      "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ColorPickerView.swift",
-      "conforms_to": [
-        "UIViewControllerRepresentable"
-      ]
+      "conforms_to": []
     },
     {
       "name": "CustomisePanel",
@@ -10223,6 +10221,15 @@
       "conforms_to": [
         "NSObject",
         "PHPickerViewControllerDelegate"
+      ]
+    },
+    {
+      "name": "PickerDelegate",
+      "kind": "class",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ColorPickerView.swift",
+      "conforms_to": [
+        "NSObject",
+        "UIColorPickerViewControllerDelegate"
       ]
     },
     {

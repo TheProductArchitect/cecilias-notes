@@ -101,3 +101,25 @@ touch that resurrects tombstoned children on save.
 **Next step.** Collect the next device log; the warn-once line
 names the exact row + moment. Then breakpoint
 `willSave`/`didSave` on that row's ID and read the stack.
+
+---
+
+## 4. Submitted binary lags the crash fixes — MEDIUM (process)
+
+**Symptom.** App Store review crashed the app twice. Xcode
+Organizer has the reports (device class iPad16,8, iPadOS 26.5):
+build 2.1(1) — SIGTRAP in the audio tap closures on Voice
+note/dictation (MainActor-isolated closure invoked on AVFAudio's
+queue); builds 2.1(1)+2.1(3) — SIGABRT re-presenting
+`UIColorPickerViewController` after eyedropper use inside the
+tool-palette popover.
+
+**In place now.** Both root causes are fixed in `main` (tap
+closures made nonisolated on 2026-07-06 in `d360d2b`; color
+picker moved to a UIKit top-VC presenter). But build 2.1(3) was
+compiled BEFORE `d360d2b`, so the tap-closure trap almost
+certainly still exists in the latest submitted binary.
+
+**Next step.** Bump the build number, archive from current
+`main`, and resubmit. Any pre-`d360d2b` binary will keep
+crashing review on microphone use no matter what else changes.

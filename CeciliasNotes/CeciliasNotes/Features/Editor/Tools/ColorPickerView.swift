@@ -7,7 +7,6 @@ struct ColorPickerView: View {
     let onClose: () -> Void
     @Environment(\.theme) private var theme
 
-    @State private var showCustomColorPicker = false
 
     /// One row of essentials. The full 40-colour grid was cramped
     /// inside the popover and most users only ever touched a
@@ -56,9 +55,23 @@ struct ColorPickerView: View {
                 }
             }
 
-            // Custom
+            // Custom — close the popover FIRST, then present the
+            // system picker from the top-most view controller once
+            // the popover has finished dismissing. Never host
+            // UIColorPickerViewController inside this popover (or a
+            // sheet of it): the eyedropper's screen-sampling tap
+            // lands outside the popover, SwiftUI tears the popover
+            // down mid-sample, and UIKit's `_pickerDidDismissEyedropper`
+            // then re-presents into a destroyed hierarchy —
+            // NSInvalidArgumentException, two App Store review
+            // crashes (builds 2.1(1) and 2.1(3)).
             Button {
-                showCustomColorPicker = true
+                let initial = viewModel.effectiveInkTool.currentColour
+                let vm = viewModel
+                onClose()
+                CustomColorPickerPresenter.present(initial: initial) { picked in
+                    vm.selectColour(picked)
+                }
             } label: {
                 HStack {
                     Image(systemName: "eyedropper")
@@ -92,13 +105,6 @@ struct ColorPickerView: View {
         .frame(width: 320)
         .background(theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
-        .sheet(isPresented: $showCustomColorPicker) {
-            CustomColorPickerSheet(initial: viewModel.effectiveInkTool.currentColour) { picked in
-                viewModel.selectColour(picked)
-                showCustomColorPicker = false
-                onClose()
-            }
-        }
     }
 
     // MARK: Current swatch (top of popover)
@@ -228,30 +234,87 @@ struct ColorPickerView: View {
     }
 }
 
-// MARK: - Custom colour picker sheet (UIColorPickerViewController bridge)
+// MARK: - Custom colour picker (UIColorPickerViewController, UIKit-presented)
 
-private struct CustomColorPickerSheet: UIViewControllerRepresentable {
-    let initial: UIColor
-    let onPick: (UIColor) -> Void
+/// Presents `UIColorPickerViewController` from the top-most view
+/// controller via plain UIKit, deliberately outside any SwiftUI
+/// presentation lineage.
+///
+/// Why not a SwiftUI `.sheet`: the picker's eyedropper hides the
+/// picker window to let the user sample the screen, then UIKit
+/// re-presents the picker's UI from inside
+/// `_pickerDidDismissEyedropper`. If the picker was hosted by a
+/// popover (or a sheet whose parent is a popover), the sampling tap
+/// itself dismisses that popover, the whole presentation chain is
+/// deallocated mid-sample, and the re-present throws
+/// `NSInvalidArgumentException` → SIGABRT. Shipped twice from App
+/// Store review devices (builds 2.1(1), 2.1(3)). A UIKit formSheet
+/// on the top-most controller doesn't dismiss on outside taps, so
+/// the eyedropper always returns to a live hierarchy.
+@MainActor
+enum CustomColorPickerPresenter {
 
-    func makeUIViewController(context: Context) -> UIColorPickerViewController {
-        let picker = UIColorPickerViewController()
-        picker.selectedColor = initial
-        picker.supportsAlpha  = false
-        picker.delegate = context.coordinator
-        return picker
+    /// Strong reference while presented — `UIColorPickerViewController.delegate`
+    /// is weak and the SwiftUI caller holds nothing.
+    private static var activeDelegate: PickerDelegate?
+
+    /// `present` is called right after the hosting popover's
+    /// dismissal begins; presenting while the dismissal animates
+    /// would target the dying popover controller, so wait for the
+    /// top of the presentation stack to settle first.
+    static func present(initial: UIColor, onPick: @escaping (UIColor) -> Void) {
+        Task { @MainActor in
+            // Popover dismissal animation is ~0.3s; poll briefly
+            // rather than trusting one magic delay.
+            for _ in 0..<6 {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                if let top = topMostViewController(),
+                   top.presentedViewController == nil,
+                   !top.isBeingDismissed {
+                    show(from: top, initial: initial, onPick: onPick)
+                    return
+                }
+            }
+            // Stack never settled (unexpected) — degrade to not
+            // showing the picker rather than risking a throw.
+        }
     }
 
-    func updateUIViewController(_ uiViewController: UIColorPickerViewController, context: Context) {}
+    private static func show(
+        from host: UIViewController,
+        initial: UIColor,
+        onPick: @escaping (UIColor) -> Void
+    ) {
+        let picker = UIColorPickerViewController()
+        picker.selectedColor = initial
+        picker.supportsAlpha = false
+        picker.modalPresentationStyle = .formSheet
+        let delegate = PickerDelegate(onPick: onPick)
+        picker.delegate = delegate
+        activeDelegate = delegate
+        host.present(picker, animated: true)
+    }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+    private static func topMostViewController() -> UIViewController? {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController,
+              !presented.isBeingDismissed {
+            top = presented
+        }
+        return top
+    }
 
-    final class Coordinator: NSObject, UIColorPickerViewControllerDelegate {
+    private final class PickerDelegate: NSObject, UIColorPickerViewControllerDelegate {
         let onPick: (UIColor) -> Void
         init(onPick: @escaping (UIColor) -> Void) { self.onPick = onPick }
 
         func colorPickerViewControllerDidFinish(_ vc: UIColorPickerViewController) {
             onPick(vc.selectedColor)
+            CustomColorPickerPresenter.activeDelegate = nil
         }
         func colorPickerViewControllerDidSelectColor(_ vc: UIColorPickerViewController) {
             // Live preview not propagated — only commit on dismiss.

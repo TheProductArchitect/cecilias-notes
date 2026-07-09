@@ -613,7 +613,13 @@ final class LectureRecorder: ObservableObject {
         // new task is never a "reset" relative to the previous task's
         // last partial (rotation already folded that into committed).
         lastSessionPartial = ""
-        currentTask = recogniser.recognitionTask(with: request) { [weak self] result, error in
+        // `@Sendable` for the same reason as the refinement pass
+        // below: `@preconcurrency import Speech` would otherwise let
+        // this closure inherit @MainActor isolation while Speech may
+        // deliver it on a private queue — a runtime isolation trap
+        // in Release. The body only logs and hops to the main actor,
+        // so nonisolated is correct.
+        currentTask = recogniser.recognitionTask(with: request) { @Sendable [weak self] result, error in
             // Log BEFORE the Task hop so we can see whether iOS
             // is firing the callback at all. The hop is needed
             // because @MainActor isolation is required to touch
@@ -622,6 +628,17 @@ final class LectureRecorder: ObservableObject {
             #if DEBUG
             dlog("[Dictation] recognitionTask callback fired — hasResult=\(result != nil) hasError=\(error != nil)")
             #endif
+            // Extract plain values here: `SFSpeechRecognitionResult`
+            // is not Sendable, so it must not cross into the
+            // MainActor task.
+            let partial = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal == true
+            let hadError = error != nil
+            #if DEBUG
+            if let error {
+                dlog("[Dictation] recogniser error: \(error)")
+            }
+            #endif
             Task { @MainActor [weak self] in
                 guard let self else {
                     #if DEBUG
@@ -629,22 +646,15 @@ final class LectureRecorder: ObservableObject {
                     #endif
                     return
                 }
-                if let result {
-                    let partial = result.bestTranscription.formattedString
+                if let partial {
                     self.ingestPartial(partial)
                     #if DEBUG
-                    dlog("[Dictation] partial result, len=\(partial.count), isFinal=\(result.isFinal), preview=\(String(partial.prefix(40)))")
+                    dlog("[Dictation] partial result, len=\(partial.count), isFinal=\(isFinal), preview=\(String(partial.prefix(40)))")
                     #endif
                 }
-                if let error {
-                    #if DEBUG
-                    dlog("[Dictation] recogniser error: \(error)")
-                    #endif
-                }
-                let didFinish = result?.isFinal == true || error != nil
-                if didFinish {
+                if isFinal || hadError {
                     await self.rotateRecognitionTaskIfStillRecording(
-                        finalSegment: result?.bestTranscription.formattedString
+                        finalSegment: partial
                     )
                 }
             }
@@ -944,8 +954,15 @@ final class LectureRecorder: ObservableObject {
         request.taskHint                    = .dictation
         request.addsPunctuation             = true
 
+        // `@Sendable` is load-bearing: under `@preconcurrency import
+        // Speech` a plain closure formed here silently inherits this
+        // class's @MainActor isolation, and Speech is free to invoke
+        // it off-main — the same runtime isolation trap
+        // (dispatch_assert_queue_fail → SIGTRAP) that shipped in the
+        // audio tap closures of build 2.1(1). @Sendable forces the
+        // closure nonisolated so there is nothing to assert.
         let final: String? = await withCheckedContinuation { cont in
-            recogniser.recognitionTask(with: request) { result, error in
+            recogniser.recognitionTask(with: request) { @Sendable result, error in
                 guard let result, result.isFinal else {
                     if error != nil { cont.resume(returning: nil) }
                     return

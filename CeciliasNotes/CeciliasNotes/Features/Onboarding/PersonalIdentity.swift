@@ -222,6 +222,13 @@ func libraryGreeting(forName name: String) -> String {
 /// `nameKey` value is the source of truth.
 @MainActor
 func reconcileAppIcon(preferredName: String? = nil) {
+    // The mandatory "you have changed the icon" system alert scrims
+    // the whole app and blocks every synthesized tap — UI tests were
+    // failing on unrelated flows because the library's onAppear
+    // reconcile fired this alert mid-test. `updateAppIcon(for:)` is
+    // already guarded; the guard has to live HERE too because
+    // LibraryView / ThemeManager / app-launch call this directly.
+    guard !ProcessInfo.processInfo.arguments.contains("-uiTesting") else { return }
     let app = UIApplication.shared
     guard app.supportsAlternateIcons else { return }
 

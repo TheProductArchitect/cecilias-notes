@@ -12,7 +12,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 ## Snapshot
 
 - Swift files scanned: **348**
-- Types declared: **682**
+- Types declared: **683**
 - `Notification.Name` declarations: **89**
 - Notification symbols referenced (post/observe): **105**
 
@@ -25,7 +25,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | `App/` | 3 | 944 |
 | `Core/` | 96 | 16,365 |
 | `DesignSystem/` | 15 | 1,762 |
-| `Features/` | 165 | 51,303 |
+| `Features/` | 165 | 51,383 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -56,8 +56,8 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | 1,599 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
 | 1,396 | [`CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift`](../CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift) |
 | 1,244 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
+| 1,236 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
 | 1,227 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift) |
-| 1,219 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
 | 1,016 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift) |
 | 969 | [`CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift) |
 | 955 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift) |
@@ -205,7 +205,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`Hashable`** — 13 conformers: `AnnotationListItem`, `AskCitation`, `InteractionReason`, `Key`, `LibraryContext`, `MacHeaderInteraction`, `NotebookSummary`, `PageCoordinateSpace`, `PageTemplate`, `TemplateCategory`, `Theme`, `TranscriptionSegment`, … +1
 - **`Identifiable`** — 28 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, `MacSmartList`, … +16
 - **`LocalizedError`** — 10 conformers: `AppError`, `AudioRecorderError`, `CeciliasNotesStorageError`, `CloudSyncError`, `Error`, `ExportError`, `ImageProcessingError`, `LectureRecorderError`, `MacExportError`, `PDFImportError`
-- **`NSObject`** — 12 conformers: `AudioPlaybackController`, `CameraPickerDelegate`, `CeciliasNotesAppDelegate`, `Coordinator`, `DocumentPickerDelegate`, `MacAppDelegate`, `MacQuickCaptureController`, `MultipeerSendService`, `MultipeerSyncService`, `PassThroughDelegate`, `PhotoPickerDelegate`, `Target`
+- **`NSObject`** — 13 conformers: `AudioPlaybackController`, `CameraPickerDelegate`, `CeciliasNotesAppDelegate`, `Coordinator`, `DocumentPickerDelegate`, `MacAppDelegate`, `MacQuickCaptureController`, `MultipeerSendService`, `MultipeerSyncService`, `PassThroughDelegate`, `PhotoPickerDelegate`, `PickerDelegate`, … +1
 - **`NSView`** — 2 conformers: `MacDocTextContainer`, `MacInlineTextContainer`
 - **`NSViewRepresentable`** — 6 conformers: `MacDocGrowingRichTextEditor`, `MacDocScrollBridge`, `MacInlineTextEditor`, `MacRichTextEditor`, `MacWindowChromeFix`, `MacWindowTag`
 - **`ObservableObject`** — 30 conformers: `AudioPlaybackController`, `CloudSyncManager`, `DeepLinkRouter`, `EditorStateMachine`, `EditorViewModel`, `KeyboardObserver`, `LassoLiveDrag`, `LassoSelectionState`, `LectureRecorder`, `LibraryViewModel`, `MCPStatusMonitor`, `MacAudioPlayer`, … +18
@@ -215,7 +215,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`String`** — 57 conformers: `AITier`, `CalloutKind`, `Category`, `CloudKitContainerStatus`, `CodingKeys`, `Command`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, … +45
 - **`Transferable`** — 3 conformers: `NotebookTransferID`, `PageDragItem`, `SubjectTransferID`
 - **`UIView`** — 9 conformers: `AudioPassthroughContainer`, `CanvasHostView`, `ContentLayerGestureController`, `PageRenderer`, `PassthroughHostView`, `PassthroughTouchView`, `PassthroughView`, `RichTextToolbar`, `TwoFingerPassthroughView`
-- **`UIViewControllerRepresentable`** — 11 conformers: `ActivityView`, `AudioFilePicker`, `CameraPicker`, `CustomColorPickerSheet`, `DocumentScannerPicker`, `FilesPicker`, `IICameraPicker`, `IIFilesPicker`, `IIPhotosPicker`, `PhotoLibraryPicker`, `ShareTextActivityView`
+- **`UIViewControllerRepresentable`** — 10 conformers: `ActivityView`, `AudioFilePicker`, `CameraPicker`, `DocumentScannerPicker`, `FilesPicker`, `IICameraPicker`, `IIFilesPicker`, `IIPhotosPicker`, `PhotoLibraryPicker`, `ShareTextActivityView`
 - **`UIViewRepresentable`** — 9 conformers: `ContinuousCanvasView`, `FourFingerTapDetector`, `PencilFingerDragSurface`, `PencilSqueezeDetector`, `SplashSVGView`, `StickyTextEditor`, `TextBlockView`, `TextEditorRepresentable`, `TwoFingerLongPressDetector`
 - **`VersionedSchema`** — 2 conformers: `CeciliasNotesSchemaV5`, `CeciliasNotesSchemaV6`
 - **`View`** — 199 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +187
