@@ -13,9 +13,18 @@ Cecilia's Notes
 
 ## Subtitle (limit 30 chars)
 ```
-Notebook for iPhone & iPad
+Write, draw, dictate notes
 ```
 *27 / 30*
+
+_Previously "Notebook for iPhone & iPad" — Apple App Store
+review rejected this: naming "iPhone"/"iPad" in a subtitle in
+Apple's own product-naming style ("X for iPhone & iPad") reads
+as confusingly similar to an Apple-authored compatibility badge,
+independent of whether the app actually runs on those devices.
+Device support is already surfaced via the app's platform
+metadata, so the subtitle doesn't need to repeat it — describe
+what the app does instead._
 
 ### Mac App Store subtitle (limit 30 chars)
 ```
