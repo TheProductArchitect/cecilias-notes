@@ -179,6 +179,12 @@ Documentation index:
 2. Grep the file for `#if canImport(UIKit)` / `#if os(iOS)` — the else branch (or missing branch) is the Mac codepath.
 3. Confirm `PlatformImage` / `PlatformColor` shims from `Core/Utilities/PlatformKit.swift` are used instead of `UIImage`/`UIColor`.
 
+**When the app hangs (ANR) — main-thread rules (2026-07-09):**
+- Keystroke persist in `TextElementView` is debounced (350 ms) with the `NSKeyedArchiver` encode off-main, and layout re-measure throttled to 250 ms. Never reintroduce per-keystroke encode/measure — an hour-long transcript block made every keystroke cost hundreds of ms.
+- Dictation partials mutate `content.text` per partial (drives the live UI) but `context.save()` at most once per second (`DictationFlowCommit.throttledDictationSave`), with a trailing pass. Stop-time commits save unconditionally.
+- The `.inkbook` mirror export builds on a background `ModelContext` (`CeciliasNotesExporter.exportInBackground`) — pass IDs across the isolation boundary, never model objects. `scheduleExportAll` runs at launch/backgrounding/termination, all watchdog-sensitive; building on main there ate the ~5 s background budget (0x8badf00d).
+- `reconcileSoftDeleteFlags` fetches ONLY mismatched rows via predicates; the healthy case materializes nothing. Don't add full-table fetches to anything scheduled by `NSPersistentStoreRemoteChange` — it fires 2 s after every local save burst.
+
 **When SwiftData behaves oddly:**
 - `StorageService.purgeDuplicateRows()` and `reconcileSoftDeleteFlags()` run on init and library appear — recent duplicate-ID crash was fixed by making every SwiftData-fed `ForEach` tolerate duplicates (see commit `d629830`).
 - Duplicate-tolerant lists that feed the *editor* must keep the NEWEST row (`dedupedByIdNewestWins()` in `Array+DedupedById.swift`) — first-wins dedupe surfaced stale duplicate pages and read as phantom "undo".

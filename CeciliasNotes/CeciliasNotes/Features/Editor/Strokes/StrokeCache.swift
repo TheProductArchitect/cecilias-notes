@@ -152,34 +152,39 @@ final class StrokeCache {
     }
 
     private func runPrewarm(notebookId: UUID, limit: Int) async {
-        // MainActor hop to read SwiftData safely. Decoded drawings
-        // get inserted via `cacheWithoutTouchingLRU` so a
-        // background warm can't push the user's current page out.
-        await MainActor.run {
+        let payloads: [(UUID, Data)] = await MainActor.run {
             let context = StorageService.shared.context
             let descriptor = FetchDescriptor<Page>(
                 predicate: #Predicate { $0.notebookId == notebookId && $0.isDeleted == false },
                 sortBy: [SortDescriptor(\.pageNumber)]
             )
-            guard let pages = try? context.fetch(descriptor) else { return }
-            for page in pages.prefix(limit) {
-                if entries[page.id] != nil { continue }
+            guard let pages = try? context.fetch(descriptor) else { return [] }
+            return pages.prefix(limit).compactMap { page -> (UUID, Data)? in
+                if entries[page.id] != nil { return nil }
                 let data = StorageService.shared.strokeData(for: page) ?? Data()
-                guard !data.isEmpty, let drawing = try? PKDrawing(data: data) else { continue }
-                cacheWithoutTouchingLRU(drawing, forPage: page.id)
+                guard !data.isEmpty else { return nil }
+                return (page.id, data)
+            }
+        }
+        for (pageId, data) in payloads {
+            guard let drawing = try? PKDrawing(data: data) else { continue }
+            await MainActor.run {
+                if entries[pageId] == nil {
+                    cacheWithoutTouchingLRU(drawing, forPage: pageId)
+                }
             }
         }
     }
 
     private func runPrewarmSubject(subjectId: UUID) async {
-        await MainActor.run {
+        let payload: (UUID, Data)? = await MainActor.run {
             let context = StorageService.shared.context
             let nbDesc = FetchDescriptor<Notebook>(
                 predicate: #Predicate { $0.subjectId == subjectId && $0.isDeleted == false },
                 sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
             )
             guard let notebooks = try? context.fetch(nbDesc),
-                  let topNotebook = notebooks.first else { return }
+                  let topNotebook = notebooks.first else { return nil }
             let nbId = topNotebook.id
             let pageDesc = FetchDescriptor<Page>(
                 predicate: #Predicate { $0.notebookId == nbId && $0.isDeleted == false },
@@ -187,10 +192,17 @@ final class StrokeCache {
             )
             guard let pages = try? context.fetch(pageDesc),
                   let firstPage = pages.first,
-                  entries[firstPage.id] == nil else { return }
+                  entries[firstPage.id] == nil else { return nil }
             let data = StorageService.shared.strokeData(for: firstPage) ?? Data()
-            guard !data.isEmpty, let drawing = try? PKDrawing(data: data) else { return }
-            cacheWithoutTouchingLRU(drawing, forPage: firstPage.id)
+            guard !data.isEmpty else { return nil }
+            return (firstPage.id, data)
+        }
+        guard let (pageId, data) = payload,
+              let drawing = try? PKDrawing(data: data) else { return }
+        await MainActor.run {
+            if entries[pageId] == nil {
+                cacheWithoutTouchingLRU(drawing, forPage: pageId)
+            }
         }
     }
 

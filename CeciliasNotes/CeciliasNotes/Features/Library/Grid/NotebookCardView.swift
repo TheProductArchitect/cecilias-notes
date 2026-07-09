@@ -92,7 +92,11 @@ struct NotebookCardView: View {
                     viewModel.toggleSelection(notebook)
                 }
             } else {
-                viewModel.macGridFocusedNotebookId = notebook.id
+                // Keyboard-focus ring is for hardware keyboard / Mac
+                // navigation only — touch opens straight through.
+                if DeviceCapabilities.supportsGridKeyboardNavigation {
+                    viewModel.macGridFocusedNotebookId = notebook.id
+                }
                 viewModel.selectedNotebookId = notebook.id
             }
             #endif

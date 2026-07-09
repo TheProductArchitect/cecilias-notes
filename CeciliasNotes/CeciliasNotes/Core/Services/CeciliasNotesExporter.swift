@@ -28,17 +28,45 @@ final class CeciliasNotesExporter {
     private init() {}
 
     private static let containerIdentifier = "iCloud.app.ceciliasnotes"
-    private static let iso = ISO8601DateFormatter()
+    // ISO8601DateFormatter is documented thread-safe (unlike
+    // DateFormatter); the export builds read it off-main.
+    nonisolated(unsafe) private static let iso = ISO8601DateFormatter()
 
     // MARK: - Public API
 
     /// Build the mirror file for `notebook` and write it to the MCP
-    /// notebooks directory. Call from main actor context only.
+    /// notebooks directory. The BUILD is the heavy half (per-page
+    /// stroke fetches, block extraction, text blobs), not just the
+    /// write — so the whole pipeline runs on a detached task with
+    /// its own background `ModelContext`. Building on the main
+    /// actor stalled it for seconds on large libraries; combined
+    /// with `scheduleExportAll` at backgrounding time that ate the
+    /// ~5 s watchdog budget → 0x8badf00d terminations (ANRs).
     func export(_ notebook: Notebook) {
-        let file = buildFile(for: notebook)
-        let notebookId = notebook.id
+        Self.exportInBackground(
+            notebookIds: [notebook.id],
+            container: StorageService.shared.container
+        )
+    }
+
+    /// Fetch → build → write for the given notebooks, sequentially,
+    /// entirely off the main actor. A fresh `ModelContext` on the
+    /// detached task reads the same store safely; row IDs cross the
+    /// isolation boundary, model objects never do.
+    nonisolated private static func exportInBackground(
+        notebookIds: [UUID],
+        container: ModelContainer
+    ) {
         Task.detached(priority: .utility) {
-            await Self.writeFile(file, notebookId: notebookId)
+            let context = ModelContext(container)
+            for notebookId in notebookIds {
+                let descriptor = FetchDescriptor<Notebook>(
+                    predicate: #Predicate { $0.id == notebookId && $0.isDeleted == false }
+                )
+                guard let notebook = (try? context.fetch(descriptor))?.first else { continue }
+                let file = buildFile(for: notebook, context: context)
+                await writeFile(file, notebookId: notebookId)
+            }
         }
     }
 
@@ -52,17 +80,31 @@ final class CeciliasNotesExporter {
 
     /// Re-export every live notebook. Intended for the first run after
     /// enabling iCloud sync, or from a "Refresh MCP" Settings button.
+    /// Only the ID list is read on the main actor; every build runs
+    /// sequentially on one background context.
     func exportAll() {
-        let notebooks = StorageService.shared.fetchAllNotebooks()
-        for nb in notebooks { export(nb) }
+        let ids = StorageService.shared.fetchAllNotebooks().map(\.id)
+        Self.exportInBackground(
+            notebookIds: ids,
+            container: StorageService.shared.container
+        )
+    }
+
+    /// Full mirror refresh. Runs at launch, on backgrounding, and at
+    /// termination — all watchdog-sensitive moments, which is why the
+    /// builds themselves live on a background context now.
+    func scheduleExportAll() {
+        exportAll()
     }
 
     /// Serialize `notebook` to `.inkbook` bytes in memory — used by
     /// the multipeer "send to device" flow, which ships the same
     /// schema the MCP mirror uses so the receiver's importer needs
-    /// no new code path.
+    /// no new code path. Stays synchronous on the main actor: it's
+    /// a one-off user action on a single notebook, and the caller
+    /// needs the bytes inline.
     func inkbookData(for notebook: Notebook) -> Data? {
-        let file = buildFile(for: notebook)
+        let file = Self.buildFile(for: notebook, context: StorageService.shared.context)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try? encoder.encode(file)
@@ -151,14 +193,18 @@ final class CeciliasNotesExporter {
     /// need the in-memory `CeciliasNotesFile` for structural
     /// assertions without round-tripping through the filesystem.
     func testOnlyBuildFile(for notebook: Notebook) -> CeciliasNotesFile {
-        buildFile(for: notebook)
+        Self.buildFile(for: notebook, context: StorageService.shared.context)
     }
 
-    // MARK: - CeciliasNotesFile construction (main actor)
+    // MARK: - CeciliasNotesFile construction (background context)
 
-    private func buildFile(for notebook: Notebook) -> CeciliasNotesFile {
-        let context = StorageService.shared.context
-
+    /// `nonisolated static` + explicit context so it can run on the
+    /// background export context — model objects passed in MUST
+    /// belong to `context`.
+    nonisolated private static func buildFile(
+        for notebook: Notebook,
+        context: ModelContext
+    ) -> CeciliasNotesFile {
         let subjectName = notebook.subject?.name
             ?? resolveSubjectName(id: notebook.subjectId, context: context)
             ?? ""
@@ -223,7 +269,7 @@ final class CeciliasNotesExporter {
         )
     }
 
-    private func originBlock(for notebook: Notebook) -> CeciliasNotesFile.Origin? {
+    nonisolated private static func originBlock(for notebook: Notebook) -> CeciliasNotesFile.Origin? {
         guard notebook.createdOnDevice != nil
             || notebook.createdOnPlatform != nil
             || notebook.lastModifiedOnDevice != nil
@@ -237,7 +283,7 @@ final class CeciliasNotesExporter {
         )
     }
 
-    private func extractBlocks(from page: Page, context: ModelContext) -> [CeciliasNotesFile.Block] {
+    nonisolated private static func extractBlocks(from page: Page, context: ModelContext) -> [CeciliasNotesFile.Block] {
         // Preferred path: the page was ingested from an `.inkbook`
         // file and the importer stashed the original block array
         // verbatim. Emit those bytes back as-is so heading levels,
@@ -282,7 +328,7 @@ final class CeciliasNotesExporter {
     /// the user has drawn ink on it. Surfaced as the `has_ink` flag
     /// on the mirror's `PageNode` so agents can tell handwritten
     /// pages apart from "this page literally has zero content."
-    private func pageHasInk(_ page: Page, context: ModelContext) -> Bool {
+    nonisolated private static func pageHasInk(_ page: Page, context: ModelContext) -> Bool {
         let pid = page.id
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil }
@@ -296,13 +342,13 @@ final class CeciliasNotesExporter {
         return false
     }
 
-    private func resolveSubjectName(id: UUID?, context: ModelContext) -> String? {
+    nonisolated private static func resolveSubjectName(id: UUID?, context: ModelContext) -> String? {
         guard let id else { return nil }
         let descriptor = FetchDescriptor<Subject>(predicate: #Predicate { $0.id == id })
         return (try? context.fetch(descriptor))?.first?.name
     }
 
-    private func placeholderPage() -> CeciliasNotesFile.PageNode {
+    nonisolated private static func placeholderPage() -> CeciliasNotesFile.PageNode {
         CeciliasNotesFile.PageNode(
             id: UUID().uuidString,
             index: 0,

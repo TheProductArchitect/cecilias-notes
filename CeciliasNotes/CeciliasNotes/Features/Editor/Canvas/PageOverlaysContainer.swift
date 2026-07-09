@@ -37,10 +37,16 @@ import SwiftUI
 /// separate host mounted behind this container inside the renderer.
 struct PageOverlaysContainer: View {
 
-    @ObservedObject var viewModel: EditorViewModel
+    /// Non-observing reference — overlays must not re-render on
+    /// unrelated `@Published` churn (zoom ticks, header state,
+    /// recording session). Tool/canvas inputs arrive via
+    /// `overlayInputs`; the coordinator refreshes this host's
+    /// `rootView` when those inputs change.
+    let viewModel: EditorViewModel
     let pageId: UUID
     let notebookId: UUID
     let coordinateSpace: PageCoordinateSpace
+    let overlayInputs: EditorPageOverlayInputs
 
     var body: some View {
         // Back-to-front. Mirrors the legacy cursor-mode stacking the
@@ -63,60 +69,81 @@ struct PageOverlaysContainer: View {
             )
 
             ImageElementsOverlayView(
-                viewModel: viewModel,
+                inputs: overlayInputs,
                 pageId: pageId,
                 notebookId: notebookId,
                 coordinateSpace: coordinateSpace
             )
+            .equatable()
 
             PDFPageElementsOverlayView(
-                viewModel: viewModel,
+                inputs: overlayInputs,
                 pageId: pageId,
                 coordinateSpace: coordinateSpace
             )
+            .equatable()
 
             HighlightElementsOverlayView(
-                viewModel: viewModel,
+                inputs: overlayInputs,
                 pageId: pageId,
                 coordinateSpace: coordinateSpace
             )
-
-            AudioElementsOverlayView(
-                viewModel: viewModel,
-                pageId: pageId,
-                coordinateSpace: coordinateSpace
-            )
+            .equatable()
 
             StickyNoteElementsOverlayView(
+                inputs: overlayInputs,
                 viewModel: viewModel,
                 pageId: pageId,
                 notebookId: notebookId,
                 coordinateSpace: coordinateSpace
             )
+            .equatable()
 
             TextElementsOverlayView(
+                inputs: overlayInputs,
                 viewModel: viewModel,
                 pageId: pageId,
                 notebookId: notebookId,
                 coordinateSpace: coordinateSpace
             )
+            .equatable()
 
-            // Shape overlay sits above text so the shape-tool
-            // drag-capture surface gets priority while it's the
-            // active tool. When the shape tool is off the overlay
-            // only renders existing shapes and forwards taps down.
             ShapeElementsOverlayView(
+                inputs: overlayInputs,
                 viewModel: viewModel,
                 pageId: pageId,
                 notebookId: notebookId,
                 coordinateSpace: coordinateSpace
             )
+            .equatable()
 
             LassoOverlayView(
                 viewModel: viewModel,
                 pageId: pageId,
                 coordinateSpace: coordinateSpace
             )
+
+            // Audio last (except lasso-tool mode) so the floating
+            // delete toolbar wins hit-testing over lasso chrome and
+            // shape tap surfaces in cursor / image modes.
+            if !viewModel.selectedTool.isLassoMode {
+                AudioElementsOverlayView(
+                    inputs: overlayInputs,
+                    pageId: pageId,
+                    coordinateSpace: coordinateSpace
+                )
+                .equatable()
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if viewModel.selectedTool.isLassoMode {
+                AudioElementsOverlayView(
+                    inputs: overlayInputs,
+                    pageId: pageId,
+                    coordinateSpace: coordinateSpace
+                )
+                .equatable()
+            }
         }
         .frame(
             width: coordinateSpace.baseSize.width,

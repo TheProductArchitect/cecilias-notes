@@ -80,6 +80,32 @@ extension ModelContainer {
         defaults.synchronize()
     }
 
+    /// Truncate the SQLite WAL log before SwiftData opens the store.
+    /// Safe to call when the WAL sidecar is absent (no-op). Call from a
+    /// background queue at launch — never on the main runloop.
+    nonisolated static func truncateWALIfPresent(at storeURL: URL) {
+        let walURL = URL(fileURLWithPath: storeURL.path + "-wal")
+        guard FileManager.default.fileExists(atPath: walURL.path) else { return }
+        let walSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
+        #if DEBUG
+        dlog("[ModelContainer] WAL log present — sizeBytes=\(walSize)")
+        #endif
+        var db: OpaquePointer?
+        if sqlite3_open(storeURL.path, &db) == SQLITE_OK {
+            _ = sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE);", nil, nil, nil)
+            sqlite3_close(db)
+            #if DEBUG
+            let newSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
+            dlog("[ModelContainer] WAL checkpoint(TRUNCATE) done — newSizeBytes=\(newSize)")
+            #endif
+        } else {
+            #if DEBUG
+            dlog("[ModelContainer] WAL checkpoint skipped — sqlite3_open failed")
+            #endif
+            sqlite3_close(db)
+        }
+    }
+
     static func ceciliasNotesContainer() throws -> ModelContainer {
         let storeURL = StorageService.ceciliasNotesDirectoryURL
             .appendingPathComponent("ceciliasnotes.sqlite")
@@ -88,51 +114,13 @@ extension ModelContainer {
             withIntermediateDirectories: true
         )
 
-        // Truncate the SQLite WAL log before SwiftData opens the
-        // store. Force-kills during debugging (or watchdog kills
-        // mid-write) leave the WAL un-checkpointed; SwiftData reads
-        // the journal lazily, then the first synchronous write —
-        // e.g. dictation's initial `mainContext.save()` — gets
-        // stuck behind a multi-second WAL checkpoint on the main
-        // runloop. Truncating up front pays the cost once at launch
-        // (off the user-visible interaction path) instead of
-        // ambushing the first dictation tap.
-        //
-        // Safe whether or not the file exists: the WAL sidecars
-        // (`-wal`, `-shm`) sit next to the .sqlite and `wal_checkpoint`
-        // is a no-op on a clean store.
-        // SQLite sidecars use a dash suffix on the full filename
-        // (`ceciliasnotes.sqlite-wal`), NOT a path extension —
-        // `appendingPathExtension("wal")` would build `.sqlite.wal`,
-        // a file that never exists, silently disabling this gate.
-        let walURL = URL(fileURLWithPath: storeURL.path + "-wal")
-        if FileManager.default.fileExists(atPath: walURL.path) {
-            let walSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
-            #if DEBUG
-            dlog("[ModelContainer] WAL log present at launch — sizeBytes=\(walSize)")
-            #endif
-            // Best-effort WAL truncate via sqlite3 CLI bound to the
-            // .sqlite file. SwiftData / Core Data don't expose a
-            // pragma API, but the file-format-level sqlite3 binary
-            // is part of every iOS app sandbox (linked via
-            // libsqlite3.tbd). A `wal_checkpoint(TRUNCATE)` pragma
-            // forces all pending pages out of the WAL and shrinks
-            // the file back to 0 bytes — turning a multi-second
-            // first-write into a fast no-op.
-            var db: OpaquePointer?
-            if sqlite3_open(storeURL.path, &db) == SQLITE_OK {
-                _ = sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE);", nil, nil, nil)
-                sqlite3_close(db)
-                #if DEBUG
-                let newSize = (try? FileManager.default.attributesOfItem(atPath: walURL.path)[.size] as? Int) ?? 0
-                dlog("[ModelContainer] WAL checkpoint(TRUNCATE) done — newSizeBytes=\(newSize)")
-                #endif
-            } else {
-                #if DEBUG
-                dlog("[ModelContainer] WAL checkpoint skipped — sqlite3_open failed")
-                #endif
-                sqlite3_close(db)
-            }
+        // WAL truncate before open — always, regardless of sidecar size.
+        // Deferring large journals let SwiftData open against a multi-MB
+        // WAL and wedge every mainContext read on relaunch. Run off the
+        // main runloop; the caller may already have truncated in the
+        // app delegate, in which case this is a fast no-op.
+        DispatchQueue.global(qos: .userInitiated).sync {
+            truncateWALIfPresent(at: storeURL)
         }
 
         // V6 = the active schema. Step 1 of the unified PageElement

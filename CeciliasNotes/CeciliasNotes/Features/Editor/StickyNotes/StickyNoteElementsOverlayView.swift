@@ -16,12 +16,20 @@ import SwiftUI
 ///
 /// Layer ordering: stickies render ABOVE text and images in the
 /// host stack — they are "floating notes" on top of page content.
-struct StickyNoteElementsOverlayView: View {
+struct StickyNoteElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
+    let viewModel: EditorViewModel
     let pageId: UUID
     let notebookId: UUID
     let coordinateSpace: PageCoordinateSpace
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.notebookId == rhs.notebookId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
+    }
 
     /// `StorageService.shared.container.mainContext` resolved
     /// directly — UIHostingController instances built inside the
@@ -34,15 +42,15 @@ struct StickyNoteElementsOverlayView: View {
 
     @State private var selectedId: UUID?
     @State private var editingId:  UUID?
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
     /// Tools that allow sticky interaction (tap-to-edit, long-press
     /// to select). Drawing tools fall through to the canvas.
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.isCursorMode
-            || viewModel.selectedTool.isStickyNoteMode
+        inputs.selectedTool.isCursorMode
+            || inputs.selectedTool.isStickyNoteMode
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -57,22 +65,7 @@ struct StickyNoteElementsOverlayView: View {
         guard allowsInteraction else { return false }
         return selectedId != nil
             || editingId != nil
-            || viewModel.selectedTool.isStickyNoteMode
-    }
-
-    /// Fetch + post-filter — `#Predicate` enum-case equality is
-    /// rejected on iOS 26 (workaround established in Step 3).
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .stickyNote }.dedupedById()
+            || inputs.selectedTool.isStickyNoteMode
     }
 
     var body: some View {
@@ -85,14 +78,11 @@ struct StickyNoteElementsOverlayView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { location in
-                        #if DEBUG
-                        dlog("[StickyGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) location=\(location) allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
-                        #endif
                         handleBackgroundTap(at: location)
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.stickyNoteContent {
                     StickyNoteElementView(
                         element: element,
@@ -108,7 +98,8 @@ struct StickyNoteElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             // Tool change away from interactive tools clears selection /
             // editing state, mirroring `TextElementsOverlayView`.
             if newValue != .cursor && newValue != .stickyNote {
@@ -117,7 +108,25 @@ struct StickyNoteElementsOverlayView: View {
         }
         .onReceive(
             NotificationCenter.default.publisher(for: .stickyNotesChanged)
-        ) { _ in refreshTick &+= 1 }
+        ) { _ in reloadElements() }
+    }
+
+    // MARK: - Fetch
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .stickyNote,
+            context: modelContext
+        )
+        if let selected = selectedId,
+           !cachedElements.contains(where: { $0.id == selected }) {
+            selectedId = nil
+        }
+        if let editing = editingId,
+           !cachedElements.contains(where: { $0.id == editing }) {
+            editingId = nil
+        }
     }
 
     // MARK: - Tap / long-press handling
@@ -129,7 +138,7 @@ struct StickyNoteElementsOverlayView: View {
             exitEditAndDeselect()
             return
         }
-        if viewModel.selectedTool.isStickyNoteMode {
+        if inputs.selectedTool.isStickyNoteMode {
             createNewSticky(at: location)
         }
     }
@@ -211,14 +220,14 @@ struct StickyNoteElementsOverlayView: View {
             context: modelContext
         ) else { return }
 
-        refreshTick &+= 1
+        reloadElements()
         selectedId = element.id
         editingId  = element.id
         viewModel.editingStickyNoteId = element.id
         PageElementUndo.registerCreate(
             elementId: element.id,
             kind: .stickyNote,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Create Sticky"
         )
         // Mirror the stroke + shape auto-add trigger so dropping a
@@ -236,7 +245,7 @@ struct StickyNoteElementsOverlayView: View {
         PageElementUndo.registerDelete(
             elementId: id,
             kind: .stickyNote,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Delete Sticky Note"
         )
         StickyNoteCommit.softDelete(elementId: id, context: modelContext)
@@ -245,6 +254,6 @@ struct StickyNoteElementsOverlayView: View {
         if viewModel.editingStickyNoteId == id {
             viewModel.editingStickyNoteId = nil
         }
-        refreshTick &+= 1
+        reloadElements()
     }
 }

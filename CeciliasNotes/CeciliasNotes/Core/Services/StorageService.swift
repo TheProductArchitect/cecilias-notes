@@ -100,6 +100,12 @@ final class StorageService: ObservableObject {
         )
     }
 
+    /// Timestamp of the launch-time purge + reconcile in `init()`.
+    /// Foreground duplicate sweeps skip `reconcileSoftDeleteFlags`
+    /// for 60s after this to avoid doubling the work on every
+    /// `LibraryView.onAppear` / scene-active transition.
+    nonisolated(unsafe) static var launchHygieneCompletedAt: Date?
+
     /// Convenience init used by the singleton and CeciliasNotesApp. Container failure is
     /// genuinely terminal (no DB → no app), so we surface a precondition with a
     /// clear message rather than a bare `try!`.
@@ -107,11 +113,19 @@ final class StorageService: ObservableObject {
         do {
             let c = try ModelContainer.ceciliasNotesContainer()
             self.init(container: c)
-            // Must run before `LibraryViewModel.init` → `refresh()` —
-            // duplicate primary keys make `Dictionary(uniqueKeysWithValues:)`
-            // and SwiftUI `ForEach` fatal-error on the first frame.
+            // Duplicate purge must finish before `LibraryViewModel.init`
+            // → `refresh()` — lists use `dedupedById` as belt-and-
+            // suspenders, but Dictionary(uniqueKeysWithValues:) in
+            // mutation paths still traps on duplicate keys.
             purgeDuplicateRows()
-            reconcileSoftDeleteFlags()
+            Self.launchHygieneCompletedAt = Date()
+            // Full-table soft-delete reconcile is deferred so a large
+            // library cannot block the first interactive frame after
+            // relaunch. Foreground sweeps skip reconcile for 60s
+            // after `launchHygieneCompletedAt`.
+            Task { @MainActor in
+                reconcileSoftDeleteFlags()
+            }
         } catch {
             // Safe: SwiftData container init only fails when the on-disk SQLite
             // file is corrupt or Application Support is unwritable — unrecoverable
@@ -188,27 +202,32 @@ final class StorageService: ObservableObject {
         purgedContainers += purgeDuplicates(
             type: Notebook.self,
             keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt }
+            updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
         )
         purgedContainers += purgeDuplicates(
             type: Page.self,
             keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt }
+            updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
         )
         purgedElements += purgeDuplicates(
             type: PageElement.self,
             keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt }
+            updatedAt: { $0.updatedAt },
+            isTombstone: { $0.deletedAt != nil }
         )
         purgedContainers += purgeDuplicates(
             type: Subject.self,
             keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt }
+            updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
         )
         purgedContainers += purgeDuplicates(
             type: Folder.self,
             keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt }
+            updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
         )
         guard purgedContainers + purgedElements > 0 else { return }
         do {
@@ -286,40 +305,53 @@ final class StorageService: ObservableObject {
             dirty = true
         }
 
-        let subjectDescriptor = FetchDescriptor<Subject>()
-        let subjects = (try? context.fetch(subjectDescriptor)) ?? []
-        for s in subjects {
-            if s.isDeleted && s.deletedAt == nil {
-                fixOnce(s.id, {
-                    s.deletedAt = Date()
-                    #if DEBUG
-                    dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — stamped missing deletedAt")
-                    #endif
-                }, what: "subject")
-            } else if !s.isDeleted, s.deletedAt != nil {
-                fixOnce(s.id, {
-                    s.isDeleted = true
-                    s.updatedAt = Date()
-                    #if DEBUG
-                    dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — restored isDeleted (CloudKit echo)")
-                    #endif
-                }, what: "subject")
-            }
+        // Fetch ONLY the mismatched rows. This sweep used to fetch
+        // every Subject and Notebook and filter in Swift — with a
+        // large library that materialized whole tables on the main
+        // actor 2 s after every save burst, a steady ANR tax. The
+        // predicates below hit SQLite indices; in the healthy case
+        // (no mismatches) all four fetches return empty and no row
+        // is materialized at all.
+        let staleSubjectStamp = FetchDescriptor<Subject>(
+            predicate: #Predicate { $0.isDeleted == true && $0.deletedAt == nil }
+        )
+        for s in (try? context.fetch(staleSubjectStamp)) ?? [] {
+            fixOnce(s.id, {
+                s.deletedAt = Date()
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — stamped missing deletedAt")
+                #endif
+            }, what: "subject")
         }
-        let notebookDescriptor = FetchDescriptor<Notebook>()
-        let notebooks = (try? context.fetch(notebookDescriptor)) ?? []
-        for n in notebooks {
-            if n.isDeleted && n.deletedAt == nil {
-                fixOnce(n.id, { n.deletedAt = Date() }, what: "notebook")
-            } else if !n.isDeleted, n.deletedAt != nil {
-                fixOnce(n.id, {
-                    n.isDeleted = true
-                    n.updatedAt = Date()
-                    #if DEBUG
-                    dlog("[Storage] reconcileSoftDelete notebook id=\(n.id) — restored isDeleted (CloudKit echo)")
-                    #endif
-                }, what: "notebook")
-            }
+        let revivedSubjects = FetchDescriptor<Subject>(
+            predicate: #Predicate { $0.isDeleted == false && $0.deletedAt != nil }
+        )
+        for s in (try? context.fetch(revivedSubjects)) ?? [] {
+            fixOnce(s.id, {
+                s.isDeleted = true
+                s.updatedAt = Date()
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete subject id=\(s.id) — restored isDeleted (CloudKit echo)")
+                #endif
+            }, what: "subject")
+        }
+        let staleNotebookStamp = FetchDescriptor<Notebook>(
+            predicate: #Predicate { $0.isDeleted == true && $0.deletedAt == nil }
+        )
+        for n in (try? context.fetch(staleNotebookStamp)) ?? [] {
+            fixOnce(n.id, { n.deletedAt = Date() }, what: "notebook")
+        }
+        let revivedNotebooks = FetchDescriptor<Notebook>(
+            predicate: #Predicate { $0.isDeleted == false && $0.deletedAt != nil }
+        )
+        for n in (try? context.fetch(revivedNotebooks)) ?? [] {
+            fixOnce(n.id, {
+                n.isDeleted = true
+                n.updatedAt = Date()
+                #if DEBUG
+                dlog("[Storage] reconcileSoftDelete notebook id=\(n.id) — restored isDeleted (CloudKit echo)")
+                #endif
+            }, what: "notebook")
         }
         guard dirty else { return }
         do {
@@ -337,17 +369,23 @@ final class StorageService: ObservableObject {
     private func purgeDuplicates<Model: PersistentModel>(
         type: Model.Type,
         keyedBy key: (Model) -> UUID,
-        updatedAt: (Model) -> Date
+        updatedAt: (Model) -> Date,
+        isTombstone: ((Model) -> Bool)? = nil
     ) -> Int {
         let descriptor = FetchDescriptor<Model>()
         guard let rows = try? context.fetch(descriptor) else { return 0 }
         let grouped = Dictionary(grouping: rows, by: key)
         var purged = 0
         for (_, copies) in grouped where copies.count > 1 {
-            // Sort newest-first; keep the freshest copy, delete the
-            // rest. We can't rely on insertion order across
-            // CloudKit syncs.
-            let sorted = copies.sorted { updatedAt($0) > updatedAt($1) }
+            // Prefer the tombstoned row when CloudKit echoes a fresher
+            // non-deleted shadow — newest-wins alone resurrects deletes.
+            // Among equals, keep the row with the latest `updatedAt`.
+            let sorted = copies.sorted { a, b in
+                let aTomb = isTombstone?(a) ?? false
+                let bTomb = isTombstone?(b) ?? false
+                if aTomb != bTomb { return aTomb && !bTomb }
+                return updatedAt(a) > updatedAt(b)
+            }
             for stale in sorted.dropFirst() {
                 context.delete(stale)
                 purged += 1
@@ -912,7 +950,9 @@ extension StorageService {
 
     func fetchAllNotebooks() -> [Notebook] {
         let descriptor = FetchDescriptor<Notebook>(
-            predicate: #Predicate { $0.isDeleted == false },
+            predicate: #Predicate {
+                $0.isDeleted == false && $0.deletedAt == nil
+            },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         return (try? context.fetch(descriptor)) ?? []

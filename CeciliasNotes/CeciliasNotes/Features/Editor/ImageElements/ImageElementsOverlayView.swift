@@ -19,9 +19,9 @@ import UIKit
 ///     the image-tool *placement* path is owned by the editor's
 ///     existing `.imageImportRequested` notification chain — this
 ///     overlay never opens the picker, it just renders + selects.
-struct ImageElementsOverlayView: View {
+struct ImageElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
     let pageId: UUID
     let notebookId: UUID
     let coordinateSpace: PageCoordinateSpace
@@ -31,10 +31,7 @@ struct ImageElementsOverlayView: View {
     }
 
     @State private var selectedElementId: UUID?
-    /// Bumped after inserts/deletes so the fetched list re-runs
-    /// without waiting for the next view-tree invalidation. Same
-    /// trick `TextElementsOverlayView` uses; cheap.
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
@@ -42,7 +39,7 @@ struct ImageElementsOverlayView: View {
     /// existing images. Matches `CeciliasNotesTool.allowsImageSelection`
     /// (cursor + image).
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.allowsImageSelection
+        inputs.selectedTool.allowsImageSelection
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -57,20 +54,11 @@ struct ImageElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    /// Fetch image elements for this page. Filtering by `.image`
-    /// kind happens in Swift; the predicate keeps the candidate set
-    /// small via pageId + soft-delete.
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .image }.dedupedById()
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.notebookId == rhs.notebookId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
     }
 
     var body: some View {
@@ -84,14 +72,11 @@ struct ImageElementsOverlayView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { _ in
-                        #if DEBUG
-                        dlog("[ImageGesture] overlay.bg tap pageId=\(pageId.uuidString.prefix(8)) selectedBefore=\(selectedElementId?.uuidString.prefix(8) ?? "nil") allowsInteraction=\(allowsInteraction) tool=\(viewModel.selectedTool.identity)")
-                        #endif
                         if selectedElementId != nil { selectedElementId = nil }
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.imageContent {
                     ImageElementView(
                         element: element,
@@ -110,7 +95,8 @@ struct ImageElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             // Switching to a tool that doesn't allow interaction
             // clears the selection chrome.
             if newValue != .cursor && newValue != .image {
@@ -136,10 +122,24 @@ struct ImageElementsOverlayView: View {
             if let info = note.userInfo,
                let srcId = info["sourcePageId"] as? UUID,
                srcId == pageId {
-                DispatchQueue.main.async { refreshTick &+= 1 }
+                DispatchQueue.main.async { reloadElements() }
             } else {
-                refreshTick &+= 1
+                reloadElements()
             }
+        }
+    }
+
+    // MARK: - Fetch
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .image,
+            context: modelContext
+        )
+        if let selected = selectedElementId,
+           !cachedElements.contains(where: { $0.id == selected }) {
+            selectedElementId = nil
         }
     }
 
@@ -158,17 +158,6 @@ struct ImageElementsOverlayView: View {
         )
     }
 
-    // MARK: - External-mutation signal
-
-    /// Posted whenever an image element is inserted, updated, or
-    /// soft-deleted outside this overlay's body (the import
-    /// pipeline, the soft-delete handler below, future PDF/scan
-    /// flows). Listeners read SwiftData themselves — the
-    /// notification is a "now would be a good time to refetch"
-    /// hint, not a payload carrier. Kept on the legacy name so the
-    /// existing import-side post sites can land on it during the
-    /// Step 4 transition.
-
     // MARK: - Soft delete
 
     private func softDelete(_ element: PageElement) {
@@ -178,7 +167,7 @@ struct ImageElementsOverlayView: View {
         PageElementUndo.registerDelete(
             elementId: element.id,
             kind: .image,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Delete Image"
         )
         element.deletedAt = Date()
@@ -190,7 +179,7 @@ struct ImageElementsOverlayView: View {
             dlog("[ImageElement] save failed on softDelete: \(error)")
             #endif
         }
-        refreshTick &+= 1
+        reloadElements()
         NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 }
@@ -204,4 +193,3 @@ extension Notification.Name {
     /// SwiftData without polling.
     static let mediaAttachmentsChanged = Notification.Name("mediaAttachmentsChanged")
 }
-

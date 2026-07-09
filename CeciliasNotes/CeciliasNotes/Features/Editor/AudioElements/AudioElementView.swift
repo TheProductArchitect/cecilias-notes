@@ -22,20 +22,18 @@ struct AudioElementView: View {
     @Bindable var element: PageElement
     @Bindable var content: AudioContent
     let pageSize: CGSize
+    /// When false (drawing tools active) play / context-menu delete
+    /// still work, but tap-to-select chrome and the floating toolbar
+    /// are hidden so handwriting isn't fighting selection gestures.
+    let allowsSelection: Bool
     @Binding var isSelected: Bool
     let onDelete: () -> Void
 
     @Environment(\.theme) private var theme
-    @StateObject private var player = AudioPlaybackController()
-    /// Step 6: drives recording-strip re-renders during an active
-    /// Voice Note. Cheap for non-recording elements — they re-
-    /// evaluate body on session ticks but `isRecording` short-
-    /// circuits to false and the rendered output is unchanged.
-    @ObservedObject private var recordingSession = RecordingSession.shared
 
     @State private var dragOffset: CGSize = .zero
     @State private var resizeDelta: ResizeDelta? = nil
-    @State private var seekDragSeconds: Double? = nil
+    @State private var isRecordingActive = false
     @State private var shareItem: ShareTextItem?
 
     private static let stripHeight: CGFloat = 50
@@ -73,67 +71,32 @@ struct AudioElementView: View {
             // the outer body tap-to-select fires reliably across
             // the strip's full rect (not only where the play
             // button happens to sit).
-            strip(width: displayed.width)
+            AudioElementStripContent(
+                elementId: element.id,
+                content: content,
+                hasTranscript: hasTranscript,
+                isRecordingActive: $isRecordingActive,
+                onCopy: copyTranscript,
+                onShare: shareTranscript,
+                onDelete: onDelete
+            )
                 .rotationEffect(.radians(element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        if !isSelected && !isRecording { isSelected = true }
+                        guard allowsSelection else { return }
+                        if !isSelected && !isRecordingActive { isSelected = true }
                     }
                 )
-                .gesture(isSelected && !isRecording ? bodyDragGesture : nil)
+                .gesture(allowsSelection && isSelected && !isRecordingActive ? bodyDragGesture : nil)
                 .position(x: displayed.midX, y: displayed.midY)
 
-            if isSelected && !isRecording {
+            if allowsSelection && isSelected && !isRecordingActive {
                 selectionChrome(rect: displayed)
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onAppear {
-            #if DEBUG
-            dlog("[AudioPlayback] AudioElementView.onAppear — elementId=\(element.id.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
-            #endif
-            if !isRecording {
-                // Step 10: if the audio file is an iCloud stub
-                // (the SwiftData record arrived ahead of the bytes
-                // on a freshly-restored device), nudge the
-                // download. `player.load(url:)` will no-op on a
-                // missing file; the user sees the inert strip and
-                // can tap play once iCloud lands the file.
-                let url = content.fileURL
-                #if DEBUG
-                let fm = FileManager.default
-                let exists = fm.fileExists(atPath: url.path)
-                let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
-                let ubi = UbiquitousFileStatus.currentState(at: url)
-                dlog("[AudioPlayback] AudioElementView file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
-                #endif
-                if case .downloading = UbiquitousFileStatus.currentState(at: url) {
-                    _ = UbiquitousFileStatus.requestDownload(at: url)
-                }
-                player.load(url: url)
-            }
-        }
-        .onDisappear { player.pause() }
-        // For a freshly-recorded note, `.onAppear` fired *during*
-        // recording (so the `!isRecording` guard skipped `load()`)
-        // and never fires again when recording stops — leaving the
-        // controller with no player, so the first play tap is inert
-        // until the view re-mounts. Loading on the recording→idle
-        // transition makes the just-recorded note playable
-        // immediately. `load(url:)` is idempotent on re-entry.
-        .onChange(of: isRecording) { _, nowRecording in
-            guard !nowRecording else { return }
-            player.load(url: content.resolvedFileURL() ?? content.fileURL)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
-            guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
-                  let time = note.userInfo?[AudioSeekKey.time] as? Double,
-                  id == content.id
-            else { return }
-            player.seek(to: time)
-        }
         .sheet(item: $shareItem) { item in
             ShareTextActivityView(text: item.text)
         }
@@ -154,198 +117,6 @@ struct AudioElementView: View {
     private func shareTranscript() {
         guard hasTranscript else { return }
         shareItem = ShareTextItem(text: trimmedTranscript)
-    }
-
-    /// Step 6: a placeholder strip created at the start of a Voice
-    /// Note recording carries `durationSeconds = 0` until the
-    /// session's stop path writes the captured duration. Use that
-    /// signal — plus an active recording session targeting this
-    /// element — to render the recording UI (pulsing dot + live
-    /// elapsed timer + stop button) instead of the play/seek
-    /// surface.
-    private var isRecording: Bool {
-        guard case .voiceNote(let ctx) = RecordingSession.shared.state else {
-            return false
-        }
-        return ctx.audioElementId == element.id
-    }
-
-    // MARK: - Strip body
-
-    @ViewBuilder
-    private func strip(width: CGFloat) -> some View {
-        if isRecording {
-            recordingStrip
-        } else {
-            readyStrip
-        }
-    }
-
-    private var readyStrip: some View {
-        HStack(spacing: 10) {
-            playPauseButton
-            timeLabel
-            progressTrack
-        }
-        .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(theme.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
-                )
-        )
-        .contextMenu {
-            if hasTranscript {
-                Button {
-                    copyTranscript()
-                } label: {
-                    Label("Copy Transcript", systemImage: "doc.on.doc")
-                }
-                Button {
-                    shareTranscript()
-                } label: {
-                    Label("Share Transcript…", systemImage: "square.and.arrow.up")
-                }
-            }
-            Button(role: .destructive) {
-                onDelete()
-            } label: {
-                Label("Delete Recording", systemImage: "trash")
-            }
-        }
-        .accessibilityLabel(A11y.audioLabel(
-            duration: content.durationSeconds,
-            hasTranscription: hasTranscript
-        ))
-        .accessibilityHint(A11y.audioHint)
-    }
-
-    // MARK: - Recording strip (Step 6 Voice Note placeholder)
-
-    private var recordingStrip: some View {
-        HStack(spacing: 10) {
-            RecordingPulseDot()
-                .frame(width: 12, height: 12)
-                .padding(.leading, 4)
-            Text(format(RecordingSession.shared.elapsedSeconds))
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(theme.foreground)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Button {
-                Task { await RecordingSession.shared.stop() }
-                HapticManager.shared.destructiveConfirmed()
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(Circle().fill(theme.accent))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop recording")
-        }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(theme.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
-                )
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Recording in progress")
-    }
-
-    private var playPauseButton: some View {
-        Button {
-            #if DEBUG
-            dlog("[AudioPlay] 1. button tap received, elementId=\(element.id), contentId=\(content.id)")
-            #endif
-            player.togglePlayPause()
-        } label: {
-            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(theme.accent)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(theme.accentMuted))
-                // Visible button stays 32pt; the tap target is
-                // expanded to 48pt (Apple's ~44pt minimum) so the
-                // user doesn't have to hit the icon exactly.
-                .padding(8)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        // Long-press → debug bypass that constructs a fresh
-        // AVAudioPlayer for this file and calls play() with the
-        // minimum possible session setup. If this works but the
-        // normal tap doesn't, the regression is in the controller
-        // flow rather than the file/session layer.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.6)
-                .onEnded { _ in
-                    #if DEBUG
-                    dlog("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(element.id)")
-                    #endif
-                    player.debugPlayDirectly(url: content.resolvedFileURL() ?? content.fileURL)
-                }
-        )
-        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-    }
-
-    private var timeLabel: some View {
-        let totalDuration = player.duration > 0 ? player.duration : content.durationSeconds
-        return Text("\(format(player.currentTime)) / \(format(totalDuration))")
-            .font(.system(size: 11, weight: .regular, design: .monospaced))
-            .foregroundStyle(theme.foregroundMuted)
-            .lineLimit(1)
-    }
-
-    private var progressTrack: some View {
-        GeometryReader { geo in
-            let totalDuration = player.duration > 0 ? player.duration : max(content.durationSeconds, 0.01)
-            let active = seekDragSeconds ?? player.currentTime
-            let fraction = totalDuration > 0 ? min(1, max(0, active / totalDuration)) : 0
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(theme.borderSubtle)
-                    .frame(height: 3)
-                Capsule()
-                    .fill(theme.accent)
-                    .frame(width: geo.size.width * fraction, height: 3)
-            }
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .gesture(seekGesture(totalDuration: totalDuration, width: geo.size.width))
-        }
-        .frame(maxHeight: .infinity)
-    }
-
-    private func seekGesture(totalDuration: Double, width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                let fraction = min(1, max(0, value.location.x / width))
-                seekDragSeconds = fraction * totalDuration
-            }
-            .onEnded { _ in
-                if let target = seekDragSeconds {
-                    player.seek(to: target)
-                }
-                seekDragSeconds = nil
-            }
-    }
-
-    private func format(_ seconds: Double) -> String {
-        let s = Int(seconds.rounded())
-        let minutes = s / 60
-        let secs = s % 60
-        return String(format: "%d:%02d", minutes, secs)
     }
 
     // MARK: - Selection chrome (width-only resize + rotate + delete)
@@ -400,8 +171,6 @@ struct AudioElementView: View {
             .position(x: rect.midX, y: rect.midY)
             .allowsHitTesting(false)
 
-        // Two handles — left edge mid + right edge mid — for the
-        // width-only resize affordance.
         widthHandle(.left,  at: CGPoint(x: rect.minX, y: rect.midY))
         widthHandle(.right, at: CGPoint(x: rect.maxX, y: rect.midY))
 
@@ -410,6 +179,8 @@ struct AudioElementView: View {
                 x: rect.midX,
                 y: max(14, rect.minY - Self.toolbarGap - 14)
             )
+            .zIndex(10)
+            .allowsHitTesting(true)
     }
 
     private func widthHandle(_ corner: Corner, at point: CGPoint) -> some View {
@@ -473,10 +244,11 @@ struct AudioElementView: View {
                 Image(systemName: "trash")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(theme.foreground)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Delete recording")
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -495,13 +267,9 @@ struct AudioElementView: View {
     private var bodyDragGesture: some Gesture {
         DragGesture(minimumDistance: 4)
             .onChanged { value in
-                // Strip is X-locked — drop horizontal translation so
-                // the strip slides only on the vertical axis.
                 dragOffset = CGSize(width: 0, height: value.translation.height)
             }
             .onEnded { value in
-                // X is locked to page center — ignore horizontal
-                // translation. Only Y moves.
                 let dyNorm = value.translation.height / pageSize.height
                 let maxY = max(0, 1 - element.normalizedHeight)
                 let centeredNormX = max(0, (1.0 - element.normalizedWidth) / 2.0)
@@ -529,8 +297,6 @@ struct AudioElementView: View {
                 let normW = Double(new.width) / Double(pageSize.width)
                 element.normalizedWidth = max(0.05, min(1, normW))
                 element.normalizedX     = max(0, min(1 - element.normalizedWidth, normX))
-                // Height stays fixed — normalize against current pageSize
-                // so a future page-size change preserves the visual height.
                 element.normalizedHeight = Double(Self.stripHeight) / Double(pageSize.height)
                 element.updatedAt        = Date()
                 resizeDelta = nil
@@ -545,6 +311,229 @@ struct AudioElementView: View {
     }
 
     private func clampNorm(_ v: Double) -> Double { max(0, min(1, v)) }
+}
+
+// MARK: - Playback strip (isolated from parent layout chrome)
+
+/// Owns `AudioPlaybackController` + recording-session ticks so
+/// 10 Hz `currentTime` updates don't invalidate the overlay shell.
+private struct AudioElementStripContent: View {
+
+    let elementId: UUID
+    @Bindable var content: AudioContent
+    let hasTranscript: Bool
+    @Binding var isRecordingActive: Bool
+    let onCopy: () -> Void
+    let onShare: () -> Void
+    let onDelete: () -> Void
+
+    @Environment(\.theme) private var theme
+    @StateObject private var player = AudioPlaybackController()
+    @ObservedObject private var recordingSession = RecordingSession.shared
+    @State private var seekDragSeconds: Double? = nil
+
+    private var isRecording: Bool {
+        guard case .voiceNote(let ctx) = recordingSession.state else {
+            return false
+        }
+        return ctx.audioElementId == elementId
+    }
+
+    var body: some View {
+        Group {
+            if isRecording {
+                recordingStrip
+            } else {
+                readyStrip
+            }
+        }
+        .onAppear {
+            #if DEBUG
+            dlog("[AudioPlayback] AudioElementStripContent.onAppear — elementId=\(elementId.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
+            #endif
+            isRecordingActive = isRecording
+            guard !isRecording else { return }
+            let url = content.fileURL
+            #if DEBUG
+            let fm = FileManager.default
+            let exists = fm.fileExists(atPath: url.path)
+            let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+            let ubi = UbiquitousFileStatus.currentState(at: url)
+            dlog("[AudioPlayback] file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
+            #endif
+            if case .downloading = UbiquitousFileStatus.currentState(at: url) {
+                _ = UbiquitousFileStatus.requestDownload(at: url)
+            }
+            player.load(url: url)
+        }
+        .onDisappear { player.pause() }
+        .onChange(of: isRecording) { _, nowRecording in
+            isRecordingActive = nowRecording
+            guard !nowRecording else { return }
+            player.load(url: content.resolvedFileURL() ?? content.fileURL)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
+            guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
+                  let time = note.userInfo?[AudioSeekKey.time] as? Double,
+                  id == content.id
+            else { return }
+            player.seek(to: time)
+        }
+    }
+
+    private var readyStrip: some View {
+        HStack(spacing: 10) {
+            playPauseButton
+            timeLabel
+            progressTrack
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(theme.borderSubtle, lineWidth: 0.5)
+                )
+        )
+        .contextMenu {
+            if hasTranscript {
+                Button {
+                    onCopy()
+                } label: {
+                    Label("Copy Transcript", systemImage: "doc.on.doc")
+                }
+                Button {
+                    onShare()
+                } label: {
+                    Label("Share Transcript…", systemImage: "square.and.arrow.up")
+                }
+            }
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete Recording", systemImage: "trash")
+            }
+        }
+        .accessibilityLabel(A11y.audioLabel(
+            duration: content.durationSeconds,
+            hasTranscription: hasTranscript
+        ))
+        .accessibilityHint(A11y.audioHint)
+    }
+
+    private var recordingStrip: some View {
+        HStack(spacing: 10) {
+            RecordingPulseDot()
+                .frame(width: 12, height: 12)
+                .padding(.leading, 4)
+            Text(format(recordingSession.elapsedSeconds))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(theme.foreground)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button {
+                Task { await RecordingSession.shared.stop() }
+                HapticManager.shared.destructiveConfirmed()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(theme.accent))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop recording")
+        }
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Color.red.opacity(0.5), lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Recording in progress")
+    }
+
+    private var playPauseButton: some View {
+        Button {
+            player.togglePlayPause()
+        } label: {
+            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.accent)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(theme.accentMuted))
+                .padding(8)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6)
+                .onEnded { _ in
+                    #if DEBUG
+                    dlog("[AudioPlayback] DEBUG long-press direct-play requested for elementId=\(elementId)")
+                    #endif
+                    player.debugPlayDirectly(url: content.resolvedFileURL() ?? content.fileURL)
+                }
+        )
+        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+    }
+
+    private var timeLabel: some View {
+        let totalDuration = player.duration > 0 ? player.duration : content.durationSeconds
+        return Text("\(format(player.currentTime)) / \(format(totalDuration))")
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .foregroundStyle(theme.foregroundMuted)
+            .lineLimit(1)
+    }
+
+    private var progressTrack: some View {
+        GeometryReader { geo in
+            let totalDuration = player.duration > 0 ? player.duration : max(content.durationSeconds, 0.01)
+            let active = seekDragSeconds ?? player.currentTime
+            let fraction = totalDuration > 0 ? min(1, max(0, active / totalDuration)) : 0
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.borderSubtle)
+                    .frame(height: 3)
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(width: geo.size.width * fraction, height: 3)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(seekGesture(totalDuration: totalDuration, width: geo.size.width))
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    private func seekGesture(totalDuration: Double, width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let fraction = min(1, max(0, value.location.x / width))
+                seekDragSeconds = fraction * totalDuration
+            }
+            .onEnded { _ in
+                if let target = seekDragSeconds {
+                    player.seek(to: target)
+                }
+                seekDragSeconds = nil
+            }
+    }
+
+    private func format(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        let minutes = s / 60
+        let secs = s % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
 }
 
 private struct ShareTextItem: Identifiable {

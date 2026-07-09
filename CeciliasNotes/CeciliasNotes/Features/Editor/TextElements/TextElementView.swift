@@ -90,6 +90,10 @@ struct TextElementView: View {
     /// from `onChange(of: attributed)`; the per-frame `height` read
     /// is then a cheap clamp.
     @State private var measuredContentHeight: CGFloat = 24
+    /// Keystroke-persist debounce state — see `schedulePersist`.
+    @State private var persistTask: Task<Void, Never>?
+    @State private var hasPendingPersist = false
+    @State private var lastMeasureAt: Date = .distantPast
 
     private func remeasureContentHeight() {
         let cw = width
@@ -201,8 +205,21 @@ struct TextElementView: View {
             remeasureContentHeight()
         }
         .onChange(of: attributed) { _, newValue in
-            remeasureContentHeight()
-            persist(newValue)
+            // Fires on EVERY keystroke. Re-measuring the full layout
+            // and NSKeyedArchiver-encoding the whole attributed
+            // string here froze the main thread on long blocks (an
+            // hour-long meeting transcript is 50–100 KB — hundreds
+            // of ms PER KEYSTROKE). Measure on a short throttle so
+            // the box still grows while typing; persist on a
+            // trailing debounce with the archive off-main.
+            if Date().timeIntervalSince(lastMeasureAt) > 0.25 {
+                lastMeasureAt = Date()
+                remeasureContentHeight()
+            }
+            schedulePersist(newValue)
+        }
+        .onDisappear {
+            flushPendingPersist()
         }
         .onChange(of: content.text) { _, _ in
             // External mutation (dictation appending text, an AI
@@ -213,6 +230,10 @@ struct TextElementView: View {
         }
         .onChange(of: isEditing) { _, nowEditing in
             if !nowEditing {
+                // Commit any debounced keystrokes FIRST — the
+                // splitter below reads `content.text` /
+                // `attributedTextData` and must see the final text.
+                flushPendingPersist()
                 // Sync the stored normalizedHeight with the
                 // measured layout so other consumers (lasso, AI
                 // context, tap-catcher hit testing) see the same
@@ -300,21 +321,73 @@ struct TextElementView: View {
         element.updatedAt = Date()
     }
 
+    /// Trailing-debounced persist: waits for a 350 ms pause in
+    /// typing, archives the attributed string on a background
+    /// thread (the immutable copy is safe to encode off-main), and
+    /// applies the row writes back on the main actor.
+    private func schedulePersist(_ value: NSAttributedString) {
+        hasPendingPersist = true
+        persistTask?.cancel()
+        persistTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            lastMeasureAt = Date()
+            remeasureContentHeight()
+            // `copy()` snapshots the attributed string into an
+            // immutable instance; boxed because region analysis
+            // can't prove NSAttributedString.copy is disconnected
+            // from the main-actor region (for already-immutable
+            // instances it returns self). Sound: the boxed value is
+            // read exactly once, for encoding, and never mutated.
+            let boxed = ArchiveBox(value.copy() as! NSAttributedString)
+            let plain = value.string
+            let data = await Task.detached(priority: .userInitiated) { () -> Data? in
+                try? NSKeyedArchiver.archivedData(
+                    withRootObject: boxed.value,
+                    requiringSecureCoding: true
+                )
+            }.value
+            guard !Task.isCancelled else { return }
+            applyPersist(plain: plain, data: data)
+            hasPendingPersist = false
+        }
+    }
+
+    /// Synchronous commit of any debounced edits. MUST run before
+    /// anything that reads `content` (the splitter on editing end,
+    /// view teardown) — the debounce trades a 350 ms staleness
+    /// window for keystroke smoothness, and this closes the window.
+    private func flushPendingPersist() {
+        guard hasPendingPersist else { return }
+        persistTask?.cancel()
+        persistTask = nil
+        hasPendingPersist = false
+        remeasureContentHeight()
+        persist(attributed)
+    }
+
     private func persist(_ value: NSAttributedString) {
+        applyPersist(plain: value.string, data: encodeAttributed(value))
+    }
+
+    private func applyPersist(plain: String, data: Data?) {
         // Keep plain text in sync — search, AI prompts, export, and
         // the dictation pipeline all read `content.text` directly.
-        let plain = value.string
         let textChanged = content.text != plain
         if textChanged {
             content.text = plain
         }
-        if let data = encodeAttributed(value) {
-            // Only write when the encoded payload actually changed so
-            // CloudKit doesn't see spurious updates.
-            if content.attributedTextData != data {
-                content.attributedTextData = data
-            }
+        // Only write when the encoded payload actually changed so
+        // CloudKit doesn't see spurious updates.
+        var dataChanged = false
+        if let data, content.attributedTextData != data {
+            content.attributedTextData = data
+            dataChanged = true
         }
+        // Nothing actually changed (re-seed echoes, style no-ops):
+        // don't stamp updatedAt — a spurious stamp uploads the whole
+        // row to CloudKit and re-triggers the hygiene sweep.
+        guard textChanged || dataChanged else { return }
         content.updatedAt = Date()
         element.updatedAt = Date()
 
@@ -354,4 +427,12 @@ struct TextElementView: View {
             requiringSecureCoding: true
         )
     }
+}
+
+/// Carries the immutable attributed-string snapshot into the
+/// background archive task — see `schedulePersist`. `@unchecked`
+/// is sound: the value is written once at init and only ever read.
+private struct ArchiveBox: @unchecked Sendable {
+    nonisolated(unsafe) let value: NSAttributedString
+    nonisolated init(_ value: NSAttributedString) { self.value = value }
 }

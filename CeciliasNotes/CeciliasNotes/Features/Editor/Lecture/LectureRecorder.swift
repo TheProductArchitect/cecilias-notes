@@ -288,13 +288,7 @@ final class LectureRecorder: ObservableObject {
 #if os(iOS)
             do {
                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-                #if DEBUG
-                dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=true, error=nil")
-                #endif
             } catch {
-                #if DEBUG
-                dlog("[AudioPlay] rec.stop (lecture) session deactivated, success=false, error=\(error)")
-                #endif
             }
 #endif
         }.value

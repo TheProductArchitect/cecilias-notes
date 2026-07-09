@@ -9,12 +9,20 @@ import SwiftUI
 ///
 /// Selection / resize / recolour are tracked under "shape selection
 /// polish" — this overlay ships the create + display path.
-struct ShapeElementsOverlayView: View {
+struct ShapeElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
+    let viewModel: EditorViewModel
     let pageId: UUID
     let notebookId: UUID
     let coordinateSpace: PageCoordinateSpace
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.notebookId == rhs.notebookId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
+    }
 
     @Environment(\.theme) private var theme
 
@@ -27,22 +35,9 @@ struct ShapeElementsOverlayView: View {
     /// release, at which point we persist the element.
     @State private var dragStart: CGPoint?
     @State private var dragCurrent: CGPoint?
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
-
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .shape }.dedupedById()
-    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -54,14 +49,14 @@ struct ShapeElementsOverlayView: View {
             // delete button) over the shape. Reusing the lasso
             // chrome avoids a parallel selection / handle / delete
             // implementation just for shapes.
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.shapeContent {
                     renderShapeFramed(element: element, content: content)
                 }
             }
 
             // In-flight preview while the user is drawing.
-            if let kind = viewModel.selectedTool.currentShapeKind,
+            if let kind = inputs.selectedTool.currentShapeKind,
                let start = dragStart, let current = dragCurrent {
                 let rect = normalizedRect(from: start, to: current)
                 ShapeKindPath.path(for: kind, in: rect)
@@ -73,7 +68,7 @@ struct ShapeElementsOverlayView: View {
             // Sits on top of the persisted shapes so the user can
             // drag freely without the overlays below it consuming
             // the gesture.
-            if viewModel.selectedTool.isShapeMode {
+            if inputs.selectedTool.isShapeMode {
                 // Pencil-only drag when a Pencil has been detected
                 // on the device; finger drags also create shapes
                 // when no Pencil has been seen (so users without a
@@ -94,7 +89,7 @@ struct ShapeElementsOverlayView: View {
                             dragCurrent = nil
                         }
                         guard !cancelled,
-                              let kind = viewModel.selectedTool.currentShapeKind,
+                              let kind = inputs.selectedTool.currentShapeKind,
                               let start = dragStart
                         else { return }
                         let rect = normalizedRect(from: start, to: location)
@@ -104,6 +99,7 @@ struct ShapeElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+        .onAppear { reloadElements() }
         .onReceive(NotificationCenter.default.publisher(for: .shapeElementsChanged)) { note in
             // Cross-page handoff carries the source page's id so the
             // SOURCE overlay can refresh one runloop tick later than
@@ -118,11 +114,20 @@ struct ShapeElementsOverlayView: View {
             if let info = note.userInfo,
                let srcId = info["sourcePageId"] as? UUID,
                srcId == pageId {
-                DispatchQueue.main.async { refreshTick &+= 1 }
+                DispatchQueue.main.async { reloadElements() }
             } else {
-                refreshTick &+= 1
+                reloadElements()
             }
         }
+    }
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .shape,
+            context: modelContext,
+            includeCreatedAtSort: false
+        )
     }
 
     /// Wraps `renderShape` in a frame anchored at the element's
@@ -141,10 +146,10 @@ struct ShapeElementsOverlayView: View {
             .frame(width: rect.width, height: rect.height)
             .contentShape(Rectangle())
             .onTapGesture {
-                guard viewModel.selectedTool.isCursorMode else { return }
+                guard inputs.selectedTool.isCursorMode else { return }
                 selectViaLasso(element: element)
             }
-            .allowsHitTesting(viewModel.selectedTool.isCursorMode)
+            .allowsHitTesting(inputs.selectedTool.isCursorMode)
             .position(x: rect.midX, y: rect.midY)
     }
 
@@ -218,7 +223,7 @@ struct ShapeElementsOverlayView: View {
         let normY = max(0, min(1, Double(rect.minY / pageSize.height)))
         let normW = max(0.01, min(1, Double(rect.width  / pageSize.width)))
         let normH = max(0.01, min(1, Double(rect.height / pageSize.height)))
-        let maxZ  = elements.map(\.zIndex).max() ?? 0
+        let maxZ  = cachedElements.map(\.zIndex).max() ?? 0
 
         let element = PageElement(
             pageId: pageId,
@@ -250,12 +255,12 @@ struct ShapeElementsOverlayView: View {
             dlog("[ShapeElement] save failed: \(error)")
             #endif
         }
-        refreshTick &+= 1
+        reloadElements()
         NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
         PageElementUndo.registerCreate(
             elementId: element.id,
             kind: .shape,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Create Shape"
         )
         // Auto-add a fresh page if this shape just landed in the

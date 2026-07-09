@@ -112,10 +112,48 @@ enum DictationFlowCommit {
 
     // MARK: - Step 2: live text update
 
+    /// Save throttle for live dictation. The recogniser delivers
+    /// partials 2–5×/second; a `context.save()` for each one kept
+    /// the main thread saturated for the whole recording (every
+    /// save also fires `NSPersistentStoreRemoteChange`, which
+    /// reschedules the hygiene sweep, which fetches whole tables —
+    /// compounding stalls). The property write below still happens
+    /// per partial — SwiftUI observation is driven by the in-memory
+    /// mutation, so the on-page text stays live — but the durable
+    /// save + stash invalidation run at most once per second, plus
+    /// a trailing pass so the final partial always lands. Stop-time
+    /// commits (`finalizeDictation`) save unconditionally.
+    private static var lastDictationSaveAt: Date = .distantPast
+    private static var trailingDictationSave: Task<Void, Never>?
+    private static let dictationSaveInterval: TimeInterval = 1.0
+
+    private static func throttledDictationSave(pageId: UUID) {
+        let context = StorageService.shared.context
+        let now = Date()
+        if now.timeIntervalSince(lastDictationSaveAt) >= dictationSaveInterval {
+            trailingDictationSave?.cancel()
+            trailingDictationSave = nil
+            lastDictationSaveAt = now
+            Page.clearInkbookStash(forPageId: pageId, context: context)
+            try? context.save()
+        } else if trailingDictationSave == nil {
+            trailingDictationSave = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_100_000_000)
+                guard !Task.isCancelled else { return }
+                trailingDictationSave = nil
+                lastDictationSaveAt = Date()
+                Page.clearInkbookStash(
+                    forPageId: pageId,
+                    context: StorageService.shared.context
+                )
+                try? StorageService.shared.context.save()
+            }
+        }
+    }
+
     /// Write the current transcript into the element's TextContent.
-    /// Cheap — no row creation, just a field mutation + save.
-    /// Throttling is handled upstream (the recorder publishes at
-    /// its own cadence; SwiftData coalesces same-runloop writes).
+    /// The field mutation is per-partial (drives the live UI); the
+    /// durable save is throttled — see `throttledDictationSave`.
     static func updateText(elementId: UUID, text: String) {
         // Defer to the next runloop tick. The recogniser's
         // partial-result callback lands inside RecordingSession's
@@ -145,24 +183,13 @@ enum DictationFlowCommit {
                 content.text = text
                 content.updatedAt = Date()
                 element.updatedAt = Date()
-                // Invalidate the inkbook stash on this page so the
-                // mirror reflects dictation appends rather than the
-                // original AI-written blocks. Funnels dictation
-                // through the same exporter path as typed edits.
-                Page.clearInkbookStash(
-                    forPageId: element.pageId,
-                    context: context
-                )
-                do {
-                    try context.save()
-                    #if DEBUG
-                    dlog("[Dictation] updateText OK — \(text.count) chars saved to elementId=\(elementId)")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    dlog("[Dictation] updateText SAVE FAILED: \(error)")
-                    #endif
-                }
+                // Durable save + inkbook-stash invalidation are
+                // throttled to once per second — the in-memory
+                // mutation above already drives the live UI.
+                throttledDictationSave(pageId: element.pageId)
+                #if DEBUG
+                dlog("[Dictation] updateText OK — \(text.count) chars applied to elementId=\(elementId)")
+                #endif
             }
         }
     }

@@ -46,15 +46,7 @@ struct CeciliasNotesApp: App {
         // is already populated and the persisted flag has been
         // flipped to `false`.
 
-        // Re-enable the hosting-hierarchy diagnostic swizzle. The
-        // previous version filtered on parent-type and never matched;
-        // this version only filters on the subview class containing
-        // "ReparentingView", which is what the runtime warning is
-        // actually about. DEBUG-only.
-        #if DEBUG
-        HostingHierarchyDiagnostics.installOnce()
         MainThreadWatchdog.install()
-        #endif
 
         // Fix 2 — instantiate the icon-update gate at launch so its
         // keyboard-lifecycle observers are installed BEFORE the
@@ -187,24 +179,10 @@ struct CeciliasNotesApp: App {
                     // UserDefaults flag — subsequent launches no-op.
                     storageService.runOneTimePageCountBackfillIfNeeded()
 
-                    // CloudKit echo + stale-local-replica bugs
-                    // occasionally leave SwiftData with two rows
-                    // sharing the same primary key. iOS 26 SwiftUI
-                    // ForEach hard-crashes on this — see
-                    // `purgeDuplicateRows` for the full story.
-                    // Sweep runs on every cold launch; it's a few
-                    // fetches and a Dictionary group, sub-ms in
-                    // practice.
-                    storageService.purgeDuplicateRows()
-
-                    // Soft-delete reconciliation. CloudKit's per-property
-                    // merge can leave a deleted row with mismatched
-                    // isDeleted / deletedAt flags — see
-                    // `reconcileSoftDeleteFlags` for the user-visible
-                    // symptom ("I deleted this subject and it came
-                    // back"). Runs immediately after the duplicate
-                    // purge so both passes see a consistent table.
-                    storageService.reconcileSoftDeleteFlags()
+                    // Duplicate purge + soft-delete reconcile already
+                    // ran in `StorageService.init` before the first
+                    // frame. Re-running here duplicated work and
+                    // produced REVERTED churn on the main thread.
 
                     // Quiz auto-update: grow any `autoUpdateEnabled`
                     // quizzes from new note content on a weekly cadence.
@@ -230,7 +208,7 @@ struct CeciliasNotesApp: App {
                     // and a fresh launch. Cheap — one short
                     // JSON write per notebook, off the main
                     // actor.
-                    CeciliasNotesExporter.shared.exportAll()
+                    CeciliasNotesExporter.shared.scheduleExportAll()
 
                     // MediaStorage migration v1: collapse the three
                     // legacy on-disk media layouts into the unified
@@ -327,7 +305,10 @@ struct CeciliasNotesApp: App {
                     // pops the editor cover for that notebook.
                     if !didAttemptLaunchResume {
                         didAttemptLaunchResume = true
+                        let resumeOn = UserDefaults.standard
+                            .object(forKey: "ceciliasnotes.resume.enabled") as? Bool ?? true
                         if LaunchRecovery.previousShutdownWasClean,
+                           resumeOn,
                            let raw = UserDefaults.standard.string(forKey: "ceciliasnotes.resume.lastNotebookId"),
                            let lastId = UUID(uuidString: raw) {
                             #if DEBUG
@@ -415,7 +396,12 @@ struct CeciliasNotesApp: App {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
             storage.purgeDuplicateRows()
-            storage.reconcileSoftDeleteFlags()
+            let skipReconcile = StorageService.launchHygieneCompletedAt.map {
+                Date().timeIntervalSince($0) < 60
+            } ?? false
+            if !skipReconcile {
+                storage.reconcileSoftDeleteFlags()
+            }
         }
     }
 
@@ -507,7 +493,33 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         // Reset to false immediately so any subsequent crash leaves
         // the gate dirty for the next launch.
         defaults.set(false, forKey: Self.shutdownKey)
-        if !prevClean {
+
+        let storeURL = StorageService.ceciliasNotesDirectoryURL
+            .appendingPathComponent("ceciliasnotes.sqlite")
+        try? FileManager.default.createDirectory(
+            at: StorageService.ceciliasNotesDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        // Truncate the WAL before SwiftUI touches `StorageService.shared`.
+        // A multi-MB sidecar from an unclean shutdown makes every
+        // subsequent `ModelContainer` open and mainContext read wedge
+        // the main runloop — the #1 cause of "unresponsive after re-open".
+        DispatchQueue.global(qos: .userInitiated).sync {
+            ModelContainer.truncateWALIfPresent(at: storeURL)
+        }
+
+        // A main-thread hang in the prior session is treated like a
+        // dirty shutdown even if the user backgrounded before force-
+        // quitting — background normally marks shutdown clean, which
+        // would otherwise auto-resume the notebook that caused the ANR.
+        if SessionHealth.consumeHadHangOnPriorSession() {
+            LaunchRecovery.previousShutdownWasClean = false
+            defaults.removeObject(forKey: "ceciliasnotes.resume.lastNotebookId")
+            defaults.removeObject(forKey: "ceciliasnotes.resume.lastPageIndex")
+            #if DEBUG
+            dlog("[Launch] prior session had main-thread hang — forcing library home + clearing resume keys")
+            #endif
+        } else if !prevClean {
             // Clear any stale per-notebook resume pointers so the
             // editor's "resume to last page" path can't restore into
             // the broken session that caused the unclean shutdown.
@@ -554,7 +566,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         try? FileManager.default.removeItem(at: storeURL)
         for suffix in ["-shm", "-wal", "-journal"] {
             try? FileManager.default.removeItem(
-                at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+                at: URL(fileURLWithPath: storeURL.path + suffix)
             )
         }
 
@@ -604,7 +616,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         try? FileManager.default.removeItem(at: storeURL)
         for suffix in ["-shm", "-wal", "-journal"] {
             try? FileManager.default.removeItem(
-                at: storeURL.appendingPathExtension(String(suffix.dropFirst()))
+                at: URL(fileURLWithPath: storeURL.path + suffix)
             )
         }
 
@@ -627,7 +639,11 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        // Don't mark a hung session as cleanly shut down — otherwise
+        // force-quit after an ANR still auto-resumes the bad notebook.
+        if !SessionHealth.hadHangThisSession {
+            UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        }
         // Reset the dirty-launch streak — reaching background means
         // the launch survived long enough to be useful, so the
         // SwiftData CloudKit auto-fallback shouldn't fire on the
@@ -641,16 +657,16 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         // an MCP that's about to read the mirror needs the latest
         // state, so a full re-export here keeps the agent's view
         // consistent without per-mutation plumbing.
-        Task { @MainActor in
-            CeciliasNotesExporter.shared.exportAll()
-        }
+        CeciliasNotesExporter.shared.scheduleExportAll()
         #if DEBUG
         dlog("[Launch] applicationDidEnterBackground → marked shutdown clean + queued mirror refresh")
         #endif
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
-        UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        if !SessionHealth.hadHangThisSession {
+            UserDefaults.standard.set(true, forKey: Self.shutdownKey)
+        }
         UserDefaults.standard.set(0, forKey: "ceciliasnotes.swiftdata.dirtyLaunchStreak")
         // Best-effort: stop any active recording so the .m4a is
         // flushed and finalizeDictation runs before the process exits.
@@ -660,7 +676,7 @@ final class CeciliasNotesAppDelegate: NSObject, UIApplicationDelegate {
         // flush and the SwiftData save are fast enough in practice.
         Task { @MainActor in
             await RecordingSession.shared.stop()
-            CeciliasNotesExporter.shared.exportAll()
+            CeciliasNotesExporter.shared.scheduleExportAll()
         }
         #if DEBUG
         dlog("[Launch] applicationWillTerminate → stopped recording + marked shutdown clean + queued mirror refresh")

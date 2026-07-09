@@ -20,9 +20,9 @@ import UIKit
 /// The overlay fetches the parent PDFPageContent element for each
 /// highlight and composes the two normalised rects before passing
 /// the final render rect to `HighlightElementView`.
-struct HighlightElementsOverlayView: View {
+struct HighlightElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
     let pageId: UUID
     let coordinateSpace: PageCoordinateSpace
 
@@ -31,7 +31,8 @@ struct HighlightElementsOverlayView: View {
     }
 
     @State private var selectedElementId: UUID?
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
+    @State private var cachedPDFMap: [UUID: PageElement] = [:]
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
@@ -40,7 +41,7 @@ struct HighlightElementsOverlayView: View {
     /// (not existing highlight rectangles) so it doesn't gate
     /// selection here.
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.allowsImageSelection
+        inputs.selectedTool.allowsImageSelection
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -52,44 +53,13 @@ struct HighlightElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    /// Fetch highlight elements for this page. Filter `kind ==
-    /// .highlight` in Swift (iOS 26 `#Predicate` workaround
-    /// established in Step 3).
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .highlight }.dedupedById()
-    }
-
-    /// Quick lookup of every PDF page element on this page —
-    /// highlights project through their parent PDFPageContent's
-    /// bounds.
-    private var pdfPageElementsByContentId: [UUID: PageElement] {
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            }
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        var map: [UUID: PageElement] = [:]
-        for element in all where element.kind == .pdfPage {
-            if let content = element.pdfPageContent {
-                map[content.id] = element
-            }
-        }
-        return map
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
     }
 
     var body: some View {
-        let pdfMap = pdfPageElementsByContentId
         ZStack(alignment: .topLeading) {
             if showsBackgroundCatcher {
                 // Tap-to-deselect on empty area. Mounted only while a
@@ -101,9 +71,9 @@ struct HighlightElementsOverlayView: View {
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.highlightContent,
-                   let parent = pdfMap[content.pdfPageContentId] {
+                   let parent = cachedPDFMap[content.pdfPageContentId] {
                     HighlightElementView(
                         element: element,
                         content: content,
@@ -119,7 +89,8 @@ struct HighlightElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             if newValue != .cursor && newValue != .image {
                 selectedElementId = nil
             }
@@ -127,7 +98,23 @@ struct HighlightElementsOverlayView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: .highlightElementsChanged)
         ) { _ in
-            refreshTick &+= 1
+            reloadElements()
+        }
+    }
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .highlight,
+            context: modelContext
+        )
+        cachedPDFMap = PageElementOverlayFetch.pdfPageElementsByContentId(
+            pageId: pageId,
+            context: modelContext
+        )
+        if let selected = selectedElementId,
+           !cachedElements.contains(where: { $0.id == selected }) {
+            selectedElementId = nil
         }
     }
 
@@ -184,13 +171,13 @@ struct HighlightElementsOverlayView: View {
             PageElementUndo.registerDelete(
                 elementId: element.id,
                 kind: .highlight,
-                canvas: viewModel.canvasView,
+                canvas: inputs.canvasView,
                 actionName: "Delete Highlight"
             )
             element.deletedAt = now
             element.updatedAt = now
             try? context.save()
-            refreshTick &+= 1
+            reloadElements()
             NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
             return
         }
@@ -202,14 +189,14 @@ struct HighlightElementsOverlayView: View {
         let contents = (try? context.fetch(descriptor)) ?? []
         // One grouped undo step restores the whole multi-line
         // highlight, matching how it was created.
-        let undoManager = viewModel.canvasView?.undoManager
+        let undoManager = inputs.canvasView?.undoManager
         undoManager?.beginUndoGrouping()
         for content in contents {
             guard let el = content.element else { continue }
             PageElementUndo.registerDelete(
                 elementId: el.id,
                 kind: .highlight,
-                canvas: viewModel.canvasView,
+                canvas: inputs.canvasView,
                 actionName: "Delete Highlight"
             )
             el.deletedAt = now
@@ -221,7 +208,7 @@ struct HighlightElementsOverlayView: View {
             selectedElementId = nil
         }
         try? context.save()
-        refreshTick &+= 1
+        reloadElements()
         NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
     }
 }

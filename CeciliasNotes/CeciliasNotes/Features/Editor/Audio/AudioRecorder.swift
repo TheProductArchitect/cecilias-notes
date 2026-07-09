@@ -258,13 +258,7 @@ final class AudioRecorder {
         await Task.detached(priority: .userInitiated) {
             do {
                 try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-                #if DEBUG
-                dlog("[AudioPlay] rec.stop session deactivated, success=true, error=nil")
-                #endif
             } catch {
-                #if DEBUG
-                dlog("[AudioPlay] rec.stop session deactivated, success=false, error=\(error)")
-                #endif
             }
         }.value
 #endif

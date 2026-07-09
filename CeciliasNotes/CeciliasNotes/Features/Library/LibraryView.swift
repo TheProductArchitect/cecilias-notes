@@ -71,11 +71,11 @@ struct LibraryView: View {
                 dlog("[ImageInsert] 4. LibraryView.onAppear — cover dismissed, library is back on top (editingNotebook=\(editingNotebook?.id.uuidString ?? "nil"))")
                 #endif
                 // Drain any icon update queued during onboarding completion.
-                // Idempotent + self-healing: no-ops when the icon
-                // already matches the user's name, retries a swap
-                // that lost the iOS 26 race on an earlier pass. See
-                // the "Icon switching" section in PersonalIdentity.swift.
                 reconcileAppIcon()
+                // Launch resume sets `deepLink.openNotebookId` during
+                // splash before this view mounts — `.onChange` alone
+                // misses that first value.
+                drainPendingNotebookDeepLink()
             }
             .onChange(of: viewModel.pendingExportNotebookId) { _, id in
                 guard let id, let notebook = viewModel.notebook(id: id) else { return }
@@ -427,6 +427,10 @@ struct LibraryView: View {
                 #endif
                 return
             }
+            // Drop the grid keyboard-focus ring once the editor takes
+            // over — otherwise the card keeps a blue accent border
+            // when the user dismisses back to the library.
+            viewModel.macGridFocusedNotebookId = nil
             editingNotebook = notebook
         }
         .onChange(of: viewModel.pendingOpenAfterImport) { _, nb in
@@ -529,6 +533,7 @@ struct LibraryView: View {
                     editingNotebook = nil
                     Task { @MainActor in
                         viewModel.selectedNotebookId = nil
+                        viewModel.macGridFocusedNotebookId = nil
                         viewModel.deepLinkPageId = nil
                         viewModel.refresh()
                     }
@@ -570,6 +575,17 @@ struct LibraryView: View {
     private struct SharedImageURL: Identifiable {
         let url: URL
         var id: String { url.path }
+    }
+
+    private func drainPendingNotebookDeepLink() {
+        guard let id = deepLink.openNotebookId,
+              let notebook = viewModel.notebook(id: id) else { return }
+        if let pageId = deepLink.openPageId {
+            viewModel.deepLinkPageId = pageId
+            deepLink.openPageId = nil
+        }
+        deepLink.openNotebookId = nil
+        editingNotebook = notebook
     }
 
     private func handleQuickCaptureOnLaunch() {

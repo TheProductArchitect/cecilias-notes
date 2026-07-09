@@ -156,13 +156,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
     }
 
     private let pageGap: CGFloat              = 24
-    private let warmBandPaddingFactor: CGFloat = 1.0
+    /// Canvas prefetch band — one viewport above/below the visible
+    /// area so the next page is ready to draw when scroll rests.
+    private let warmBandPaddingFactor: CGFloat = 0.5
+    /// Overlay hosts are far heavier than PKCanvasView (full SwiftUI
+    /// trees per page). Keep overlays on the visible viewport only —
+    /// a quarter-screen pad at most — and unmount when pages leave.
+    private let overlayWarmBandPaddingFactor: CGFloat = 0.25
 
     func makeCoordinator() -> Coordinator {
         Coordinator(viewModel: viewModel,
                     fingerDrawingEnabled: resolvedFingerDrawingEnabled,
                     pageGap: pageGap,
-                    warmBandPaddingFactor: warmBandPaddingFactor)
+                    warmBandPaddingFactor: warmBandPaddingFactor,
+                    overlayWarmBandPaddingFactor: overlayWarmBandPaddingFactor)
     }
 
     // MARK: makeUIView
@@ -320,22 +327,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // Defer initial layout to the next runloop so SwiftUI's frame
         // assignment has settled.
+        context.coordinator.deferringInitialPageHostBuild = true
         DispatchQueue.main.async {
             context.coordinator.rebuildPageHosts()
+            context.coordinator.deferringInitialPageHostBuild = false
             context.coordinator.scrollToPage(viewModel.currentPageIndex, animated: false)
             context.coordinator.installOverlayLayerIntoActivePage(animated: false)
             context.coordinator.installFlushHandler()
-            #if DEBUG
-            // Fix 1 — touch-path diagnostic. Instrument the outer
-            // layers (window / editor root / scroll view). Per-page
-            // layers are instrumented in `rebuildPageHosts` /
-            // `mountCanvas`. Observe-only — see `TouchPathLogger`.
-            if let window = host.window {
-                TouchPathLogger.attach(to: window, label: "1. UIWindow")
-            }
-            TouchPathLogger.attach(to: host, label: "2. editor root (CanvasHostView)")
-            TouchPathLogger.attach(to: scrollView, label: "3. scroll view")
-            #endif
         }
         return host
     }
@@ -377,20 +375,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             scrollView.panGestureRecognizer.allowedTouchTypes = desiredTouchTypes
         }
 
-        // Drawing policy + tool propagate to every mounted canvas. Cheap
-        // — typically 3–5 canvases live at once.
+        // Drawing policy + tool propagate to every mounted canvas.
         coord.applyDrawingPolicyToAll(fingerDraws: fingerDraws)
         coord.applyToolToAll(viewModel.selectedTool)
-        // Non-drawing tools (text / image / sticky-note) need finger
-        // taps to reach the SwiftUI overlays underneath the canvas.
-        // PKCanvasView's gesture recognisers swallow taps even in
-        // `.pencilOnly` mode, so we have to disable user interaction
-        // on every mounted canvas while a non-drawing tool is active.
-        // Phase 5E: consult the single-source `canvasIsInteractive`
-        // signal instead of reading `selectedTool.isDrawingTool`
-        // directly. The state machine adds the mode-axis check so a
-        // lecture / audio recording also suppresses Pencil input
-        // even when a drawing tool is selected.
         coord.applyOverlayHitTestingToAll(canvasInteractive: viewModel.canvasIsInteractive)
         // OPEN_ISSUES #1: per-tool overlay z-order promotion is gone.
         // With every overlay in one `PageOverlaysContainer`, SwiftUI
@@ -443,6 +430,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         private let pageGap: CGFloat
         private let warmBandPaddingFactor: CGFloat
+        private let overlayWarmBandPaddingFactor: CGFloat
 
         weak var host:         UIView?
         weak var scrollView:   UIScrollView?
@@ -479,20 +467,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
             /// every tap before the overlays below it were reached.
             /// One host = one SwiftUI tree = correct internal hit
             /// routing. See `PageOverlaysContainer`.
-            var overlaysHost: UIHostingController<PageOverlaysContainer>
+            /// Lazily mounted when the page enters the warm band.
+            /// `PageOverlaysContainer` is the heaviest per-page cost
+            /// (nine overlay types in one SwiftUI tree) — deferring it
+            /// keeps editor open + scroll from mounting every page at once.
+            var overlaysHost: UIHostingController<PageOverlaysContainer>?
             var template: PageTemplate
             var canvasView: PKCanvasView?  // lazy-mounted when in warm band
             var saveTask: Task<Void, Never>?
+            var strokeDecodeTask: Task<Void, Never>?
+            var strokeDecodeGeneration: UInt = 0
             var isDirty: Bool = false
         }
 
         var hosts: [PageHostState] = []
         private var lastSnapshot: [UUID] = []     // page id list, for diffing
+        /// Set while `makeUIView`'s deferred initial mount is
+        /// pending — blocks `updateUIView` from duplicating it.
+        var deferringInitialPageHostBuild = false
         private var lastActivePageId: UUID?
         var suppressZoomUpdate = false
         private var suppressActivePageUpdates = false
         private var isStrokeInProgress = false
         var appliedTool: CeciliasNotesTool?
+        private var lastFingerDrawingEnabled: Bool?
+        private var lastCanvasInteractive: Bool?
+        private var lastMembershipUpdate: CFTimeInterval = 0
         /// Throttle for auto-add-page-on-bottom-stroke. Without this a
         /// flurry of short strokes near the bottom of the last page would
         /// spawn multiple pages back-to-back.
@@ -509,15 +509,38 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private nonisolated(unsafe) var pixelEraserObserver: NSObjectProtocol?
         private nonisolated(unsafe) var imageHandoffObserver: NSObjectProtocol?
         private nonisolated(unsafe) var strokeRewriteObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var interactiveRectsObservers: [NSObjectProtocol] = []
+
+        private struct PageInteractiveRects {
+            var audio: [CGRect] = []
+            var image: [CGRect] = []
+        }
+
+        private var interactiveRectCache: [UUID: PageInteractiveRects] = [:]
+        /// Stroke snapshots captured at unmount time — flushed after
+        /// scroll-rest. Keyed by pageId so a late async flush cannot
+        /// overwrite ink the user added after remounting the page.
+        private var pendingUnmountDrawings: [UUID: PKDrawing] = [:]
+        /// Canvas indices queued while the user is actively scrolling.
+        private var pendingCanvasMountIndices = Set<Int>()
+        private var pendingCanvasMountTask: Task<Void, Never>?
+        /// Overlay hosts deferred until scroll-rest or one-per-tick mount.
+        private var pendingOverlayMountIndices = Set<Int>()
+        private var pendingOverlayMountTask: Task<Void, Never>?
+        /// Remaining page hosts to mount across runloop ticks.
+        private var hostBuildQueue: [(page: Page, frame: CGRect)] = []
+        private var hostBuildMaxW: CGFloat = 0
 
         init(viewModel: EditorViewModel,
              fingerDrawingEnabled: Bool,
              pageGap: CGFloat,
-             warmBandPaddingFactor: CGFloat) {
+             warmBandPaddingFactor: CGFloat,
+             overlayWarmBandPaddingFactor: CGFloat) {
             self.viewModel = viewModel
             self.fingerDrawingEnabled = fingerDrawingEnabled
             self.pageGap = pageGap
             self.warmBandPaddingFactor = warmBandPaddingFactor
+            self.overlayWarmBandPaddingFactor = overlayWarmBandPaddingFactor
             super.init()
             self.capabilityObserver = NotificationCenter.default.addObserver(
                 forName: .inputCapabilityChanged,
@@ -589,8 +612,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
             ) { [weak self] note in
                 guard let pageIds = note.userInfo?["pageIds"] as? [UUID] else { return }
                 MainActor.assumeIsolated {
+                    self?.cancelPendingSaves(forPageIds: pageIds)
                     self?.reloadCanvases(forPageIds: pageIds)
                 }
+            }
+            for rectCacheNote in [
+                Notification.Name.audioElementsChanged,
+                .mediaAttachmentsChanged,
+                .shapeElementsChanged,
+            ] {
+                let token = NotificationCenter.default.addObserver(
+                    forName: rectCacheNote,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.interactiveRectCache.removeAll()
+                    }
+                }
+                interactiveRectsObservers.append(token)
             }
         }
 
@@ -605,6 +645,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(token)
             }
             if let token = strokeRewriteObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
+            for token in interactiveRectsObservers {
                 NotificationCenter.default.removeObserver(token)
             }
             // Detach the sticky-notes hosting controller from its
@@ -622,6 +665,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // MARK: Page hosts — diff + (re)build
 
         func rebuildPageHostsIfNeeded() {
+            // `makeUIView` schedules the first mount on the next
+            // runloop; `updateUIView` can fire first with an empty
+            // host stack and duplicate the full tear-down/rebuild.
+            if deferringInitialPageHostBuild && hosts.isEmpty {
+                return
+            }
             let snapshot = viewModel.pages.map(\.id)
             guard snapshot != lastSnapshot else {
                 // Page list shape unchanged, but page metadata (size /
@@ -669,24 +718,75 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         func rebuildPageHosts() {
             guard contentView != nil else { return }
-            tearDownAllHosts()
-            var y: CGFloat = 0
-            // Use the widest page as the content width so a mixed-size
-            // notebook (e.g. A4 + Letter) stays centred without horizontal
-            // jitter while scrolling.
-            let pages   = viewModel.pages
-            let maxW    = pages.map { $0.pageSize.pointSize.width }.max() ?? PageSize.a4.pointSize.width
-            for page in pages {
-                y = mountPageHost(page, atY: y, contentMaxWidth: maxW)
+            let snapshot = viewModel.pages.map(\.id)
+            if snapshot == lastSnapshot && !hosts.isEmpty {
+                applyPageMetadataChanges()
+                return
             }
-            // Total content height excludes the trailing gap.
-            let height = max(0, y - pageGap)
-            updateContentSize(width: maxW, height: height)
+            hostBuildQueue.removeAll()
+            tearDownAllHosts()
+            let pages   = viewModel.pages
+            let maxW    = pages.map { $0.pageSize.pointSize.width }.max()
+                ?? PageSize.a4.pointSize.width
+            var y: CGFloat = 0
+            var frames: [(Page, CGRect)] = []
+            for page in pages {
+                let baseSize = page.pageSize.pointSize
+                let frame = CGRect(
+                    x: (maxW - baseSize.width) / 2,
+                    y: y,
+                    width: baseSize.width,
+                    height: baseSize.height
+                )
+                frames.append((page, frame))
+                y += baseSize.height + pageGap
+            }
+            updateContentSize(width: maxW, height: max(0, y - pageGap))
             lastSnapshot = pages.map(\.id)
+            hostBuildMaxW = maxW
+            // Active page first so the first interactive frame lands
+            // on the page the user is actually viewing.
+            let activeIdx = viewModel.currentPageIndex
+            if frames.indices.contains(activeIdx) {
+                let active = frames.remove(at: activeIdx)
+                frames.insert(active, at: 0)
+            }
+            hostBuildQueue = frames.map { ($0.0, $0.1) }
+            continueHostBuild(batchSize: 1)
+        }
 
-            // Mount canvases for the warm band straight away so the user
-            // doesn't see a paper-only flash when entering the editor.
-            updateCanvasMembership(force: true)
+        private func continueHostBuild(batchSize: Int) {
+            guard contentView != nil else { return }
+            let count = min(batchSize, hostBuildQueue.count)
+            guard count > 0 else {
+                let activeIdx = viewModel.currentPageIndex
+                if hosts.indices.contains(activeIdx) {
+                    ensureOverlaysMounted(at: activeIdx)
+                }
+                mountActivePageCanvasFirst()
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateCanvasMembership(force: true)
+                }
+                return
+            }
+            for _ in 0..<count {
+                let item = hostBuildQueue.removeFirst()
+                mountPageHost(item.page, frame: item.frame, contentMaxWidth: hostBuildMaxW, mountOverlays: false)
+            }
+            if hostBuildQueue.isEmpty {
+                let activeIdx = viewModel.currentPageIndex
+                if hosts.indices.contains(activeIdx) {
+                    ensureOverlaysMounted(at: activeIdx)
+                }
+                mountActivePageCanvasFirst()
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateCanvasMembership(force: true)
+                }
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.continueHostBuild(batchSize: batchSize)
+                }
+            }
         }
 
         /// Append `newPages` to the bottom of the existing host
@@ -725,7 +825,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             atY y: CGFloat,
             contentMaxWidth maxW: CGFloat
         ) -> CGFloat {
-            guard let contentView else { return y }
             let baseSize = page.pageSize.pointSize
             let frame = CGRect(
                 x: (maxW - baseSize.width) / 2,
@@ -733,18 +832,21 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 width: baseSize.width,
                 height: baseSize.height
             )
+            mountPageHost(page, frame: frame, contentMaxWidth: maxW, mountOverlays: false)
+            return y + baseSize.height + pageGap
+        }
+
+        private func mountPageHost(
+            _ page: Page,
+            frame: CGRect,
+            contentMaxWidth maxW: CGFloat,
+            mountOverlays: Bool = false
+        ) {
+            guard let contentView else { return }
+            let baseSize = page.pageSize.pointSize
             let renderer = PageRenderer(pageSize: page.pageSize)
             renderer.frame = frame
 
-                // Step 5.5: PageRenderer no longer draws PDFs or
-                // highlights — those flow through
-                // `PDFPageElementsOverlayView` and
-                // `HighlightElementsOverlayView` respectively. The
-                // renderer just paints paper + template now.
-
-                // Mount the SwiftUI template pattern inside the
-                // renderer so paper colour (UIKit, theme-aware) sits
-                // behind the pattern (SwiftUI Canvas, theme-agnostic).
                 let templateHost = UIHostingController(
                     rootView: TemplatePatternView(template: page.backgroundTemplate)
                 )
@@ -761,70 +863,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 ])
                 templateHost.attachAsChild(of: renderer)
 
-                // Image attachments layer — sits ABOVE the
-                // background (template / PDF) and BELOW the
-                // PencilKit canvas. The hierarchy is non-negotiable
-                // per the architecture rule: PKCanvasView is always
-                // the topmost interactive layer so handwriting
-                // overwrites images cleanly.
-                //
-                // Pass the *base* page size (not the effective
-                // height `h` which includes auto-extension extra
-                // space). The image overlay normalises positions
-                // against this size, so when the page auto-extends
-                // after a stroke near the bottom, images stay
-                // anchored to their original absolute coordinates
-                // instead of shifting down proportionally with the
-                // grown height. Images live in the original page
-                // rect; the extended region is canvas-only.
-                // Single placement primitive shared by every per-page
-                // overlay below — base size only, no effective height.
-                // See `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.A.
                 let pageCS = PageCoordinateSpace(baseSize: baseSize)
-
-                // OPEN_ISSUES #1 — every interactive overlay (stroke
-                // seed, legacy text-block, image, PDF page, highlight,
-                // audio, sticky, V6 text element, lasso) is hosted in
-                // ONE `PageOverlaysContainer` so a single SwiftUI tree
-                // owns hit routing. Stacking nine separate hosts is
-                // what caused the gesture absorption: a `_UIHostingView`
-                // claims its whole frame whenever it is
-                // interaction-enabled, so the topmost host swallowed
-                // every tap. See `PageOverlaysContainer`. The template
-                // pattern stays a separate host (mounted above) — it's
-                // non-interactive and needs its own `rootView` swap
-                // when the Customise panel changes the template.
-                let overlaysHost = UIHostingController(
-                    rootView: PageOverlaysContainer(
-                        viewModel: viewModel,
-                        pageId: page.id,
-                        notebookId: viewModel.notebook.id,
-                        coordinateSpace: pageCS
-                    )
-                )
-                overlaysHost.view.backgroundColor = .clear
-                overlaysHost.view.translatesAutoresizingMaskIntoConstraints = false
-                renderer.addSubview(overlaysHost.view)
-                NSLayoutConstraint.activate([
-                    overlaysHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
-                    overlaysHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
-                    overlaysHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
-                    overlaysHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
-                ])
-                overlaysHost.attachAsChild(of: renderer)
 
                 contentView.addSubview(renderer)
 
-                #if DEBUG
-                // OPEN_ISSUES #1 touch-path diagnostic. Only two
-                // renderer subviews carry interaction now: the
-                // renderer itself and the single overlays host.
-                let pidTag = page.id.uuidString.prefix(8)
-                TouchPathLogger.attach(to: renderer,
-                                       label: "4. page \(pidTag) renderer")
-                TouchPathLogger.attach(to: overlaysHost.view,
-                                       label: "6. page \(pidTag) overlays host")
-                #endif
+            var overlaysHost: UIHostingController<PageOverlaysContainer>?
+            if mountOverlays {
+                overlaysHost = mountOverlaysHost(
+                    page: page,
+                    renderer: renderer,
+                    coordinateSpace: pageCS
+                )
+            }
 
             hosts.append(PageHostState(
                 pageId:       page.id,
@@ -834,10 +884,92 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 overlaysHost: overlaysHost,
                 template:     page.backgroundTemplate
             ))
-            return y + baseSize.height + pageGap
+        }
+
+        private func mountOverlaysHost(
+            page: Page,
+            renderer: PageRenderer,
+            coordinateSpace pageCS: PageCoordinateSpace
+        ) -> UIHostingController<PageOverlaysContainer> {
+            let inputs = overlayInputs(for: page.id)
+            let overlaysHost = UIHostingController(
+                rootView: PageOverlaysContainer(
+                    viewModel: viewModel,
+                    pageId: page.id,
+                    notebookId: viewModel.notebook.id,
+                    coordinateSpace: pageCS,
+                    overlayInputs: inputs
+                )
+            )
+            overlaysHost.view.backgroundColor = .clear
+            overlaysHost.view.translatesAutoresizingMaskIntoConstraints = false
+            renderer.addSubview(overlaysHost.view)
+            NSLayoutConstraint.activate([
+                overlaysHost.view.topAnchor.constraint(equalTo: renderer.topAnchor),
+                overlaysHost.view.leadingAnchor.constraint(equalTo: renderer.leadingAnchor),
+                overlaysHost.view.trailingAnchor.constraint(equalTo: renderer.trailingAnchor),
+                overlaysHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
+            ])
+            overlaysHost.attachAsChild(of: renderer)
+            return overlaysHost
+        }
+
+        private func overlayInputs(for pageId: UUID) -> EditorPageOverlayInputs {
+            EditorPageOverlayInputs(
+                selectedTool: viewModel.selectedTool,
+                canvasView: viewModel.canvasForPageHandler?(pageId)
+            )
+        }
+
+        /// Refresh the single active-page overlay when tool / canvas
+        /// inputs change without remounting the hosting controller.
+        func refreshActivePageOverlayInputs() {
+            guard let activeId = lastActivePageId,
+                  let i = hosts.firstIndex(where: { $0.pageId == activeId }),
+                  let overlaysHost = hosts[i].overlaysHost,
+                  let page = page(for: activeId) else { return }
+            let inputs = overlayInputs(for: activeId)
+            if overlaysHost.rootView.overlayInputs == inputs { return }
+            let pageCS = PageCoordinateSpace(baseSize: page.pageSize.pointSize)
+            overlaysHost.rootView = PageOverlaysContainer(
+                viewModel: viewModel,
+                pageId: activeId,
+                notebookId: viewModel.notebook.id,
+                coordinateSpace: pageCS,
+                overlayInputs: inputs
+            )
+        }
+
+        private func ensureOverlaysMounted(at i: Int) {
+            guard hosts.indices.contains(i),
+                  hosts[i].overlaysHost == nil,
+                  let page = page(for: hosts[i].pageId) else { return }
+            let pageCS = PageCoordinateSpace(baseSize: page.pageSize.pointSize)
+            hosts[i].overlaysHost = mountOverlaysHost(
+                page: page,
+                renderer: hosts[i].renderer,
+                coordinateSpace: pageCS
+            )
+        }
+
+        private func unmountOverlays(at i: Int) {
+            guard hosts.indices.contains(i),
+                  let overlaysHost = hosts[i].overlaysHost else { return }
+            pendingOverlayMountIndices.remove(i)
+            overlaysHost.detachFromParentVC()
+            overlaysHost.view.removeFromSuperview()
+            hosts[i].overlaysHost = nil
         }
 
         private func tearDownAllHosts() {
+            hostBuildQueue.removeAll()
+            pendingCanvasMountTask?.cancel()
+            pendingCanvasMountTask = nil
+            pendingCanvasMountIndices.removeAll()
+            pendingOverlayMountTask?.cancel()
+            pendingOverlayMountTask = nil
+            pendingOverlayMountIndices.removeAll()
+            flushPendingUnmountSaves()
             for i in hosts.indices {
                 if hosts[i].isDirty,
                    let canvas = hosts[i].canvasView,
@@ -851,7 +983,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 // removed — otherwise the VC graph holds dangling
                 // children whose `.view` no longer has a window.
                 hosts[i].templateHost.detachFromParentVC()
-                hosts[i].overlaysHost.detachFromParentVC()
+                hosts[i].overlaysHost?.detachFromParentVC()
                 hosts[i].renderer.removeFromSuperview()
             }
             hosts.removeAll()
@@ -1218,7 +1350,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard isActivelyScrolling != active else { return }
             isActivelyScrolling = active
             if !active {
+                flushPendingCanvasMounts()
+                // Settle active page before membership so the single
+                // overlay host mounts on the page the user landed on.
+                updateActivePageFromScroll(force: true)
                 updateCanvasMembership()
+                flushPendingOverlayMounts()
                 // The throttle may have swallowed the last few
                 // scroll ticks — publish the final resting viewport
                 // so the minimap doesn't stop a hair off-position.
@@ -1236,21 +1373,35 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
         }
 
+        /// Mount only the active page's canvas on the first editor frame;
+        /// remaining warm-band pages mount on the next tick.
+        private func mountActivePageCanvasFirst() {
+            guard let contentView else { return }
+            let idx = viewModel.currentPageIndex
+            guard hosts.indices.contains(idx),
+                  hosts[idx].canvasView == nil else { return }
+            ensureOverlaysMounted(at: idx)
+            mountCanvas(at: idx, in: contentView)
+        }
+
         func updateCanvasMembership(force: Bool = false) {
             guard let scrollView, let contentView else { return }
             let viewportTop    = scrollView.contentOffset.y
             let viewportBottom = viewportTop + scrollView.bounds.height
-            // Mid-scroll: no prefetch padding — only what the user
-            // can see mounts. At rest: full warm band.
-            let pad = isActivelyScrolling
+            let canvasPad = isActivelyScrolling
                 ? 0
                 : scrollView.bounds.height * warmBandPaddingFactor
-            let warmTop    = viewportTop - pad
-            let warmBottom = viewportBottom + pad
+            let overlayPad = isActivelyScrolling
+                ? 0
+                : scrollView.bounds.height * overlayWarmBandPaddingFactor
+            let canvasWarmTop    = viewportTop - canvasPad
+            let canvasWarmBottom = viewportBottom + canvasPad
+            let overlayWarmTop    = viewportTop - overlayPad
+            let overlayWarmBottom = viewportBottom + overlayPad
+            var deferredUnmountSaves = false
 
             for i in hosts.indices {
                 let f = hosts[i].frame
-                // Frame is in contentView coords; offset by zoomScale.
                 let scale = scrollView.zoomScale
                 let scaled = CGRect(
                     x:      f.origin.x * scale,
@@ -1258,16 +1409,88 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     width:  f.width    * scale,
                     height: f.height   * scale
                 )
-                let isInBand = scaled.maxY >= warmTop && scaled.minY <= warmBottom
-                if isInBand && hosts[i].canvasView == nil {
-                    mountCanvas(at: i, in: contentView)
-                } else if !isInBand && hosts[i].canvasView != nil && !force
+                let inCanvasBand = scaled.maxY >= canvasWarmTop && scaled.minY <= canvasWarmBottom
+                let inOverlayBand = scaled.maxY >= overlayWarmTop && scaled.minY <= overlayWarmBottom
+                if inCanvasBand {
+                    if hosts[i].canvasView == nil {
+                        if isActivelyScrolling {
+                            pendingCanvasMountIndices.insert(i)
+                        } else {
+                            mountCanvas(at: i, in: contentView)
+                        }
+                    }
+                } else if !inCanvasBand && hosts[i].canvasView != nil && !force
                             && !isActivelyScrolling {
-                    // Unmount churn deferred to scroll-rest — a page
-                    // leaving the zero-pad "band" mid-scroll is often
-                    // still inside the real warm band and would be
-                    // remounted seconds later.
-                    unmountCanvas(at: i)
+                    unmountCanvas(at: i, deferStorageSave: true)
+                    deferredUnmountSaves = true
+                }
+                if inOverlayBand, hosts[i].pageId == lastActivePageId {
+                    if hosts[i].overlaysHost == nil {
+                        pendingOverlayMountIndices.insert(i)
+                    }
+                } else if hosts[i].overlaysHost != nil && !force
+                            && !isActivelyScrolling {
+                    unmountOverlays(at: i)
+                }
+            }
+            if !isActivelyScrolling {
+                flushPendingOverlayMounts()
+            }
+            if deferredUnmountSaves {
+                flushPendingUnmountSaves()
+            }
+        }
+
+        private func flushPendingCanvasMounts() {
+            guard !pendingCanvasMountIndices.isEmpty else { return }
+            let indices = pendingCanvasMountIndices
+            pendingCanvasMountIndices.removeAll()
+            scheduleCanvasMounts(indices)
+        }
+
+        /// Mount at most one PKCanvasView per runloop tick so scroll-
+        /// rest cannot spike the main thread decoding every warm-band
+        /// page in a single frame.
+        private func scheduleCanvasMounts(_ indices: Set<Int>) {
+            guard let contentView, !indices.isEmpty else { return }
+            pendingCanvasMountTask?.cancel()
+            var queue = indices.sorted()
+            pendingCanvasMountTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                while !queue.isEmpty {
+                    guard !Task.isCancelled else { return }
+                    let i = queue.removeFirst()
+                    guard self.hosts.indices.contains(i),
+                          self.hosts[i].canvasView == nil else { continue }
+                    self.mountCanvas(at: i, in: contentView)
+                    if queue.isEmpty { break }
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+            }
+        }
+
+        private func flushPendingOverlayMounts() {
+            guard !pendingOverlayMountIndices.isEmpty else { return }
+            let indices = pendingOverlayMountIndices
+            pendingOverlayMountIndices.removeAll()
+            scheduleOverlayMounts(indices)
+        }
+
+        /// Mount at most one `PageOverlaysContainer` per runloop tick
+        /// so scrolling through a long notebook cannot wedge the main
+        /// thread mounting every overlay tree in one frame.
+        private func scheduleOverlayMounts(_ indices: Set<Int>) {
+            guard !indices.isEmpty else { return }
+            pendingOverlayMountTask?.cancel()
+            var queue = indices.sorted()
+            pendingOverlayMountTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                while !queue.isEmpty {
+                    guard !Task.isCancelled else { return }
+                    let i = queue.removeFirst()
+                    self.ensureOverlaysMounted(at: i)
+                    if queue.isEmpty { break }
+                    try? await Task.sleep(for: .milliseconds(16))
                 }
             }
         }
@@ -1275,6 +1498,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private func mountCanvas(at i: Int, in contentView: UIView) {
             guard i < hosts.count else { return }
             guard let page = page(for: hosts[i].pageId) else { return }
+            let pageId = hosts[i].pageId
+            // A remount supersedes any deferred unmount snapshot.
+            pendingUnmountDrawings.removeValue(forKey: pageId)
             let frame = hosts[i].frame
 
             // `CeciliasNotesPKCanvasView` overrides `addGestureRecognizer` to
@@ -1302,12 +1528,28 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // Step 8: read via the in-memory cache first; fall
             // back to the V6 stroke singleton on miss and warm the
             // cache with the decoded drawing for next time.
-            if let cached = StrokeCache.shared.drawing(forPage: page.id) {
+            if let cached = StrokeCache.shared.drawing(forPage: pageId) {
                 canvas.drawing = cached
             } else if let data = StorageService.shared.strokeData(for: page),
-                      let drawing = try? PKDrawing(data: data) {
-                canvas.drawing = drawing
-                StrokeCache.shared.cache(drawing, forPage: page.id)
+                      !data.isEmpty {
+                canvas.drawing = PKDrawing()
+                hosts[i].strokeDecodeTask?.cancel()
+                hosts[i].strokeDecodeGeneration &+= 1
+                let generation = hosts[i].strokeDecodeGeneration
+                hosts[i].strokeDecodeTask = Task.detached(priority: .userInitiated) { [weak canvas] in
+                    guard let drawing = try? PKDrawing(data: data) else { return }
+                    await MainActor.run { [weak self, weak canvas] in
+                        guard let self, let canvas,
+                              i < self.hosts.count,
+                              self.hosts[i].strokeDecodeGeneration == generation,
+                              !self.hosts[i].isDirty,
+                              self.hosts[i].canvasView === canvas,
+                              canvas.superview != nil
+                        else { return }
+                        canvas.drawing = drawing
+                        StrokeCache.shared.cache(drawing, forPage: pageId)
+                    }
+                }
             }
             applyTool(viewModel.selectedTool, to: canvas)
             // Honour current text-mode state at mount time. Without
@@ -1341,18 +1583,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
                    touches.contains(where: { $0.type == .pencil }) {
                     return false
                 }
-                // Drawing tools should never yield to the media
-                // overlay: the overlay has `allowsHitTesting(false)`
-                // while a drawing tool is active, so a yield here
-                // strands the finger touch between two views that
-                // both refuse it — the user sees the stroke "not
-                // taking" until they start from outside the image.
+                let size = canvas.bounds.size
+                guard size.width > 0, size.height > 0 else { return false }
+                // Audio play buttons must work under drawing tools.
+                if self.pointHitsAudioElement(
+                    point, pageId: canvasPageId, pageSize: size
+                ) {
+                    return true
+                }
+                // Drawing tools should never yield to image overlays:
+                // the overlay has `allowsHitTesting(false)` while a
+                // drawing tool is active, so a yield here strands the
+                // finger touch between two views that both refuse it.
                 if self.viewModel.selectedTool.isDrawingTool {
                     return false
                 }
-                let size = canvas.bounds.size
-                guard size.width > 0, size.height > 0 else { return false }
-                return self.pointHitsInteractiveElement(
+                return self.pointHitsImageElement(
                     point, pageId: canvasPageId, pageSize: size
                 )
             }
@@ -1369,19 +1615,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
             contentView.addSubview(canvas)
 
-            #if DEBUG
-            // Fix 1 — touch-path diagnostic. PKCanvasView is added
-            // to `contentView` AFTER each page's `renderer`, so it
-            // is a sibling stacked ON TOP of every element overlay —
-            // the prime suspect for absorbing element taps. If the
-            // `[TouchPath]` sequence reaches "5. PKCanvasView" and
-            // stops, this layer is the absorber.
-            TouchPathLogger.attach(
-                to: canvas,
-                label: "5. PKCanvasView page \(hosts[i].pageId.uuidString.prefix(8))"
-            )
-            #endif
-
             hosts[i].canvasView = canvas
 
             // Keep the overlay layer (audio pins + sticky notes) above
@@ -1396,25 +1629,84 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // primary ownership of `viewModel.canvasView`.
             if hosts[i].pageId == lastActivePageId {
                 viewModel.canvasView = canvas
+                refreshActivePageOverlayInputs()
             }
         }
 
-        private func unmountCanvas(at i: Int) {
+        private func unmountCanvas(at i: Int, deferStorageSave: Bool = false) {
             guard i < hosts.count, let canvas = hosts[i].canvasView else { return }
-            // Synchronous flush — abandoning a dirty canvas without saving
-            // would silently lose strokes when the user scrolls back to the
-            // page later.
-            if hosts[i].isDirty, let page = page(for: hosts[i].pageId) {
-                viewModel.savePage(page, drawing: canvas.drawing)
+            let pageId = hosts[i].pageId
+            if hosts[i].isDirty {
+                let drawing = canvas.drawing
+                StrokeCache.shared.cache(drawing, forPage: pageId)
                 hosts[i].isDirty = false
+                if deferStorageSave {
+                    pendingUnmountDrawings[pageId] = drawing
+                } else if let page = page(for: pageId) {
+                    viewModel.savePage(page, drawing: drawing)
+                }
             }
             hosts[i].saveTask?.cancel()
             hosts[i].saveTask = nil
+            hosts[i].strokeDecodeTask?.cancel()
+            hosts[i].strokeDecodeTask = nil
             canvas.removeFromSuperview()
             hosts[i].canvasView = nil
             if viewModel.canvasView === canvas {
                 viewModel.canvasView = nil
             }
+        }
+
+        private func flushPendingUnmountSaves() {
+            guard !pendingUnmountDrawings.isEmpty else { return }
+            let snapshots = pendingUnmountDrawings
+            pendingUnmountDrawings.removeAll()
+            for (pageId, snapshot) in snapshots {
+                if let i = hosts.firstIndex(where: { $0.pageId == pageId }),
+                   let canvas = hosts[i].canvasView {
+                    if hosts[i].isDirty, let page = page(for: pageId) {
+                        let live = canvas.drawing
+                        StrokeCache.shared.cache(live, forPage: pageId)
+                        viewModel.savePage(page, drawing: live)
+                        hosts[i].isDirty = false
+                    }
+                    continue
+                }
+                guard let page = page(for: pageId) else { continue }
+                StrokeCache.shared.cache(snapshot, forPage: pageId)
+                viewModel.savePage(page, drawing: snapshot)
+            }
+        }
+
+        private func cachedInteractiveRects(
+            for pageId: UUID,
+            pageSize: CGSize
+        ) -> PageInteractiveRects {
+            if let cached = interactiveRectCache[pageId] { return cached }
+            let ctx = StorageService.shared.container.mainContext
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pageId && $0.deletedAt == nil
+                }
+            )
+            let elements = (try? ctx.fetch(descriptor)) ?? []
+            var rects = PageInteractiveRects()
+            for e in elements {
+                let w = max(e.normalizedWidth  * pageSize.width,  44)
+                let h = max(e.normalizedHeight * pageSize.height, 44)
+                let rect = CGRect(
+                    x: e.normalizedX * pageSize.width,
+                    y: e.normalizedY * pageSize.height,
+                    width: w, height: h
+                )
+                switch e.kind {
+                case .audio: rects.audio.append(rect)
+                case .image: rects.image.append(rect)
+                default: break
+                }
+            }
+            interactiveRectCache[pageId] = rects
+            return rects
         }
 
         // MARK: Active page tracking
@@ -1438,16 +1730,34 @@ struct ContinuousCanvasView: UIViewRepresentable {
             }
             guard bestIdx < hosts.count else { return }
             let activeId = hosts[bestIdx].pageId
-            if force || activeId != lastActivePageId {
-                lastActivePageId = activeId
-                if viewModel.currentPageIndex != bestIdx {
-                    viewModel.currentPageIndex = bestIdx
-                }
-                if let canvas = hosts[bestIdx].canvasView {
-                    viewModel.canvasView = canvas
-                }
-                installOverlayLayerIntoActivePage(animated: !force)
+            guard force || activeId != lastActivePageId else { return }
+
+            let previousActiveId = lastActivePageId
+            lastActivePageId = activeId
+            if let canvas = hosts[bestIdx].canvasView {
+                viewModel.canvasView = canvas
             }
+
+            // Drop the overlay for the page we're leaving mid-scroll —
+            // remounts on scroll-rest for the landing page only.
+            if isActivelyScrolling,
+               let prev = previousActiveId,
+               prev != activeId,
+               let prevIdx = hosts.firstIndex(where: { $0.pageId == prev }),
+               hosts[prevIdx].overlaysHost != nil {
+                unmountOverlays(at: prevIdx)
+            }
+
+            // While the user is actively scrolling, skip @Published
+            // `currentPageIndex` writes — they re-render every mounted
+            // `PageOverlaysContainer` (@ObservedObject viewModel) on
+            // every tick and have produced scroll-time ANRs.
+            guard !isActivelyScrolling || force else { return }
+
+            if viewModel.currentPageIndex != bestIdx {
+                viewModel.currentPageIndex = bestIdx
+            }
+            installOverlayLayerIntoActivePage(animated: !force)
         }
 
         // MARK: Overlay layer (Phase 1)
@@ -1480,9 +1790,12 @@ struct ContinuousCanvasView: UIViewRepresentable {
             for h in hosts {
                 if let canvas = h.canvasView { applyTool(tool, to: canvas) }
             }
+            refreshActivePageOverlayInputs()
         }
 
         func applyDrawingPolicyToAll(fingerDraws: Bool) {
+            if lastFingerDrawingEnabled == fingerDraws { return }
+            lastFingerDrawingEnabled = fingerDraws
             let desired: PKCanvasViewDrawingPolicy = fingerDraws ? .anyInput : .pencilOnly
             for h in hosts {
                 guard let canvas = h.canvasView else { continue }
@@ -1504,6 +1817,8 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// explicitly switched away from a drawing tool. Switching
         /// back to any drawing tool restores `true`.
         func applyOverlayHitTestingToAll(canvasInteractive desired: Bool) {
+            if lastCanvasInteractive == desired { return }
+            lastCanvasInteractive = desired
             for h in hosts {
                 guard let canvas = h.canvasView else { continue }
                 if canvas.isUserInteractionEnabled != desired {
@@ -1597,6 +1912,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
             viewModel.canvasFlushAllHandler = { [weak self] in
                 self?.flushAllDirty()
             }
+            viewModel.canvasForPageHandler = { [weak self] pageId in
+                self?.hosts.first(where: { $0.pageId == pageId })?.canvasView
+            }
+            viewModel.canvasHasDirtyPagesHandler = { [weak self] in
+                self?.hosts.contains(where: { $0.isDirty }) ?? false
+            }
+        }
+
+        private func cancelPendingSaves(forPageIds pageIds: [UUID]) {
+            for pid in pageIds {
+                guard let i = hosts.firstIndex(where: { $0.pageId == pid }) else { continue }
+                hosts[i].saveTask?.cancel()
+                hosts[i].saveTask = nil
+            }
         }
 
         func flushAllDirty() {
@@ -1623,8 +1952,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             for pid in pageIds {
                 guard let i = hosts.firstIndex(where: { $0.pageId == pid }),
                       let canvas = hosts[i].canvasView else { continue }
-                // Cancel any pending debounced save — it holds the
-                // stale pre-edit drawing.
+                // Never clobber in-flight ink — lasso only runs in
+                // cursor mode, not during an active stroke.
+                if hosts[i].isDirty { continue }
                 hosts[i].saveTask?.cancel()
                 hosts[i].saveTask = nil
                 hosts[i].isDirty = false
@@ -1662,38 +1992,47 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// Runs only on finger touch-down (Pencil short-circuits in
         /// the caller), so the one-shot SwiftData fetch is off the
         /// drawing hot path.
+        func pointHitsAudioElement(
+            _ point: CGPoint,
+            pageId: UUID,
+            pageSize: CGSize
+        ) -> Bool {
+            cachedInteractiveRects(for: pageId, pageSize: pageSize).audio
+                .contains { $0.contains(point) }
+        }
+
+        func pointHitsImageElement(
+            _ point: CGPoint,
+            pageId: UUID,
+            pageSize: CGSize
+        ) -> Bool {
+            cachedInteractiveRects(for: pageId, pageSize: pageSize).image
+                .contains { $0.contains(point) }
+        }
+
+        private func elementRects(
+            on pageId: UUID,
+            pageSize: CGSize,
+            kinds: Set<ElementKind>
+        ) -> [CGRect] {
+            let cached = cachedInteractiveRects(for: pageId, pageSize: pageSize)
+            if kinds.contains(.audio), kinds.contains(.image) {
+                return cached.audio + cached.image
+            }
+            if kinds.contains(.audio) { return cached.audio }
+            if kinds.contains(.image) { return cached.image }
+            return []
+        }
+
+        /// Legacy wrapper — yields finger taps on audio (always) and
+        /// images (non-drawing tools only).
         func pointHitsInteractiveElement(
             _ point: CGPoint,
             pageId: UUID,
             pageSize: CGSize
         ) -> Bool {
-            let ctx = StorageService.shared.container.mainContext
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> {
-                    $0.pageId == pageId && $0.deletedAt == nil
-                }
-            )
-            guard let elements = try? ctx.fetch(descriptor) else { return false }
-            for e in elements {
-                switch e.kind {
-                case .audio, .image:
-                    // Clamp to a ≥44pt tap target so a thin/zero-height
-                    // element (e.g. a freshly-created strip whose
-                    // normalized height hasn't been written yet) is
-                    // still reachable.
-                    let w = max(e.normalizedWidth  * pageSize.width,  44)
-                    let h = max(e.normalizedHeight * pageSize.height, 44)
-                    let rect = CGRect(
-                        x: e.normalizedX * pageSize.width,
-                        y: e.normalizedY * pageSize.height,
-                        width: w, height: h
-                    )
-                    if rect.contains(point) { return true }
-                default:
-                    break
-                }
-            }
-            return false
+            pointHitsAudioElement(point, pageId: pageId, pageSize: pageSize)
+                || pointHitsImageElement(point, pageId: pageId, pageSize: pageSize)
         }
 
         func scrollViewDidZoom(_ scrollView: UIScrollView) {
@@ -1841,7 +2180,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     ]
                 )
             }
-            updateCanvasMembership()
+            // Membership scans every host frame — throttle to ~10 Hz
+            // while actively scrolling so scroll ticks don't wedge the
+            // main thread on band math + pending-mount bookkeeping.
+            if isActivelyScrolling {
+                if now - lastMembershipUpdate > 0.1 {
+                    lastMembershipUpdate = now
+                    updateCanvasMembership()
+                }
+            } else {
+                updateCanvasMembership()
+            }
             updateActivePageFromScroll()
         }
 
@@ -1882,11 +2231,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
             isStrokeInProgress = false
-            // Hand off to the existing shape-recognition pipeline. It reads
-            // viewModel.canvasView, so make sure that points at the canvas
-            // the user just drew on.
-            viewModel.canvasView = canvasView
-            viewModel.handleStrokeEnded()
+            let hostPageId = hosts.first(where: { $0.canvasView === canvasView })?.pageId
+            if hostPageId == lastActivePageId {
+                viewModel.canvasView = canvasView
+            }
+            viewModel.handleStrokeEnded(on: canvasView, pageId: hostPageId)
             considerAutoAddAfterStroke(on: canvasView)
         }
 
@@ -1927,11 +2276,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // Pencil 2 (iPad Pro / iPad Air with original Apple Pencil 2):
         // the system calls this legacy method on double-tap.
         func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
-            #if DEBUG
-            dlog("[Pencil] double-tap fired (legacy API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
-            dlog("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
-            Thread.callStackSymbols.prefix(8).forEach { dlog("[Pencil-diag]   \($0)") }
-            #endif
             viewModel.handlePencilDoubleTap()
         }
 
@@ -1949,11 +2293,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // `UIPencilInteraction.Tap` is a discrete event (no
             // `phase` member). One delegate call = one user-perceived
             // double-tap — fire the action once and exit.
-            #if DEBUG
-            dlog("[Pencil] double-tap fired (Pencil Pro API) action=\(viewModel.activePencilDoubleTapAction.rawValue)")
-            dlog("[Pencil-diag] tap handler entered interaction=\(ObjectIdentifier(interaction).hashValue) thread=\(Thread.current.description)")
-            Thread.callStackSymbols.prefix(8).forEach { dlog("[Pencil-diag]   \($0)") }
-            #endif
             viewModel.handlePencilDoubleTap()
         }
 

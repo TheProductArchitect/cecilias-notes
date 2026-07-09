@@ -269,7 +269,7 @@ extension CeciliasNotesFile {
 
     // MARK: - Reverse mappings (app enum → schema string, used by exporter)
 
-    static func schemaString(for size: PageSize) -> String {
+    nonisolated static func schemaString(for size: PageSize) -> String {
         switch size {
         case .a4:         return "a4"
         case .letter:     return "letter"
@@ -280,7 +280,7 @@ extension CeciliasNotesFile {
     /// Maps internal `PageTemplate` cases back to the six coarse
     /// schema strings. Any template not in the schema's vocabulary
     /// maps to its nearest representative.
-    static func schemaString(for template: PageTemplate) -> String {
+    nonisolated static func schemaString(for template: PageTemplate) -> String {
         switch template {
         case .blank, .storyboard, .mindMap,
              .calendarWeek, .dayPlanner,
@@ -300,7 +300,7 @@ extension CeciliasNotesFile {
         }
     }
 
-    static func schemaString(for tone: NotebookCoverTone?) -> String? {
+    nonisolated static func schemaString(for tone: NotebookCoverTone?) -> String? {
         guard let tone else { return nil }
         switch tone {
         case .parchment:   return "parchment"

@@ -110,8 +110,6 @@ final class EditorStateMachine: ObservableObject {
         #if DEBUG
         dlog("[StateMachine] \(mode) → \(next)")
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
-        dlog("[StateMachine-diag] entering mode \(next), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
-        dlog("[StateMachine-diag]   call stack:\n  \(stack)")
         #endif
         mode = next
     }
@@ -122,8 +120,6 @@ final class EditorStateMachine: ObservableObject {
         #if DEBUG
         dlog("[StateMachine] \(mode) → .drawing")
         let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
-        dlog("[StateMachine-diag] exitMode (was \(mode)), thread=\(Thread.current), isMain=\(Thread.isMainThread)")
-        dlog("[StateMachine-diag]   call stack:\n  \(stack)")
         #endif
         mode = .drawing
     }

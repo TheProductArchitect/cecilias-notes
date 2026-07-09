@@ -15,10 +15,11 @@ import UIKit
 ///
 /// Cursor + image tool let users select existing audio strips
 /// (drag, width-resize, delete). Drawing tools leave audio inert
-/// so handwriting can sit on top.
-struct AudioElementsOverlayView: View {
+/// so handwriting can sit on top. Play / pause / context-menu
+/// delete stay live in every tool mode.
+struct AudioElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
     let pageId: UUID
     let coordinateSpace: PageCoordinateSpace
 
@@ -27,7 +28,7 @@ struct AudioElementsOverlayView: View {
     }
 
     @State private var selectedElementId: UUID?
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
@@ -35,7 +36,7 @@ struct AudioElementsOverlayView: View {
     /// modes" gate as other PageElement-backed media. There's no
     /// dedicated audio tool — recording is its own UX surface.
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.allowsImageSelection
+        inputs.selectedTool.allowsImageSelection
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -51,23 +52,10 @@ struct AudioElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        let audioOnly = all.filter { $0.kind == .audio }.dedupedById()
-        #if DEBUG
-        if !audioOnly.isEmpty {
-            dlog("[AudioPlayback] overlay elements fetch — pageId=\(pid) totalElements=\(all.count) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")
-        }
-        #endif
-        return audioOnly
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
     }
 
     var body: some View {
@@ -83,24 +71,23 @@ struct AudioElementsOverlayView: View {
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.audioContent {
                     AudioElementView(
                         element: element,
                         content: content,
                         pageSize: pageSize,
+                        allowsSelection: allowsInteraction,
                         isSelected: bindingForSelected(elementId: element.id),
-                        onDelete: { softDelete(element) }
+                        onDelete: { softDelete(elementId: element.id) }
                     )
-                    // Play/pause/seek work regardless of tool mode —
-                    // playback is a content interaction, not a
-                    // selection interaction. Only the drag/resize/
-                    // delete chrome is gated on `allowsInteraction`.
+                    .zIndex(selectedElementId == element.id ? 1_000 : 0)
                 }
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             if newValue != .cursor && newValue != .image {
                 selectedElementId = nil
             }
@@ -108,7 +95,27 @@ struct AudioElementsOverlayView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: .audioElementsChanged)
         ) { _ in
-            refreshTick &+= 1
+            reloadElements()
+        }
+    }
+
+    // MARK: - Fetch
+
+    private func reloadElements() {
+        let audioOnly = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .audio,
+            context: modelContext
+        )
+        #if DEBUG
+        if !audioOnly.isEmpty {
+            dlog("[AudioPlayback] overlay elements fetch — pageId=\(pageId) audioElements=\(audioOnly.count) ids=\(audioOnly.map { $0.id.uuidString.prefix(8) })")
+        }
+        #endif
+        cachedElements = audioOnly
+        if let selected = selectedElementId,
+           !audioOnly.contains(where: { $0.id == selected }) {
+            selectedElementId = nil
         }
     }
 
@@ -117,6 +124,11 @@ struct AudioElementsOverlayView: View {
             get: { selectedElementId == elementId },
             set: { newValue in
                 if newValue {
+                    // Lasso sits above audio in the page stack and
+                    // claims the full page for hit-testing while it
+                    // owns a selection — clear it so the audio
+                    // toolbar's delete button gets the first tap.
+                    LassoSelectionState.shared.clear()
                     selectedElementId = elementId
                 } else if selectedElementId == elementId {
                     selectedElementId = nil
@@ -125,26 +137,45 @@ struct AudioElementsOverlayView: View {
         )
     }
 
-    private func softDelete(_ element: PageElement) {
-        if selectedElementId == element.id {
-            selectedElementId = nil
+    private func softDelete(elementId: UUID) {
+        let eid = elementId
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.id == eid && $0.deletedAt == nil }
+        )
+        guard let element = try? modelContext.fetch(descriptor).first else {
+            #if DEBUG
+            dlog("[AudioElement] softDelete DROP — element not found id=\(elementId)")
+            #endif
+            if selectedElementId == eid { selectedElementId = nil }
+            reloadElements()
+            return
         }
+
         PageElementUndo.registerDelete(
             elementId: element.id,
             kind: .audio,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Delete Audio"
         )
         element.deletedAt = Date()
         element.updatedAt = Date()
         do {
             try modelContext.save()
+            HapticManager.shared.destructiveConfirmed()
+            #if DEBUG
+            dlog("[AudioElement] softDelete OK — elementId=\(element.id)")
+            #endif
         } catch {
             #if DEBUG
             dlog("[AudioElement] save failed on softDelete: \(error)")
             #endif
         }
-        refreshTick &+= 1
+        // Clear selection only after the delete commits — clearing
+        // first unmounts the toolbar mid-tap and drops the action.
+        if selectedElementId == eid {
+            selectedElementId = nil
+        }
+        reloadElements()
         NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
     }
 }

@@ -248,8 +248,6 @@ struct MacRootView: View {
         MacStateUpdates.deferred {
             reconcileAppIcon()
             MacMenuState.shared.refresh()
-            storageService.purgeDuplicateRows()
-            storageService.reconcileSoftDeleteFlags()
             libraryVM.refresh()
             Task {
                 await SearchIndexService.shared.loadAsync()

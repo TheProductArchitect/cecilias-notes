@@ -1,6 +1,7 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
+import GameController
 #endif
 
 /// Single source of truth for what the current device is allowed to
@@ -40,12 +41,15 @@ enum DeviceCapabilities {
     static var prefersTabletLayout: Bool { !isPhoneIdiom }
 
     /// True when the library grid exposes arrow-key focus + Return/Space
-    /// shortcuts (iPad with external keyboard, Mac).
+    /// shortcuts (iPad with external keyboard, Mac). Touch-only iPad
+    /// must stay false — otherwise every card tap paints a persistent
+    /// blue focus ring (`macGridFocusedNotebookId`) that reads as a
+    /// stuck highlight when the user returns from the editor.
     static var supportsGridKeyboardNavigation: Bool {
 #if os(macOS)
         true
 #elseif canImport(UIKit)
-        prefersTabletLayout
+        prefersTabletLayout && GCKeyboard.coalesced != nil
 #else
         false
 #endif

@@ -379,7 +379,7 @@ final class CeciliasNotesImporter {
 
     /// Inverse of `encodeBlocks`. Used by the exporter to round-trip
     /// stored inkbook blocks back into the structured `Block` array.
-    static func decodeBlocks(_ json: String?) -> [CeciliasNotesFile.Block]? {
+    nonisolated static func decodeBlocks(_ json: String?) -> [CeciliasNotesFile.Block]? {
         guard let json, !json.isEmpty,
               let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode([CeciliasNotesFile.Block].self, from: data)
@@ -425,12 +425,16 @@ final class CeciliasNotesImporter {
         return subject.id
     }
 
-    /// Wipes existing pages + text blocks before a re-import. SwiftData
-    /// cascade rules drop the text blocks via `Page.textBlocks`, but we
-    /// soft-delete-then-hard-delete to clear them out of the context
-    /// graph cleanly before inserting replacements.
+    /// Wipes existing pages + V6 elements before a re-import.
     private func resetPages(of notebook: Notebook, context: ModelContext) throws {
         for page in notebook.pages ?? [] {
+            let pageId = page.id
+            let elementDescriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate { $0.pageId == pageId }
+            )
+            for element in (try? context.fetch(elementDescriptor)) ?? [] {
+                context.delete(element)
+            }
             for block in page.textBlocks ?? [] {
                 context.delete(block)
             }

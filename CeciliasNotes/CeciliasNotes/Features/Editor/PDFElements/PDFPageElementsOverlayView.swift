@@ -25,9 +25,9 @@ import UIKit
 /// `PageRenderer.updatePDFBacking` until a follow-up step
 /// migrates both the PDF render and the
 /// `PDFTextAnnotationStore` overlay it sits behind.
-struct PDFPageElementsOverlayView: View {
+struct PDFPageElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
     let pageId: UUID
     let coordinateSpace: PageCoordinateSpace
 
@@ -36,7 +36,7 @@ struct PDFPageElementsOverlayView: View {
     }
 
     @State private var selectedElementId: UUID?
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
 
@@ -45,7 +45,7 @@ struct PDFPageElementsOverlayView: View {
     /// no dedicated "PDF tool" mode (PDF insert is a menu item on
     /// the image tool, not a separate tool).
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.allowsImageSelection
+        inputs.selectedTool.allowsImageSelection
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -58,17 +58,10 @@ struct PDFPageElementsOverlayView: View {
         allowsInteraction && selectedElementId != nil
     }
 
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .pdfPage }.dedupedById()
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
     }
 
     var body: some View {
@@ -81,7 +74,7 @@ struct PDFPageElementsOverlayView: View {
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.pdfPageContent {
                     PDFPageElementView(
                         element: element,
@@ -95,7 +88,8 @@ struct PDFPageElementsOverlayView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             if newValue != .cursor && newValue != .image {
                 selectedElementId = nil
             }
@@ -103,7 +97,19 @@ struct PDFPageElementsOverlayView: View {
         .onReceive(
             NotificationCenter.default.publisher(for: .pdfPageElementsChanged)
         ) { _ in
-            refreshTick &+= 1
+            reloadElements()
+        }
+    }
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .pdfPage,
+            context: modelContext
+        )
+        if let selected = selectedElementId,
+           !cachedElements.contains(where: { $0.id == selected }) {
+            selectedElementId = nil
         }
     }
 
@@ -133,7 +139,7 @@ struct PDFPageElementsOverlayView: View {
             dlog("[PDFElement] save failed on softDelete: \(error)")
             #endif
         }
-        refreshTick &+= 1
+        reloadElements()
         NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
     }
 }

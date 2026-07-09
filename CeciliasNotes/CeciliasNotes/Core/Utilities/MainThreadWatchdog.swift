@@ -1,9 +1,9 @@
 import Foundation
 
-#if DEBUG
-/// Detects main-thread stalls in DEBUG builds. A background queue
-/// pings every `interval`; the main runloop must acknowledge within
-/// `threshold` or a stack trace is logged via `dlog`.
+/// Detects main-thread stalls. A background queue pings every
+/// `interval`; the main runloop must acknowledge within `threshold`
+/// or `SessionHealth` records a hang (launch recovery reads this on
+/// the next cold start). DEBUG builds also log a stack trace.
 ///
 /// Install once at launch (`CeciliasNotesApp.init` / `MacAppDelegate`).
 enum MainThreadWatchdog {
@@ -54,6 +54,8 @@ enum MainThreadWatchdog {
                     guard let self else { return }
                     guard self.pendingPingID > self.lastAckID,
                           self.pendingPingID >= ping else { return }
+                    SessionHealth.recordMainThreadHangFromWatchdog()
+                    #if DEBUG
                     let stack = Thread.callStackSymbols.prefix(40).joined(separator: "\n")
                     dlog(
                         """
@@ -63,10 +65,10 @@ enum MainThreadWatchdog {
                         \(stack)
                         """
                     )
+                    #endif
                 }
             }
             source.resume()
         }
     }
 }
-#endif

@@ -172,9 +172,7 @@ final class EditorViewModel: ObservableObject {
     @Published var zoomScale: CGFloat = 1.0
 
     // MARK: Save state
-    @Published private(set) var isDirty: Bool = false
     @Published private(set) var saveStatus: SaveStatus = .idle
-    private var saveTask: Task<Void, Never>?
     private var savedFlashTask: Task<Void, Never>?
 
     // MARK: Drawing accessor — set by CanvasContainerView coordinator after makeUIView
@@ -544,8 +542,6 @@ final class EditorViewModel: ObservableObject {
             guard recordingState != oldValue else { return }
             #if DEBUG
             let stack = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
-            dlog("[RecordingMirror] recordingState \(oldValue) → \(recordingState)")
-            dlog("[RecordingMirror]   stack:\n  \(stack)")
             #endif
             switch recordingState {
             case .recording:
@@ -579,13 +575,15 @@ final class EditorViewModel: ObservableObject {
     /// Set after a successful detection; cleared on tap-to-undo, tap-to-dismiss,
     /// timeout (3s), or new stroke.
     struct PendingShapeReplacement: Equatable {
+        let pageId: UUID
         let originalStroke: PKStroke
         let replacementStrokeIndex: Int
 
         // PKStroke is not Equatable in PencilKit — compare by index since
         // only one replacement is in flight at a time.
         static func == (lhs: PendingShapeReplacement, rhs: PendingShapeReplacement) -> Bool {
-            lhs.replacementStrokeIndex == rhs.replacementStrokeIndex
+            lhs.pageId == rhs.pageId
+                && lhs.replacementStrokeIndex == rhs.replacementStrokeIndex
         }
     }
     @Published var pendingShapeUndo: PendingShapeReplacement?
@@ -680,15 +678,15 @@ final class EditorViewModel: ObservableObject {
 
         // Live peer refresh: when a paired device announces a change
         // to THIS notebook, re-fetch pages once CloudKit lands them.
-        // Guarded on `isDirty` — never yank state out from under an
-        // in-flight stroke save. Debounced: hint bursts (one per
+        // Guarded on dirty canvas pages — never yank state out from
+        // under an in-flight stroke save. Debounced: hint bursts (one per
         // remote stroke save) collapse to one refresh per 2 s.
         NotificationCenter.default.publisher(for: MultipeerNotebookHint.changedNotification)
             .compactMap { $0.userInfo?["notebookId"] as? UUID }
             .filter { [notebookId = notebook.id] in $0 == notebookId }
             .debounce(for: .seconds(2), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                guard let self, !self.isDirty else { return }
+                guard let self, self.canvasHasDirtyPagesHandler?() != true else { return }
                 self.refreshPages()
             }
             .store(in: &cancellables)
@@ -734,7 +732,10 @@ final class EditorViewModel: ObservableObject {
         // open-time keeps page-strip / first-swipe transitions
         // off the SwiftData decode path. Detached background
         // task — does not block init.
-        StrokeCache.shared.prewarmNotebook(notebook.id)
+        Task { @MainActor [notebookId = notebook.id] in
+            try? await Task.sleep(for: .milliseconds(300))
+            StrokeCache.shared.prewarmNotebook(notebookId, pageCount: 2)
+        }
 
         // App-background flush for the PDF annotation writer. We
         // bypass the 3s debounce on background to guarantee no
@@ -785,7 +786,6 @@ final class EditorViewModel: ObservableObject {
         // Tasks captured [weak self] — they will be no-ops after dealloc.
         toolbarHideTask?.cancel()
         headerManualReHideTask?.cancel()
-        saveTask?.cancel()
         savedFlashTask?.cancel()
         // Selector-based observers (e.g. handleAppBackground).
         NotificationCenter.default.removeObserver(self)
@@ -796,13 +796,12 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Background-notification handler. `@objc` so it can be
-    /// targeted by `NotificationCenter.addObserver(selector:)`.
     /// Step 5.5: legacy `PDFAnnotationWriter` removed — highlights
-    /// commit synchronously through `HighlightCommit` so there's
-    /// nothing to flush here. Kept as a hook for future async
-    /// background work.
-    @objc private func handleAppBackground() {}
+    /// commit synchronously through `HighlightCommit`. Flush every
+    /// dirty canvas page so backgrounding never loses in-flight ink.
+    @objc private func handleAppBackground() {
+        flushPendingSaveSync()
+    }
 
     /// Image-import completion handler. Reads the picked image +
     /// extension + normalised tap location from the notification's
@@ -1137,11 +1136,14 @@ final class EditorViewModel: ObservableObject {
         // If we're already on the target tool, treat as a no-op so
         // the release doesn't pop back to itself.
         guard selectedTool.identity != target else { return }
+        // Stash synchronously — `.ended` can arrive in the same
+        // runloop tick and must see this before any deferred work.
         savedToolBeforeSqueeze = selectedTool
-        // Press-and-hold squeeze owns its own restore state; must NOT
-        // touch `lastTool` (the double-tap ping-pong state).
-        selectTool(identity: target, tracksLastTool: false)
-        HapticManager.shared.toolSwitched()
+        let identity = target
+        Task { @MainActor in
+            self.selectTool(identity: identity, tracksLastTool: false)
+            HapticManager.shared.toolSwitched()
+        }
     }
 
     /// Squeeze END / CANCEL — fires when the user releases or the
@@ -1153,12 +1155,11 @@ final class EditorViewModel: ObservableObject {
         dlog("[Pencil] squeeze .ended/.cancelled action=\(action.rawValue) restoring=\(savedToolBeforeSqueeze?.identity.rawValue ?? "nil")")
         #endif
         guard action == .tool, let saved = savedToolBeforeSqueeze else { return }
-        // Restoring after squeeze must NOT poison `lastTool`. Otherwise
-        // the next double-tap would toggle to the squeeze tool instead
-        // of the user's prior pre-squeeze choice.
-        selectTool(saved, tracksLastTool: false)
         savedToolBeforeSqueeze = nil
-        HapticManager.shared.toolSwitched()
+        Task { @MainActor in
+            self.selectTool(saved, tracksLastTool: false)
+            HapticManager.shared.toolSwitched()
+        }
     }
 
     /// Squeeze RELEASE — `.palette` action toggles the wheel here
@@ -1167,12 +1168,14 @@ final class EditorViewModel: ObservableObject {
     func handlePencilSqueezeReleased() {
         let action = currentSqueezeAction()
         guard action == .palette else { return }
-        if squeezeWheelCentre != nil {
-            squeezeWheelCentre = nil
-            return
+        Task { @MainActor in
+            if self.squeezeWheelCentre != nil {
+                self.squeezeWheelCentre = nil
+                return
+            }
+            self.squeezeWheelCentre = .zero
+            HapticManager.shared.contextMenuOpened()
         }
-        squeezeWheelCentre = .zero
-        HapticManager.shared.contextMenuOpened()
     }
 
     private func currentSqueezeAction() -> SqueezeAction {
@@ -1323,14 +1326,18 @@ final class EditorViewModel: ObservableObject {
         canvas.undoManager?.setActionName("Erase Page")
 
         canvas.drawing = PKDrawing()
-        scheduleAutosave()
+        StrokeCache.shared.cache(canvas.drawing, forPage: currentPage.id)
+        savePage(currentPage, drawing: canvas.drawing)
     }
 
     // MARK: - Shape recognition
 
     /// Called from the canvas coordinator on `canvasViewDidEndUsingTool`.
     /// Schedules a 600 ms recognition pass; the next stroke cancels it.
-    func handleStrokeEnded() {
+    /// `strokeCanvas` / `pageId` are the page the stroke landed on —
+    /// pinned so a scroll before the 600 ms timer can't retarget
+    /// recognition at a different page's last stroke.
+    func handleStrokeEnded(on strokeCanvas: PKCanvasView, pageId: UUID?) {
         // Any active "Undo Shape" pill is from the previous stroke and must
         // commit (or get blown away) when the user starts drawing again.
         if pendingShapeUndo != nil { dismissShapePill() }
@@ -1349,19 +1356,25 @@ final class EditorViewModel: ObservableObject {
             attemptHighlighterTextDetection()
         }
 
-        guard shapeRecognitionEnabled, canvasView != nil else { return }
+        guard shapeRecognitionEnabled,
+              selectedTool.isDrawingTool
+        else { return }
+        if case .eraser = selectedTool { return }
+
         shapeRecognitionTask?.cancel()
+        let pinnedCanvas = strokeCanvas
+        let pinnedPageId = pageId
         shapeRecognitionTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(600))
             guard !Task.isCancelled else { return }
-            await MainActor.run { self?.runShapeRecognition() }
+            await MainActor.run {
+                self?.runShapeRecognition(on: pinnedCanvas, pageId: pinnedPageId)
+            }
         }
     }
 
-    private func runShapeRecognition() {
-        guard let canvas = canvasView,
-              let lastStroke = canvas.drawing.strokes.last
-        else { return }
+    private func runShapeRecognition(on canvas: PKCanvasView, pageId: UUID?) {
+        guard let lastStroke = canvas.drawing.strokes.last else { return }
 
         // Vision rasterisation + contour detection runs ~30–80ms — push
         // the heavy lifting onto a background priority Task and only
@@ -1369,7 +1382,12 @@ final class EditorViewModel: ObservableObject {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let shape = await ShapeRecognizer.recognize(lastStroke) else { return }
             await MainActor.run { [weak self] in
-                self?.applyRecognisedShape(shape, replacing: lastStroke)
+                self?.applyRecognisedShape(
+                    shape,
+                    replacing: lastStroke,
+                    on: canvas,
+                    pageId: pageId
+                )
             }
         }
     }
@@ -1377,8 +1395,12 @@ final class EditorViewModel: ObservableObject {
     /// Apply a recognised shape back onto the canvas. Runs on the main
     /// actor — kept separate from `runShapeRecognition` so the Vision
     /// path is purely background.
-    private func applyRecognisedShape(_ shape: RecognizedShape, replacing originalStroke: PKStroke) {
-        guard let canvas = canvasView else { return }
+    private func applyRecognisedShape(
+        _ shape: RecognizedShape,
+        replacing originalStroke: PKStroke,
+        on canvas: PKCanvasView,
+        pageId: UUID?
+    ) {
         // The user may have drawn another stroke (or undone) between
         // background detection and now. Locate the original stroke by
         // identity — we still hold a reference. If it's no longer the
@@ -1393,26 +1415,37 @@ final class EditorViewModel: ObservableObject {
         let cleanStroke = makeCleanStroke(for: shape, like: lastStroke)
         var newStrokes = strokes
         newStrokes[replacementIndex] = cleanStroke
+
+        let undoManager = canvas.undoManager
+        undoManager?.beginUndoGrouping()
         canvas.drawing = PKDrawing(strokes: newStrokes)
 
         // ⌘Z restores the rough stroke as a separate undo entry.
-        canvas.undoManager?.registerUndo(withTarget: canvas) { target in
+        undoManager?.registerUndo(withTarget: canvas) { target in
             var s = target.drawing.strokes
             if replacementIndex < s.count {
                 s[replacementIndex] = lastStroke
                 target.drawing = PKDrawing(strokes: s)
             }
         }
-        canvas.undoManager?.setActionName("Recognise Shape")
+        undoManager?.setActionName("Recognise Shape")
+        undoManager?.endUndoGrouping()
+
+        if let pageId,
+           let page = pages.first(where: { $0.id == pageId }) {
+            StrokeCache.shared.cache(canvas.drawing, forPage: pageId)
+            savePage(page, drawing: canvas.drawing)
+        }
 
         withAnimation(.ceciliasNotesSpring(CeciliasNotesSpring.fade)) {
             pendingShapeUndo = PendingShapeReplacement(
+                pageId: pageId ?? currentPage.id,
                 originalStroke: lastStroke,
                 replacementStrokeIndex: replacementIndex
             )
         }
 
-        // Auto-dismiss the pill after 5 s. Bumped from 3 s along with the
+        // Auto-dismiss the pill after 5 s.
         // 0.75 → 0.65 confidence drop: more shapes get caught, so the user
         // needs a slightly longer window to reject a misfire.
         shapePillDismissTask?.cancel()
@@ -1427,21 +1460,25 @@ final class EditorViewModel: ObservableObject {
         }
 
         HapticManager.shared.toolSwitched()  // brief tactile signal
-        scheduleAutosave()
     }
 
     /// Tap-handler for the "Undo Shape" pill. Restores the rough stroke
     /// and clears pill state.
     func undoShapeReplacement() {
-        guard let pending = pendingShapeUndo,
-              let canvas  = canvasView else { return }
+        guard let pending = pendingShapeUndo else { return }
+        guard let canvas = canvasForPageHandler?(pending.pageId) ?? canvasView else { return }
         var strokes = canvas.drawing.strokes
-        if pending.replacementStrokeIndex < strokes.count {
-            strokes[pending.replacementStrokeIndex] = pending.originalStroke
-            canvas.drawing = PKDrawing(strokes: strokes)
+        guard pending.replacementStrokeIndex < strokes.count else {
+            dismissShapePill()
+            return
+        }
+        strokes[pending.replacementStrokeIndex] = pending.originalStroke
+        canvas.drawing = PKDrawing(strokes: strokes)
+        if let page = pages.first(where: { $0.id == pending.pageId }) {
+            StrokeCache.shared.cache(canvas.drawing, forPage: pending.pageId)
+            savePage(page, drawing: canvas.drawing)
         }
         dismissShapePill()
-        scheduleAutosave()
     }
 
     private func dismissShapePill() {
@@ -1651,13 +1688,21 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Pencil double-tap
 
     func handlePencilDoubleTap() {
-        switch activePencilDoubleTapAction {
-        case .switchTool:        toggleLastTwoTools()
-        case .toggleEraser:      toggleEraser()
-        case .showColorPicker:   isShowingColorPicker = true
-        case .doNothing:         break
+        let action = activePencilDoubleTapAction
+        // UIKit delivers this from `UIPencilInteractionDelegate`
+        // mid-gesture. Mutating `@Published` synchronously here lands
+        // inside SwiftUI's view-update pass and produces "Publishing
+        // changes from within view updates" — tool toggles can then
+        // fail to stick, leaving the pencil feeling dead in cursor.
+        Task { @MainActor in
+            switch action {
+            case .switchTool:        self.toggleLastTwoTools()
+            case .toggleEraser:      self.toggleEraser()
+            case .showColorPicker:   self.isShowingColorPicker = true
+            case .doNothing:         break
+            }
+            self.resetToolbarTimer()
         }
-        resetToolbarTimer()
     }
 
     // MARK: - Page navigation
@@ -2462,26 +2507,14 @@ final class EditorViewModel: ObservableObject {
     /// Called by the canvas coordinator on `canvasViewDrawingDidChange`.
     /// Cancels any pending save and schedules a new one 1.2s later.
     func scheduleAutosave() {
-        isDirty = true
-        saveTask?.cancel()
-        saveTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled, let self else { return }
-            await self.performSave()
-        }
+        // Stroke persistence is owned by ContinuousCanvasView's per-page
+        // debounce. Non-stroke mutations persist synchronously in
+        // StorageService; undo/redo and erase fire drawingDidChange.
     }
 
-    /// Force-flush any pending save synchronously. Used when navigating between pages.
+    /// Force-flush any pending save synchronously. Used when navigating
+    /// between pages or backgrounding.
     func flushPendingSaveSync() {
-        if isDirty, let canvasView {
-            let drawing = canvasView.drawing
-            let page    = currentPage
-            savePage(page, drawing: drawing)
-            isDirty = false
-        }
-        // ContinuousCanvasView (Item 2) owns per-page autosave for *every*
-        // page in the warm band, not just the active one. Give it a chance
-        // to flush all dirty pages before the editor unwinds.
         canvasFlushAllHandler?()
     }
 
@@ -2519,38 +2552,16 @@ final class EditorViewModel: ObservableObject {
     /// so `flushPendingSaveSync()` can walk every dirty page on dismiss.
     var canvasFlushAllHandler: (() -> Void)?
 
+    /// Returns the mounted PKCanvasView for a page id, if any.
+    var canvasForPageHandler: ((UUID) -> PKCanvasView?)?
+
+    /// True when any warm-band page has unsaved ink.
+    var canvasHasDirtyPagesHandler: (() -> Bool)?
+
     /// Set by the page-strip / keyboard so the continuous canvas knows to
     /// scroll to a particular page index. Read-and-clear contract: the
     /// canvas coordinator clears the value once it has acted on it.
     @Published var pendingScrollPageIndex: Int?
-
-    private func performSave() async {
-        guard let canvasView else { return }
-        let drawing = canvasView.drawing
-        let page    = currentPage
-
-        saveStatus = .saving
-
-        do {
-            try storage.updatePageStrokes(page, drawing: drawing)
-            isDirty    = false
-            saveStatus = .saved
-            scheduleSavedFlash()
-            // Composite-path regeneration via the page-strip row's
-            // `.onChange(of: page.updatedAt)` observer — see the
-            // identical comment in `savePage(_:drawing:)`.
-            SearchIndexService.shared.scheduleOCR(
-                notebookId: page.notebookId,
-                pageId:     page.id
-            )
-            IntelligenceService.shared.scheduleSummary(notebookId: page.notebookId)
-            MultipeerNotebookHint.broadcastNotebookChanged(notebookId: page.notebookId)
-            maybeGenerateTitleSuggestion()
-            maybeGenerateTagSuggestions()
-        } catch {
-            saveStatus = .error(error.localizedDescription)
-        }
-    }
 
     private func scheduleSavedFlash() {
         savedFlashTask?.cancel()

@@ -22,12 +22,20 @@ import UIKit
 /// and renders them via `TextElementView`. Inserts and deletes go
 /// straight to the context — SwiftData's @Bindable propagation
 /// keeps the views in sync.
-struct TextElementsOverlayView: View {
+struct TextElementsOverlayView: View, Equatable {
 
-    @ObservedObject var viewModel: EditorViewModel
+    let inputs: EditorPageOverlayInputs
+    let viewModel: EditorViewModel
     let pageId: UUID
     let notebookId: UUID
     let coordinateSpace: PageCoordinateSpace
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.pageId == rhs.pageId
+            && lhs.notebookId == rhs.notebookId
+            && lhs.coordinateSpace.baseSize == rhs.coordinateSpace.baseSize
+            && lhs.inputs == rhs.inputs
+    }
 
     /// Resolved straight from the singleton storage service rather
     /// than via `@Environment(\.modelContext)` — UIHostingController
@@ -49,42 +57,16 @@ struct TextElementsOverlayView: View {
     /// Editing identity — separate from `selectedId` because a tap
     /// can select without entering edit mode (and vice versa).
     @State private var editingId: UUID?
-    /// SwiftData refresh tick — bumped after inserts/deletes so the
-    /// fetched list re-runs without waiting for the next view-tree
-    /// invalidation.
-    @State private var refreshTick: Int = 0
+    @State private var cachedElements: [PageElement] = []
 
     private var pageSize: CGSize { coordinateSpace.baseSize }
-
-    /// Fetch text elements for this page. Sorted by zIndex so
-    /// stacking is deterministic.
-    ///
-    /// Filtering by `kind` happens post-fetch in Swift because
-    /// SwiftData's `#Predicate` macro on iOS 26 rejects equality
-    /// against an enum case in a key-path comparison ("key path
-    /// cannot refer to enum case"). The pageId + deletedAt
-    /// predicate keeps the candidate set small, and the kind
-    /// filter is O(n) over what's typically a handful of elements
-    /// per page.
-    private var elements: [PageElement] {
-        let _ = refreshTick
-        let pid = pageId
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pid && $0.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.zIndex)]
-        )
-        let all = (try? modelContext.fetch(descriptor)) ?? []
-        return all.filter { $0.kind == .text }.dedupedById()
-    }
 
     /// True when the active tool grants text-element interaction.
     /// Text tool: creates new elements on tap + edits existing.
     /// Cursor tool: selects + edits existing.
     private var allowsInteraction: Bool {
-        viewModel.selectedTool.isCursorMode
-            || viewModel.selectedTool.isTextMode
+        inputs.selectedTool.isCursorMode
+            || inputs.selectedTool.isTextMode
     }
 
     /// Whether to mount the full-page background tap layer.
@@ -104,7 +86,7 @@ struct TextElementsOverlayView: View {
         guard allowsInteraction else { return false }
         return selectedId != nil
             || editingId != nil
-            || viewModel.selectedTool.isTextMode
+            || inputs.selectedTool.isTextMode
     }
 
     var body: some View {
@@ -120,14 +102,15 @@ struct TextElementsOverlayView: View {
                     }
             }
 
-            ForEach(elements, id: \.id) { element in
+            ForEach(cachedElements, id: \.id) { element in
                 if let content = element.textContent {
                     elementContainer(element: element, content: content)
                 }
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
-        .onChange(of: viewModel.selectedTool.identity) { _, newValue in
+        .onAppear { reloadElements() }
+        .onChange(of: inputs.selectedTool.identity) { _, newValue in
             // Switching to a tool that doesn't allow interaction
             // clears selection / editing state. Switching within
             // the interactive set (cursor ↔ text) preserves it.
@@ -139,7 +122,7 @@ struct TextElementsOverlayView: View {
             // A text element was created outside the overlay's own
             // interactive path (currently the AI Summarize result
             // sheet). Re-fetch so it appears immediately.
-            refreshTick &+= 1
+            reloadElements()
         }
         #if DEBUG
         // OPEN_ISSUES #1 diagnostic — reports whether the gated
@@ -152,15 +135,15 @@ struct TextElementsOverlayView: View {
                 + "showsBackgroundCatcher=\(showsBackgroundCatcher) "
                 + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
                 + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
-                + "tool=\(viewModel.selectedTool.identity) "
-                + "elementCount=\(elements.count)")
+                + "tool=\(inputs.selectedTool.identity) "
+                + "elementCount=\(cachedElements.count)")
         }
         .onChange(of: showsBackgroundCatcher) { old, new in
             dlog("[TextCatcher v3] page=\(pageId.uuidString.prefix(8)) "
                 + "showsBackgroundCatcher \(old) → \(new) "
                 + "selectedId=\(selectedId?.uuidString.prefix(8) ?? "nil") "
                 + "editingId=\(editingId?.uuidString.prefix(8) ?? "nil") "
-                + "tool=\(viewModel.selectedTool.identity)")
+                + "tool=\(inputs.selectedTool.identity)")
         }
         #endif
     }
@@ -223,7 +206,7 @@ struct TextElementsOverlayView: View {
                         // Long-press selects without entering edit, giving
                         // the move gesture a chance to fire while the
                         // finger is still down (mirrors ImageElementView).
-                        if viewModel.selectedTool.isCursorMode {
+                        if inputs.selectedTool.isCursorMode {
                             selectedId = element.id
                             // Do not set editingId — leave the block in
                             // the "selected, not editing" state so the
@@ -322,7 +305,7 @@ struct TextElementsOverlayView: View {
         PageElementUndo.registerDelete(
             elementId: element.id,
             kind: .text,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Delete Text"
         )
         let now = Date()
@@ -331,8 +314,27 @@ struct TextElementsOverlayView: View {
         try? modelContext.save()
         if selectedId == element.id { selectedId = nil }
         if editingId  == element.id { editingId  = nil }
-        refreshTick &+= 1
+        reloadElements()
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+    }
+
+    // MARK: - Fetch
+
+    private func reloadElements() {
+        cachedElements = PageElementOverlayFetch.elements(
+            pageId: pageId,
+            kind: .text,
+            context: modelContext,
+            includeCreatedAtSort: false
+        )
+        if let selected = selectedId,
+           !cachedElements.contains(where: { $0.id == selected }) {
+            selectedId = nil
+        }
+        if let editing = editingId,
+           !cachedElements.contains(where: { $0.id == editing }) {
+            editingId = nil
+        }
     }
 
     // MARK: - Selection / editing bindings
@@ -376,7 +378,7 @@ struct TextElementsOverlayView: View {
             exitEditAndDeselect()
             return
         }
-        if viewModel.selectedTool.isTextMode {
+        if inputs.selectedTool.isTextMode {
             createNewElement(at: location)
         }
     }
@@ -492,7 +494,7 @@ struct TextElementsOverlayView: View {
 
         // zIndex: 1 above the current max so the new element renders
         // on top of any existing text elements on this page.
-        let maxZ = elements.map(\.zIndex).max() ?? 0
+        let maxZ = cachedElements.map(\.zIndex).max() ?? 0
 
         let element = PageElement(
             pageId: pageId,
@@ -519,14 +521,11 @@ struct TextElementsOverlayView: View {
         PageElementUndo.registerCreate(
             elementId: element.id,
             kind: .text,
-            canvas: viewModel.canvasView,
+            canvas: inputs.canvasView,
             actionName: "Create Text"
         )
 
-        // Force the next body() to re-fetch the elements list so
-        // the new row appears immediately — without bumping, the
-        // fetched array can lag a runloop.
-        refreshTick &+= 1
+        reloadElements()
 
         // Select + enter edit mode → keyboard appears.
         selectedId = element.id

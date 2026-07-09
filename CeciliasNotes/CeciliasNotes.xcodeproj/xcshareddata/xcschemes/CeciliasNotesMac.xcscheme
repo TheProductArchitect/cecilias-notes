@@ -21,7 +21,7 @@
                ReferencedContainer = "container:CeciliasNotes.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
-               <BuildActionEntry
+         <BuildActionEntry
             buildForTesting = "YES"
             buildForRunning = "NO"
             buildForProfiling = "NO"

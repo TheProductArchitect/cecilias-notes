@@ -87,20 +87,11 @@ struct ImageElementView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        #if DEBUG
-                        dlog("[ImageGesture] 1. tap received on image body, elementId=\(element.id.uuidString.prefix(8)), isSelected before=\(isSelected)")
-                        #endif
                         if !isSelected { isSelected = true }
-                        #if DEBUG
-                        dlog("[ImageGesture] 1a. tap handler done, isSelected after=\(isSelected)")
-                        #endif
                     }
                 )
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: 0.35).onEnded { _ in
-                        #if DEBUG
-                        dlog("[ImageGesture] 1b. long-press received on image body, elementId=\(element.id.uuidString.prefix(8)), isSelected=\(isSelected)")
-                        #endif
                         // Select on long-press too. A press held past
                         // the long-press threshold does NOT also fire
                         // the simultaneous `TapGesture`, so without
@@ -121,9 +112,6 @@ struct ImageElementView: View {
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
         .onChange(of: isSelected) { oldValue, newValue in
-            #if DEBUG
-            dlog("[ImageGesture] isSelected changed elementId=\(element.id.uuidString.prefix(8)) old=\(oldValue) new=\(newValue)")
-            #endif
         }
         .fullScreenCover(isPresented: $isCropping) {
             ImageCropSheet(
@@ -336,16 +324,10 @@ struct ImageElementView: View {
         DragGesture(minimumDistance: 2, coordinateSpace: .global)
             .onChanged { value in
                 if dragOffset == .zero {
-                    #if DEBUG
-                    dlog("[ImageGesture] 2. drag onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) startLocation=\(value.startLocation)")
-                    #endif
                 }
                 dragOffset = value.translation
             }
             .onEnded { value in
-                #if DEBUG
-                dlog("[ImageGesture] 3. drag onEnded elementId=\(element.id.uuidString.prefix(8)) translation=\(value.translation) predictedEnd=\(value.predictedEndTranslation)")
-                #endif
                 let dxNorm = value.translation.width  / pageSize.width
                 let dyNorm = value.translation.height / pageSize.height
                 let proposedX = element.normalizedX + Double(dxNorm)
@@ -383,9 +365,6 @@ struct ImageElementView: View {
                     element.updatedAt   = Date()
                 }
                 dragOffset = .zero
-                #if DEBUG
-                dlog("[ImageGesture] 3a. drag commit done normX=\(element.normalizedX) normY=\(element.normalizedY)")
-                #endif
             }
     }
 
@@ -421,16 +400,10 @@ struct ImageElementView: View {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { value in
                 if resizeDelta == nil {
-                    #if DEBUG
-                    dlog("[ImageGesture] 4. resize handle onChanged FIRST tick elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation) startLocation=\(value.startLocation)")
-                    #endif
                 }
                 resizeDelta = ResizeDelta(corner: corner, translation: value.translation)
             }
             .onEnded { value in
-                #if DEBUG
-                dlog("[ImageGesture] 5. resize handle onEnded elementId=\(element.id.uuidString.prefix(8)) corner=\(corner) translation=\(value.translation)")
-                #endif
                 let base = CGRect(
                     x: element.normalizedX * pageSize.width,
                     y: element.normalizedY * pageSize.height,
@@ -455,9 +428,6 @@ struct ImageElementView: View {
                     element.updatedAt        = Date()
                 }
                 resizeDelta = nil
-                #if DEBUG
-                dlog("[ImageGesture] 5a. resize commit done normW=\(element.normalizedWidth) normH=\(element.normalizedHeight)")
-                #endif
             }
     }
 
