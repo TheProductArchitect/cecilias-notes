@@ -374,6 +374,8 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
     let modelContext: ModelContext
     var columnWidth: CGFloat
     var pageDisplayHeight: CGFloat
+    var stackTopOffset: CGFloat
+    var maxBlockHeight: CGFloat
     var richTextController: MacRichTextController
     var onWritingBegan: () -> Void
     var onEndEdit: () -> Void
@@ -385,6 +387,8 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
             page: page,
             modelContext: modelContext,
             pageDisplayHeight: pageDisplayHeight,
+            stackTopOffset: stackTopOffset,
+            maxBlockHeight: maxBlockHeight,
             richTextController: richTextController,
             onWritingBegan: onWritingBegan,
             onEndEdit: onEndEdit
@@ -406,8 +410,11 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
         context.coordinator.element = element
         context.coordinator.page = page
         context.coordinator.pageDisplayHeight = pageDisplayHeight
+        context.coordinator.stackTopOffset = stackTopOffset
+        context.coordinator.maxBlockHeight = maxBlockHeight
         context.coordinator.richTextController = richTextController
         container.applyWidth(max(1, columnWidth))
+        context.coordinator.reattachController(to: container.textView)
         // Restore caret when SwiftUI re-lays out the field but nothing
         // else owns first responder (e.g. after header reflow).
         DispatchQueue.main.async {
@@ -419,6 +426,7 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ container: MacDocTextContainer, coordinator: Coordinator) {
+        coordinator.richTextController.onTextMutated = nil
         coordinator.flushSave()
     }
 
@@ -429,12 +437,15 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
         var page: Page
         let modelContext: ModelContext
         var pageDisplayHeight: CGFloat
+        var stackTopOffset: CGFloat
+        var maxBlockHeight: CGFloat
         var richTextController: MacRichTextController
         let onWritingBegan: () -> Void
         let onEndEdit: () -> Void
         private var saveTask: Task<Void, Never>?
         private weak var textView: NSTextView?
         private weak var container: MacDocTextContainer?
+        private var lastPersistedLength = 0
         private let slash = MacDocSlashCommandHandler()
 
         init(
@@ -443,6 +454,8 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
             page: Page,
             modelContext: ModelContext,
             pageDisplayHeight: CGFloat,
+            stackTopOffset: CGFloat,
+            maxBlockHeight: CGFloat,
             richTextController: MacRichTextController,
             onWritingBegan: @escaping () -> Void,
             onEndEdit: @escaping () -> Void
@@ -452,6 +465,8 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
             self.page = page
             self.modelContext = modelContext
             self.pageDisplayHeight = pageDisplayHeight
+            self.stackTopOffset = stackTopOffset
+            self.maxBlockHeight = maxBlockHeight
             self.richTextController = richTextController
             self.onWritingBegan = onWritingBegan
             self.onEndEdit = onEndEdit
@@ -468,9 +483,18 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
                 textView.textStorage?.setAttributedString(decoded)
             }
             textView.typingAttributes = MacRichTextCodec.defaultTypingAttributes(size: content.size)
-            richTextController.attach(textView)
+            lastPersistedLength = decoded.length
+            reattachController(to: textView)
             container.growToFit()
             focusTextView(atClickY: MacPendingTextCursor.take(elementId: element.id), in: textView)
+        }
+
+        func reattachController(to textView: NSTextView) {
+            richTextController.onTextMutated = { [weak self] in
+                guard let self, let tv = self.textView else { return }
+                self.flushSave(from: tv)
+            }
+            richTextController.attach(textView)
         }
 
         private func focusTextView(atClickY clickY: CGFloat?, in textView: NSTextView) {
@@ -490,20 +514,25 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
+            guard let tv = notification.object as? NSTextView, tv === textView else { return }
             onWritingBegan()
             richTextController.refresh()
             scheduleSave(from: tv)
             container?.growToFit(maxHeight: remainingPageHeightPixels())
             syncLayout(from: tv)
             slash.handleTextChange(in: tv)
+            let length = (tv.string as NSString).length
+            if length != lastPersistedLength {
+                lastPersistedLength = length
+                maybeSplitOverflow(from: tv)
+            }
         }
 
         func textDidBeginEditing(_ notification: Notification) {
-            guard let tv = notification.object as? NSTextView else { return }
+            guard let tv = notification.object as? NSTextView, tv === textView else { return }
             MacDictationTrigger.register(tv)
             MacStateUpdates.deferred { [weak self] in
-                self?.richTextController.attach(tv)
+                self?.reattachController(to: tv)
             }
             onWritingBegan()
         }
@@ -518,15 +547,7 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
             guard let tv = notification.object as? NSTextView else { return }
             flushSave(from: tv)
             syncLayout(from: tv, commit: true)
-            if let content = element.textContent {
-                let originY = element.normalizedY * page.pageSize.pointSize.height
-                _ = MacTextElementSplitter.splitIfNeeded(
-                    element: element,
-                    content: content,
-                    pageSize: page.pageSize.pointSize,
-                    originY: originY
-                )
-            }
+            maybeSplitOverflow(from: tv)
             slash.dismiss()
             MacStateUpdates.deferred { [onEndEdit] in onEndEdit() }
         }
@@ -590,10 +611,39 @@ struct MacDocGrowingRichTextEditor: NSViewRepresentable {
         }
 
         private func remainingPageHeightPixels() -> CGFloat {
-            let pagePoints = page.pageSize.pointSize.height
-            let scale = pageDisplayHeight / max(1, pagePoints)
-            let originPixels = element.normalizedY * pageDisplayHeight
-            return max(24, pageDisplayHeight - originPixels - 6)
+            max(24, maxBlockHeight)
+        }
+
+        private func maybeSplitOverflow(from textView: NSTextView) {
+            guard let content = element.textContent else { return }
+            MacPageElementReflow.packVerticalLayout(pageId: page.id)
+            let originY = MacPageElementReflow.stackOriginPoints(
+                elementId: element.id,
+                pageId: page.id
+            )
+            guard let split = MacTextElementSplitter.splitIfNeeded(
+                element: element,
+                content: content,
+                pageSize: page.pageSize.pointSize,
+                originY: originY
+            ) else { return }
+
+            let fit = MacRichTextCodec.decode(from: content)
+            if textView.attributedString() != fit {
+                textView.textStorage?.setAttributedString(fit)
+            }
+            container?.growToFit(maxHeight: remainingPageHeightPixels())
+
+            MacRecordingSession.shared.retargetIfWriting(
+                from: element.id,
+                to: split.continuationElementId,
+                consumedUTF16: split.overflowStartUTF16
+            )
+            NotificationCenter.default.post(
+                name: .macFocusTextBlock,
+                object: nil,
+                userInfo: [MacTranscriptionKeys.elementId: split.continuationElementId]
+            )
         }
     }
 }

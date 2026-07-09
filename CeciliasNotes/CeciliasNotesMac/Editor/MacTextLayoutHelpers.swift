@@ -40,6 +40,46 @@ enum MacPageAutoAdd {
     }
 }
 
+// MARK: - Page overflow reconciliation
+
+@MainActor
+enum MacPageOverflow {
+    /// Splits any text blocks that extend past the page bottom so
+    /// overflow always lands on the next page instead of being clipped.
+    static func reconcilePage(_ pageId: UUID) {
+        MacPageElementReflow.packVerticalLayout(pageId: pageId)
+        let storage = StorageService.shared
+        guard let page = storage.fetchPage(id: pageId) else { return }
+        let pageSize = page.pageSize.pointSize
+        let pid = pageId
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil },
+            sortBy: [
+                SortDescriptor(\PageElement.normalizedY),
+                SortDescriptor(\PageElement.zIndex),
+            ]
+        )
+        guard let elements = try? storage.context.fetch(descriptor) else { return }
+        var originY = MacDocPageLayout.topMargin
+        for element in elements where element.kind == .text {
+            guard let content = element.textContent else { continue }
+            if let split = MacTextElementSplitter.splitIfNeeded(
+                element: element,
+                content: content,
+                pageSize: pageSize,
+                originY: originY
+            ) {
+                MacRecordingSession.shared.retargetIfWriting(
+                    from: element.id,
+                    to: split.continuationElementId,
+                    consumedUTF16: split.overflowStartUTF16
+                )
+            }
+            originY += CGFloat(element.normalizedHeight) * pageSize.height + MacDocPageLayout.blockSpacing
+        }
+    }
+}
+
 // MARK: - Overflow split (Mac port of `TextElementSplitter`)
 
 @MainActor
@@ -67,7 +107,8 @@ enum MacTextElementSplitter {
 
         let margin = MacDocPageLayout.horizontalMargin
         let contentWidth = max(40, pageSize.width - 2 * margin)
-        let availableHeight = max(40, pageSize.height - originY - bottomPadding)
+        let contentBottom = MacPageElementReflow.contentBottomPoints(pageId: element.pageId)
+        let availableHeight = max(40, contentBottom - originY - bottomPadding)
 
         let measured = ceil(attributed.boundingRect(
             with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
@@ -169,6 +210,19 @@ enum MacTextElementSplitter {
             predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil }
         )
         let existingOnNext = (try? context.fetch(descriptor)) ?? []
+            .filter { $0.kind == .text }
+        if let reuse = existingOnNext.first(where: { existing in
+            guard let existingText = existing.textContent?.text else { return false }
+            return existingText.isEmpty || existingText == overflow.string
+        }) {
+            if let content = reuse.textContent {
+                commit(attributed: overflow, into: content)
+                reuse.updatedAt = Date()
+                try? context.save()
+            }
+            return reuse.id
+        }
+
         let openY: Double
         if existingOnNext.isEmpty {
             openY = topY

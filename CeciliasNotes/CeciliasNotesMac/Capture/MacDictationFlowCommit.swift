@@ -114,11 +114,16 @@ enum MacDictationFlowCommit {
             element.normalizedHeight = normH
         }
 
-        let originY = CGFloat(element.normalizedY) * pageHeight
+        MacPageElementReflow.packVerticalLayout(pageId: element.pageId)
+        let pageWidth = pageSizeContentWidth(for: element) + 2 * MacDocPageLayout.horizontalMargin
+        let originY = MacPageElementReflow.stackOriginPoints(
+            elementId: element.id,
+            pageId: element.pageId
+        )
         if let split = MacTextElementSplitter.splitIfNeeded(
             element: element,
             content: content,
-            pageSize: CGSize(width: pageSizeContentWidth(for: element) + 2 * MacDocPageLayout.horizontalMargin, height: pageHeight),
+            pageSize: CGSize(width: pageWidth, height: pageHeight),
             originY: originY
         ) {
             MacRecordingSession.shared.retargetTranscription(
@@ -171,4 +176,5 @@ enum MacTranscriptionKeys {
 extension Notification.Name {
     static let macLiveTranscriptUpdated = Notification.Name("app.ceciliasnotes.mac.liveTranscriptUpdated")
     static let macTranscriptionStarted = Notification.Name("app.ceciliasnotes.mac.transcriptionStarted")
+    static let macFocusTextBlock = Notification.Name("app.ceciliasnotes.mac.focusTextBlock")
 }

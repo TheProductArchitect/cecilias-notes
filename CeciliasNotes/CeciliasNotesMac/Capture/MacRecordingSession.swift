@@ -194,6 +194,13 @@ final class MacRecordingSession: ObservableObject {
         ))
     }
 
+    /// Retarget live transcription only when the split block is the
+    /// current write target — no-op for manual typing splits.
+    func retargetIfWriting(from elementId: UUID, to continuationId: UUID, consumedUTF16: Int) {
+        guard case .transcription(let ctx) = mode, ctx.textElementId == elementId else { return }
+        retargetTranscription(to: continuationId, consumedUTF16: consumedUTF16)
+    }
+
     /// The tail of `transcript` not yet frozen into earlier blocks.
     private func unconsumedTail(of transcript: String) -> String {
         guard transcriptConsumedUTF16 > 0 else { return transcript }

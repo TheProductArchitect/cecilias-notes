@@ -125,8 +125,12 @@ struct MacEditorView: View {
         .onChange(of: state.editorZoom) { _, _ in
             MacStateUpdates.deferred { publishHandoff() }
         }
-        .onChange(of: state.editingBlockID) { _, blockID in
-            if blockID == nil { richTextController.detach() }
+        .onChange(of: state.editingBlockID) { oldID, newID in
+            if newID == nil {
+                richTextController.detach()
+            } else if oldID != newID {
+                richTextController.detach(clearPending: false)
+            }
         }
         .onDisappear {
             richTextController.detach()
@@ -208,7 +212,10 @@ struct MacEditorView: View {
     }
 
     private func focusSelectedTextForFormatting() {
-        guard state.editingBlockID == nil else { return }
+        if let editing = state.editingBlockID {
+            state.selectedElementID = editing
+            return
+        }
         if let selected = state.selectedElementID {
             state.editingBlockID = selected
             return

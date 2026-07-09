@@ -38,4 +38,35 @@ enum MacPageElementReflow {
             try? context.save()
         }
     }
+
+    /// Top edge of a block in page points after `packVerticalLayout`.
+    static func stackOriginPoints(elementId: UUID, pageId: UUID) -> CGFloat {
+        let context = StorageService.shared.context
+        let pid = pageId
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil },
+            sortBy: [
+                SortDescriptor(\PageElement.normalizedY),
+                SortDescriptor(\PageElement.zIndex),
+            ]
+        )
+        guard let elements = try? context.fetch(descriptor) else {
+            return MacDocPageLayout.topMargin
+        }
+        let pageHeight = StorageService.shared.fetchPage(id: pageId)?
+            .pageSize.pointSize.height ?? PageSize.a4.pointSize.height
+        var cursor = MacDocPageLayout.topMargin
+        for element in elements where element.kind != .stroke {
+            if element.id == elementId { return cursor }
+            cursor += CGFloat(element.normalizedHeight) * pageHeight + MacDocPageLayout.blockSpacing
+        }
+        return cursor
+    }
+
+    /// Bottom of the usable content area on a page, in page points.
+    static func contentBottomPoints(pageId: UUID) -> CGFloat {
+        let pageHeight = StorageService.shared.fetchPage(id: pageId)?
+            .pageSize.pointSize.height ?? PageSize.a4.pointSize.height
+        return pageHeight - MacDocPageLayout.topMargin
+    }
 }

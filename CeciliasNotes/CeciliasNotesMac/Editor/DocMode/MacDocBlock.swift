@@ -18,6 +18,8 @@ struct MacDocBlock: View {
     var onSelect: () -> Void = {}
     var onWritingBegan: () -> Void = {}
     var pageDisplayHeight: CGFloat = 792
+    var stackTopOffset: CGFloat = 40
+    var maxBlockHeight: CGFloat = 600
 
     @Environment(\.theme) private var theme
     @EnvironmentObject private var storage: StorageService
@@ -60,6 +62,8 @@ struct MacDocBlock: View {
             notebook: notebook,
             page: page,
             pageDisplayHeight: pageDisplayHeight,
+            stackTopOffset: stackTopOffset,
+            maxBlockHeight: maxBlockHeight,
             isEditing: isEditing,
             isSelected: isSelected,
             onSelect: onSelect,
@@ -407,6 +411,8 @@ private struct MacDocTextBlock: View {
     let notebook: Notebook
     let page: Page
     let pageDisplayHeight: CGFloat
+    let stackTopOffset: CGFloat
+    let maxBlockHeight: CGFloat
     let isEditing: Bool
     let isSelected: Bool
     let onSelect: () -> Void
@@ -438,19 +444,24 @@ private struct MacDocTextBlock: View {
                         modelContext: storage.context,
                         columnWidth: columnWidth,
                         pageDisplayHeight: pageDisplayHeight,
+                        stackTopOffset: stackTopOffset,
+                        maxBlockHeight: maxBlockHeight,
                         richTextController: richTextController,
                         onWritingBegan: onWritingBegan,
                         onEndEdit: onEndEdit
                     )
                     .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    MacDocTextPreview(element: element)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 1, coordinateSpace: .local) { location in
-                            MacPendingTextCursor.set(elementId: element.id, clickYInBlock: location.y)
-                            onWritingBegan()
-                            onSelect()
-                            onBeginEdit()
+                    MacDocTextPreview(element: element, maxHeight: maxBlockHeight)
+                        .overlay {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture(count: 1, coordinateSpace: .local) { location in
+                                    MacPendingTextCursor.set(elementId: element.id, clickYInBlock: location.y)
+                                    onWritingBegan()
+                                    onSelect()
+                                    onBeginEdit()
+                                }
                         }
                 }
             }
@@ -521,6 +532,7 @@ private struct MacDocInlineRecordingChrome: View {
 
 private struct MacDocTextPreview: View {
     @Bindable var element: PageElement
+    var maxHeight: CGFloat?
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -529,14 +541,12 @@ private struct MacDocTextPreview: View {
                 let attributed = MacRichTextCodec.decode(from: content)
                 if attributed.length > 0 {
                     Text(AttributedString(attributed))
-                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if !content.text.isEmpty {
                     Text(content.text)
                         .font(.system(size: 15))
                         .foregroundStyle(theme.foreground)
-                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
@@ -554,6 +564,9 @@ private struct MacDocTextPreview: View {
                     .accessibilityHidden(true)
             }
         }
+        .frame(maxHeight: maxHeight, alignment: .topLeading)
+        .clipped()
+        .allowsHitTesting(false)
     }
 }
 

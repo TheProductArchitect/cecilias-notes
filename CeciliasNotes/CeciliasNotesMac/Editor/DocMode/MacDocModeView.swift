@@ -99,6 +99,16 @@ struct MacDocModeView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .macFocusTextBlock)) { note in
+                guard let elementID = note.userInfo?[MacTranscriptionKeys.elementId] as? UUID else { return }
+                MacStateUpdates.deferred {
+                    editingBlockID = elementID
+                    selectedElementID = elementID
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo(elementID, anchor: .center)
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .macInsertTextOnPage)) { _ in
             MacStateUpdates.deferred { insertTextOnCurrentPage() }
@@ -196,6 +206,7 @@ private struct MacDocPageSection: View {
     @Environment(\.theme) private var theme
     @EnvironmentObject private var storage: StorageService
     @Query private var elements: [PageElement]
+    @State private var measuredHeights: [UUID: CGFloat] = [:]
 
     private static let fitWidth: CGFloat = 680
 
@@ -242,6 +253,25 @@ private struct MacDocPageSection: View {
         max(40, displaySize.width - 2 * MacDocPageLayout.horizontalMargin)
     }
 
+    private var contentBottom: CGFloat {
+        displaySize.height - MacDocPageLayout.topMargin
+    }
+
+    private func stackTopOffset(for elementId: UUID) -> CGFloat {
+        var offset = MacDocPageLayout.topMargin
+        for element in contentElements {
+            if element.id == elementId { break }
+            let height = measuredHeights[element.id]
+                ?? CGFloat(element.normalizedHeight) * displaySize.height
+            offset += height + MacDocPageLayout.blockSpacing
+        }
+        return offset
+    }
+
+    private func maxBlockHeight(for elementId: UUID) -> CGFloat {
+        max(24, contentBottom - stackTopOffset(for: elementId) - 6)
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             MacTemplateBackground(template: page.backgroundTemplate, theme: theme)
@@ -278,10 +308,12 @@ private struct MacDocPageSection: View {
             .padding(.horizontal, MacDocPageLayout.horizontalMargin)
             .padding(.vertical, MacDocPageLayout.topMargin)
             .frame(width: displaySize.width, alignment: .topLeading)
+            .onPreferenceChange(MacDocBlockHeightKey.self) { heights in
+                measuredHeights.merge(heights) { _, new in new }
+            }
         }
         .frame(width: displaySize.width)
-        .frame(height: displaySize.height, alignment: .topLeading)
-        .clipped()
+        .frame(minHeight: displaySize.height, alignment: .topLeading)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
@@ -291,6 +323,9 @@ private struct MacDocPageSection: View {
         .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Page \(page.pageNumber)")
+        .onAppear {
+            MacStateUpdates.deferred { MacPageOverflow.reconcilePage(page.id) }
+        }
     }
 
     @ViewBuilder
@@ -326,10 +361,20 @@ private struct MacDocPageSection: View {
                 }
             },
             onWritingBegan: onWritingBegan,
-            pageDisplayHeight: displaySize.height
+            pageDisplayHeight: displaySize.height,
+            stackTopOffset: stackTopOffset(for: element.id),
+            maxBlockHeight: maxBlockHeight(for: element.id)
         )
         .frame(maxWidth: contentWidth, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: MacDocBlockHeightKey.self,
+                    value: [element.id: geo.size.height]
+                )
+            }
+        )
         .id(element.id)
         .zIndex(blockEditing ? 50 : Double(element.zIndex))
     }

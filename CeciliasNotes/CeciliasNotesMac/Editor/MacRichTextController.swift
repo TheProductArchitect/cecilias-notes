@@ -173,6 +173,10 @@ final class MacRichTextController: ObservableObject {
     private weak var textView: NSTextView?
     private var defaultInkColor: NSColor = .labelColor
     private var pendingActions: [() -> Void] = []
+    /// Fired after every toolbar/storage mutation so the doc editor
+    /// can persist immediately (typing-attribute-only edits do not
+    /// always reach `NSTextViewDelegate.textDidChange`).
+    var onTextMutated: (() -> Void)?
 
     static let headingKey = NSAttributedString.Key("ceciliasnotes.heading")
     static let sizeKey = NSAttributedString.Key("ceciliasnotes.size")
@@ -189,21 +193,34 @@ final class MacRichTextController: ObservableObject {
             guard let self else { return }
             pending.forEach { $0() }
             self.refresh()
+            self.onTextMutated?()
         }
     }
 
-    func detach() {
+    func detach(clearPending: Bool = true) {
         textView = nil
-        pendingActions.removeAll()
+        onTextMutated = nil
+        if clearPending { pendingActions.removeAll() }
         currentAttributes = MacRichTextAttributeSnapshot()
     }
 
     /// Runs on the next tick when a text view is attached; otherwise queues until attach.
     func performWhenReady(_ action: @escaping () -> Void) {
         if textView != nil {
-            MacStateUpdates.deferred { action() }
+            MacStateUpdates.deferred { [weak self] in
+                guard let self, let tv = self.textView else { return }
+                tv.window?.makeFirstResponder(tv)
+                action()
+                self.refresh()
+                self.onTextMutated?()
+            }
         } else {
-            pendingActions.append(action)
+            pendingActions.append { [weak self] in
+                guard let self else { return }
+                self.textView?.window?.makeFirstResponder(self.textView)
+                action()
+                self.onTextMutated?()
+            }
         }
     }
 
@@ -480,7 +497,8 @@ final class MacRichTextController: ObservableObject {
 
     private func notifyDidChange() {
         guard let tv = textView else { return }
-        NotificationCenter.default.post(name: NSText.didChangeNotification, object: tv)
+        tv.didChangeText()
+        onTextMutated?()
     }
 
     private func refreshDeferred() {
