@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 349,
-    "types": 684,
+    "types": 685,
     "notifications_declared": 90,
     "notification_symbols_referenced": 107
   },
@@ -1140,13 +1140,14 @@
         "Foundation"
       ],
       "declared_types": [
+        "MultipeerSendQueue",
         "MultipeerNotebookHint",
         "Payload"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 47
+      "lines": 100
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerNotebookShare.swift",
@@ -1181,7 +1182,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 288
+      "lines": 301
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSendService.swift",
@@ -1208,7 +1209,7 @@
         "MultipeerNotebookHint.changedNotification"
       ],
       "observes": [],
-      "lines": 467
+      "lines": 464
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift",
@@ -1524,7 +1525,8 @@
       "imports": [
         "CoreSpotlight",
         "Foundation",
-        "PencilKit"
+        "PencilKit",
+        "SwiftData"
       ],
       "declared_types": [
         "SearchIndexService",
@@ -1538,7 +1540,7 @@
         ".searchIndexLoaded"
       ],
       "observes": [],
-      "lines": 700
+      "lines": 727
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/ShareInboxWatcher.swift",
@@ -9613,6 +9615,12 @@
       "name": "MultipeerPairingStore",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerPairingStore.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "MultipeerSendQueue",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerNotebookHint.swift",
       "conforms_to": []
     },
     {

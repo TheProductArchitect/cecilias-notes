@@ -280,3 +280,47 @@ If a TestFlight pass on iPad + iPhone is clean, the next step is:
 3. Confirm Mac category: Productivity
 4. Privacy nutrition labels match iOS (no data collection)
 5. Smoke test: iCloud sync, Multipeer with iPad, PDF import, export share
+
+---
+
+## Update — 2026-07-10 (crash + ANR hardening rounds)
+
+State after the July 8–10 sessions. Everything code-verified;
+both targets build and the full unit suite is green after each
+round (commits `c424991` → `e3f6384`).
+
+### Crashes (App Store review + device reports)
+- **Voice-note / dictation SIGTRAP (review, 2.1(1))** — audio tap
+  closures were MainActor-isolated under `@preconcurrency` and ran
+  on AVFAudio's queue. Fixed (`d360d2b`); Speech callbacks hardened
+  with explicit `@Sendable`.
+- **Color-picker eyedropper SIGABRT (review, 2.1(1)+2.1(3))** —
+  picker hosted inside the tool-palette popover died mid-eyedropper.
+  Now a UIKit formSheet from the top-most VC (`c424991`).
+- **Post-dictation window** — summary-prepend geometry clamped;
+  duplicate-purge now nudges overlays to re-fetch so deleted
+  SwiftData instances are never re-rendered (`aebc7ff`).
+- Reviewer's exact voice-note steps reproduced green in
+  `VoiceNoteFlowUITests` on the iPad (M5) iOS 26.4 simulator.
+
+### ANRs
+- Keystroke persist debounced + archive off-main; dictation saves
+  throttled to 1/s; `.inkbook` mirror builds on a background
+  `ModelContext`; hygiene sweeps fetch only mismatched rows
+  (`3f2ccb6`).
+- Stroke blob fetch AND decode off-main at canvas mount; stroke
+  encode off-main for draw-debounce/unmount saves; dictation
+  UITextView relayout coalesced to 4/s (`e3f6384`).
+- **Phantom undo** — iPadOS three-finger swipe fired PencilKit's
+  stroke undo during multi-finger scrolls; canvases now opt out
+  via `editingInteractionConfiguration = .none` (`e3f6384`).
+- **Draw-time freeze with a stale paired peer** — notebook-changed
+  hints ran `MCSession.send(.reliable)` on the main thread on every
+  debounced stroke save; a peer that left the LAN leaves a zombie
+  DTLS link ("No route to host") that blocks each send for seconds
+  while still listed as connected. All multipeer sends now egress
+  on `MultipeerSendQueue`; hints coalesced to 1 per 3 s per notebook.
+
+### Submission status
+- **3.0 (3) predates all of the above** — archive a fresh build
+  from `main` before the next review round (OPEN_ISSUES §4).

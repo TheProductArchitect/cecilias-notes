@@ -1,6 +1,6 @@
 # Cecilia's Notes — Robustness & Threading Map
 
-Last updated: 2026-07-09. Documents how major processes run, which thread owns them, known race/ANR/crash risks, and what was hardened in the robustness pass.
+Last updated: 2026-07-10. Documents how major processes run, which thread owns them, known race/ANR/crash risks, and what was hardened in the robustness pass.
 
 ---
 
@@ -10,7 +10,7 @@ Last updated: 2026-07-09. Documents how major processes run, which thread owns t
 |-------|----------------|------|
 | SwiftUI views & `@Published` | `@MainActor` | Never mutate from UIKit/PencilKit delegates synchronously — defer with `Task { @MainActor in … }` |
 | `StorageService` / SwiftData `mainContext` | `@MainActor` | All fetches and `context.save()` on main; heavy decode/export off-main |
-| `StrokeCache` | `@MainActor` | Write-through on stroke edits; PKDrawing decode in `Task.detached` |
+| `StrokeCache` | `@MainActor` | Write-through on stroke edits; blob fetch AND `PKDrawing` decode on a background `ModelContext` (2026-07-10) |
 | `MainThreadWatchdog` | Background queue | Records hangs synchronously via `SessionHealth` (UserDefaults + latch, no `main.async`) |
 | MCP `.inkbook` export | `Task.detached` — build AND write on a background `ModelContext` | Pass notebook IDs across the boundary, never model objects |
 | Vision / OCR / shape detect | `Task.detached` | Results applied on main only |
@@ -52,24 +52,39 @@ ContinuousCanvasView.makeUIView
   → next runloop: updateCanvasMembership [remaining warm band]
 mountCanvas
   → cache hit: sync assign drawing
-  → cache miss: empty drawing + detached PKDrawing decode
+  → cache miss: empty drawing + detached blob fetch (background ModelContext) + decode
        → generation guard + skip if isDirty before apply
 ```
 
-**Mitigations applied:** Active-page-first canvas mount; async stroke decode with generation/isDirty guard; cached overlay fetches (Audio/Image/PDF/Highlight).
+**Mitigations applied:** Active-page-first canvas mount; async stroke blob fetch + decode with generation/isDirty guard (the blob READ used to run on main per mount — the 8-inked-pages scroll ANR); cached overlay fetches (Audio/Image/PDF/Highlight).
 
 ### 3. Drawing & autosave
 
 ```
 PKCanvasViewDelegate.canvasViewDrawingDidChange
   → hosts[i].isDirty = true
-  → debounced 1.2s Task → savePage → updatePageStrokes → context.save
-  → StrokeCache write-through
+  → debounced 1.2s Task → savePageAsync
+       → StrokeCache write-through (immediate, main)
+       → PKDrawing.dataRepresentation() [Task.detached — 50-300 ms on inked pages]
+       → re-fetch page by id → updatePageStrokes(strokeData:) → context.save [main]
 ```
+Synchronous `savePage` survives ONLY for teardown/dismiss durability
+(`flushAllDirty`, renderer dismantle).
+
+**Post-save OCR (2026-07-10):** `SearchIndexService.runOCR` (2 s
+after stroke quiet) reads the drawing cache-first — `savePageAsync`
+write-through guarantees a warm `StrokeCache` right after drawing —
+and on a miss fetches AND decodes the stroke blob on a background
+`ModelContext`. It previously pulled the multi-MB blob out of
+SQLite and decoded it on the main actor after every stroke burst.
 
 **Stroke save ownership:** `EditorViewModel.performSave` / vm-level `flushPendingSaveSync` stroke path removed — only per-host debounce + `canvasFlushAllHandler` flush dirty pages.
 
 **Race risks:** Single `viewModel.canvasView` pointer vs multi-page canvases — undo may target wrong page if user scrolls mid-stroke. **Open issue R2:** per-page canvas map.
+
+**System undo gestures:** `CeciliasNotesPKCanvasView.editingInteractionConfiguration == .none` (2026-07-10). iPadOS's three-finger swipe fires `undoManager.undo()` and PencilKit registers every stroke there — multi-finger scrolls across inked canvases read as the undo swipe ("strokes undo themselves"). Do not remove.
+
+**Multipeer sends (2026-07-10):** every `MCSession.send` egresses via `MultipeerSendQueue` (background serial, `MultipeerNotebookHint.swift`) — a `.reliable` send on a dying DTLS link blocks for seconds while the peer is still in `connectedPeers`; each debounced stroke save broadcast a hint on main, wedging draw sessions when a paired peer left the LAN ("No route to host" spam). Hints coalesced to leading+trailing per 3 s per notebook. `sendPayload` now means "handed to transport" — iCloud stays the durable path. `MultipeerPairingStore.sharedKey` is memory-cached (invalidated on store/forget) — the raw lookup is a synchronous `SecItemCopyMatching` XPC to securityd, previously paid per peer per hint.
 
 **Shape recognition:** Pins `(canvas, pageId)` at stroke end; atomic undo grouping; `savePage` + cache write-through on apply; pill undo uses pinned `pageId` + `canvasForPageHandler`.
 
@@ -115,7 +130,7 @@ NSPersistentStoreRemoteChange → scheduleDuplicateSweep (2s debounce)
 | R1 | WAL checkpoint blocking mainContext on relaunch | ANR | **Fixed** — always truncate pre-open on userInitiated queue (delegate + container) |
 | R2 | Single `canvasView` for multi-page editor | Race | **Mitigated** — per-page canvas in overlay inputs; active-page-only `canvasView` binding; batched canvas mount on scroll-rest |
 | R3 | Full `viewModel` on Text/Sticky/Shape overlays | ANR | **Mitigated** — `EditorPageOverlayInputs` + `Equatable`; thin `let viewModel` for mutations |
-| R4 | Sync `savePage` on canvas unmount | ANR | **Mitigated** — StrokeCache write-through + batched deferred SwiftData flush |
+| R4 | Sync `savePage` on canvas unmount | ANR | **Fixed** — `savePageAsync`: encode off-main on unmount, draw-debounce, and deferred flush paths (2026-07-10) |
 | R5 | Soft-delete REVERTED churn | Data + ANR | **Mitigated** — tombstone dedupe + deletedAt fetch belt |
 | R6 | `pointHitsInteractiveElement` SwiftData fetch per tap | ANR micro | **Fixed** — per-page rect cache invalidated on element notifications |
 | R7 | `@Published` from scroll delegate (some paths) | UI glitch | Partial |

@@ -563,7 +563,7 @@ _All iPad-only, by design. iPhone reads strokes but does not author (no Pencil).
 ### 16.1 Summarize current page
 - **iPad** `implemented` — `SummarizePageView`.
 - **iPhone** `implemented`.
-- **Mac** `missing` — recommend; trivially portable.
+- **Mac** `implemented` — toolbar action (`MacToolbar`), same `MeetingSummarizer` engine.
 
 ### 16.2 Ask about page (contextual AI)
 - **iPad** `implemented` — `AgentBannerView` + Foundation Models.
@@ -746,7 +746,7 @@ _All iPad-only, by design. iPhone reads strokes but does not author (no Pencil).
 - All `n/a` — system-managed; no work needed.
 
 ### 21.4 Deep link (URL scheme) to notebook / page
-- All `missing` — **recommend**: `ceciliasnotes://notebook/{uuid}/page/{uuid}` opens the right surface; enables Shortcuts, browser bookmarks, cross-app links.
+- All `implemented` — `ceciliasnotes://` scheme registered; `DeepLinkRouter` resolves notebook/page and opens the right surface. Powers widgets tap-through and App Intents.
 
 ---
 
@@ -779,15 +779,15 @@ _All iPad-only, by design. iPhone reads strokes but does not author (no Pencil).
 - **Mac** `partial`.
 
 ### 23.2 App Intents / Shortcuts
-- All `missing` — **recommend** intents: "Create new note", "Open notebook", "Ask my notes".
+- All `implemented` — `CeciliasNotesIntents.swift` (create note, open notebook; routes through `DeepLinkRouter`).
 
 ### 23.3 Share extension (receive text/URL from other apps)
-- **iPad** `missing`.
-- **iPhone** `missing`.
+- **iPad** `implemented` — `CeciliasNotesShareExtension` target (`ShareViewController`).
+- **iPhone** `implemented` — same extension.
 - **Mac** `n/a` (macOS uses Services menu).
 
 ### 23.4 Services menu (Mac)
-- **Mac** `missing` — "New note from selection" service.
+- **Mac** `implemented` — `NSServices` entry in Info.plist, handled in `CeciliasNotesMacApp`.
 
 ### 23.5 Files provider (browse notebooks from Files app)
 - All `missing` — costly; deprioritise unless requested.
@@ -834,13 +834,13 @@ _All iPad-only, by design. iPhone reads strokes but does not author (no Pencil).
 _Granola's differentiator: fast, keyboard-first, meeting-centric capture. Cecilia's Notes is not a meeting app, but the Mac's job is "capture during work" and these idioms translate._
 
 ### 25.1 Menu bar quick capture
-- **Mac** `missing` — **high-priority recommendation**. Menu bar icon opens a compact popover: title + body, one keyboard shortcut (⌥⌘Space), saves to "Unfiled" notebook and dismisses. Granola's core surface.
+- **Mac** `implemented` — quick-capture popover (`MacRootView` / `MacToolbar`), saves without opening the full editor.
 
 ### 25.2 Global hotkey (system-wide) to open the app / new note
-- **Mac** `missing` — `⌥⌘Space` toggles quick capture; user-configurable in Settings.
+- **Mac** `implemented` — `MacCaptureHotkey` (⌥⌘Space default).
 
 ### 25.3 Command palette (⌘K)
-- **Mac** `missing` — searches subjects, notebooks, pages, actions ("Change cover to Midnight", "Start lecture"). Fastest way to reach any flow without mousing.
+- **Mac** `implemented` — `CommandPalette` (`MacRootView` + `MacToolbar`): subjects, notebooks, pages, actions.
 
 ### 25.4 Multi-window
 - **Mac** `missing` — open two notebooks side-by-side (`File → New Window` or double-click). Currently editor is a modal sheet — see §9.1 recommendation.
@@ -849,7 +849,7 @@ _Granola's differentiator: fast, keyboard-first, meeting-centric capture. Cecili
 - **Mac** `missing` — optional: EventKit integration. On a calendar event start, offer "Take notes for this meeting" → creates a notebook titled after the event. **Consider only if user wants meeting-notes positioning.**
 
 ### 25.6 Templates
-- **Mac** `missing` — "New from template" (meeting, lecture, journal). Templates seed the first page with typed text scaffolding. Cross-device once built.
+- **Mac** `implemented` — "New from template" in `MacRootView`; template scaffolding shared cross-device (`PageStripView` on iPad).
 
 ### 25.7 Sidebar smart lists
 - **Mac** `missing` — "Today", "This week", "Untagged", "Recording in progress". Zero-config filters.

@@ -9,9 +9,10 @@ trail.
 
 Related docs (narrower scope, subordinate to this one):
 - `MULTIPEER_SYNC_PROTOCOL.md` — wire format for the LAN fast path.
-- `MCP_MULTIPEER_HANDOFF.md` — implementation brief for the Mac-side
-  sender (historical; decisions captured there are restated here
-  where they affect the iPad contract).
+  (The old `MCP_MULTIPEER_HANDOFF.md` implementation brief was
+  deleted once the Mac-side sender shipped in cecilias-notes-mcp
+  v2.x — every decision that affects the iPad contract is restated
+  here or in the protocol doc.)
 
 ---
 

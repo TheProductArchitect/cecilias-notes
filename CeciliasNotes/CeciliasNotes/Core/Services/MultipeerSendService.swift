@@ -179,17 +179,14 @@ final class MultipeerSendService: NSObject, ObservableObject {
     /// Send a pre-built signed payload over the browse session.
     /// Mirror of `MultipeerSyncService.sendPayload` — the share
     /// facade tries both sessions since a peer may be connected on
-    /// either lane.
+    /// either lane. True means "handed to the transport" (send runs
+    /// on `MultipeerSendQueue`, never the main thread).
     func sendPayload(_ payload: Data, toPeerNamed name: String) -> Bool {
         guard let session,
               let peer = session.connectedPeers.first(where: { $0.displayName == name })
         else { return false }
-        do {
-            try session.send(payload, toPeers: [peer], with: .reliable)
-            return true
-        } catch {
-            return false
-        }
+        MultipeerSendQueue.enqueue(payload, to: peer, session: session)
+        return true
     }
 
     private enum InviteReason {
@@ -256,7 +253,7 @@ final class MultipeerSendService: NSObject, ObservableObject {
         payload.append(Data(bytes: &lenBE, count: 4))
         payload.append(headerData)
         payload.append(tag)
-        try? session.send(payload, toPeers: [peer], with: .reliable)
+        MultipeerSendQueue.enqueue(payload, to: peer, session: session)
     }
 
     private func pairingKey(for peer: MCPeerID) -> SymmetricKey? {

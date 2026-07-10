@@ -1,7 +1,7 @@
 # Open issues — unresolved
 
 Status tracker for bugs and gaps that are **known but not yet
-fixed**. Last reviewed 2026-07-08 (branch `main`).
+fixed**. Last reviewed 2026-07-10 (branch `main`).
 Resolved items should be deleted from this file, not struck
 through — git history is the archive.
 
@@ -50,7 +50,10 @@ device logs, then build the registry against those three.
 **Symptom.** Up to ~12 SwiftUI "Publishing changes from within
 view updates" warnings have been logged on dictation start
 across the project's history. Re-baseline still pending — recent
-fixes (below) may have collapsed several.
+fixes (below) may have collapsed several. A 2026-07-10 device
+log shows one firing during page scroll (amid `TextCatcher
+onAppear` lines), so at least one site is on the editor
+scroll/mount path, not the dictation path.
 
 **In place now.**
   - The `navigateToPage` cluster in `startDictationRecording` —
@@ -84,6 +87,12 @@ defer only the genuinely-safe ones (never `state`).
 `TextContent`/`PageElement` rows flipping `isDeleted` back to
 `false` repeatedly — with CloudKit DB sync switched OFF in
 Settings, so the reverter is local, not a cloud echo.
+A 2026-07-10 device log adds a **Notebook** row to the pattern:
+`[Storage] reconcileSoftDelete notebook id=18FC7E35 — restored
+isDeleted (CloudKit echo)` — again with sync disabled at launch
+(`cloudKitDatabase: .none` in the same log), so the "(CloudKit
+echo)" attribution in that log line is wrong and misleading;
+the writer is local and now touches Notebook rows too.
 
 **In place now.** The visible damage is contained:
 `reconcileSoftDeleteFlags()` fixes each row at most once per
@@ -116,13 +125,15 @@ tool-palette popover.
 
 **In place now.** Both root causes are fixed in `main` (tap
 closures made nonisolated on 2026-07-06 in `d360d2b`; color
-picker moved to a UIKit top-VC presenter). But build 2.1(3) was
-compiled BEFORE `d360d2b`, so the tap-closure trap almost
-certainly still exists in the latest submitted binary.
+picker moved to a UIKit top-VC presenter on 2026-07-09).
 
-**Next step.** Bump the build number, archive from current
-`main`, and resubmit. Any pre-`d360d2b` binary will keep
-crashing review on microphone use no matter what else changes.
+**Next step (updated 2026-07-10).** Version 3.0 (3) was
+submitted with the tap-closure fixes, but it PREDATES the
+2026-07-09/10 work: the color-picker eyedropper fix, the
+post-dictation hardening, the four-source ANR pass, and the
+scroll/ink/dictation + three-finger-undo fixes. The next archive
+from current `main` picks all of those up — cut it before the
+next review round.
 
 ---
 

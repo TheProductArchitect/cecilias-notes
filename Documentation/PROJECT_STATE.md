@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-08
+Last updated: 2026-07-10
 
 ## Elevator pitch
 
@@ -186,6 +186,8 @@ Documentation index:
 - `reconcileSoftDeleteFlags` fetches ONLY mismatched rows via predicates; the healthy case materializes nothing. Don't add full-table fetches to anything scheduled by `NSPersistentStoreRemoteChange` — it fires 2 s after every local save burst.
 - Stroke persistence (2026-07-10): `PKDrawing.dataRepresentation()` is 50–300 ms for an inked page — NEVER call it on main in a scroll/draw path. `EditorViewModel.savePageAsync` (cache write-through → detached encode → main row write) serves the drawing-debounce, warm-band unmounts, and deferred unmount flushes; the synchronous `savePage` is reserved for teardown/dismiss durability. Canvas mounts fetch the stroke blob on a background `ModelContext` too (`ContinuousCanvasView` mount path) — reading a multi-MB blob on main per mount was the scroll hitch.
 - Dictation partials: `TextElementView` coalesces external-text reseeds to 250 ms trailing — every reseed relayouts the whole UITextView, and doing it per partial saturated main for the length of a recording.
+- Multipeer sends (2026-07-10): every outbound `MCSession.send` goes through `MultipeerSendQueue` (background serial queue in `MultipeerNotebookHint.swift`) — NEVER call `session.send` on main. A `.reliable` send blocks for seconds when the DTLS link is dying ("sendmsg error: No route to host" spam) while the peer is still listed in `connectedPeers` (a peer that left the LAN takes tens of seconds to drop out). Stroke saves broadcast notebook-changed hints every ~1.2 s while drawing — on a zombie link each hint wedged main ("froze after a few strokes" device report). Hints are additionally coalesced to one leading + one trailing send per 3 s per notebook, and `MultipeerPairingStore.sharedKey` is memory-cached (the raw lookup is a blocking `SecItemCopyMatching` XPC to securityd, previously paid per peer per hint).
+- Post-stroke OCR (2026-07-10): `SearchIndexService.runOCR` reads the drawing cache-first (warm right after drawing via `savePageAsync` write-through); on a miss the blob fetch AND `PKDrawing` decode run on a background `ModelContext`. Never pull a stroke blob out of SQLite on the main actor in anything scheduled after a stroke burst.
 - `CeciliasNotesPKCanvasView.editingInteractionConfiguration == .none` is load-bearing: iPadOS's system three-finger swipe fires `undoManager.undo()`, PencilKit registers every stroke there, and multi-finger scrolling across an inked canvas read as that swipe — strokes "undid themselves." Do not remove; toolbar/squeeze-wheel undo call `undoManager` directly and are unaffected.
 
 **When SwiftData behaves oddly:**

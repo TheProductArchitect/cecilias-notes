@@ -219,16 +219,16 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     /// Send a pre-built signed payload to a connected peer over the
     /// receiver session. Returns false when the peer isn't connected
     /// on this session (the caller can then try the browse session).
+    /// True means "handed to the transport", not "delivered" — the
+    /// send runs on `MultipeerSendQueue` (a `.reliable` send of a
+    /// multi-MB file on the main thread is an ANR when the link is
+    /// degrading), and iCloud remains the durable path if it drops.
     func sendPayload(_ payload: Data, toPeerNamed name: String) -> Bool {
         guard let session,
               let peer = session.connectedPeers.first(where: { $0.displayName == name })
         else { return false }
-        do {
-            try session.send(payload, toPeers: [peer], with: .reliable)
-            return true
-        } catch {
-            return false
-        }
+        MultipeerSendQueue.enqueue(payload, to: peer, session: session)
+        return true
     }
 
     func isPeerConnected(_ name: String) -> Bool {
@@ -530,7 +530,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         payload.append(Data(bytes: &lenBE, count: 4))
         payload.append(headerData)
         payload.append(tag)
-        try? session.send(payload, toPeers: [peer], with: .reliable)
+        MultipeerSendQueue.enqueue(payload, to: peer, session: session)
     }
 
     /// Build and send a `pong` reply HMAC-signed with the same key
@@ -552,7 +552,7 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         payload.append(Data(bytes: &lenBE, count: 4))
         payload.append(headerData)
         payload.append(tag)
-        try? session.send(payload, toPeers: [peer], with: .reliable)
+        MultipeerSendQueue.enqueue(payload, to: peer, session: session)
     }
 
     private func verifyHMAC(_ tag: Data, message: Data, key: SymmetricKey) -> Bool {

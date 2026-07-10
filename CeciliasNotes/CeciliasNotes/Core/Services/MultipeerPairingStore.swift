@@ -48,9 +48,17 @@ enum MultipeerPairingStore {
     static let householdServiceName = "app.ceciliasnotes.multipeer.householdKey"
     static let householdAccount = "household"
 
+    /// In-memory cache in front of the Keychain. `SecItemCopyMatching`
+    /// is a synchronous XPC round-trip to securityd — hint broadcasts
+    /// look the key up per connected peer on every save tick, so an
+    /// uncached lookup puts repeated blocking IPC on the main thread
+    /// while the user draws or dictates.
+    private static var keyCache: [String: SymmetricKey] = [:]
+
     /// Look up the persisted shared key for a peer. Nil when never
     /// paired or after the user clears the trust store.
     static func sharedKey(forPeerName peerName: String) -> SymmetricKey? {
+        if let cached = keyCache[peerName] { return cached }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -62,7 +70,9 @@ enum MultipeerPairingStore {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let data = item as? Data, data.count == 32
         else { return nil }
-        return SymmetricKey(data: data)
+        let key = SymmetricKey(data: data)
+        keyCache[peerName] = key
+        return key
     }
 
     /// Persist (or overwrite) the shared key for a peer. Marked
@@ -88,6 +98,7 @@ enum MultipeerPairingStore {
         ]
         SecItemDelete(deleteQuery as CFDictionary)
         SecItemAdd(attributes as CFDictionary, nil)
+        keyCache[peerName] = key
     }
 
     /// Remove a single peer's pairing. Called from "forget device"
@@ -100,6 +111,7 @@ enum MultipeerPairingStore {
             kSecAttrAccount as String: peerName
         ]
         SecItemDelete(query as CFDictionary)
+        keyCache[peerName] = nil
     }
 
     /// Wipe every paired peer. Backs the "forget all paired devices"
@@ -110,6 +122,7 @@ enum MultipeerPairingStore {
             kSecAttrService as String: serviceName
         ]
         SecItemDelete(query as CFDictionary)
+        keyCache.removeAll()
     }
 
     /// Return the list of peer names that have a stored key. Drives

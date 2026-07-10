@@ -1,6 +1,7 @@
 import CoreSpotlight
 import Foundation
 import PencilKit
+import SwiftData
 
 /// Full-text search across notebook titles, typed `TextBlock` content,
 /// audio transcripts, and handwriting (via Vision OCR). Entirely
@@ -345,12 +346,38 @@ final class SearchIndexService {
         // Re-fetch fresh — the page may have been deleted / its
         // notebook moved between scheduling and firing.
         guard let page = storage.fetchPage(id: pageId), !page.isDeleted else { return }
-        // Step 8: read via the V6 stroke singleton.
-        guard let strokeData = storage.strokeData(for: page),
-              let drawing = try? PKDrawing(data: strokeData)
-        else { return }
-
         let pageSize = page.pageSize.pointSize
+
+        // Prefer the in-memory stroke cache — right after drawing it
+        // is guaranteed warm because `savePageAsync` writes through
+        // before scheduling this OCR pass. On a miss, BOTH the blob
+        // fetch and the `PKDrawing` decode run on a background
+        // `ModelContext`: pulling a multi-MB stroke blob out of
+        // SQLite on the main thread 2 s after every stroke burst was
+        // a per-page main-thread stall (the "drew a few strokes and
+        // the app stopped responding" report).
+        let drawing: PKDrawing
+        if let cached = StrokeCache.shared.drawing(forPage: pageId) {
+            drawing = cached
+        } else {
+            let container = storage.container
+            let decoded = await Task.detached(priority: .utility) { () -> PKDrawing? in
+                let bg = ModelContext(container)
+                let descriptor = FetchDescriptor<PageElement>(
+                    predicate: #Predicate<PageElement> {
+                        $0.pageId == pageId && $0.deletedAt == nil
+                    }
+                )
+                let elements = (try? bg.fetch(descriptor)) ?? []
+                guard let data = elements
+                        .first(where: { $0.kind == .stroke })?
+                        .strokeContent?.strokeData,
+                      !data.isEmpty else { return nil }
+                return try? PKDrawing(data: data)
+            }.value
+            guard let decoded else { return }
+            drawing = decoded
+        }
         let output = await HandwritingOCRService.recognise(
             drawing:  drawing,
             pageSize: pageSize
