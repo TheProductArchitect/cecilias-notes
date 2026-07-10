@@ -1237,9 +1237,18 @@ extension StorageService {
 
     func fetchPages(in notebook: Notebook) -> [Page] {
         let id = notebook.id
+        // Tie-breakers matter: rows sharing a `pageNumber` (duplicate
+        // rows from the sync/reverter era) sort non-deterministically
+        // on the single key, and every order flip reads as a page-list
+        // change upstream — the editor re-diffs its page hosts on any
+        // id-order change.
         let descriptor = FetchDescriptor<Page>(
             predicate: #Predicate { $0.notebookId == id && $0.isDeleted == false },
-            sortBy: [SortDescriptor(\.pageNumber)]
+            sortBy: [
+                SortDescriptor(\.pageNumber),
+                SortDescriptor(\.createdAt),
+                SortDescriptor(\.id)
+            ]
         )
         return (try? context.fetch(descriptor)) ?? []
     }

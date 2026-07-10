@@ -94,6 +94,16 @@ isDeleted (CloudKit echo)` — again with sync disabled at launch
 echo)" attribution in that log line is wrong and misleading;
 the writer is local and now touches Notebook rows too.
 
+A second 2026-07-10 capture showed the worst consequence yet: a
+**Page** row (`F157C5C8`) flapped in and out of the editor's
+fetched page list mid-session (9 pages → 8 → 9 across consecutive
+host rebuilds) with neither the purge nor the reconcile sweep
+logging anything — so the flapper is a third, still-silent
+writer. Every flap used to tear down and rebuild ALL page hosts
+(the freeze); the editor now reconciles hosts incrementally and
+logs `[Hosts] reconcile added=… removed=…` naming the exact page
+ids, which is the tripwire for identifying the writer.
+
 **In place now.** The visible damage is contained:
 `reconcileSoftDeleteFlags()` fixes each row at most once per
 session (`7a0a2e4`), so the sweep no longer loops (its own save

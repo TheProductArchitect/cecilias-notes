@@ -693,10 +693,21 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 appendPageHosts(appendedPages)
                 return
             }
-            // Phase 1 simplification: rebuild from scratch on any list
-            // change. The cost is 1× PKDrawing reload per page in the warm
-            // band, which dominates and is independent of the rebuild.
-            rebuildPageHosts()
+            // Incremental reconcile (2026-07-10): reuse hosts for
+            // surviving pages, tear down only removed ones, mount only
+            // added ones. The previous "rebuild from scratch on any
+            // list change" tore down every UIKit host + SwiftUI
+            // overlay tree + mounted PKCanvasView on the main thread;
+            // a device log showed a page row flapping in and out of
+            // the fetched list (open issue #3's un-deleter), which
+            // turned that into a rebuild LOOP — multi-second stalls
+            // with handwritingd reconnect storms. From-scratch builds
+            // (empty host stack) still use the batched full build.
+            if hosts.isEmpty {
+                rebuildPageHosts()
+            } else {
+                reconcilePageHosts()
+            }
         }
 
         /// True iff `new` equals `old` followed by zero or more
@@ -714,6 +725,110 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let currentMaxW = hosts.map(\.frame.width).max() ?? 0
             let newMaxW = newPages.map { $0.pageSize.pointSize.width }.max() ?? 0
             return newMaxW <= currentMaxW + 0.5
+        }
+
+        /// Diff-based host reconcile for a changed page list. Hosts
+        /// whose page survives keep their renderer, template host,
+        /// overlay tree, mounted canvas, and in-flight stroke state —
+        /// they are only re-framed. Removed pages flush dirty ink and
+        /// tear down; added pages mount fresh. Index-based pending
+        /// mount bookkeeping is invalidated by any reorder, so it is
+        /// cancelled and re-derived by the forced membership pass.
+        private func reconcilePageHosts() {
+            guard contentView != nil else { return }
+            let pages  = viewModel.pages
+            let newIds = pages.map(\.id)
+            guard newIds != lastSnapshot else {
+                applyPageMetadataChanges()
+                return
+            }
+            #if DEBUG
+            let newSet = Set(newIds)
+            let oldSet = Set(lastSnapshot)
+            let added   = newIds.filter { !oldSet.contains($0) }.map { $0.uuidString.prefix(8) }
+            let removed = lastSnapshot.filter { !newSet.contains($0) }.map { $0.uuidString.prefix(8) }
+            dlog("[Hosts] reconcile count=\(newIds.count) added=\(added) removed=\(removed) — ids flapping here with no user page action = issue #3's un-deleter fighting a sweep")
+            #endif
+
+            hostBuildQueue.removeAll()
+            pendingCanvasMountTask?.cancel()
+            pendingCanvasMountTask = nil
+            pendingCanvasMountIndices.removeAll()
+            pendingOverlayMountTask?.cancel()
+            pendingOverlayMountTask = nil
+            pendingOverlayMountIndices.removeAll()
+            flushPendingUnmountSaves()
+
+            // Partition current hosts: survivors keep everything,
+            // departures flush + tear down.
+            let survivingIds = Set(newIds)
+            var surviving: [UUID: PageHostState] = [:]
+            for host in hosts {
+                if survivingIds.contains(host.pageId) {
+                    surviving[host.pageId] = host
+                    continue
+                }
+                if host.isDirty,
+                   let canvas = host.canvasView,
+                   let page   = page(for: host.pageId) {
+                    viewModel.savePage(page, drawing: canvas.drawing)
+                }
+                host.saveTask?.cancel()
+                host.strokeDecodeTask?.cancel()
+                host.canvasView?.removeFromSuperview()
+                host.templateHost.detachFromParentVC()
+                host.overlaysHost?.detachFromParentVC()
+                host.renderer.removeFromSuperview()
+            }
+
+            // Lay out the new order, re-framing survivors in place.
+            let maxW = pages.map { $0.pageSize.pointSize.width }.max()
+                ?? PageSize.a4.pointSize.width
+            var y: CGFloat = 0
+            var reused: [PageHostState] = []
+            reused.reserveCapacity(pages.count)
+            var toMount: [(Page, CGRect)] = []
+            for page in pages {
+                let baseSize = page.pageSize.pointSize
+                let frame = CGRect(
+                    x: (maxW - baseSize.width) / 2,
+                    y: y,
+                    width: baseSize.width,
+                    height: baseSize.height
+                )
+                y += baseSize.height + pageGap
+                if var host = surviving[page.id] {
+                    host.frame = frame
+                    host.renderer.frame = frame
+                    host.canvasView?.frame = frame
+                    reused.append(host)
+                } else {
+                    toMount.append((page, frame))
+                }
+            }
+            hosts = reused
+            for (page, frame) in toMount {
+                mountPageHost(page, frame: frame, contentMaxWidth: maxW, mountOverlays: false)
+            }
+            // `mountPageHost` appends — restore page-list order so
+            // index-based lookups (`currentPageIndex`) stay aligned.
+            let order = Dictionary(
+                newIds.enumerated().map { ($0.element, $0.offset) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            hosts.sort { (order[$0.pageId] ?? .max) < (order[$1.pageId] ?? .max) }
+
+            updateContentSize(width: maxW, height: max(0, y - pageGap))
+            lastSnapshot = newIds
+            hostBuildMaxW = maxW
+            let activeIdx = viewModel.currentPageIndex
+            if hosts.indices.contains(activeIdx) {
+                ensureOverlaysMounted(at: activeIdx)
+            }
+            mountActivePageCanvasFirst()
+            DispatchQueue.main.async { [weak self] in
+                self?.updateCanvasMembership(force: true)
+            }
         }
 
         func rebuildPageHosts() {

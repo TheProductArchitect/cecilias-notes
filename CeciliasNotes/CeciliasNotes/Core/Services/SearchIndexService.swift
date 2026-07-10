@@ -309,11 +309,15 @@ final class SearchIndexService {
     // MARK: - Handwriting OCR (debounced + incremental)
 
     private func shouldOCR(page: Page, notebookId: UUID) -> Bool {
-        // Step 8: stroke storage moved to V6 `PageElement(.stroke) +
-        // StrokeContent`. Read via the storage helper; OCR is
-        // worthwhile only when there's an actual stroke blob.
-        guard let data = StorageService.shared.strokeData(for: page),
-              !data.isEmpty else { return false }
+        // Pure property reads ONLY. The old shape fetched the page's
+        // ENTIRE stroke blob out of SQLite on the main actor just to
+        // test non-emptiness — for every page of every notebook on
+        // each `refreshAll()` pass (launch, library events). On an
+        // ink-heavy library that was a launch-time main-thread SQLite
+        // storm (device-log confirmed). Ink existence is now checked
+        // inside `runOCR`'s background fetch; a blank page costs one
+        // background fetch once, then gets stamped so it stops
+        // re-queueing.
         guard let entry = index[notebookId]?.pages[page.id.uuidString] else { return true }
         guard let lastOCR = entry.ocrUpdatedAt else { return true }
         return page.updatedAt > lastOCR
@@ -375,7 +379,13 @@ final class SearchIndexService {
                       !data.isEmpty else { return nil }
                 return try? PKDrawing(data: data)
             }.value
-            guard let decoded else { return }
+            guard let decoded else {
+                // No ink on this page. Stamp the entry anyway so
+                // `shouldOCR` (which no longer reads the blob) stops
+                // re-queueing blank pages on every refreshAll pass.
+                stampOCRResult(notebookId: notebookId, pageId: pageId, text: "")
+                return
+            }
             drawing = decoded
         }
         let output = await HandwritingOCRService.recognise(
@@ -384,13 +394,7 @@ final class SearchIndexService {
         )
 
         // Mutate the index back on the main actor.
-        guard var notebookEntry = index[notebookId] else { return }
-        guard var pageEntry = notebookEntry.pages[pageId.uuidString] else { return }
-        pageEntry.handwritingText = output.joined
-        pageEntry.ocrUpdatedAt    = Date()
-        notebookEntry.pages[pageId.uuidString] = pageEntry
-        index[notebookId] = notebookEntry
-        schedulePersist()
+        stampOCRResult(notebookId: notebookId, pageId: pageId, text: output.joined)
 
         // Refresh the Spotlight donation so newly-OCR'd words show
         // up in iOS search. The page's `notebook` back-reference
@@ -398,6 +402,20 @@ final class SearchIndexService {
         if let nb = page.notebook {
             donateToSpotlight(nb)
         }
+    }
+
+    /// Write an OCR pass's result (possibly empty) into the index
+    /// entry and stamp `ocrUpdatedAt`. The stamp is what keeps
+    /// `shouldOCR` cheap — pages without an `ocrUpdatedAt` re-queue
+    /// on every `refreshAll()`.
+    private func stampOCRResult(notebookId: UUID, pageId: UUID, text: String) {
+        guard var notebookEntry = index[notebookId],
+              var pageEntry = notebookEntry.pages[pageId.uuidString] else { return }
+        pageEntry.handwritingText = text
+        pageEntry.ocrUpdatedAt    = Date()
+        notebookEntry.pages[pageId.uuidString] = pageEntry
+        index[notebookId] = notebookEntry
+        schedulePersist()
     }
 
     // MARK: - Search

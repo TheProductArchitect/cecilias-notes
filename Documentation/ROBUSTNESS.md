@@ -77,12 +77,21 @@ write-through guarantees a warm `StrokeCache` right after drawing —
 and on a miss fetches AND decodes the stroke blob on a background
 `ModelContext`. It previously pulled the multi-MB blob out of
 SQLite and decoded it on the main actor after every stroke burst.
+`shouldOCR` is pure property reads: it used to fetch each page's
+ENTIRE blob on main just to test non-emptiness, for every page of
+every notebook per `refreshAll()` (launch, library events) — the
+launch-time main-thread SQLite storm in the 2026-07-10 device
+capture. Ink existence is checked inside `runOCR`'s background
+fetch; blank pages get their index entry stamped (empty text) so
+they don't re-queue.
 
 **Stroke save ownership:** `EditorViewModel.performSave` / vm-level `flushPendingSaveSync` stroke path removed — only per-host debounce + `canvasFlushAllHandler` flush dirty pages.
 
 **Race risks:** Single `viewModel.canvasView` pointer vs multi-page canvases — undo may target wrong page if user scrolls mid-stroke. **Open issue R2:** per-page canvas map.
 
 **System undo gestures:** `CeciliasNotesPKCanvasView.editingInteractionConfiguration == .none` (2026-07-10). iPadOS's three-finger swipe fires `undoManager.undo()` and PencilKit registers every stroke there — multi-finger scrolls across inked canvases read as the undo swipe ("strokes undo themselves"). Do not remove.
+
+**Page-host reconcile (2026-07-10, device-log confirmed):** the editor diffs `viewModel.pages` and reuses hosts for surviving pages (`reconcilePageHosts`) — removed pages flush ink + tear down, added pages mount, survivors keep renderer/overlays/canvas/in-flight strokes and just re-frame. The old "rebuild from scratch on any list change" became a freeze loop when a Page row flapped in/out of the fetch (issue #3). From-scratch builds (empty host stack) still use the batched `rebuildPageHosts`. The reconcile logs `[Hosts] reconcile added=… removed=…` — the tripwire for the un-deleter. `fetchPages` sorts (pageNumber, createdAt, id) so equal page numbers can't flap order.
 
 **Thumbnail keys (2026-07-10, device-log confirmed):** `PageThumbnailCache.Key` is `(pageId, page.updatedAt, pdfFingerprint)`. It used to fingerprint THE STROKE BYTES — every `composeKey` (per strip-row body eval / per save tick) pulled the full multi-MB stroke blob out of SQLite on the main actor, and the miss path fetched it a SECOND time. Console capture of the freeze showed continuous `sqlite3_step`/`performBlockAndWait` main-thread I/O faults while drawing. `composeKey` must stay a pure property read; render resolves strokes from `StrokeCache` (warm right after a save) or a background `ModelContext`, and `render` is explicitly `nonisolated` (an unannotated static func is MainActor-isolated under default isolation — awaiting it from the detached task hopped the PDF+ink rasterisation back onto main). Stroke rewrites that bypass `updatePageStrokes` (lasso move/delete, transform undo) must call `StrokeCommit.stampPage` or the thumbnail goes stale. `StrokeCache` prewarm now fetches+decodes on a background context too (was: all first-N page blobs read on main at editor open).
 

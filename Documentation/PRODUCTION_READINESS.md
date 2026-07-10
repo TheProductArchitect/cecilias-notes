@@ -330,6 +330,16 @@ round (commits `c424991` → `e3f6384`).
   `(pageId, page.updatedAt, pdfFingerprint)`; renders resolve strokes
   from `StrokeCache` or a background `ModelContext`; the rasteriser
   is explicitly `nonisolated`; prewarm fetches+decodes off main.
+- **Freeze #3 (second device capture, 2026-07-10)** — two more
+  sources confirmed by a follow-up capture: (a)
+  `SearchIndexService.shouldOCR` fetched every page's full stroke
+  blob on main per `refreshAll()` pass (launch-time storm) — now
+  pure property reads with ink checked in the background fetch;
+  (b) a Page row flapping in/out of the fetched list (issue #3's
+  un-deleter) made the editor tear down and rebuild ALL page hosts
+  on each flap — hosts now reconcile incrementally (survivors keep
+  canvas/overlays/in-flight ink) and `[Hosts] reconcile` logs the
+  exact page ids, the tripwire for naming the writer.
 
 ### Submission status
 - **3.0 (3) predates all of the above** — archive a fresh build
