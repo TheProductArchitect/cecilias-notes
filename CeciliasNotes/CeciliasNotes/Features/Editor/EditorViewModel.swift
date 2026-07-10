@@ -2522,6 +2522,46 @@ final class EditorViewModel: ObservableObject {
     /// for every page's debounced autosave AND for the unmount/dismiss
     /// flush. Idempotent — calling it on a page that's already up-to-date
     /// just rewrites the same bytes.
+    /// Async stroke save for scroll- and draw-time paths.
+    /// `PKDrawing.dataRepresentation()` is 50–300 ms on main for an
+    /// ink-heavy page — running it per debounced save while drawing
+    /// (and at every warm-band unmount while scrolling) was a
+    /// steady ANR source. The encode runs detached (PKDrawing is a
+    /// Sendable value type); the row write hops back to main and
+    /// re-fetches the page by id so a mid-flight deletion can't
+    /// touch a stale model.
+    func savePageAsync(_ page: Page, drawing: PKDrawing) {
+        let pageId = page.id
+        // Write-through to the stroke cache immediately (cheap
+        // dictionary insert) so a remount during the async encode
+        // window still sees the newest strokes.
+        StrokeCache.shared.cache(drawing, forPage: pageId)
+        Task { @MainActor [weak self] in
+            let data = await Task.detached(priority: .userInitiated) {
+                drawing.dataRepresentation()
+            }.value
+            guard let self, let livePage = self.storage.fetchPage(id: pageId) else { return }
+            do {
+                try self.storage.updatePageStrokes(livePage, strokeData: data)
+                self.saveStatus = .saved
+                self.scheduleSavedFlash()
+                SearchIndexService.shared.scheduleOCR(
+                    notebookId: livePage.notebookId,
+                    pageId:     livePage.id
+                )
+                IntelligenceService.shared.scheduleSummary(notebookId: livePage.notebookId)
+                MultipeerNotebookHint.broadcastNotebookChanged(notebookId: livePage.notebookId)
+                self.maybeGenerateTitleSuggestion()
+                self.maybeGenerateTagSuggestions()
+            } catch {
+                self.saveStatus = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    /// Synchronous stroke save — teardown/dismiss flushes only,
+    /// where durability must precede deallocation. Everything else
+    /// uses `savePageAsync`.
     func savePage(_ page: Page, drawing: PKDrawing) {
         do {
             try storage.updatePageStrokes(page, drawing: drawing)

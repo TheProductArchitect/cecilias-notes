@@ -94,6 +94,8 @@ struct TextElementView: View {
     @State private var persistTask: Task<Void, Never>?
     @State private var hasPendingPersist = false
     @State private var lastMeasureAt: Date = .distantPast
+    /// External-change reseed coalescer (dictation partials).
+    @State private var reseedTask: Task<Void, Never>?
 
     private func remeasureContentHeight() {
         let cw = width
@@ -226,7 +228,19 @@ struct TextElementView: View {
             // path updating the row, etc.). Re-seed only while
             // *not* editing — blowing away the buffer mid-typing
             // would cancel the keyboard / dictation session.
-            reseedIfExternallyChanged()
+            //
+            // Coalesced: dictation delivers partials 2–5×/s and each
+            // reseed rebuilds the attributed string + relayouts the
+            // whole UITextView. On a long transcript that alone
+            // saturated the main thread for the length of the
+            // recording. A 250 ms trailing debounce caps relayout at
+            // 4/s and always lands the final text.
+            reseedTask?.cancel()
+            reseedTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                reseedIfExternallyChanged()
+            }
         }
         .onChange(of: isEditing) { _, nowEditing in
             if !nowEditing {

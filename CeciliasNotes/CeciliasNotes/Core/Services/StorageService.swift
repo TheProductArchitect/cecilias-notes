@@ -1245,6 +1245,18 @@ extension StorageService {
     }
 
     func updatePageStrokes(_ page: Page, drawing: PKDrawing) throws {
+        // Synchronous variant — encodes on the calling (main)
+        // thread. Reserved for teardown/dismiss flushes that need
+        // durability before the editor deallocates. Scroll- and
+        // draw-time saves go through `updatePageStrokes(_:strokeData:)`
+        // with the encode done off-main (`EditorViewModel.savePageAsync`).
+        // Write-through to the in-memory cache so the next canvas
+        // mount on this page hits without re-decoding from SwiftData.
+        StrokeCache.shared.cache(drawing, forPage: page.id)
+        try updatePageStrokes(page, strokeData: drawing.dataRepresentation())
+    }
+
+    func updatePageStrokes(_ page: Page, strokeData data: Data) throws {
         // Step 8: writes flow through V6
         // `PageElement(.stroke) + StrokeContent`. The Page-level
         // `strokeData` / `strokeDataSize` fields are gone; this
@@ -1264,7 +1276,6 @@ extension StorageService {
                 )
             )
         }
-        let data = drawing.dataRepresentation()
         pair.content.strokeData = data
         pair.content.updatedAt  = Date()
         pair.element.updatedAt  = Date()
@@ -1275,9 +1286,6 @@ extension StorageService {
             scheduleSpotlightReindex(for: nb)
         }
         try context.save()
-        // Write-through to the in-memory cache so the next canvas
-        // mount on this page hits without re-decoding from SwiftData.
-        StrokeCache.shared.cache(drawing, forPage: page.id)
         scheduleWidgetSnapshot()
     }
 

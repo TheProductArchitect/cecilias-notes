@@ -55,6 +55,18 @@ final class CeciliasNotesPKCanvasView: PKCanvasView {
     private let pageUndoManager = UndoManager()
     override var undoManager: UndoManager? { pageUndoManager }
 
+    /// Opt out of iPadOS's system-wide editing gestures (three-finger
+    /// swipe left/right = undo/redo, three-finger tap = the edit HUD).
+    /// PencilKit registers every stroke with `undoManager`, so a
+    /// multi-finger scroll across an inked canvas routinely read as
+    /// the undo swipe — users watched strokes "undo themselves"
+    /// without ever touching the undo button. The toolbar's undo /
+    /// redo buttons and the squeeze wheel call `undoManager`
+    /// directly, so they keep working.
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration {
+        .none
+    }
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if shouldYieldTouchToOverlay?(point, event) == true {
             return nil

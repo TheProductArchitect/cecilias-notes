@@ -1638,7 +1638,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2362
+      "lines": 2370
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -2313,7 +2313,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 85
+      "lines": 97
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift",
@@ -2351,7 +2351,7 @@
         ".strokeContentRewritten",
         "rectCacheNote"
       ],
-      "lines": 2375
+      "lines": 2397
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -2602,7 +2602,7 @@
         "MultipeerNotebookHint.changedNotification",
         "UserDefaults.didChangeNotification"
       ],
-      "lines": 2622
+      "lines": 2662
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/HeaderVisibility.swift",
@@ -3862,7 +3862,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 439
+      "lines": 453
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift",

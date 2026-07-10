@@ -1527,17 +1527,33 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
             // Step 8: read via the in-memory cache first; fall
             // back to the V6 stroke singleton on miss and warm the
-            // cache with the decoded drawing for next time.
+            // cache with the decoded drawing for next time. On a
+            // miss BOTH the blob fetch and the decode run off-main:
+            // reading a multi-MB stroke blob out of SQLite on the
+            // main thread at mount time was a per-page hitch every
+            // time an inked page crossed the warm band while
+            // scrolling.
             if let cached = StrokeCache.shared.drawing(forPage: pageId) {
                 canvas.drawing = cached
-            } else if let data = StorageService.shared.strokeData(for: page),
-                      !data.isEmpty {
+            } else {
                 canvas.drawing = PKDrawing()
                 hosts[i].strokeDecodeTask?.cancel()
                 hosts[i].strokeDecodeGeneration &+= 1
                 let generation = hosts[i].strokeDecodeGeneration
+                let container = StorageService.shared.container
                 hosts[i].strokeDecodeTask = Task.detached(priority: .userInitiated) { [weak canvas] in
-                    guard let drawing = try? PKDrawing(data: data) else { return }
+                    let bg = ModelContext(container)
+                    let descriptor = FetchDescriptor<PageElement>(
+                        predicate: #Predicate<PageElement> {
+                            $0.pageId == pageId && $0.deletedAt == nil
+                        }
+                    )
+                    let elements = (try? bg.fetch(descriptor)) ?? []
+                    guard let data = elements
+                            .first(where: { $0.kind == .stroke })?
+                            .strokeContent?.strokeData,
+                          !data.isEmpty,
+                          let drawing = try? PKDrawing(data: data) else { return }
                     await MainActor.run { [weak self, weak canvas] in
                         guard let self, let canvas,
                               i < self.hosts.count,
@@ -1643,7 +1659,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 if deferStorageSave {
                     pendingUnmountDrawings[pageId] = drawing
                 } else if let page = page(for: pageId) {
-                    viewModel.savePage(page, drawing: drawing)
+                    // Async: unmounts happen mid-scroll as pages
+                    // cross the warm band — encode must not block
+                    // the scroll frame.
+                    viewModel.savePageAsync(page, drawing: drawing)
                 }
             }
             hosts[i].saveTask?.cancel()
@@ -1667,14 +1686,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     if hosts[i].isDirty, let page = page(for: pageId) {
                         let live = canvas.drawing
                         StrokeCache.shared.cache(live, forPage: pageId)
-                        viewModel.savePage(page, drawing: live)
+                        viewModel.savePageAsync(page, drawing: live)
                         hosts[i].isDirty = false
                     }
                     continue
                 }
                 guard let page = page(for: pageId) else { continue }
                 StrokeCache.shared.cache(snapshot, forPage: pageId)
-                viewModel.savePage(page, drawing: snapshot)
+                viewModel.savePageAsync(page, drawing: snapshot)
             }
         }
 
@@ -2215,7 +2234,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
                           let canvas = self.hosts[idx].canvasView,
                           let page   = self.page(for: pageId)
                     else { return }
-                    self.viewModel.savePage(page, drawing: canvas.drawing)
+                    // Async: this fires every ~1.2 s while the user
+                    // draws — encoding the full drawing on main here
+                    // was the "ANR from just ink strokes" report.
+                    self.viewModel.savePageAsync(page, drawing: canvas.drawing)
                     self.hosts[idx].isDirty = false
                 }
             }
