@@ -9,12 +9,22 @@ import UIKit
 /// pressure. Generation always happens off the main actor; results
 /// are stored on the main actor.
 ///
-/// Phase 4E: cache keys are now composite `(pageId,
-/// strokeFingerprint, pdfFingerprint)`. A new sketch produces a new
-/// fingerprint and therefore a new entry; old entries orphan and
-/// evict naturally. Manual `invalidate(pageId:)` is no longer needed
-/// from the save path — the row asks for the thumbnail that matches
-/// the current fingerprint and the cache either hits or renders.
+/// Cache keys are composite `(pageId, contentStamp, pdfFingerprint)`
+/// where `contentStamp` is `page.updatedAt`. Every stroke persist
+/// bumps the page's `updatedAt` (and stroke rewrites that bypass
+/// `updatePageStrokes` call `StrokeCommit.stampPage`), so a new
+/// sketch produces a new key and old entries orphan and evict
+/// naturally — no manual invalidate from the save path.
+///
+/// The key used to be a fingerprint OF THE STROKE BYTES — which
+/// meant every `composeKey` pulled the full multi-MB stroke blob
+/// out of SQLite ON THE MAIN ACTOR, and the render path fetched it
+/// a second time. While drawing, every debounced save re-keyed and
+/// re-rendered the strip row: two main-thread blob reads per page
+/// per 1.2 s, the dominant source of the "drew a few strokes and
+/// the app stopped responding" ANR. `composeKey` must stay a pure
+/// property read; the render path resolves strokes from
+/// `StrokeCache` or a background `ModelContext`, never main.
 ///
 /// In-flight de-duplication: when two concurrent saves both call
 /// `generate(for:targetSize:)` for the same key, the second call
@@ -33,35 +43,8 @@ final class PageThumbnailCache {
 
     struct Key: Hashable {
         let pageId: UUID
-        let strokeFingerprint: UInt64
+        let contentStamp: Date
         let pdfFingerprint: UInt64
-    }
-
-    /// Cheap, deterministic 64-bit fingerprint of stroke bytes. Uses
-    /// FNV-1a folded over a stride so a 100KB drawing is processed in
-    /// ~1KB samples — fast enough to call on every body evaluation
-    /// without blocking the main thread. Sample-based; two different
-    /// drawings could theoretically collide, but a single new stroke
-    /// changes the size and the high-frequency samples reliably.
-    static func fingerprint(of data: Data?) -> UInt64 {
-        guard let data, !data.isEmpty else { return 0 }
-        var hash: UInt64 = 14695981039346656037   // FNV offset basis
-        let prime: UInt64 = 1099511628211
-        let stride = max(1, data.count / 1024)
-        var index = 0
-        // Include the byte count so size deltas alone produce a new
-        // fingerprint even when the sampled positions happen to match.
-        let countBytes = withUnsafeBytes(of: UInt64(data.count).littleEndian) { Array($0) }
-        for b in countBytes {
-            hash ^= UInt64(b)
-            hash = hash &* prime
-        }
-        while index < data.count {
-            hash ^= UInt64(data[index])
-            hash = hash &* prime
-            index += stride
-        }
-        return hash
     }
 
     // MARK: - Storage
@@ -101,19 +84,22 @@ final class PageThumbnailCache {
 
         if let cached = thumbnail(for: key) {
             #if DEBUG
-            dlog("[Thumb] cache hit pageId=\(page.id) fp=\(key.strokeFingerprint)")
+            dlog("[Thumb] cache hit pageId=\(page.id) stamp=\(key.contentStamp)")
             #endif
             return cached
         }
 
-        // Snapshot the data we need off the main actor before
-        // detaching. Step 8: stroke bytes read via the V6
-        // singleton through the storage helper instead of the
-        // retired `Page.strokeData` field; PDF backing still
-        // resolves via the V6 PageElement lookup (Step 5.5).
+        // Snapshot cheap values on the main actor; NEVER the stroke
+        // blob. Right after drawing the `StrokeCache` is guaranteed
+        // warm (savePageAsync writes through before bumping
+        // `page.updatedAt`), so the common regen path hands the
+        // already-decoded PKDrawing (Sendable) to the render task.
+        // A cold cache falls back to a background-ModelContext
+        // fetch + decode inside the detached task.
         let pageId    = page.id
         let pageRect  = CGRect(origin: .zero, size: page.pageSize.pointSize)
-        let strokeData = StorageService.shared.strokeData(for: page)
+        let warmDrawing = StrokeCache.shared.drawing(forPage: pageId)
+        let container = StorageService.shared.container
         // Step 5.5: PDF backing now comes from the V6 PageElement
         // model. The first full-bleed `.pdfPage` element on the
         // page identifies the file + page index; rasterising it
@@ -131,17 +117,19 @@ final class PageThumbnailCache {
             state[key]
         }) {
             #if DEBUG
-            dlog("[Thumb] await in-flight pageId=\(pageId) fp=\(key.strokeFingerprint)")
+            dlog("[Thumb] await in-flight pageId=\(pageId) stamp=\(key.contentStamp)")
             #endif
             return await existing.value
         }
 
         let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
+            let drawing = warmDrawing
+                ?? Self.loadDrawingOffMain(pageId: pageId, container: container)
             #if DEBUG
-            dlog("[Thumb] render begin pageId=\(pageId) fp=\(key.strokeFingerprint) strokes=\(strokeData?.count ?? 0)")
+            dlog("[Thumb] render begin pageId=\(pageId) stamp=\(key.contentStamp) strokes=\(drawing?.strokes.count ?? 0)")
             #endif
             let image = await Self.render(
-                strokeData: strokeData,
+                drawing: drawing,
                 pageRect: pageRect,
                 targetSize: targetSize,
                 pdfBacking: pdfBacking
@@ -154,7 +142,7 @@ final class PageThumbnailCache {
                 )
             }
             #if DEBUG
-            dlog("[Thumb] render end   pageId=\(pageId) fp=\(key.strokeFingerprint) success=\(image != nil)")
+            dlog("[Thumb] render end   pageId=\(pageId) stamp=\(key.contentStamp) success=\(image != nil)")
             #endif
             return image
         }
@@ -167,17 +155,40 @@ final class PageThumbnailCache {
         return result
     }
 
-    /// Compose a `Key` from a page on the main actor. Cheap — the
-    /// fingerprint sample-walks the stroke bytes (~1KB of work for a
-    /// 100KB drawing). Step 8 reads through the V6 storage helper.
+    /// Compose a `Key` from a page on the main actor. MUST stay a
+    /// pure property read plus the small PDF-element lookup — this
+    /// runs per strip-row body evaluation, and reading stroke bytes
+    /// here is exactly the main-thread SQLite storm the stamp-based
+    /// key exists to prevent.
     func composeKey(for page: Page) -> Key {
         let pdfIndex = Self.lookupPDFBacking(forPageId: page.id)?.index
-        let strokeData = StorageService.shared.strokeData(for: page)
         return Key(
             pageId: page.id,
-            strokeFingerprint: Self.fingerprint(of: strokeData),
+            contentStamp: page.updatedAt,
             pdfFingerprint: pdfIndex.map { UInt64($0) + 1 } ?? 0
         )
+    }
+
+    /// Fetch + decode the page's stroke blob on a background
+    /// `ModelContext`. Called ONLY from the detached render task —
+    /// the whole point is that the multi-MB read never touches the
+    /// main actor.
+    nonisolated private static func loadDrawingOffMain(
+        pageId: UUID,
+        container: ModelContainer
+    ) -> PKDrawing? {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        guard let data = elements
+                .first(where: { $0.kind == .stroke })?
+                .strokeContent?.strokeData,
+              !data.isEmpty else { return nil }
+        return try? PKDrawing(data: data)
     }
 
     /// Step 5.5: replaces the legacy `Page.pdfPageIndex` /
@@ -221,7 +232,7 @@ final class PageThumbnailCache {
     // MARK: - Internals
 
     nonisolated private func cacheKey(_ k: Key) -> NSString {
-        "\(k.pageId.uuidString)|\(k.strokeFingerprint)|\(k.pdfFingerprint)" as NSString
+        "\(k.pageId.uuidString)|\(k.contentStamp.timeIntervalSinceReferenceDate)|\(k.pdfFingerprint)" as NSString
     }
 
     // MARK: Rendering
@@ -231,8 +242,13 @@ final class PageThumbnailCache {
     /// strip thumbnails should match the paper-white look of the
     /// printed page regardless of the system appearance, and PKDrawing
     /// strokes need a stable trait when resolving dynamic ink colours.
-    private static func render(
-        strokeData: Data?,
+    /// `nonisolated` is load-bearing: under
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` an unannotated
+    /// static func is MainActor-isolated, so awaiting it from the
+    /// detached render task would hop the whole rasterisation
+    /// (PDFDocument open + PKDrawing.image) back onto main.
+    nonisolated private static func render(
+        drawing: PKDrawing?,
         pageRect: CGRect,
         targetSize: CGSize,
         pdfBacking: (url: URL, index: Int)?
@@ -266,8 +282,7 @@ final class PageThumbnailCache {
                     drawPDFPage(page, in: ctx.cgContext, target: CGRect(origin: .zero, size: targetSize))
                 }
 
-                guard let data = strokeData,
-                      let drawing = try? PKDrawing(data: data) else { return }
+                guard let drawing else { return }
 
                 // `PKDrawing.image(from:scale:)` rasterises the
                 // stored drawing into a UIImage at the supplied
@@ -282,7 +297,7 @@ final class PageThumbnailCache {
 
     /// Letterbox-fit a PDF page into `target`. Keeps aspect ratio,
     /// centred.
-    private static func drawPDFPage(_ page: PDFPage, in ctx: CGContext, target: CGRect) {
+    nonisolated private static func drawPDFPage(_ page: PDFPage, in ctx: CGContext, target: CGRect) {
         let pageBounds = page.bounds(for: .mediaBox)
         guard pageBounds.width > 0, pageBounds.height > 0 else { return }
         let scale = min(

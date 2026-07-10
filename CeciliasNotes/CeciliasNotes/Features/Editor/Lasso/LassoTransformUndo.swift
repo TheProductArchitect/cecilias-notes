@@ -158,6 +158,7 @@ enum LassoTransformUndo {
                 if let drawing = try? PKDrawing(data: data) {
                     StrokeCache.shared.cache(drawing, forPage: snap.pageId)
                 }
+                StrokeCommit.stampPage(pageId: snap.pageId, context: context)
                 strokePageIds.insert(snap.pageId)
             }
             kinds.insert(snap.kind)

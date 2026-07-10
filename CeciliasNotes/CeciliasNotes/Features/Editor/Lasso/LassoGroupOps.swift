@@ -443,6 +443,7 @@ enum LassoGroupOps {
             let newDrawing = PKDrawing(strokes: kept)
             content.strokeData = newDrawing.dataRepresentation()
             content.updatedAt  = Date()
+            StrokeCommit.stampPage(pageId: element.pageId, context: context)
             element.updatedAt  = Date()
             // Cache write-through so the next canvas mount sees the
             // truncated drawing instead of re-decoding stale bytes.
@@ -529,6 +530,7 @@ enum LassoGroupOps {
         content.strokeData = newDrawing.dataRepresentation()
         content.updatedAt  = Date()
         element.updatedAt  = Date()
+        StrokeCommit.stampPage(pageId: element.pageId, context: context)
         StrokeCache.shared.cache(newDrawing, forPage: element.pageId)
     }
 

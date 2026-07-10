@@ -2567,9 +2567,9 @@ final class EditorViewModel: ObservableObject {
             try storage.updatePageStrokes(page, drawing: drawing)
             saveStatus = .saved
             scheduleSavedFlash()
-            // Phase 4E: thumbnail cache is keyed by
-            // `(pageId, strokeFingerprint, pdfFingerprint)`. A new
-            // stroke produces a new fingerprint, so the next lookup
+            // Thumbnail cache is keyed by
+            // `(pageId, page.updatedAt, pdfFingerprint)`. The save
+            // above bumped `page.updatedAt`, so the next lookup
             // automatically misses and the row re-renders via the
             // composite path. No manual invalidate needed.
             // Re-OCR the page for full-text search. Debounced by 2s

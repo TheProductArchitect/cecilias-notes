@@ -106,6 +106,7 @@ enum StrokeCommit {
         pair.content.strokeData = data
         pair.content.updatedAt  = Date()
         pair.element.updatedAt  = Date()
+        stampPage(pageId: pageId, context: context)
         do {
             try context.save()
         } catch {
@@ -118,5 +119,19 @@ enum StrokeCommit {
         // mount on this page hits without re-decoding.
         StrokeCache.shared.cache(drawing, forPage: pageId)
         return true
+    }
+
+    /// Bump the owning page's `updatedAt` after a stroke rewrite
+    /// that bypasses `StorageService.updatePageStrokes` (lasso
+    /// move/delete, transform undo). The page-strip thumbnail key
+    /// is `(pageId, page.updatedAt, pdfIndex)` — without the stamp
+    /// those rewrites would keep serving the stale thumbnail.
+    /// Caller owns the surrounding `context.save()`.
+    @MainActor
+    static func stampPage(pageId: UUID, context: ModelContext) {
+        let descriptor = FetchDescriptor<Page>(
+            predicate: #Predicate<Page> { $0.id == pageId }
+        )
+        (try? context.fetch(descriptor))?.first?.updatedAt = Date()
     }
 }

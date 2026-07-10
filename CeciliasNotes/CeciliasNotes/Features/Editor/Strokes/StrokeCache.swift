@@ -151,59 +151,77 @@ final class StrokeCache {
         }
     }
 
+    /// Both prewarm passes fetch AND decode entirely on a background
+    /// `ModelContext` — only the final cache insert touches the main
+    /// actor. The previous shape fetched every page's multi-MB stroke
+    /// blob through the MAIN context inside one `MainActor.run`
+    /// block, which put a burst of main-thread SQLite reads at the
+    /// exact moment the editor opens.
     private func runPrewarm(notebookId: UUID, limit: Int) async {
-        let payloads: [(UUID, Data)] = await MainActor.run {
-            let context = StorageService.shared.context
+        let skip = Set(entries.keys)
+        let container = StorageService.shared.container
+        let decoded: [(UUID, PKDrawing)] = await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
             let descriptor = FetchDescriptor<Page>(
-                predicate: #Predicate { $0.notebookId == notebookId && $0.isDeleted == false },
+                predicate: #Predicate<Page> { $0.notebookId == notebookId && $0.isDeleted == false },
                 sortBy: [SortDescriptor(\.pageNumber)]
             )
             guard let pages = try? context.fetch(descriptor) else { return [] }
-            return pages.prefix(limit).compactMap { page -> (UUID, Data)? in
-                if entries[page.id] != nil { return nil }
-                let data = StorageService.shared.strokeData(for: page) ?? Data()
-                guard !data.isEmpty else { return nil }
-                return (page.id, data)
+            var out: [(UUID, PKDrawing)] = []
+            for page in pages.prefix(limit) where !skip.contains(page.id) {
+                guard let drawing = Self.loadDrawingOffMain(pageId: page.id, context: context)
+                else { continue }
+                out.append((page.id, drawing))
             }
-        }
-        for (pageId, data) in payloads {
-            guard let drawing = try? PKDrawing(data: data) else { continue }
-            await MainActor.run {
-                if entries[pageId] == nil {
-                    cacheWithoutTouchingLRU(drawing, forPage: pageId)
-                }
-            }
+            return out
+        }.value
+        for (pageId, drawing) in decoded where entries[pageId] == nil {
+            cacheWithoutTouchingLRU(drawing, forPage: pageId)
         }
     }
 
     private func runPrewarmSubject(subjectId: UUID) async {
-        let payload: (UUID, Data)? = await MainActor.run {
-            let context = StorageService.shared.context
+        let skip = Set(entries.keys)
+        let container = StorageService.shared.container
+        let payload: (UUID, PKDrawing)? = await Task.detached(priority: .utility) {
+            let context = ModelContext(container)
             let nbDesc = FetchDescriptor<Notebook>(
-                predicate: #Predicate { $0.subjectId == subjectId && $0.isDeleted == false },
+                predicate: #Predicate<Notebook> { $0.subjectId == subjectId && $0.isDeleted == false },
                 sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
             )
-            guard let notebooks = try? context.fetch(nbDesc),
-                  let topNotebook = notebooks.first else { return nil }
+            guard let topNotebook = (try? context.fetch(nbDesc))?.first else { return nil }
             let nbId = topNotebook.id
             let pageDesc = FetchDescriptor<Page>(
-                predicate: #Predicate { $0.notebookId == nbId && $0.isDeleted == false },
+                predicate: #Predicate<Page> { $0.notebookId == nbId && $0.isDeleted == false },
                 sortBy: [SortDescriptor(\.pageNumber)]
             )
-            guard let pages = try? context.fetch(pageDesc),
-                  let firstPage = pages.first,
-                  entries[firstPage.id] == nil else { return nil }
-            let data = StorageService.shared.strokeData(for: firstPage) ?? Data()
-            guard !data.isEmpty else { return nil }
-            return (firstPage.id, data)
-        }
-        guard let (pageId, data) = payload,
-              let drawing = try? PKDrawing(data: data) else { return }
-        await MainActor.run {
-            if entries[pageId] == nil {
-                cacheWithoutTouchingLRU(drawing, forPage: pageId)
+            guard let firstPage = (try? context.fetch(pageDesc))?.first,
+                  !skip.contains(firstPage.id),
+                  let drawing = Self.loadDrawingOffMain(pageId: firstPage.id, context: context)
+            else { return nil }
+            return (firstPage.id, drawing)
+        }.value
+        guard let (pageId, drawing) = payload, entries[pageId] == nil else { return }
+        cacheWithoutTouchingLRU(drawing, forPage: pageId)
+    }
+
+    /// Stroke-singleton blob read + decode on the CALLER's context —
+    /// must only be handed a background `ModelContext`.
+    nonisolated private static func loadDrawingOffMain(
+        pageId: UUID,
+        context: ModelContext
+    ) -> PKDrawing? {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
             }
-        }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        guard let data = elements
+                .first(where: { $0.kind == .stroke })?
+                .strokeContent?.strokeData,
+              !data.isEmpty else { return nil }
+        return try? PKDrawing(data: data)
     }
 
     /// Insert without bumping the LRU timestamp past existing

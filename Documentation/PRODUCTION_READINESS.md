@@ -320,6 +320,16 @@ round (commits `c424991` → `e3f6384`).
   DTLS link ("No route to host") that blocks each send for seconds
   while still listed as connected. All multipeer sends now egress
   on `MultipeerSendQueue`; hints coalesced to 1 per 3 s per notebook.
+- **Draw-time freeze #2 (device-log confirmed, 2026-07-10)** — the
+  page-strip thumbnail key fingerprinted the stroke BYTES, so every
+  save tick and every strip-row body eval pulled the full multi-MB
+  stroke blob out of SQLite on the main actor (twice on a miss), and
+  `StrokeCache` prewarm read the first N page blobs on main at editor
+  open. The console capture showed continuous main-thread
+  `sqlite3_step` faults while drawing. Keys are now
+  `(pageId, page.updatedAt, pdfFingerprint)`; renders resolve strokes
+  from `StrokeCache` or a background `ModelContext`; the rasteriser
+  is explicitly `nonisolated`; prewarm fetches+decodes off main.
 
 ### Submission status
 - **3.0 (3) predates all of the above** — archive a fresh build
