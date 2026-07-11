@@ -59,17 +59,32 @@ public extension Color {
     /// that isn't a theme field — most reads should go through
     /// `@Environment(\.theme)` instead.
     init(light: Color, dark: Color) {
+        // The dynamic-provider closure MUST be `@Sendable` and close
+        // over pre-resolved platform colors. UIKit resolves dynamic
+        // colors on whatever thread asks — including SwiftUI's
+        // AsyncRenderer render thread — and under
+        // `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` an unannotated
+        // closure formed here silently inherits @MainActor, so the
+        // isolation assert fires AT RUNTIME on the render thread:
+        // dispatch_assert_queue_fail → SIGTRAP. This shipped as the
+        // "app freezes mid-scroll / mid-anything" bug — attached to
+        // Xcode the trap suspends the whole process in lldb (reads
+        // as a permanent silent freeze); detached it kills the app
+        // (device .ips 2026-07-11 13:52, thread
+        // com.apple.SwiftUI.AsyncRenderer). Same family as the
+        // audio-tap closures that crashed App Store review.
 #if canImport(UIKit)
-        self = Color(UIColor { trait in
-            trait.userInterfaceStyle == .dark
-                ? UIColor(dark)
-                : UIColor(light)
+        let lightColor = UIColor(light)
+        let darkColor  = UIColor(dark)
+        self = Color(UIColor { @Sendable trait in
+            trait.userInterfaceStyle == .dark ? darkColor : lightColor
         })
 #else
-        self = Color(nsColor: NSColor(name: nil) { appearance in
+        let lightColor = NSColor(light)
+        let darkColor  = NSColor(dark)
+        self = Color(nsColor: NSColor(name: nil) { @Sendable appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let chosen: Color = isDark ? dark : light
-            return NSColor(chosen)
+            return isDark ? darkColor : lightColor
         })
 #endif
     }

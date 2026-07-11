@@ -247,19 +247,30 @@ failure (gesture-recognizer wedge, invisible hit-testing blocker,
 or presentation-layer scrim), which no main-thread instrument can
 see.
 
-**The decisive capture (needs the user, ~30 seconds):** run from
-Xcode, freeze it, then press Pause (⏸) in Xcode's debug bar and
-type `bt all` at the `(lldb)` prompt — every thread's stack at
-the exact stuck moment. Also answer: do animations still run
-while stuck (recording timer, save flash)? do toolbar taps work
-while the canvas doesn't (or vice versa)? does it ever recover
-after ~30 s? does the app switcher still respond? And check
-Settings → Privacy & Security → Analytics & Improvements →
-Analytics Data for CeciliasNotes hang `.ips` entries.
+**ROOT CAUSE FOUND (2026-07-11, device `.ips` 13:52).** SIGTRAP
+on thread `com.apple.SwiftUI.AsyncRenderer` inside
+`closure #1 in Color.init(light:dark:)`
+(`CeciliasNotesColors.swift`): the `UIColor(dynamicProvider:)`
+closure silently inherited @MainActor under
+`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and UIKit resolves
+dynamic colors on SwiftUI's async render thread WHILE HOLDING the
+render-graph lock. The same report shows the main thread blocked
+on that very lock inside `touchesBegan → EventBindingBridge.send
+→ _MovableLockLock`. Mechanism of the "silent freeze": attached
+to Xcode, the trap suspends the process in lldb with the lock
+held — every touch wedges, nothing logs, the watchdog is
+suspended too; detached, it's an instant crash. Same defect
+family as the audio-tap closures that crashed App Store review.
+Fix landed: provider closures are `@Sendable` over pre-resolved
+platform colors (both UIKit and AppKit branches).
 
-Once the freeze is confirmed dead, strip the `[Membership]`/
-`[Canvas]`/`[Overlays]` forensics logs back out (keep the
-watchdog dump).
+**Verification pending:** user re-run (attached + detached).
+Once confirmed dead, delete this entry and strip the
+`[Membership]`/`[Canvas]`/`[Overlays]` forensics logs (keep the
+watchdog dump). Note: `knowledgeconstructiond` /
+`spotlightknowledged` CPU-resource `.ips` files from the same
+device are system daemons churning on Spotlight donations —
+worth a look at donation volume if they recur.
 
 ---
 
