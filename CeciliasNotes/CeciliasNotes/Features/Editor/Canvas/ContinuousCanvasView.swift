@@ -1536,6 +1536,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // its band.
             let keepPad = scrollView.bounds.height
             var deferredUnmountSaves = false
+            var didMountThisPass = false
 
             for i in hosts.indices {
                 let f = hosts[i].frame
@@ -1555,7 +1556,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 if inCanvasBand {
                     if hosts[i].canvasView == nil {
                         if isActivelyScrolling {
-                            pendingCanvasMountIndices.insert(i)
+                            // One synchronous mount per pass (~10 Hz),
+                            // and only for a page intersecting the RAW
+                            // viewport: the page the user is looking at
+                            // gets its ink promptly. Deferring every
+                            // mid-scroll mount showed blank paper for
+                            // the whole sweep, then the rest-time flush
+                            // mounted every crossed page in one burst.
+                            if !didMountThisPass,
+                               scaled.maxY >= viewportTop, scaled.minY <= viewportBottom {
+                                didMountThisPass = true
+                                mountCanvas(at: i, in: contentView)
+                            } else {
+                                pendingCanvasMountIndices.insert(i)
+                            }
                         } else {
                             mountCanvas(at: i, in: contentView)
                         }
@@ -1609,12 +1623,31 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     guard !Task.isCancelled else { return }
                     let i = queue.removeFirst()
                     guard self.hosts.indices.contains(i),
-                          self.hosts[i].canvasView == nil else { continue }
+                          self.hosts[i].canvasView == nil,
+                          self.isHostNearViewport(i) else { continue }
                     self.mountCanvas(at: i, in: contentView)
                     if queue.isEmpty { break }
                     try? await Task.sleep(for: .milliseconds(16))
                 }
             }
+        }
+
+        /// True when host `i` is within the padded canvas warm band
+        /// for the CURRENT scroll position. Deferred mount queues
+        /// accumulate every page crossed during a sweep; without this
+        /// re-check at mount time the rest flush mounted all of them
+        /// and the next membership pass unmounted most again (device
+        /// log: 7 mounts then 5 unmounts in a burst at scroll rest).
+        private func isHostNearViewport(_ i: Int) -> Bool {
+            guard let scrollView, hosts.indices.contains(i) else { return false }
+            let viewportTop = scrollView.contentOffset.y
+            let viewportBottom = viewportTop + scrollView.bounds.height
+            let pad = scrollView.bounds.height * warmBandPaddingFactor
+            let f = hosts[i].frame
+            let scale = scrollView.zoomScale
+            let minY = f.origin.y * scale
+            let maxY = (f.origin.y + f.height) * scale
+            return maxY >= viewportTop - pad && minY <= viewportBottom + pad
         }
 
         private func flushPendingOverlayMounts() {
@@ -1636,6 +1669,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 while !queue.isEmpty {
                     guard !Task.isCancelled else { return }
                     let i = queue.removeFirst()
+                    guard self.isHostNearViewport(i) else { continue }
                     self.ensureOverlaysMounted(at: i)
                     if queue.isEmpty { break }
                     try? await Task.sleep(for: .milliseconds(16))

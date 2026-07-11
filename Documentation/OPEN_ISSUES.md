@@ -208,13 +208,28 @@ DTLS storm writes stderr hundreds of times per second; the debug
 console pipe applies backpressure, and `dlog` fflushes stdout on
 the main thread — console saturation can itself stall main.
 
+**2026-07-11 13:05 capture (hysteresis build) — livelock GONE.**
+Whole-session mount churn collapsed to 7 canvas mounts / 5
+unmounts (was continuous); main-thread I/O faults down to 10, all
+inside one second at launch; DTLS spam down ~5×. Two residuals
+found in the `[Membership]` trace and fixed:
+  - mid-scroll, ALL canvas mounts were deferred to scroll rest —
+    a fast sweep showed blank paper the whole way (reads as
+    "stuck"), then the rest flush mounted every crossed page in
+    one burst (7 mounts → 5 unmounts spike). Now: one synchronous
+    mount per membership pass for a page intersecting the raw
+    viewport; deferred queues re-check the band at mount time and
+    drop pages that scrolled away.
+
 **Next step.** Rebuild to device, reproduce, capture the Xcode
 console. Read in order: (1) any `[MainThreadWatchdog] MAIN THREAD
 unresponsive` stack; (2) `[Membership]` lines — `canvases=`/
 `overlays=` counts oscillating at rest = band thrash persists;
 (3) `viewModel INIT` / `makeUIView` repeats = identity churn.
 Also worth one run DETACHED from Xcode (launch from home screen)
-to rule the console-backpressure factor in or out.
+to rule the console-backpressure factor in or out. Once the
+freeze is confirmed dead, strip the `[Membership]`/`[Canvas]`/
+`[Overlays]` forensics logs back out (keep the watchdog dump).
 
 ---
 
