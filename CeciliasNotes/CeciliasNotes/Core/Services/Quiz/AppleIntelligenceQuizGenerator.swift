@@ -14,15 +14,10 @@ import FoundationModels
 /// the caller falls back to Tier 1 silently.
 struct AppleIntelligenceQuizGenerator {
 
-    /// True when the foundation model is usable right now.
-    nonisolated var isAvailable: Bool {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return SystemLanguageModel.default.availability == .available
-        }
-        #endif
-        return false
-    }
+    /// True when the foundation model is usable right now. Cached
+    /// (60 s TTL) — the raw availability read instantiates the model
+    /// bundle per call. See `FMAvailabilityCache`.
+    nonisolated var isAvailable: Bool { FMAvailabilityCache.isAvailable }
 
     // MARK: - Generation
 

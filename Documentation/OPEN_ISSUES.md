@@ -235,15 +235,31 @@ with a 60 s TTL. This also accounts for the recurring
 `-[NSBundle bundleIdentifier]` main-thread I/O faults across ALL
 captures.
 
-**Next step.** Rebuild to device, reproduce, capture the Xcode
-console. Read in order: (1) any `[MainThreadWatchdog] MAIN THREAD
-unresponsive` stack; (2) `[Membership]` lines — `canvases=`/
-`overlays=` counts oscillating at rest = band thrash persists;
-(3) `viewModel INIT` / `makeUIView` repeats = identity churn.
-Also worth one run DETACHED from Xcode (launch from home screen)
-to rule the console-backpressure factor in or out. Once the
-freeze is confirmed dead, strip the `[Membership]`/`[Canvas]`/
-`[Overlays]` forensics logs back out (keep the watchdog dump).
+**2026-07-11 13:47 capture — every in-app metric healthy, freeze
+persists.** Scroll mounts incremental, no churn, faults down to
+12, ModelBundle creations 201→14 (remaining direct readers now
+routed through `FMAvailabilityCache`). The capture shows UIEvents
+being DELIVERED to the window right up to the end, then the log
+simply stops — across all six captures the freeze itself emits
+nothing: no watchdog dump, no burst, process alive. Working
+hypothesis: main keeps running and this is a TOUCH-DELIVERY
+failure (gesture-recognizer wedge, invisible hit-testing blocker,
+or presentation-layer scrim), which no main-thread instrument can
+see.
+
+**The decisive capture (needs the user, ~30 seconds):** run from
+Xcode, freeze it, then press Pause (⏸) in Xcode's debug bar and
+type `bt all` at the `(lldb)` prompt — every thread's stack at
+the exact stuck moment. Also answer: do animations still run
+while stuck (recording timer, save flash)? do toolbar taps work
+while the canvas doesn't (or vice versa)? does it ever recover
+after ~30 s? does the app switcher still respond? And check
+Settings → Privacy & Security → Analytics & Improvements →
+Analytics Data for CeciliasNotes hang `.ips` entries.
+
+Once the freeze is confirmed dead, strip the `[Membership]`/
+`[Canvas]`/`[Overlays]` forensics logs back out (keep the
+watchdog dump).
 
 ---
 

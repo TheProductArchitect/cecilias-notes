@@ -29,16 +29,9 @@ final class AppleFoundationProvider: AIProvider {
     let name = "AppleFoundation"
     let isOnDevice = true
 
-    var isAvailable: Bool {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return SystemLanguageModel.default.availability == .available
-        }
-        return false
-        #else
-        return false
-        #endif
-    }
+    /// Cached (60 s TTL) — the raw availability read instantiates
+    /// the model bundle per call. See `FMAvailabilityCache`.
+    var isAvailable: Bool { FMAvailabilityCache.isAvailable }
 
     init() {}
 
@@ -52,7 +45,7 @@ final class AppleFoundationProvider: AIProvider {
 
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, *) {
-            guard SystemLanguageModel.default.availability == .available else {
+            guard FMAvailabilityCache.isAvailable else {
                 throw AIError.unavailable
             }
             do {
@@ -85,7 +78,7 @@ final class AppleFoundationProvider: AIProvider {
         return AsyncThrowingStream { continuation in
             #if canImport(FoundationModels)
             if #available(iOS 26.0, macOS 26.0, *) {
-                guard SystemLanguageModel.default.availability == .available else {
+                guard FMAvailabilityCache.isAvailable else {
                     continuation.finish(throwing: AIError.unavailable)
                     return
                 }

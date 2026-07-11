@@ -6,6 +6,44 @@ import SwiftUI
 import FoundationModels
 #endif
 
+/// Process-wide cached read of `SystemLanguageModel.default
+/// .availability`. Reading that property is NOT cheap: each access
+/// instantiates + verifies the language-model bundle (device log:
+/// 201 `ModelBundle: Creating … instruct_3b` in a 16-second session
+/// before caching — one per availability check — each doing
+/// `NSBundle` disk I/O plus an eligibility-observer register/
+/// deregister cycle). Availability only changes with Settings
+/// toggles, eligibility, or a model download, so a 60 s TTL loses
+/// nothing. Lock-protected so nonisolated providers
+/// (`AppleFoundationProvider`, quiz generator) share the cache with
+/// the MainActor `IntelligenceService`.
+enum FMAvailabilityCache {
+    nonisolated(unsafe) private static var cached: (value: Bool, at: Date)?
+    nonisolated private static let lock = NSLock()
+
+    nonisolated static var isAvailable: Bool {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            lock.lock()
+            if let cached, Date().timeIntervalSince(cached.at) < 60 {
+                let value = cached.value
+                lock.unlock()
+                return value
+            }
+            lock.unlock()
+            let value = SystemLanguageModel.default.availability == .available
+            lock.lock()
+            cached = (value, Date())
+            lock.unlock()
+            return value
+        }
+        return false
+        #else
+        return false
+        #endif
+    }
+}
+
 /// On-device AI surface, backed by Apple's Foundation Models
 /// framework. **All inference runs locally** — there are no network
 /// calls in this file, no cloud SDKs, no telemetry. The framework
@@ -53,34 +91,9 @@ final class IntelligenceService {
     ///     remains gracefully absent — no UI, no crashes — and the
     ///     architecture is in place to light up the day the
     ///     deployment moves up.
-    /// Cached with a 60 s TTL. Reading
-    /// `SystemLanguageModel.default.availability` is NOT a cheap
-    /// property: each access instantiates + verifies the language
-    /// model bundle (device log: 201 `ModelBundle: Creating …
-    /// instruct_3b` in a 16-second session — one per `canRun` check
-    /// from view bodies and save ticks — each doing `NSBundle` disk
-    /// I/O on the main thread plus an eligibility-observer
-    /// register/deregister cycle). Availability only changes with
-    /// Settings toggles, eligibility, or a model download, so a
-    /// once-per-minute lazy refresh loses nothing.
-    private var cachedAvailability: (value: Bool, at: Date)?
-
-    var isAvailable: Bool {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            if let cached = cachedAvailability,
-               Date().timeIntervalSince(cached.at) < 60 {
-                return cached.value
-            }
-            let value = SystemLanguageModel.default.availability == .available
-            cachedAvailability = (value, Date())
-            return value
-        }
-        return false
-        #else
-        return false
-        #endif
-    }
+    /// Delegates to `FMAvailabilityCache` (60 s TTL) — see its doc
+    /// for why the raw availability read must never run per call.
+    var isAvailable: Bool { FMAvailabilityCache.isAvailable }
 
     /// Master user toggle, stored in UserDefaults under
     /// `intelligence.enabled`. Default ON when the framework is
