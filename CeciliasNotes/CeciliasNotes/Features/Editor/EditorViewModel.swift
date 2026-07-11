@@ -166,6 +166,10 @@ final class EditorViewModel: ObservableObject {
     /// when the user changes the setting in Settings → Pencil with the
     /// editor still open. See §6.E.
     private nonisolated(unsafe) var userDefaultsObserver: NSObjectProtocol?
+    #if DEBUG
+    /// Phantom-undo forensics tokens — removed in deinit.
+    private nonisolated(unsafe) var undoForensicsTokens: [NSObjectProtocol] = []
+    #endif
     @Published var isShowingColorPicker: Bool = false
 
     // MARK: Zoom
@@ -638,6 +642,27 @@ final class EditorViewModel: ObservableObject {
         // under the user (view-identity churn upstream).
         dlog("[Editor] viewModel INIT notebook=\(notebook.id.uuidString.prefix(8)) pages=\(deduped.count)")
 
+        #if DEBUG
+        // Phantom-undo forensics: log EVERY undo/redo any manager in
+        // the process performs, with the call stack that asked for
+        // it. A "strokes undid themselves" report WITH a matching
+        // [Undo] line names the caller (gesture, Pencil squeeze,
+        // wrong-page targeting); a report WITHOUT one proves the
+        // strokes were lost at the DATA layer instead (issue #3
+        // un-deleter, purge, or a stale drawing apply — see the
+        // "[Canvas] drawing APPLIED" logs).
+        for name in [NSNotification.Name.NSUndoManagerWillUndoChange,
+                     .NSUndoManagerWillRedoChange] {
+            undoForensicsTokens.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { note in
+                let kind = name == .NSUndoManagerWillUndoChange ? "UNDO" : "REDO"
+                let stack = Thread.callStackSymbols.prefix(14).joined(separator: "\n")
+                dlog("[Undo] will \(kind) — caller stack:\n\(stack)")
+            })
+        }
+        #endif
+
         // Restore the last viewed page if the resume feature is on AND the page
         // is still in range. The check happens once at init; subsequent changes
         // are written back in `currentPageIndex`'s didSet.
@@ -797,6 +822,11 @@ final class EditorViewModel: ObservableObject {
         NotificationCenter.default.removeObserver(self)
         // Block-based observer for UserDefaults.didChangeNotification —
         // `removeObserver(self)` does not cover token-returning observers.
+        #if DEBUG
+        for token in undoForensicsTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        #endif
         if let token = userDefaultsObserver {
             NotificationCenter.default.removeObserver(token)
         }

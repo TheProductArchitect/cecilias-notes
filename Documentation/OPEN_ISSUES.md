@@ -274,7 +274,50 @@ worth a look at donation volume if they recur.
 
 ---
 
-## 6. Crash "post dictation and summary" (v3.0 report) — HIGH
+## 6. Phantom undo — strokes revert without tapping undo — HIGH
+
+**Symptom.** Recurred 2026-07-11 on the build with
+`editingInteractionConfiguration = .none` (which killed the
+system three-finger-swipe undo), so that gesture was not the only
+source.
+
+**Candidate families.**
+  1. A real `undoManager.undo()` call: Pencil squeeze/double-tap
+     action mapped to undo, or R2 (single `viewModel.canvasView`
+     pointer targeting the WRONG PAGE's canvas when the user
+     scrolled mid-stroke — the undo "fires" on a page the user
+     isn't looking at, and the visible page's revert comes from a
+     reload).
+  2. Data-level stroke loss that only reads as undo: issue #3's
+     un-deleter, the duplicate purge's tombstone-wins deleting a
+     LIVE stroke row, or a stale drawing apply racing a save.
+
+**Primary-suspect fix (2026-07-11).** The canvas-only opt-out had
+a hole: the per-page overlay hosts cover the FULL page
+(TextCatcher is a page-sized background catcher), still honoured
+the system editing-interaction gestures, and those land on the
+SHARED window undo manager where PencilKit registers strokes — a
+multi-finger scroll over an overlay region still fired system
+undo. Overlay + template hosts now use
+`NoSystemUndoHostingController` (`editingInteractionConfiguration
+= .none`).
+
+**Forensics in place (2026-07-11).** DEBUG builds log:
+  - `[Undo] will UNDO/REDO — caller stack:` for every undo any
+    manager performs (installed in `EditorViewModel.init`);
+  - `[Canvas] drawing APPLIED (mount decode | reload cache |
+    reload fetch | reload EMPTY)` with stroke counts for every
+    non-user canvas drawing assignment.
+
+**Next step.** Reproduce with the console open. A revert WITH a
+matching `[Undo]` line → read the stack, fix the caller. A revert
+WITHOUT one → compare the `strokes=` counts in the nearest
+`[Canvas] drawing APPLIED` line against what was on screen; that
+names the stale-data path.
+
+---
+
+## 7. Crash "post dictation and summary" (v3.0 report) — HIGH
 
 **Symptom.** User reports the app crashed after a dictation
 finished and the summary appeared, on a v3.0 build. No crash

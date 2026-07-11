@@ -48,6 +48,14 @@ struct CeciliasNotesApp: App {
 
         MainThreadWatchdog.install()
 
+        // Production hang/crash telemetry — the OS delivers MetricKit
+        // diagnostics (with stacks) on the launch after an incident,
+        // written to Documents/Diagnostics. DEBUG builds have the
+        // watchdog + forensics logs; this is the Release-build eye.
+        #if canImport(MetricKit) && os(iOS)
+        MainActor.assumeIsolated { MetricKitCollector.shared.start() }
+        #endif
+
         // Fix 2 — instantiate the icon-update gate at launch so its
         // keyboard-lifecycle observers are installed BEFORE the
         // onboarding name field can raise the keyboard. Created late,

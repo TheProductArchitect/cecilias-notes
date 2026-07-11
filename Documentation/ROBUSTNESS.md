@@ -12,6 +12,7 @@ Last updated: 2026-07-10. Documents how major processes run, which thread owns t
 | `StorageService` / SwiftData `mainContext` | `@MainActor` | All fetches and `context.save()` on main; heavy decode/export off-main |
 | `StrokeCache` | `@MainActor` | Write-through on stroke edits; blob fetch AND `PKDrawing` decode on a background `ModelContext` (2026-07-10) |
 | `MainThreadWatchdog` | Background queue | Records hangs synchronously via `SessionHealth`; DEBUG builds dump the MAIN thread's stack at hang time (SIGPROF + `backtrace()`) |
+| `MetricKitCollector` | MetricKit background queue | Release-build eye: OS-collected hang/crash diagnostics (with stacks) written to `Documents/Diagnostics/*.json` on the launch after an incident |
 | MCP `.inkbook` export | `Task.detached` — build AND write on a background `ModelContext` | Pass notebook IDs across the boundary, never model objects |
 | Vision / OCR / shape detect | `Task.detached` | Results applied on main only |
 | UI tests (`-uiTesting`) | Main | Wipes store; CloudKit disabled in container |
@@ -89,7 +90,7 @@ they don't re-queue.
 
 **Race risks:** Single `viewModel.canvasView` pointer vs multi-page canvases — undo may target wrong page if user scrolls mid-stroke. **Open issue R2:** per-page canvas map.
 
-**System undo gestures:** `CeciliasNotesPKCanvasView.editingInteractionConfiguration == .none` (2026-07-10). iPadOS's three-finger swipe fires `undoManager.undo()` and PencilKit registers every stroke there — multi-finger scrolls across inked canvases read as the undo swipe ("strokes undo themselves"). Do not remove.
+**System undo gestures:** `CeciliasNotesPKCanvasView.editingInteractionConfiguration == .none` (2026-07-10) AND `NoSystemUndoHostingController` for the per-page overlay/template hosts (2026-07-11). iPadOS's three-finger gestures fire `undoManager.undo()` on the SHARED window undo manager (where PencilKit registers every stroke); the canvas-only opt-out left the full-page overlay hosts as a route in — phantom undo recurred until they opted out too. Do not remove either half. Toolbar/squeeze-wheel undo call `undoManager` directly and are unaffected; DEBUG builds log `[Undo] will UNDO/REDO — caller stack` for every undo any manager performs.
 
 **Page-host reconcile (2026-07-10, device-log confirmed):** the editor diffs `viewModel.pages` and reuses hosts for surviving pages (`reconcilePageHosts`) — removed pages flush ink + tear down, added pages mount, survivors keep renderer/overlays/canvas/in-flight strokes and just re-frame. The old "rebuild from scratch on any list change" became a freeze loop when a Page row flapped in/out of the fetch (issue #3). From-scratch builds (empty host stack) still use the batched `rebuildPageHosts`. The reconcile logs `[Hosts] reconcile added=… removed=…` — the tripwire for the un-deleter. `fetchPages` sorts (pageNumber, createdAt, id) so equal page numbers can't flap order.
 

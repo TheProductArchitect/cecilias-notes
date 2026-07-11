@@ -94,6 +94,20 @@ private extension UIHostingController {
 /// has to stay equal to `(bounds.width - pageWidth) / 2` to keep the
 /// page horizontally centred, but SwiftUI doesn't natively notify a
 /// `UIViewRepresentable` on layout-only changes.
+/// Hosting controller that opts out of iPadOS's system three-finger
+/// undo/redo gestures. `CeciliasNotesPKCanvasView` already opts the
+/// canvas out, but the per-page overlay hosts cover the FULL page
+/// (TextCatcher is a page-sized background catcher), and UIKit's
+/// editing-interaction gestures fired through them land on the
+/// SHARED window undo manager — where PencilKit registers every
+/// stroke. Result: a multi-finger scroll over an overlay region
+/// still read as system undo ("strokes undo themselves") after the
+/// canvas-only fix. Toolbar / squeeze-wheel undo call `undoManager`
+/// directly and are unaffected.
+final class NoSystemUndoHostingController<Content: View>: UIHostingController<Content> {
+    override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
+}
+
 private final class CanvasHostView: UIView {
     var onLayoutSubviews: (() -> Void)?
 
@@ -968,7 +982,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let renderer = PageRenderer(pageSize: page.pageSize)
             renderer.frame = frame
 
-                let templateHost = UIHostingController(
+                let templateHost: UIHostingController<TemplatePatternView> = NoSystemUndoHostingController(
                     rootView: TemplatePatternView(template: page.backgroundTemplate)
                 )
                 templateHost.view.backgroundColor = .clear
@@ -1013,7 +1027,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             coordinateSpace pageCS: PageCoordinateSpace
         ) -> UIHostingController<PageOverlaysContainer> {
             let inputs = overlayInputs(for: page.id)
-            let overlaysHost = UIHostingController(
+            let overlaysHost: UIHostingController<PageOverlaysContainer> = NoSystemUndoHostingController(
                 rootView: PageOverlaysContainer(
                     viewModel: viewModel,
                     pageId: page.id,
@@ -1745,6 +1759,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                               self.hosts[i].canvasView === canvas,
                               canvas.superview != nil
                         else { return }
+                        dlog("[Canvas] drawing APPLIED (mount decode) page=\(pageId.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
                         canvas.drawing = drawing
                         StrokeCache.shared.cache(drawing, forPage: pageId)
                     }
@@ -2162,13 +2177,16 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].saveTask = nil
                 hosts[i].isDirty = false
                 if let cached = StrokeCache.shared.drawing(forPage: pid) {
+                    dlog("[Canvas] drawing APPLIED (reload cache) page=\(pid.uuidString.prefix(8)) strokes=\(cached.strokes.count)")
                     canvas.drawing = cached
                 } else if let page = page(for: pid),
                           let data = StorageService.shared.strokeData(for: page),
                           let drawing = try? PKDrawing(data: data) {
+                    dlog("[Canvas] drawing APPLIED (reload fetch) page=\(pid.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
                     canvas.drawing = drawing
                     StrokeCache.shared.cache(drawing, forPage: pid)
                 } else {
+                    dlog("[Canvas] drawing APPLIED (reload EMPTY) page=\(pid.uuidString.prefix(8))")
                     canvas.drawing = PKDrawing()
                 }
             }
