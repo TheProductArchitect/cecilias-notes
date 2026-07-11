@@ -225,6 +225,10 @@ final class MultipeerSendService: NSObject, ObservableObject {
     /// work per attempt, and the "Failed to send a DTLS packet / No
     /// route to host" stderr storm drowning every freeze capture.
     private var reconnectAttempts: [String: Int] = [:]
+    /// Earliest moment ANY path (timer or `foundPeer` discovery) may
+    /// re-invite the peer. Both must share one gate — see
+    /// `considerAutoConnect`.
+    private var nextReconnectAllowedAt: [String: Date] = [:]
 
     private func scheduleReconnect(to peer: MCPeerID) {
         guard keepBrowsingAlive || MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) != nil else {
@@ -235,6 +239,7 @@ final class MultipeerSendService: NSObject, ObservableObject {
         reconnectAttempts[peer.displayName] = attempt + 1
         // 5 s → 10 → 20 → 40 → 80 → 160 → capped 300 s.
         let delay = min(300.0, 5.0 * pow(2.0, Double(min(attempt, 6))))
+        nextReconnectAllowedAt[peer.displayName] = Date().addingTimeInterval(delay)
         reconnectTasks[peer.displayName] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             await MainActor.run {
@@ -357,8 +362,18 @@ final class MultipeerSendService: NSObject, ObservableObject {
     }
 
     private func considerAutoConnect(to peer: MCPeerID, info: [String: String]?) {
-        if MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) != nil {
+        // Backoff gate for DISCOVERY-driven invites. Bonjour re-fires
+        // `foundPeer` whenever the peer's record refreshes, and a
+        // zombie peer (still advertised, dead data link) therefore got
+        // an immediate re-invite per refresh — bypassing the
+        // `scheduleReconnect` backoff entirely. Each invite runs a
+        // ~30 s DTLS handshake retry storm in-process, so the app
+        // never got a quiet second all session.
+        let name = peer.displayName
+        guard Date() >= (nextReconnectAllowedAt[name] ?? .distantPast) else { return }
+        if MultipeerPairingStore.sharedKey(forPeerName: name) != nil {
             if session?.connectedPeers.contains(peer) != true, targetPeer == nil || targetPeer == peer {
+                armReconnectBackoff(peerName: name)
                 invite(peer: peer, reason: .reconnect)
             }
             return
@@ -369,8 +384,19 @@ final class MultipeerSendService: NSObject, ObservableObject {
         if pendingCode == nil,
            let remoteHash, let localHash, remoteHash == localHash,
            targetPeer == nil || targetPeer == peer {
+            armReconnectBackoff(peerName: name)
             pairFirstParty(with: peer)
         }
+    }
+
+    /// Bump the attempt counter and stamp the earliest next-invite
+    /// moment for this peer (5 s → 10 → … capped 300 s). Cleared on
+    /// a successful connect.
+    private func armReconnectBackoff(peerName: String) {
+        let attempt = reconnectAttempts[peerName, default: 0]
+        reconnectAttempts[peerName] = attempt + 1
+        let delay = min(300.0, 5.0 * pow(2.0, Double(min(attempt, 6))))
+        nextReconnectAllowedAt[peerName] = Date().addingTimeInterval(delay)
     }
 }
 
@@ -442,6 +468,7 @@ extension MultipeerSendService: MCSessionDelegate {
             switch state {
             case .connected:
                 self.reconnectAttempts[peerID.displayName] = 0
+                self.nextReconnectAllowedAt[peerID.displayName] = nil
                 self.refreshConnectedPeerNames()
                 if let key = self.pairingKey(for: peerID),
                    self.pendingCode != nil || self.pendingFirstParty {

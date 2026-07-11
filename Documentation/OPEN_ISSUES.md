@@ -185,14 +185,36 @@ answers this conclusively:
   - Multipeer reconnect now backs off exponentially (5 s → 5 min)
     so the DTLS stderr storm stops drowning captures.
 
+**2026-07-11 12:55 capture (forensics build) — livelock
+confirmed.** One `viewModel INIT`, one `makeUIView` (no identity
+churn this run), NO watchdog dump (runloop still ticking) — but
+the `[Canvas]`/`[Overlays]` logs caught the loop: mass-mount of
+all 9 pages' canvases + overlay trees, immediate mass-unmount of
+idx 1–7, remount idx 1, … The user reported "stuck no matter
+what — just scrolling". Two membership defects fixed in response:
+  - mount band == unmount threshold → border pages flipped every
+    pass; now hysteresis (a host survives until it drifts a full
+    extra viewport past its band);
+  - overlays unmounted for every non-active page on every at-rest
+    pass → now sticky while within the keep band.
+Also fixed: `considerAutoConnect` invited a zombie peer on every
+Bonjour `foundPeer` refresh, bypassing the reconnect backoff —
+each invite = ~30 s of in-process DTLS handshake retries, which
+is the "Failed to send a DTLS packet" wall in every capture. Both
+invite paths now share one backoff gate.
+
+**Suspected compounding factor while attached to Xcode:** the
+DTLS storm writes stderr hundreds of times per second; the debug
+console pipe applies backpressure, and `dlog` fflushes stdout on
+the main thread — console saturation can itself stall main.
+
 **Next step.** Rebuild to device, reproduce, capture the Xcode
-console. Read it in this order: (1) any
-`[MainThreadWatchdog] MAIN THREAD unresponsive` stack — that's
-the answer for a blocked main; (2) if absent, the mount-cycle
-logs — `viewModel INIT` repeating names editor recreation
-(identity churn upstream); `makeUIView` repeating names
-representable churn; `[Canvas] mount/unmount` oscillation names
-warm-band thrash.
+console. Read in order: (1) any `[MainThreadWatchdog] MAIN THREAD
+unresponsive` stack; (2) `[Membership]` lines — `canvases=`/
+`overlays=` counts oscillating at rest = band thrash persists;
+(3) `viewModel INIT` / `makeUIView` repeats = identity churn.
+Also worth one run DETACHED from Xcode (launch from home screen)
+to rule the console-backpressure factor in or out.
 
 ---
 

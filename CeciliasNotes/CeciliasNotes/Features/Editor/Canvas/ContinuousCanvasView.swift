@@ -1521,6 +1521,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let canvasWarmBottom = viewportBottom + canvasPad
             let overlayWarmTop    = viewportTop - overlayPad
             let overlayWarmBottom = viewportBottom + overlayPad
+            // Hysteresis (2026-07-11, device-log confirmed): the
+            // mount band and the unmount threshold MUST differ. With
+            // a single band, a page sitting on the border flips
+            // mounted→unmounted→mounted across consecutive membership
+            // passes, and a scroll sweep churns every page it crosses
+            // — each canvas mount re-applies a full PKDrawing render
+            // and each overlay mount builds a nine-overlay SwiftUI
+            // tree, all on main. A freeze capture showed exactly that
+            // loop (mass mount → mass unmount → remount) starving
+            // touch delivery with the runloop still turning, so the
+            // hang watchdog never fired. Once mounted, a host now
+            // survives until it drifts a full extra viewport beyond
+            // its band.
+            let keepPad = scrollView.bounds.height
             var deferredUnmountSaves = false
 
             for i in hosts.indices {
@@ -1534,6 +1548,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 )
                 let inCanvasBand = scaled.maxY >= canvasWarmTop && scaled.minY <= canvasWarmBottom
                 let inOverlayBand = scaled.maxY >= overlayWarmTop && scaled.minY <= overlayWarmBottom
+                let inCanvasKeepBand = scaled.maxY >= canvasWarmTop - keepPad
+                    && scaled.minY <= canvasWarmBottom + keepPad
+                let inOverlayKeepBand = scaled.maxY >= overlayWarmTop - keepPad
+                    && scaled.minY <= overlayWarmBottom + keepPad
                 if inCanvasBand {
                     if hosts[i].canvasView == nil {
                         if isActivelyScrolling {
@@ -1542,7 +1560,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                             mountCanvas(at: i, in: contentView)
                         }
                     }
-                } else if !inCanvasBand && hosts[i].canvasView != nil && !force
+                } else if !inCanvasKeepBand && hosts[i].canvasView != nil && !force
                             && !isActivelyScrolling {
                     unmountCanvas(at: i, deferStorageSave: true)
                     deferredUnmountSaves = true
@@ -1551,8 +1569,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     if hosts[i].overlaysHost == nil {
                         pendingOverlayMountIndices.insert(i)
                     }
-                } else if hosts[i].overlaysHost != nil && !force
+                } else if hosts[i].overlaysHost != nil && !inOverlayKeepBand && !force
                             && !isActivelyScrolling {
+                    // Sticky overlays: a page that already paid the
+                    // overlay-tree build cost keeps it while anywhere
+                    // near the viewport. The old rule unmounted every
+                    // non-active page's overlays on every at-rest
+                    // pass, so sweeping N pages churned N mount+
+                    // unmount cycles of the heaviest per-page cost.
                     unmountOverlays(at: i)
                 }
             }
@@ -1562,6 +1586,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
             }
+            dlog("[Membership] offset=\(Int(viewportTop)) zoom=\(String(format: "%.2f", scrollView.zoomScale)) scrolling=\(isActivelyScrolling) force=\(force) canvases=\(hosts.filter { $0.canvasView != nil }.count) overlays=\(hosts.filter { $0.overlaysHost != nil }.count)")
         }
 
         private func flushPendingCanvasMounts() {
