@@ -53,10 +53,28 @@ final class IntelligenceService {
     ///     remains gracefully absent — no UI, no crashes — and the
     ///     architecture is in place to light up the day the
     ///     deployment moves up.
+    /// Cached with a 60 s TTL. Reading
+    /// `SystemLanguageModel.default.availability` is NOT a cheap
+    /// property: each access instantiates + verifies the language
+    /// model bundle (device log: 201 `ModelBundle: Creating …
+    /// instruct_3b` in a 16-second session — one per `canRun` check
+    /// from view bodies and save ticks — each doing `NSBundle` disk
+    /// I/O on the main thread plus an eligibility-observer
+    /// register/deregister cycle). Availability only changes with
+    /// Settings toggles, eligibility, or a model download, so a
+    /// once-per-minute lazy refresh loses nothing.
+    private var cachedAvailability: (value: Bool, at: Date)?
+
     var isAvailable: Bool {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, macOS 26.0, *) {
-            return SystemLanguageModel.default.availability == .available
+            if let cached = cachedAvailability,
+               Date().timeIntervalSince(cached.at) < 60 {
+                return cached.value
+            }
+            let value = SystemLanguageModel.default.availability == .available
+            cachedAvailability = (value, Date())
+            return value
         }
         return false
         #else

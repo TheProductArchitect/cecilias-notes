@@ -221,6 +221,20 @@ found in the `[Membership]` trace and fixed:
     viewport; deferred queues re-check the band at mount time and
     drop pages that scrolled away.
 
+**2026-07-11 13:26 capture — scroll healthy; new offender found.**
+Mid-scroll incremental mounts behave (counts grow smoothly, no
+churn, no watchdog dump). The unified log exposed a fresh storm:
+`ModelBundle: Creating … com.apple.fm.language.instruct_3b` ×201
+in a 16-second session (~12/s) — every `IntelligenceService
+.canRun` check read `SystemLanguageModel.default.availability`,
+which instantiates + verifies the 3B model bundle (NSBundle disk
+I/O on main + an eligibility-observer register/deregister cycle
+per read), and `canRun` is consulted from SwiftUI view bodies
+(notebook cards, header, toolbar) and every save tick. Now cached
+with a 60 s TTL. This also accounts for the recurring
+`-[NSBundle bundleIdentifier]` main-thread I/O faults across ALL
+captures.
+
 **Next step.** Rebuild to device, reproduce, capture the Xcode
 console. Read in order: (1) any `[MainThreadWatchdog] MAIN THREAD
 unresponsive` stack; (2) `[Membership]` lines — `canvases=`/
