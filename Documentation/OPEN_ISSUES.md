@@ -147,7 +147,56 @@ next review round.
 
 ---
 
-## 5. Crash "post dictation and summary" (v3.0 report) — HIGH
+## 5. Editor freeze after opening a notebook — HIGH (active)
+
+**Symptom.** Device freezes ~seconds after opening a specific
+notebook (id `75784527`, 9 pages). Reproduced across three
+capture rounds on 2026-07-10/11. Every session ends with a
+force-kill (each next launch logs `previous shutdown was DIRTY`).
+
+**Fixed so far (each round shrank the storm, none ended it):**
+main-thread `MCSession.send` on stale DTLS links; thumbnail keys
+fingerprinting stroke bytes (2× multi-MB main-actor blob reads
+per page per save); `StrokeCache` prewarm blob reads on main;
+`shouldOCR` full-blob reads per page per `refreshAll()`; full
+host teardown+rebuild on any page-list change (now incremental).
+The 2026-07-11 12:35 build (all fixes in) still froze — but the
+main-thread DB faults dropped from continuous to 48 samples in
+12 s, so the remaining cause is likely NOT SQLite volume.
+
+**Signature in the 07-11 capture.** After ONE card tap: three
+consecutive full editor mounts (all pages' overlay `onAppear` +
+all canvases torn down — `handwritingd` invalidation bursts)
+with page `F157C5C8` flapping in/out between them, and no
+`[Hosts] reconcile` log — meaning the whole canvas representable
+(fresh coordinator) is being recreated, i.e. view-identity churn
+ABOVE the host diff, possibly a livelock (main busy, not
+blocked — the runloop-ack watchdog may never fire for this).
+
+**Diagnostics now in place (2026-07-11).** The next capture
+answers this conclusively:
+  - `MainThreadWatchdog` DEBUG builds now dump THE MAIN THREAD'S
+    stack at hang time (SIGPROF handler + `backtrace()`; the
+    watchdog symbolicates and prints it).
+  - Lifecycle logs: `[Editor] viewModel INIT/DEINIT`,
+    `[Hosts] makeUIView — fresh coordinator`, `[Hosts] FULL
+    rebuild`, `[Hosts] reconcile added=…removed=…`,
+    `[Canvas] mount/unmount`, `[Overlays] mount/unmount`.
+  - Multipeer reconnect now backs off exponentially (5 s → 5 min)
+    so the DTLS stderr storm stops drowning captures.
+
+**Next step.** Rebuild to device, reproduce, capture the Xcode
+console. Read it in this order: (1) any
+`[MainThreadWatchdog] MAIN THREAD unresponsive` stack — that's
+the answer for a blocked main; (2) if absent, the mount-cycle
+logs — `viewModel INIT` repeating names editor recreation
+(identity churn upstream); `makeUIView` repeating names
+representable churn; `[Canvas] mount/unmount` oscillation names
+warm-band thrash.
+
+---
+
+## 6. Crash "post dictation and summary" (v3.0 report) — HIGH
 
 **Symptom.** User reports the app crashed after a dictation
 finished and the summary appeared, on a v3.0 build. No crash

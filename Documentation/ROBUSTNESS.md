@@ -11,7 +11,7 @@ Last updated: 2026-07-10. Documents how major processes run, which thread owns t
 | SwiftUI views & `@Published` | `@MainActor` | Never mutate from UIKit/PencilKit delegates synchronously — defer with `Task { @MainActor in … }` |
 | `StorageService` / SwiftData `mainContext` | `@MainActor` | All fetches and `context.save()` on main; heavy decode/export off-main |
 | `StrokeCache` | `@MainActor` | Write-through on stroke edits; blob fetch AND `PKDrawing` decode on a background `ModelContext` (2026-07-10) |
-| `MainThreadWatchdog` | Background queue | Records hangs synchronously via `SessionHealth` (UserDefaults + latch, no `main.async`) |
+| `MainThreadWatchdog` | Background queue | Records hangs synchronously via `SessionHealth`; DEBUG builds dump the MAIN thread's stack at hang time (SIGPROF + `backtrace()`) |
 | MCP `.inkbook` export | `Task.detached` — build AND write on a background `ModelContext` | Pass notebook IDs across the boundary, never model objects |
 | Vision / OCR / shape detect | `Task.detached` | Results applied on main only |
 | UI tests (`-uiTesting`) | Main | Wipes store; CloudKit disabled in container |

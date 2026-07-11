@@ -218,13 +218,25 @@ final class MultipeerSendService: NSObject, ObservableObject {
         }
     }
 
+    /// Reconnect attempts per peer since its last successful connect.
+    /// Drives exponential backoff — a paired peer that left the LAN
+    /// otherwise re-arms a dead DTLS handshake every 5 s for the whole
+    /// session: in-process MCSession socket churn, keychain identity
+    /// work per attempt, and the "Failed to send a DTLS packet / No
+    /// route to host" stderr storm drowning every freeze capture.
+    private var reconnectAttempts: [String: Int] = [:]
+
     private func scheduleReconnect(to peer: MCPeerID) {
         guard keepBrowsingAlive || MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) != nil else {
             return
         }
         reconnectTasks[peer.displayName]?.cancel()
+        let attempt = reconnectAttempts[peer.displayName, default: 0]
+        reconnectAttempts[peer.displayName] = attempt + 1
+        // 5 s → 10 → 20 → 40 → 80 → 160 → capped 300 s.
+        let delay = min(300.0, 5.0 * pow(2.0, Double(min(attempt, 6))))
         reconnectTasks[peer.displayName] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(delay))
             await MainActor.run {
                 guard let self else { return }
                 guard self.session?.connectedPeers.contains(peer) != true else { return }
@@ -429,6 +441,7 @@ extension MultipeerSendService: MCSessionDelegate {
             guard let self else { return }
             switch state {
             case .connected:
+                self.reconnectAttempts[peerID.displayName] = 0
                 self.refreshConnectedPeerNames()
                 if let key = self.pairingKey(for: peerID),
                    self.pendingCode != nil || self.pendingFirstParty {

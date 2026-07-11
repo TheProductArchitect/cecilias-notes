@@ -631,7 +631,12 @@ final class EditorViewModel: ObservableObject {
         // (CloudKit echo / stale local replica) make `ForEach` on iOS 26
         // hard-crash with "NativeDictionary.swift:792: Fatal error:
         // Duplicate values for key…" the moment the editor mounts.
-        self.pages            = fetched.isEmpty ? [] : fetched.dedupedByIdNewestWins()
+        let deduped           = fetched.isEmpty ? [] : fetched.dedupedByIdNewestWins()
+        self.pages            = deduped
+        // Freeze forensics: repeated init for the same notebook with
+        // no editor exit = the editor is being recreated out from
+        // under the user (view-identity churn upstream).
+        dlog("[Editor] viewModel INIT notebook=\(notebook.id.uuidString.prefix(8)) pages=\(deduped.count)")
 
         // Restore the last viewed page if the resume feature is on AND the page
         // is still in range. The check happens once at init; subsequent changes
@@ -783,6 +788,7 @@ final class EditorViewModel: ObservableObject {
     }
 
     deinit {
+        dlog("[Editor] viewModel DEINIT")
         // Tasks captured [weak self] — they will be no-ops after dealloc.
         toolbarHideTask?.cancel()
         headerManualReHideTask?.cancel()

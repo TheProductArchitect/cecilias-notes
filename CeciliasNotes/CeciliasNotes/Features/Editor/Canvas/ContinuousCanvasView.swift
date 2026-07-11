@@ -175,6 +175,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
     // MARK: makeUIView
 
     func makeUIView(context: Context) -> UIView {
+        // Freeze forensics: one line per REPRESENTABLE recreation.
+        // Repeated makeUIView with no editor exit/enter = something
+        // is churning this view's SwiftUI identity — every recreation
+        // tears down and rebuilds all page hosts from scratch.
+        dlog("[Hosts] makeUIView — fresh coordinator (notebook=\(viewModel.notebook.id.uuidString.prefix(8)))")
         let host = CanvasHostView()
         host.backgroundColor = UIColor(theme.pageBackground)
         host.isUserInteractionEnabled = true
@@ -838,6 +843,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 applyPageMetadataChanges()
                 return
             }
+            dlog("[Hosts] FULL rebuild count=\(snapshot.count) (had \(hosts.count) hosts) pages=\(snapshot.map { $0.uuidString.prefix(8) })")
             hostBuildQueue.removeAll()
             tearDownAllHosts()
             let pages   = viewModel.pages
@@ -1059,6 +1065,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard hosts.indices.contains(i),
                   hosts[i].overlaysHost == nil,
                   let page = page(for: hosts[i].pageId) else { return }
+            dlog("[Overlays] mount idx=\(i) page=\(hosts[i].pageId.uuidString.prefix(8))")
             let pageCS = PageCoordinateSpace(baseSize: page.pageSize.pointSize)
             hosts[i].overlaysHost = mountOverlaysHost(
                 page: page,
@@ -1070,6 +1077,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private func unmountOverlays(at i: Int) {
             guard hosts.indices.contains(i),
                   let overlaysHost = hosts[i].overlaysHost else { return }
+            dlog("[Overlays] unmount idx=\(i) page=\(hosts[i].pageId.uuidString.prefix(8))")
             pendingOverlayMountIndices.remove(i)
             overlaysHost.detachFromParentVC()
             overlaysHost.view.removeFromSuperview()
@@ -1614,6 +1622,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard i < hosts.count else { return }
             guard let page = page(for: hosts[i].pageId) else { return }
             let pageId = hosts[i].pageId
+            dlog("[Canvas] mount idx=\(i) page=\(pageId.uuidString.prefix(8))")
             // A remount supersedes any deferred unmount snapshot.
             pendingUnmountDrawings.removeValue(forKey: pageId)
             let frame = hosts[i].frame
@@ -1767,6 +1776,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private func unmountCanvas(at i: Int, deferStorageSave: Bool = false) {
             guard i < hosts.count, let canvas = hosts[i].canvasView else { return }
             let pageId = hosts[i].pageId
+            dlog("[Canvas] unmount idx=\(i) page=\(pageId.uuidString.prefix(8)) deferSave=\(deferStorageSave)")
             if hosts[i].isDirty {
                 let drawing = canvas.drawing
                 StrokeCache.shared.cache(drawing, forPage: pageId)
