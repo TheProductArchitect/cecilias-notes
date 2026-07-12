@@ -155,12 +155,18 @@ draws no custom pen shadow; candidates are the system Pencil
 hover preview or PencilKit's wet-ink/predicted-stroke layer
 lagging its swap to the committed render under load.
 
-**Next step.** Needs a screen recording or photo of the artefact
-to identify which system layer it is. If it is the wet-ink swap,
-profile what runs at stroke-end (shape recognition is detached;
-CoreHandwriting re-analysis is system-owned); if it is hover
-preview, note that `CeciliasNotesPKCanvasView` already rejects
-hover recognisers and the residual is system-rendered.
+**Identified (2026-07-12 screenshot).** It is the Apple Pencil
+Pro HOVER TIP SHADOW — an OS-composited hardware feature that
+shows a realistic pencil-tip shadow whenever the Pencil is within
+hover range (~12 mm). Not app-drawn; persisting after "lift" is
+expected while the tip stays near the glass.
+
+**Next step.** Compare tracking in Apple Notes. Identical lag →
+system behaviour, close this entry. Notably snappier in Notes →
+our `CeciliasNotesPKCanvasView` hover-recogniser rejection (added
+for the stroke-shift bug) is degrading hover tracking, and that
+tradeoff needs revisiting (scope the rejection to the layout
+side-effect instead of the whole recogniser).
 
 ---
 
