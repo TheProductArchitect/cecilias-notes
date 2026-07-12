@@ -50,15 +50,24 @@ final class LassoLiveDrag: ObservableObject {
     /// rotation gesture to the selection's bbox centre.
     @Published var rotationCenter: CGPoint = .zero
 
-    /// Convenience: the CGAffineTransform that rotates around
-    /// `rotationCenter` by `rotationAngle`. Elements apply this
-    /// via `.transformEffect` to render the live preview.
-    var rotationTransform: CGAffineTransform {
+    /// The CGAffineTransform that rotates around `rotationCenter`
+    /// by `rotationAngle`, expressed in the coordinate space of a
+    /// view whose top-leading corner sits at `frameOrigin` (page
+    /// coords). `transformEffect` operates in the VIEW'S OWN local
+    /// space — feeding it the page-coord pivot directly made every
+    /// element orbit a point displaced by its own page position
+    /// ("rotates in a circle centred somewhere on the page"), then
+    /// snap correct on release because the commit math was right.
+    func rotationTransform(frameOrigin: CGPoint) -> CGAffineTransform {
         guard rotationAngle != 0 else { return .identity }
+        let localPivot = CGPoint(
+            x: rotationCenter.x - frameOrigin.x,
+            y: rotationCenter.y - frameOrigin.y
+        )
         return CGAffineTransform.identity
-            .translatedBy(x: rotationCenter.x, y: rotationCenter.y)
+            .translatedBy(x: localPivot.x, y: localPivot.y)
             .rotated(by: rotationAngle)
-            .translatedBy(x: -rotationCenter.x, y: -rotationCenter.y)
+            .translatedBy(x: -localPivot.x, y: -localPivot.y)
     }
 
     func reset() {
@@ -83,6 +92,11 @@ final class LassoLiveDrag: ObservableObject {
 struct LassoRotationPreviewModifier: ViewModifier {
 
     let elementId: UUID
+    /// The element's top-leading corner in page coordinates — the
+    /// same space as `LassoLiveDrag.rotationCenter`. Needed to
+    /// convert the pivot into the view's local space (see
+    /// `rotationTransform(frameOrigin:)`).
+    let frameOrigin: CGPoint
 
     @ObservedObject private var selection = LassoSelectionState.shared
     @ObservedObject private var liveDrag  = LassoLiveDrag.shared
@@ -95,7 +109,9 @@ struct LassoRotationPreviewModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if isPreviewing {
-            content.transformEffect(liveDrag.rotationTransform)
+            content.transformEffect(
+                liveDrag.rotationTransform(frameOrigin: frameOrigin)
+            )
         } else {
             content
         }
@@ -105,8 +121,11 @@ struct LassoRotationPreviewModifier: ViewModifier {
 extension View {
     /// Apply the rotation preview to an element view. Call after
     /// the view's own `.position(...)` so the transform composes
-    /// with the element's resting placement.
-    func lassoRotationPreview(elementId: UUID) -> some View {
-        modifier(LassoRotationPreviewModifier(elementId: elementId))
+    /// with the element's resting placement; pass the element's
+    /// page-space top-leading corner.
+    func lassoRotationPreview(elementId: UUID, frameOrigin: CGPoint) -> some View {
+        modifier(LassoRotationPreviewModifier(
+            elementId: elementId, frameOrigin: frameOrigin
+        ))
     }
 }

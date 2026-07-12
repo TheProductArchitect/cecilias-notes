@@ -1593,7 +1593,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     unmountCanvas(at: i, deferStorageSave: true)
                     deferredUnmountSaves = true
                 }
-                if inOverlayBand, hosts[i].pageId == lastActivePageId {
+                // Any page inside the overlay band queues its overlay
+                // mount (batched 1/16 ms by the scheduler). The old
+                // "active page only" rule meant text/audio/sticky
+                // elements POPPED IN visibly after scrolling onto a
+                // page — the ink (canvas) arrived first, the elements
+                // only once the page became active at rest, which
+                // read as a glitch. Cost is bounded by the keep band
+                // (~3 pages of overlay trees alive).
+                if inOverlayBand {
                     if hosts[i].overlaysHost == nil {
                         pendingOverlayMountIndices.insert(i)
                     }
@@ -1608,9 +1616,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     unmountOverlays(at: i)
                 }
             }
-            if !isActivelyScrolling {
-                flushPendingOverlayMounts()
-            }
+            // Flush even mid-scroll: the scheduler batches one overlay
+            // tree per 16 ms and re-checks the band per mount, so a
+            // sweep pays at most a frame here and there instead of
+            // showing element-less pages until rest.
+            flushPendingOverlayMounts()
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
             }

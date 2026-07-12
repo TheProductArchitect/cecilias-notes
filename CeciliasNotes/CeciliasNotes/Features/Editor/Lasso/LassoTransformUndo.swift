@@ -13,6 +13,21 @@ enum ActivePageCanvas {
     weak static var current: PKCanvasView?
 }
 
+/// Stable anchor object for lasso undo registrations. Registrations
+/// used to target the PKCanvasView itself — but the warm band
+/// RECYCLES canvases while scrolling, and NSUndoManager drops (or
+/// dangles) every action whose target is gone, so the lasso undo
+/// history silently died after a couple of pages of scrolling
+/// ("undo works for a while, then stops"). The canvas is still used
+/// to LOCATE the window's UndoManager at registration time; this
+/// object only gives the actions an editor-lifetime target.
+/// `EditorView` clears anchored actions on dismiss so entries can't
+/// outlive their notebook.
+final class LassoUndoAnchor {
+    @MainActor static let shared = LassoUndoAnchor()
+    private init() {}
+}
+
 /// Undo plumbing for lasso group transforms (move / resize /
 /// rotate). Unlike `PageElementUndo` (a boolean deletedAt toggle),
 /// a transform mutates continuous geometry — and the commit path
@@ -106,7 +121,7 @@ enum LassoTransformUndo {
         guard before != after else { return }
         registerApply(
             state: before, opposite: after,
-            manager: manager, anchor: canvas, actionName: actionName
+            manager: manager, anchor: LassoUndoAnchor.shared, actionName: actionName
         )
     }
 

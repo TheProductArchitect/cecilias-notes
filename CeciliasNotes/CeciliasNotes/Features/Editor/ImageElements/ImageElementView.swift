@@ -104,7 +104,7 @@ struct ImageElementView: View {
                 .gesture(isSelected ? imageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
                 .position(x: displayed.midX, y: displayed.midY)
-                .lassoRotationPreview(elementId: element.id)
+                .lassoRotationPreview(elementId: element.id, frameOrigin: displayed.origin)
 
             if isSelected {
                 selectionChrome(imageRect: displayed)

@@ -30,7 +30,7 @@ enum PageElementUndo {
             willDelete: true,                  // first ⌘Z deletes the just-created element
             manager: manager,
             actionName: actionName,
-            anchor: canvas!
+            anchor: LassoUndoAnchor.shared
         )
     }
 
@@ -60,7 +60,7 @@ enum PageElementUndo {
             willDelete: false,                 // first ⌘Z restores the just-deleted element
             manager: manager,
             actionName: actionName,
-            anchor: canvas!
+            anchor: LassoUndoAnchor.shared
         )
     }
 

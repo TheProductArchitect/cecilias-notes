@@ -1,7 +1,7 @@
 # Open issues — unresolved
 
 Status tracker for bugs and gaps that are **known but not yet
-fixed**. Last reviewed 2026-07-10 (branch `main`).
+fixed**. Last reviewed 2026-07-12 (branch `main`).
 Resolved items should be deleted from this file, not struck
 through — git history is the archive.
 
@@ -147,177 +147,24 @@ next review round.
 
 ---
 
-## 5. Editor freeze after opening a notebook — HIGH (active)
+## 5. Pencil "shadow" lingers briefly after pen lift — LOW
+ 
+**Symptom (2026-07-12).** "The pen shadow is a bit slow — I can
+still see the shadow sometimes after lifting the pen." The app
+draws no custom pen shadow; candidates are the system Pencil
+hover preview or PencilKit's wet-ink/predicted-stroke layer
+lagging its swap to the committed render under load.
 
-**Symptom.** Device freezes ~seconds after opening a specific
-notebook (id `75784527`, 9 pages). Reproduced across three
-capture rounds on 2026-07-10/11. Every session ends with a
-force-kill (each next launch logs `previous shutdown was DIRTY`).
-
-**Fixed so far (each round shrank the storm, none ended it):**
-main-thread `MCSession.send` on stale DTLS links; thumbnail keys
-fingerprinting stroke bytes (2× multi-MB main-actor blob reads
-per page per save); `StrokeCache` prewarm blob reads on main;
-`shouldOCR` full-blob reads per page per `refreshAll()`; full
-host teardown+rebuild on any page-list change (now incremental).
-The 2026-07-11 12:35 build (all fixes in) still froze — but the
-main-thread DB faults dropped from continuous to 48 samples in
-12 s, so the remaining cause is likely NOT SQLite volume.
-
-**Signature in the 07-11 capture.** After ONE card tap: three
-consecutive full editor mounts (all pages' overlay `onAppear` +
-all canvases torn down — `handwritingd` invalidation bursts)
-with page `F157C5C8` flapping in/out between them, and no
-`[Hosts] reconcile` log — meaning the whole canvas representable
-(fresh coordinator) is being recreated, i.e. view-identity churn
-ABOVE the host diff, possibly a livelock (main busy, not
-blocked — the runloop-ack watchdog may never fire for this).
-
-**Diagnostics now in place (2026-07-11).** The next capture
-answers this conclusively:
-  - `MainThreadWatchdog` DEBUG builds now dump THE MAIN THREAD'S
-    stack at hang time (SIGPROF handler + `backtrace()`; the
-    watchdog symbolicates and prints it).
-  - Lifecycle logs: `[Editor] viewModel INIT/DEINIT`,
-    `[Hosts] makeUIView — fresh coordinator`, `[Hosts] FULL
-    rebuild`, `[Hosts] reconcile added=…removed=…`,
-    `[Canvas] mount/unmount`, `[Overlays] mount/unmount`.
-  - Multipeer reconnect now backs off exponentially (5 s → 5 min)
-    so the DTLS stderr storm stops drowning captures.
-
-**2026-07-11 12:55 capture (forensics build) — livelock
-confirmed.** One `viewModel INIT`, one `makeUIView` (no identity
-churn this run), NO watchdog dump (runloop still ticking) — but
-the `[Canvas]`/`[Overlays]` logs caught the loop: mass-mount of
-all 9 pages' canvases + overlay trees, immediate mass-unmount of
-idx 1–7, remount idx 1, … The user reported "stuck no matter
-what — just scrolling". Two membership defects fixed in response:
-  - mount band == unmount threshold → border pages flipped every
-    pass; now hysteresis (a host survives until it drifts a full
-    extra viewport past its band);
-  - overlays unmounted for every non-active page on every at-rest
-    pass → now sticky while within the keep band.
-Also fixed: `considerAutoConnect` invited a zombie peer on every
-Bonjour `foundPeer` refresh, bypassing the reconnect backoff —
-each invite = ~30 s of in-process DTLS handshake retries, which
-is the "Failed to send a DTLS packet" wall in every capture. Both
-invite paths now share one backoff gate.
-
-**Suspected compounding factor while attached to Xcode:** the
-DTLS storm writes stderr hundreds of times per second; the debug
-console pipe applies backpressure, and `dlog` fflushes stdout on
-the main thread — console saturation can itself stall main.
-
-**2026-07-11 13:05 capture (hysteresis build) — livelock GONE.**
-Whole-session mount churn collapsed to 7 canvas mounts / 5
-unmounts (was continuous); main-thread I/O faults down to 10, all
-inside one second at launch; DTLS spam down ~5×. Two residuals
-found in the `[Membership]` trace and fixed:
-  - mid-scroll, ALL canvas mounts were deferred to scroll rest —
-    a fast sweep showed blank paper the whole way (reads as
-    "stuck"), then the rest flush mounted every crossed page in
-    one burst (7 mounts → 5 unmounts spike). Now: one synchronous
-    mount per membership pass for a page intersecting the raw
-    viewport; deferred queues re-check the band at mount time and
-    drop pages that scrolled away.
-
-**2026-07-11 13:26 capture — scroll healthy; new offender found.**
-Mid-scroll incremental mounts behave (counts grow smoothly, no
-churn, no watchdog dump). The unified log exposed a fresh storm:
-`ModelBundle: Creating … com.apple.fm.language.instruct_3b` ×201
-in a 16-second session (~12/s) — every `IntelligenceService
-.canRun` check read `SystemLanguageModel.default.availability`,
-which instantiates + verifies the 3B model bundle (NSBundle disk
-I/O on main + an eligibility-observer register/deregister cycle
-per read), and `canRun` is consulted from SwiftUI view bodies
-(notebook cards, header, toolbar) and every save tick. Now cached
-with a 60 s TTL. This also accounts for the recurring
-`-[NSBundle bundleIdentifier]` main-thread I/O faults across ALL
-captures.
-
-**2026-07-11 13:47 capture — every in-app metric healthy, freeze
-persists.** Scroll mounts incremental, no churn, faults down to
-12, ModelBundle creations 201→14 (remaining direct readers now
-routed through `FMAvailabilityCache`). The capture shows UIEvents
-being DELIVERED to the window right up to the end, then the log
-simply stops — across all six captures the freeze itself emits
-nothing: no watchdog dump, no burst, process alive. Working
-hypothesis: main keeps running and this is a TOUCH-DELIVERY
-failure (gesture-recognizer wedge, invisible hit-testing blocker,
-or presentation-layer scrim), which no main-thread instrument can
-see.
-
-**ROOT CAUSE FOUND (2026-07-11, device `.ips` 13:52).** SIGTRAP
-on thread `com.apple.SwiftUI.AsyncRenderer` inside
-`closure #1 in Color.init(light:dark:)`
-(`CeciliasNotesColors.swift`): the `UIColor(dynamicProvider:)`
-closure silently inherited @MainActor under
-`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and UIKit resolves
-dynamic colors on SwiftUI's async render thread WHILE HOLDING the
-render-graph lock. The same report shows the main thread blocked
-on that very lock inside `touchesBegan → EventBindingBridge.send
-→ _MovableLockLock`. Mechanism of the "silent freeze": attached
-to Xcode, the trap suspends the process in lldb with the lock
-held — every touch wedges, nothing logs, the watchdog is
-suspended too; detached, it's an instant crash. Same defect
-family as the audio-tap closures that crashed App Store review.
-Fix landed: provider closures are `@Sendable` over pre-resolved
-platform colors (both UIKit and AppKit branches).
-
-**Verification pending:** user re-run (attached + detached).
-Once confirmed dead, delete this entry and strip the
-`[Membership]`/`[Canvas]`/`[Overlays]` forensics logs (keep the
-watchdog dump). Note: `knowledgeconstructiond` /
-`spotlightknowledged` CPU-resource `.ips` files from the same
-device are system daemons churning on Spotlight donations —
-worth a look at donation volume if they recur.
+**Next step.** Needs a screen recording or photo of the artefact
+to identify which system layer it is. If it is the wet-ink swap,
+profile what runs at stroke-end (shape recognition is detached;
+CoreHandwriting re-analysis is system-owned); if it is hover
+preview, note that `CeciliasNotesPKCanvasView` already rejects
+hover recognisers and the residual is system-rendered.
 
 ---
 
-## 6. Phantom undo — strokes revert without tapping undo — HIGH
-
-**Symptom.** Recurred 2026-07-11 on the build with
-`editingInteractionConfiguration = .none` (which killed the
-system three-finger-swipe undo), so that gesture was not the only
-source.
-
-**Candidate families.**
-  1. A real `undoManager.undo()` call: Pencil squeeze/double-tap
-     action mapped to undo, or R2 (single `viewModel.canvasView`
-     pointer targeting the WRONG PAGE's canvas when the user
-     scrolled mid-stroke — the undo "fires" on a page the user
-     isn't looking at, and the visible page's revert comes from a
-     reload).
-  2. Data-level stroke loss that only reads as undo: issue #3's
-     un-deleter, the duplicate purge's tombstone-wins deleting a
-     LIVE stroke row, or a stale drawing apply racing a save.
-
-**Primary-suspect fix (2026-07-11).** The canvas-only opt-out had
-a hole: the per-page overlay hosts cover the FULL page
-(TextCatcher is a page-sized background catcher), still honoured
-the system editing-interaction gestures, and those land on the
-SHARED window undo manager where PencilKit registers strokes — a
-multi-finger scroll over an overlay region still fired system
-undo. Overlay + template hosts now use
-`NoSystemUndoHostingController` (`editingInteractionConfiguration
-= .none`).
-
-**Forensics in place (2026-07-11).** DEBUG builds log:
-  - `[Undo] will UNDO/REDO — caller stack:` for every undo any
-    manager performs (installed in `EditorViewModel.init`);
-  - `[Canvas] drawing APPLIED (mount decode | reload cache |
-    reload fetch | reload EMPTY)` with stroke counts for every
-    non-user canvas drawing assignment.
-
-**Next step.** Reproduce with the console open. A revert WITH a
-matching `[Undo]` line → read the stack, fix the caller. A revert
-WITHOUT one → compare the `strokes=` counts in the nearest
-`[Canvas] drawing APPLIED` line against what was on screen; that
-names the stale-data path.
-
----
-
-## 7. Crash "post dictation and summary" (v3.0 report) — HIGH
+## 6. Crash "post dictation and summary" (v3.0 report) — HIGH
 
 **Symptom.** User reports the app crashed after a dictation
 finished and the summary appeared, on a v3.0 build. No crash

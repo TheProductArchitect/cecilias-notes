@@ -201,7 +201,7 @@ struct TextElementView: View {
         .gesture(isSelected && !isEditing ? moveGesture : nil)
         .position(x: origin.x + width / 2, y: origin.y + height / 2)
         .rotationEffect(.radians(element.rotation))
-        .lassoRotationPreview(elementId: element.id)
+        .lassoRotationPreview(elementId: element.id, frameOrigin: origin)
         .onAppear {
             seedIfNeeded()
             remeasureContentHeight()

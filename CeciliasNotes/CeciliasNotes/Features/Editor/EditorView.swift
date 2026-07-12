@@ -295,7 +295,17 @@ struct EditorView: View {
 
                         EditorToolbarView(
                             viewModel: viewModel,
-                            onBack: { onDismiss() },
+                            onBack: {
+                                // Lasso undo entries are anchored to
+                                // the editor-lifetime LassoUndoAnchor
+                                // (not the recycled canvases). Clear
+                                // them on exit so a stale entry can't
+                                // mutate this notebook's elements from
+                                // inside another notebook.
+                                viewModel.canvasView?.undoManager?
+                                    .removeAllActions(withTarget: LassoUndoAnchor.shared)
+                                onDismiss()
+                            },
                             onUndo: undo,
                             onRedo: redo,
                             canUndo: canUndo,
