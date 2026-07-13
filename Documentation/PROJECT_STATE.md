@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-10
+Last updated: 2026-07-12
 
 ## Elevator pitch
 
@@ -15,7 +15,30 @@ Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit contai
 
 ## Current phase
 
-**Production push: cross-device sync UX + Mac meeting assistant (2026-07-07).**
+**Stability sprint: crash/ANR elimination + device-feedback fixes
+(2026-07-10 → 07-12).** The "app freezes no matter what I do"
+hunt ran six device-capture rounds and ended at a single root
+cause: a `UIColor(dynamicProvider:)` closure that silently
+inherited @MainActor and SIGTRAPPED SwiftUI's async render thread
+while it held the render-graph lock (see Non-obvious constraints).
+Along the way every real main-thread I/O source fell: multipeer
+sends, thumbnail-key blob reads, `StrokeCache` prewarm,
+`shouldOCR`, full host rebuilds on page-list changes, warm-band
+mount thrash, and per-view-body Foundation-Models availability
+checks. User-confirmed on device: freeze gone, phantom undo gone.
+Follow-up device pass fixed lasso-undo longevity (registrations
+now anchor to `LassoUndoAnchor`, not recycled canvases), the
+rotate live-preview pivot, element pop-in on scroll, the custom
+colour picker's dismissal commit, image-element thumbnails, and
+the PDF-derived export's mirrored/shuffled image stamps.
+Permanent eyes added: `MainThreadWatchdog` dumps the main
+thread's own stack at hang time (DEBUG, SIGPROF sampler);
+`MetricKitCollector` lands OS-collected hang/crash diagnostics in
+`Documents/Diagnostics` (Release). **The next App Store archive
+must be cut from current `main` — 3.0 (3) predates all of it
+(OPEN_ISSUES #4).**
+
+Previous phase — **Production push: cross-device sync UX + Mac meeting assistant (2026-07-07).**
 
 1. **Same-Apple-Account devices on one LAN feel live.** Every platform now
    runs both multipeer lanes (advertise + browse — previously only the Mac

@@ -344,3 +344,55 @@ round (commits `c424991` → `e3f6384`).
 ### Submission status
 - **3.0 (3) predates all of the above** — archive a fresh build
   from `main` before the next review round (OPEN_ISSUES §4).
+
+---
+
+## Update — 2026-07-12 (freeze root cause found + device-feedback pass)
+
+### The freeze, closed (user-confirmed on device)
+Six capture rounds ended at ONE root cause: the
+`Color(light:dark:)` dynamic-provider closure silently inherited
+@MainActor and SIGTRAPPED SwiftUI's AsyncRenderer thread WHILE IT
+HELD the render-graph lock (`7e813f5`). Attached to Xcode the trap
+suspends the process in lldb — main deadlocks on that lock inside
+`touchesBegan` and the app reads as a total silent freeze; detached
+it is an instant crash (device `.ips` 13:52). Every intermediate
+round also removed a real defect: multipeer main-thread sends,
+thumbnail-key blob reads, prewarm blob reads, `shouldOCR` blob
+reads, full host rebuilds on page-list flap, warm-band mount
+thrash, and per-view-body Foundation-Models availability checks
+(201 model-bundle instantiations in 16 s → cached, `0e58925`).
+
+### Phantom undo, closed (user-confirmed)
+The page-sized overlay hosts still honoured iPadOS's three-finger
+editing gestures on the shared window undo manager; they now use
+`NoSystemUndoHostingController` (`2bb5db1`). DEBUG forensics log
+every undo with its caller stack.
+
+### Device-feedback pass (2026-07-12, `aedf390` + `4032a09`)
+- Lasso undo survives scrolling (registrations re-anchored from
+  recycled canvases to `LassoUndoAnchor`; cleared on editor exit).
+- Rotate live-preview pivots about the selection centre (the
+  commit was always correct; the preview transform was applied in
+  the wrong coordinate space).
+- Text/audio elements no longer pop in after scrolling onto a page
+  (overlay mounts queue for any in-band page and flush mid-scroll).
+- Custom colour picker commits on ANY dismissal (swipe-down
+  previously dropped the pick and the recents entry) with live ink
+  preview while the sheet is up.
+- Page-strip thumbnails composite image elements; image mutations
+  stamp `page.updatedAt` so the stamp-keyed cache refreshes.
+- PDF-derived export: image stamps un-mirrored (y-up context flip),
+  z-ordered deterministically (createdAt tiebreaker), rotation
+  honoured.
+
+### Permanent reliability eyes
+- DEBUG: `MainThreadWatchdog` dumps the MAIN thread's stack at hang
+  time (SIGPROF sampler); lifecycle/undo/membership forensics logs.
+- Release: `MetricKitCollector` writes OS-collected hang/crash
+  diagnostics (with stacks) to `Documents/Diagnostics/*.json` on
+  the launch after an incident.
+
+### Submission status
+- **Unchanged and urgent: archive from current `main`.** 3.0 (3)
+  contains none of the July 9–12 fixes.

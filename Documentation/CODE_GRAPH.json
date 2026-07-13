@@ -5,10 +5,10 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 349,
-    "types": 685,
+    "files": 350,
+    "types": 690,
     "notifications_declared": 90,
-    "notification_symbols_referenced": 107
+    "notification_symbols_referenced": 108
   },
   "files": [
     {
@@ -30,7 +30,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 686
+      "lines": 694
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/App/CeciliasNotesCommands.swift",
@@ -640,7 +640,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 124
+      "lines": 117
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/AI/MeetingSummarizer.swift",
@@ -1032,6 +1032,7 @@
         "SwiftUI"
       ],
       "declared_types": [
+        "FMAvailabilityCache",
         "IntelligenceService"
       ],
       "extends": [
@@ -1039,7 +1040,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 490
+      "lines": 521
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/KeyboardObserver.swift",
@@ -1209,7 +1210,7 @@
         "MultipeerNotebookHint.changedNotification"
       ],
       "observes": [],
-      "lines": 464
+      "lines": 504
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift",
@@ -1369,7 +1370,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 324
+      "lines": 319
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/Quiz/GeneratedQuestion.swift",
@@ -1540,7 +1541,7 @@
         ".searchIndexLoaded"
       ],
       "observes": [],
-      "lines": 727
+      "lines": 745
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/ShareInboxWatcher.swift",
@@ -1640,7 +1641,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2370
+      "lines": 2379
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -1714,6 +1715,7 @@
       "module": "Core",
       "target": "CeciliasNotes",
       "imports": [
+        "Darwin",
         "Foundation"
       ],
       "declared_types": [
@@ -1723,7 +1725,23 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 75
+      "lines": 154
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Utilities/MetricKitCollector.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation",
+        "MetricKit"
+      ],
+      "declared_types": [
+        "MetricKitCollector"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 57
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Utilities/NameFormatter.swift",
@@ -1881,7 +1899,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 125
+      "lines": 140
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/DesignSystem/CeciliasNotesComponents.swift",
@@ -2330,6 +2348,7 @@
       ],
       "declared_types": [
         "PalmRejectingScrollView",
+        "NoSystemUndoHostingController",
         "CanvasHostView",
         "ContinuousCanvasView",
         "Coordinator",
@@ -2353,7 +2372,7 @@
         ".strokeContentRewritten",
         "rectCacheNote"
       ],
-      "lines": 2397
+      "lines": 2609
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -2545,7 +2564,7 @@
         ".ceciliasNotesCommandPrint",
         ".ceciliasNotesCanvasShouldPanTo"
       ],
-      "lines": 1244
+      "lines": 1254
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel+Highlighter.swift",
@@ -2601,10 +2620,11 @@
         ".pixelEraserWidthChanged"
       ],
       "observes": [
+        "name",
         "MultipeerNotebookHint.changedNotification",
         "UserDefaults.didChangeNotification"
       ],
-      "lines": 2662
+      "lines": 2716
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/HeaderVisibility.swift",
@@ -2759,7 +2779,7 @@
       "observes": [
         ".mediaAttachmentsChanged"
       ],
-      "lines": 196
+      "lines": 198
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ShareImageImporter.swift",
@@ -2822,7 +2842,7 @@
         ".strokeContentRewritten"
       ],
       "observes": [],
-      "lines": 668
+      "lines": 670
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoLiveDrag.swift",
@@ -2843,7 +2863,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 113
+      "lines": 132
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoMath.swift",
@@ -2912,6 +2932,7 @@
       ],
       "declared_types": [
         "ActivePageCanvas",
+        "LassoUndoAnchor",
         "LassoTransformUndo",
         "ElementSnapshot"
       ],
@@ -2926,7 +2947,7 @@
         ".strokeContentRewritten"
       ],
       "observes": [],
-      "lines": 203
+      "lines": 228
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift",
@@ -3060,7 +3081,7 @@
         ".mediaAttachmentsChanged"
       ],
       "observes": [],
-      "lines": 348
+      "lines": 352
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/MediaPickerController.swift",
@@ -3270,12 +3291,13 @@
       ],
       "declared_types": [
         "PageThumbnailCache",
-        "Key"
+        "Key",
+        "ImageLayer"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 320
+      "lines": 405
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/DictationFlowCommit.swift",
@@ -3525,7 +3547,7 @@
       "observes": [
         "UIApplication.didReceiveMemoryWarningNotification"
       ],
-      "lines": 220
+      "lines": 238
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Strokes/StrokeCommit.swift",
@@ -3542,7 +3564,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 123
+      "lines": 138
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Strokes/StrokeElementView.swift",
@@ -3972,7 +3994,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 324
+      "lines": 368
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/PencilProSupport.swift",
@@ -4226,7 +4248,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 398
+      "lines": 430
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Export/RecentExportsView.swift",
@@ -7774,6 +7796,12 @@
       ]
     },
     {
+      "name": "FMAvailabilityCache",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/IntelligenceService.swift",
+      "conforms_to": []
+    },
+    {
       "name": "FilesPicker",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/MediaPickerController.swift",
@@ -8091,6 +8119,14 @@
       "conforms_to": []
     },
     {
+      "name": "ImageLayer",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/PageStrip/PageThumbnailCache.swift",
+      "conforms_to": [
+        "Sendable"
+      ]
+    },
+    {
       "name": "ImageProcessingError",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageProcessingService.swift",
@@ -8277,6 +8313,12 @@
     {
       "name": "LassoTransformUndo",
       "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "LassoUndoAnchor",
+      "kind": "class",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
       "conforms_to": []
     },
@@ -9543,6 +9585,15 @@
       "conforms_to": []
     },
     {
+      "name": "MetricKitCollector",
+      "kind": "class",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Utilities/MetricKitCollector.swift",
+      "conforms_to": [
+        "NSObject",
+        "MXMetricManagerSubscriber"
+      ]
+    },
+    {
       "name": "MinimapView",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift",
@@ -9676,6 +9727,14 @@
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/NewNotebookCustomiseTrigger.swift",
       "conforms_to": []
+    },
+    {
+      "name": "NoSystemUndoHostingController",
+      "kind": "class",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift",
+      "conforms_to": [
+        "UIHostingController<Content>"
+      ]
     },
     {
       "name": "NoteTypography",
@@ -10273,8 +10332,7 @@
       "kind": "class",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ColorPickerView.swift",
       "conforms_to": [
-        "NSObject",
-        "UIColorPickerViewControllerDelegate"
+        "NSObject"
       ]
     },
     {
@@ -13008,6 +13066,13 @@
         ],
         "observed_in": [
           "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageElementsOverlayView.swift"
+        ]
+      },
+      {
+        "name": "name",
+        "posted_in": [],
+        "observed_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift"
         ]
       },
       {

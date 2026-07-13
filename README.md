@@ -18,7 +18,7 @@ For the full per-device flow inventory (155 flows across 25 domains, per-device 
 
 1. **Handwriting-first on iPad.** Apple Pencil is the primary input; typed text, PDFs, images, and audio are equal citizens.
 2. **Editorial voice.** 8pt tracked-uppercase eyebrows, SF Heavy wordmarks, italic serif rows, 2pt selection rule. The chrome is quiet — never a permanent warning strip.
-3. **Local-first.** No network calls, no backend, no analytics. Sync goes through the user's own iCloud account. Foundation Models inference runs on-device.
+3. **Local-first.** No network calls, no backend, no analytics. Sync goes through the user's own iCloud account. Foundation Models inference runs on-device. Crash/hang diagnostics are OS-collected via MetricKit and written to the app's own Documents folder — the app transmits nothing.
 4. **One codebase.** Two Xcode targets share the design system, models, and services via `PBXFileSystemSynchronizedRootGroup`. Cross-platform code guards with `#if canImport(UIKit)` / `#if canImport(AppKit)`.
 5. **Zero third-party dependencies.** Everything is an Apple framework: SwiftUI, PencilKit, SwiftData, CloudKit, Vision, Speech, Foundation Models, WidgetKit, MultipeerConnectivity.
 
@@ -30,6 +30,8 @@ Start here in this order — every file in the list is aimed at someone opening 
 |---|---|
 | [`Documentation/PROJECT_STATE.md`](Documentation/PROJECT_STATE.md) | Current phase, wire diagram, "where things live" cheat sheet, debug playbook. **Read this first.** |
 | [`Documentation/ARCHITECTURE.md`](Documentation/ARCHITECTURE.md) | Deep dive: data layer, service layer, sync, editor pipeline. |
+| [`Documentation/ROBUSTNESS.md`](Documentation/ROBUSTNESS.md) | Threading map: which thread owns each process, main-thread rules, the ANR/crash postmortems, and the reliability instruments (hang watchdog, MetricKit). |
+| [`Documentation/OPEN_ISSUES.md`](Documentation/OPEN_ISSUES.md) | Live tracker for known-but-unfixed bugs, each with what's been tried and the next concrete step. Resolved entries are deleted, not struck through. |
 | [`Documentation/CODE_GRAPH.md`](Documentation/CODE_GRAPH.md) | Auto-generated map of every file, type, protocol, and `NotificationCenter` symbol with its posters + observers. Regenerate with `python3 Documentation/tools/build_code_graph.py`. |
 | [`Documentation/USER_FLOWS.md`](Documentation/USER_FLOWS.md) | 155 user flows × 3 devices with per-device status, UX notes, and Granola benchmarks for the Mac. |
 | [`Documentation/USER_FLOWS.yaml`](Documentation/USER_FLOWS.yaml) | Machine-queryable version of the flows — grep / `yq` / feed to an LLM. |
