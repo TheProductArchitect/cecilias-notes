@@ -329,6 +329,10 @@ final class MediaInsertCoordinator: ObservableObject {
         )
         element.imageContent = content
         context.insert(element)
+        // Thumbnails key on `page.updatedAt` and now composite image
+        // elements — without the stamp a freshly inserted photo
+        // never appears in the strip until the next stroke.
+        StrokeCommit.stampPage(pageId: page.id, context: context)
         do {
             try context.save()
         } catch {

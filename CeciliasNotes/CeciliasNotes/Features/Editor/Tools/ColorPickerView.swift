@@ -69,7 +69,10 @@ struct ColorPickerView: View {
                 let initial = viewModel.effectiveInkTool.currentColour
                 let vm = viewModel
                 onClose()
-                CustomColorPickerPresenter.present(initial: initial) { picked in
+                CustomColorPickerPresenter.present(
+                    initial: initial,
+                    onLiveChange: { vm.selectColourLive($0) }
+                ) { picked in
                     vm.selectColour(picked)
                 }
             } label: {
@@ -262,7 +265,15 @@ enum CustomColorPickerPresenter {
     /// dismissal begins; presenting while the dismissal animates
     /// would target the dying popover controller, so wait for the
     /// top of the presentation stack to settle first.
-    static func present(initial: UIColor, onPick: @escaping (UIColor) -> Void) {
+    /// `onLiveChange` fires per colour selection while the sheet is
+    /// up (ink preview without polluting the recents ring);
+    /// `onPick` fires exactly once with the final colour — from the
+    /// close button OR a swipe-down dismissal.
+    static func present(
+        initial: UIColor,
+        onLiveChange: ((UIColor) -> Void)? = nil,
+        onPick: @escaping (UIColor) -> Void
+    ) {
         Task { @MainActor in
             // Popover dismissal animation is ~0.3s; poll briefly
             // rather than trusting one magic delay.
@@ -271,7 +282,8 @@ enum CustomColorPickerPresenter {
                 if let top = topMostViewController(),
                    top.presentedViewController == nil,
                    !top.isBeingDismissed {
-                    show(from: top, initial: initial, onPick: onPick)
+                    show(from: top, initial: initial,
+                         onLiveChange: onLiveChange, onPick: onPick)
                     return
                 }
             }
@@ -283,14 +295,21 @@ enum CustomColorPickerPresenter {
     private static func show(
         from host: UIViewController,
         initial: UIColor,
+        onLiveChange: ((UIColor) -> Void)?,
         onPick: @escaping (UIColor) -> Void
     ) {
         let picker = UIColorPickerViewController()
         picker.selectedColor = initial
         picker.supportsAlpha = false
         picker.modalPresentationStyle = .formSheet
-        let delegate = PickerDelegate(onPick: onPick)
+        let delegate = PickerDelegate(onLiveChange: onLiveChange, onPick: onPick)
         picker.delegate = delegate
+        // Swipe-down dismissal never calls
+        // `colorPickerViewControllerDidFinish` — without this
+        // delegate the picked colour was silently dropped unless
+        // the user tapped the sheet's close button ("custom colour
+        // doesn't get selected" / "never shows in recents").
+        picker.presentationController?.delegate = delegate
         activeDelegate = delegate
         host.present(picker, animated: true)
     }
@@ -308,16 +327,41 @@ enum CustomColorPickerPresenter {
         return top
     }
 
-    private final class PickerDelegate: NSObject, UIColorPickerViewControllerDelegate {
-        let onPick: (UIColor) -> Void
-        init(onPick: @escaping (UIColor) -> Void) { self.onPick = onPick }
+    private final class PickerDelegate: NSObject,
+        UIColorPickerViewControllerDelegate,
+        UIAdaptivePresentationControllerDelegate {
 
-        func colorPickerViewControllerDidFinish(_ vc: UIColorPickerViewController) {
-            onPick(vc.selectedColor)
+        let onLiveChange: ((UIColor) -> Void)?
+        let onPick: (UIColor) -> Void
+        private var committed = false
+
+        init(onLiveChange: ((UIColor) -> Void)?, onPick: @escaping (UIColor) -> Void) {
+            self.onLiveChange = onLiveChange
+            self.onPick = onPick
+        }
+
+        private func commit(_ colour: UIColor) {
+            guard !committed else { return }
+            committed = true
+            onPick(colour)
             CustomColorPickerPresenter.activeDelegate = nil
         }
+
+        func colorPickerViewControllerDidFinish(_ vc: UIColorPickerViewController) {
+            commit(vc.selectedColor)
+        }
+
         func colorPickerViewControllerDidSelectColor(_ vc: UIColorPickerViewController) {
-            // Live preview not propagated — only commit on dismiss.
+            // Live ink preview only — recents are committed once, on
+            // dismissal, so dragging the wheel doesn't flush the
+            // 8-slot recents ring with intermediate hues.
+            onLiveChange?(vc.selectedColor)
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            guard let picker = presentationController.presentedViewController
+                    as? UIColorPickerViewController else { return }
+            commit(picker.selectedColor)
         }
     }
 }

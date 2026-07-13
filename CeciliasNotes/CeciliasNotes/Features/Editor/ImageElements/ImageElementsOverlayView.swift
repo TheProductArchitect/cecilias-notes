@@ -172,6 +172,8 @@ struct ImageElementsOverlayView: View, Equatable {
         )
         element.deletedAt = Date()
         element.updatedAt = Date()
+        // Thumbnail key is `page.updatedAt` — refresh the strip.
+        StrokeCommit.stampPage(pageId: element.pageId, context: modelContext)
         do {
             try modelContext.save()
         } catch {

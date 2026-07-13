@@ -1695,6 +1695,24 @@ final class EditorViewModel: ObservableObject {
         addRecentColour(colour)
     }
 
+    /// Live-preview variant for the system colour picker: applies
+    /// the colour to the active tool WITHOUT touching the recents
+    /// ring. The picker fires per selection while the user drags
+    /// the wheel; pushing every intermediate hue into recents would
+    /// flush all 8 slots per drag. The final colour lands in
+    /// recents via `selectColour` when the sheet dismisses.
+    func selectColourLive(_ colour: UIColor) {
+        if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
+            lastDrawingToolBeforeRuler = companion.withColour(colour)
+            toolSettings.snapshot(lastDrawingToolBeforeRuler!)
+            toolSettings.save()
+            applyToolToCanvas()
+            return
+        }
+        selectedTool = selectedTool.withColour(colour)
+        persistCurrentToolSettings()
+    }
+
     /// Re-apply the active tool to every mounted canvas. Used by the
     /// ruler-companion edit path: the user mutates colour/width on
     /// the companion while ruler stays selected, so the canvas

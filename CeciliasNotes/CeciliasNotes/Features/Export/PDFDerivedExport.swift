@@ -326,7 +326,12 @@ enum PDFDerivedExport {
             predicate: #Predicate<PageElement> {
                 $0.pageId == pid && $0.deletedAt == nil
             },
-            sortBy: [SortDescriptor(\.zIndex)]
+            // `createdAt` tiebreaker is load-bearing: inserted images
+            // all share zIndex 0, so a zIndex-only sort left the
+            // stacking order ARBITRARY per export — a 20-image page
+            // came out shuffled relative to the editor. Annotations
+            // stack in add order, so fetch order IS z-order here.
+            sortBy: [SortDescriptor(\.zIndex), SortDescriptor(\.createdAt)]
         )
         let elements = ((try? context.fetch(descriptor)) ?? [])
             .filter { $0.kind == .image }
@@ -340,7 +345,11 @@ enum PDFDerivedExport {
             let yTop = CGFloat(element.normalizedY) * bounds.height
             let y = bounds.height - yTop - h
             let rect = CGRect(x: x, y: y, width: w, height: h)
-            let annotation = ImageStampAnnotation(bounds: rect, image: image)
+            let annotation = ImageStampAnnotation(
+                bounds: rect,
+                image: image,
+                rotation: CGFloat(element.rotation)
+            )
             pdfPage.addAnnotation(annotation)
         }
     }
@@ -372,9 +381,13 @@ enum PDFDerivedExport {
 /// rendered tiles.
 final class ImageStampAnnotation: PDFAnnotation {
     private let image: UIImage
+    /// Editor-space rotation in radians (clockwise-positive in the
+    /// editor's y-down space). `0` for the stroke composite.
+    private let rotation: CGFloat
 
-    nonisolated init(bounds: CGRect, image: UIImage) {
+    nonisolated init(bounds: CGRect, image: UIImage, rotation: CGFloat = 0) {
         self.image = image
+        self.rotation = rotation
         super.init(bounds: bounds, forType: .stamp, withProperties: nil)
     }
 
@@ -389,6 +402,25 @@ final class ImageStampAnnotation: PDFAnnotation {
 
     nonisolated override func draw(with box: PDFDisplayBox, in context: CGContext) {
         super.draw(with: box, in: context)
+        context.saveGState()
+        defer { context.restoreGState() }
+        // Rotation about the stamp's centre. The editor rotates in
+        // y-down screen space; this context is y-up, so the sign
+        // flips to keep the on-screen direction.
+        if rotation != 0 {
+            context.translateBy(x: bounds.midX, y: bounds.midY)
+            context.rotate(by: -rotation)
+            context.translateBy(x: -bounds.midX, y: -bounds.midY)
+        }
+        // The annotation context is PDF page space — y-UP, exactly
+        // why the caller computes `bounds.height - yTop - h` for the
+        // annotation origin. `UIImage.draw` assumes a y-DOWN UIKit
+        // context, so drawing it here unflipped rendered every
+        // stamped image VERTICALLY MIRRORED (device report: exported
+        // page of ~20 photos "flipped"). Flip the context across the
+        // stamp's horizontal midline before handing it to UIKit.
+        context.translateBy(x: 0, y: bounds.minY + bounds.maxY)
+        context.scaleBy(x: 1, y: -1)
         UIGraphicsPushContext(context)
         defer { UIGraphicsPopContext() }
         image.draw(in: bounds)

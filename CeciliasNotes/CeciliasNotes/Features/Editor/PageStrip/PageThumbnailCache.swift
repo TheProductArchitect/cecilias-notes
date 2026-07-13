@@ -125,11 +125,13 @@ final class PageThumbnailCache {
         let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
             let drawing = warmDrawing
                 ?? Self.loadDrawingOffMain(pageId: pageId, container: container)
+            let imageLayers = Self.loadImageLayersOffMain(pageId: pageId, container: container)
             #if DEBUG
-            dlog("[Thumb] render begin pageId=\(pageId) stamp=\(key.contentStamp) strokes=\(drawing?.strokes.count ?? 0)")
+            dlog("[Thumb] render begin pageId=\(pageId) stamp=\(key.contentStamp) strokes=\(drawing?.strokes.count ?? 0) images=\(imageLayers.count)")
             #endif
             let image = await Self.render(
                 drawing: drawing,
+                imageLayers: imageLayers,
                 pageRect: pageRect,
                 targetSize: targetSize,
                 pdfBacking: pdfBacking
@@ -191,6 +193,51 @@ final class PageThumbnailCache {
         return try? PKDrawing(data: data)
     }
 
+    /// One decoded image element ready for thumbnail compositing —
+    /// plain Sendable values, no model objects.
+    struct ImageLayer: Sendable {
+        let image: UIImage
+        /// Normalised (0…1) page rect.
+        let rect: CGRect
+        let rotation: Double
+        let zIndex: Int
+    }
+
+    /// Fetch + decode the page's image elements on a background
+    /// `ModelContext`. Thumbnails composited only paper + PDF + ink
+    /// — pages whose content is photos/imports rendered as blank
+    /// paper in the strip ("thumbnails won't show images").
+    nonisolated private static func loadImageLayersOffMain(
+        pageId: UUID,
+        container: ModelContainer
+    ) -> [ImageLayer] {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> {
+                $0.pageId == pageId && $0.deletedAt == nil
+            }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        return elements
+            .filter { $0.kind == .image }
+            .compactMap { element -> ImageLayer? in
+                guard let data = element.imageContent?.imageData,
+                      let image = UIImage(data: data) else { return nil }
+                return ImageLayer(
+                    image: image,
+                    rect: CGRect(
+                        x: element.normalizedX,
+                        y: element.normalizedY,
+                        width: element.normalizedWidth,
+                        height: element.normalizedHeight
+                    ),
+                    rotation: element.rotation,
+                    zIndex: element.zIndex
+                )
+            }
+            .sorted { $0.zIndex < $1.zIndex }
+    }
+
     /// Step 5.5: replaces the legacy `Page.pdfPageIndex` /
     /// `Notebook.sourcePDFURL` read. Returns `(file URL, page
     /// index)` for the first full-bleed `PageElement(.pdfPage)`
@@ -249,6 +296,7 @@ final class PageThumbnailCache {
     /// (PDFDocument open + PKDrawing.image) back onto main.
     nonisolated private static func render(
         drawing: PKDrawing?,
+        imageLayers: [ImageLayer],
         pageRect: CGRect,
         targetSize: CGSize,
         pdfBacking: (url: URL, index: Int)?
@@ -280,6 +328,28 @@ final class PageThumbnailCache {
                    pdfBacking.index < doc.pageCount,
                    let page = doc.page(at: pdfBacking.index) {
                     drawPDFPage(page, in: ctx.cgContext, target: CGRect(origin: .zero, size: targetSize))
+                }
+
+                // Image elements, z-ordered, below the ink — matches
+                // the editor's compositing (ink draws over photos).
+                for layer in imageLayers {
+                    let target = CGRect(
+                        x: layer.rect.origin.x * targetSize.width,
+                        y: layer.rect.origin.y * targetSize.height,
+                        width: layer.rect.width * targetSize.width,
+                        height: layer.rect.height * targetSize.height
+                    )
+                    if layer.rotation != 0 {
+                        let cg = ctx.cgContext
+                        cg.saveGState()
+                        cg.translateBy(x: target.midX, y: target.midY)
+                        cg.rotate(by: CGFloat(layer.rotation))
+                        cg.translateBy(x: -target.midX, y: -target.midY)
+                        layer.image.draw(in: target)
+                        cg.restoreGState()
+                    } else {
+                        layer.image.draw(in: target)
+                    }
                 }
 
                 guard let drawing else { return }

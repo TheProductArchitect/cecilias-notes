@@ -99,9 +99,18 @@ enum LassoTransformUndo {
         let context = StorageService.shared.context
         let before = capture(elementIds: [elementId], context: context)
         mutate()
+        let after = capture(elementIds: [elementId], context: context)
+        // Thumbnails key on `page.updatedAt`; element mutations that
+        // only stamped `element.updatedAt` left the strip thumbnail
+        // stale (visible now that thumbnails composite image
+        // elements). One stamp here covers every per-element
+        // move/resize/rotate commit.
+        if before != after, let pageId = after.first?.pageId {
+            StrokeCommit.stampPage(pageId: pageId, context: context)
+        }
         register(
             before: before,
-            after: capture(elementIds: [elementId], context: context),
+            after: after,
             canvas: ActivePageCanvas.current,
             actionName: actionName
         )
