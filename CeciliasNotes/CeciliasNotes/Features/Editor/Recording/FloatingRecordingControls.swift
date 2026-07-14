@@ -19,7 +19,10 @@ struct FloatingRecordingControls: View {
 
     @ObservedObject var session: RecordingSession = .shared
     @Environment(\.theme) private var theme
-    @State private var summaryOn: Bool = DictationSummaryPreference.isEnabled
+    // Bound directly to the persisted preference (not a one-shot
+    // @State) so the chip always reflects — and remembers — the last
+    // choice across dictations and stays in sync with Settings.
+    @AppStorage(DictationSummaryPreference.key) private var summaryOn: Bool = true
 
     var body: some View {
         if session.state.isRecording {
@@ -48,8 +51,9 @@ struct FloatingRecordingControls: View {
     /// the new default. Only shown when Apple Intelligence can run.
     private var summaryChip: some View {
         Button {
+            // @AppStorage write IS the persistence — toggling stores
+            // the new value under DictationSummaryPreference.key.
             summaryOn.toggle()
-            DictationSummaryPreference.setEnabled(summaryOn)
             HapticManager.shared.toolSwitched()
         } label: {
             HStack(spacing: 7) {

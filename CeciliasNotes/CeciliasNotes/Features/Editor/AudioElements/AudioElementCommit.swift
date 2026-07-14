@@ -129,7 +129,10 @@ enum AudioElementCommit {
         contentId: UUID,
         pageId: UUID,
         notebookId: UUID,
-        pageSize: CGSize
+        pageSize: CGSize,
+        normalizedX: Double? = nil,
+        normalizedY: Double? = nil,
+        normalizedWidth: Double? = nil
     ) -> UUID {
         let context = StorageService.shared.context
         let normalizedHeight = Self.normalizedHeight(for: Double(pageSize.height))
@@ -140,9 +143,9 @@ enum AudioElementCommit {
             pageId: pageId,
             notebookId: notebookId,
             kind: .audio,
-            normalizedX: defaultNormalizedX,
-            normalizedY: defaultNormalizedY,
-            normalizedWidth: defaultNormalizedWidth,
+            normalizedX: normalizedX ?? defaultNormalizedX,
+            normalizedY: normalizedY ?? defaultNormalizedY,
+            normalizedWidth: normalizedWidth ?? defaultNormalizedWidth,
             normalizedHeight: normalizedHeight,
             zIndex: baseZIndex
         )

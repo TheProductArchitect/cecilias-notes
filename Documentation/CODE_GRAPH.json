@@ -1297,7 +1297,7 @@
         ".audioElementsChanged"
       ],
       "observes": [],
-      "lines": 403
+      "lines": 418
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookMarkdownExport.swift",
@@ -2296,7 +2296,7 @@
         ".audioElementsChanged"
       ],
       "observes": [],
-      "lines": 257
+      "lines": 260
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementView.swift",
@@ -2321,7 +2321,7 @@
       "observes": [
         ".audioSeekRequested"
       ],
-      "lines": 572
+      "lines": 573
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift",
@@ -2801,7 +2801,7 @@
         ".imageElementCrossPageHandoffRequested"
       ],
       "observes": [],
-      "lines": 449
+      "lines": 511
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageElementsOverlayView.swift",
@@ -3361,7 +3361,7 @@
         ".audioElementsChanged"
       ],
       "observes": [],
-      "lines": 402
+      "lines": 451
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/DictationSummaryPreference.swift",
@@ -3393,7 +3393,7 @@
         ".recordingScrollToActivePage"
       ],
       "observes": [],
-      "lines": 159
+      "lines": 163
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
@@ -3409,10 +3409,11 @@
       ],
       "extends": [],
       "posts": [
-        ".textElementsChanged"
+        ".textElementsChanged",
+        ".audioElementsChanged"
       ],
       "observes": [],
-      "lines": 132
+      "lines": 166
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift",
@@ -3457,7 +3458,7 @@
       "observes": [
         "AVAudioSession.interruptionNotification"
       ],
-      "lines": 717
+      "lines": 733
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/PencilFingerDragSurface.swift",
@@ -3497,7 +3498,7 @@
       "observes": [
         ".shapeElementsChanged"
       ],
-      "lines": 296
+      "lines": 303
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/ShapeKindPath.swift",
@@ -5231,7 +5232,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 60
+      "lines": 68
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Sync/MultipeerSettingsSection.swift",
@@ -12522,6 +12523,7 @@
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/DictationFlowCommit.swift",
+          "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
           "CeciliasNotes/CeciliasNotesMac/Editor/MacRendering.swift"
         ],
         "observed_in": [

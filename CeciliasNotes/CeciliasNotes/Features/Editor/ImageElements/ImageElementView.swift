@@ -42,8 +42,13 @@ struct ImageElementView: View {
     @State private var dragOffset: CGSize = .zero
     @State private var pinchScale: CGFloat = 1.0
     @State private var resizeDelta: ResizeDelta? = nil
+    /// Live rotation (radians) while dragging the rotation handle; nil
+    /// when idle. Commit lands on `.onEnded`, like the other gestures.
+    @State private var liveRotation: Double? = nil
+    @State private var rotationBase: Double = 0
     private static let handleSize: CGFloat = 10
     private static let toolbarGap: CGFloat = 8
+    private static let rotationSpace = "imageRotationPageSpace"
     private static let minNormalizedWidth: Double = 0.05
 
     private struct ResizeDelta: Equatable {
@@ -82,7 +87,7 @@ struct ImageElementView: View {
             //   frame → overlays/effects → contentShape →
             //   gestures → position.
             ImageDataView(content: content)
-                .rotationEffect(.radians(element.rotation))
+                .rotationEffect(.radians(liveRotation ?? element.rotation))
                 .frame(width: displayed.width, height: displayed.height)
                 .contentShape(Rectangle())
                 .simultaneousGesture(
@@ -111,6 +116,7 @@ struct ImageElementView: View {
             }
         }
         .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+        .coordinateSpace(name: Self.rotationSpace)
         .onChange(of: isSelected) { oldValue, newValue in
         }
         .fullScreenCover(isPresented: $isCropping) {
@@ -239,11 +245,67 @@ struct ImageElementView: View {
         cornerHandle(.bottomLeft,  at: CGPoint(x: imageRect.minX, y: imageRect.maxY))
         cornerHandle(.bottomRight, at: CGPoint(x: imageRect.maxX, y: imageRect.maxY))
 
+        rotationHandle(imageRect: imageRect)
+
         floatingToolbar()
             .position(
                 x: imageRect.midX,
                 y: max(14, imageRect.minY - Self.toolbarGap - 14)
             )
+    }
+
+    /// Free-angle rotation knob below the image, dragged around the
+    /// image centre. Complements the toolbar's 90° button (the
+    /// "rotate to an angle" affordance the image chrome was missing).
+    /// The centre and the touch are resolved in the same page-named
+    /// coordinate space so the angle math is translation-invariant.
+    @ViewBuilder
+    private func rotationHandle(imageRect: CGRect) -> some View {
+        let center = CGPoint(x: imageRect.midX, y: imageRect.midY)
+        let stemBottom = CGPoint(x: imageRect.midX, y: imageRect.maxY)
+        let knob = CGPoint(x: imageRect.midX, y: imageRect.maxY + 26)
+
+        Path { p in
+            p.move(to: stemBottom)
+            p.addLine(to: knob)
+        }
+        .stroke(theme.accent, lineWidth: 1)
+        .allowsHitTesting(false)
+
+        Image(systemName: "arrow.clockwise")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: Self.handleSize + 6, height: Self.handleSize + 6)
+            .background(Circle().fill(theme.accent))
+            .contentShape(Circle().inset(by: -10))
+            .position(knob)
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.rotationSpace))
+                    .onChanged { value in
+                        if liveRotation == nil { rotationBase = element.rotation }
+                        let delta = Self.angle(from: value.startLocation, to: value.location, around: center)
+                        liveRotation = rotationBase + delta
+                    }
+                    .onEnded { value in
+                        let delta = Self.angle(from: value.startLocation, to: value.location, around: center)
+                        let final = rotationBase + delta
+                        liveRotation = nil
+                        LassoTransformUndo.withUndo(
+                            elementId: element.id, actionName: "Rotate Image"
+                        ) {
+                            let twoPi = 2 * Double.pi
+                            element.rotation = final.truncatingRemainder(dividingBy: twoPi)
+                            element.updatedAt = Date()
+                        }
+                    }
+            )
+    }
+
+    /// Signed angle (radians) swept from `start` to `end` about `center`.
+    private static func angle(from start: CGPoint, to end: CGPoint, around center: CGPoint) -> Double {
+        let a0 = atan2(Double(start.y - center.y), Double(start.x - center.x))
+        let a1 = atan2(Double(end.y - center.y), Double(end.x - center.x))
+        return a1 - a0
     }
 
     private func cornerHandle(_ corner: Corner, at point: CGPoint) -> some View {

@@ -109,6 +109,10 @@ final class RecordingSession: ObservableObject {
 
     struct DictationContext: Equatable {
         let audioContentId: UUID      // AudioContent.id (matches m4a filename stem)
+        /// PageElement.id of the inline pill created at START (shows
+        /// the live "recording" strip); promoted to its final state
+        /// on stop instead of creating a second pill.
+        let audioElementId: UUID
         let originalPageId: UUID      // first dictation page — where the audio strip lands on stop
         var currentPageId: UUID       // updated as continuation pages are created
         let notebookId: UUID
@@ -321,12 +325,22 @@ final class RecordingSession: ObservableObject {
         #endif
 
         let contentId = UUID()
+        // Live recording pill above the transcript, created NOW so the
+        // user sees the recording is running (pulsing dot + timer) —
+        // promoted to its ready state on stop, not re-created.
+        let audioElementId = DictationFlowCommit.createRecordingPill(
+            pageId: newPage.id,
+            notebookId: notebookId,
+            pageSize: pageSize,
+            contentId: contentId
+        )
         dictationRecorder = recorder
         #if DEBUG
-        dlog("[Dictation] post-start phase=assignRecorder")
+        dlog("[Dictation] post-start phase=assignRecorder audioElement=\(audioElementId)")
         #endif
         state = .dictation(DictationContext(
             audioContentId: contentId,
+            audioElementId: audioElementId,
             originalPageId: newPage.id,
             currentPageId: newPage.id,
             notebookId: notebookId,
@@ -570,6 +584,7 @@ final class RecordingSession: ObservableObject {
         // AudioContent.fileURL resolves; commit the strip above the
         // first text element on the original dictation page.
         let contentId = ctx.audioContentId
+        let audioElementId = ctx.audioElementId
         let originalPageId = ctx.originalPageId
         let notebookId = ctx.notebookId
         let textElementIds = ctx.textElementIds
@@ -589,6 +604,7 @@ final class RecordingSession: ObservableObject {
                 return
             }
             DictationFlowCommit.finalizeDictation(
+                audioElementId: audioElementId,
                 contentId: contentId,
                 originalPageId: originalPageId,
                 notebookId: notebookId,

@@ -23,9 +23,9 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | Module | Files | Lines |
 | --- | ---: | ---: |
 | `App/` | 3 | 926 |
-| `Core/` | 99 | 17,339 |
+| `Core/` | 99 | 17,354 |
 | `DesignSystem/` | 15 | 1,777 |
-| `Features/` | 168 | 52,553 |
+| `Features/` | 168 | 52,737 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -67,8 +67,8 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | 745 | [`CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift) |
 | 740 | [`CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift) |
 | 739 | [`CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
+| 733 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
 | 732 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
-| 717 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
 | 702 | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) |
 | 694 | [`CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift`](../CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift) |
 | 686 | [`CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift) |
@@ -86,7 +86,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | `CKAccountChanged` | — | — | [`CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
 | `NSMetadataQueryDidFinishGathering` | — | — | [`CloudSyncManager.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/CloudSyncManager.swift) |
 | `Name("pdfPageElementsChanged"` | — | [`LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift), [`MacPDFImport.swift`](../CeciliasNotes/CeciliasNotesMac/Services/MacPDFImport.swift) | — |
-| **`audioElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`NotebookArchiveIO.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift), [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift), [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift), … +5 | [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift) |
+| **`audioElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`NotebookArchiveIO.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift), [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift), [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift), … +6 | [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift) |
 | **`audioSeekRequested`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`TextElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift) | [`AudioElementView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementView.swift), [`MacRendering.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRendering.swift) |
 | `boundsDidChangeNotification` | — | — | [`MacDocScrollBridge.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocScrollBridge.swift) |
 | **`ceciliasNotesCanvasShouldPanTo`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift) | [`MinimapView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift) | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |

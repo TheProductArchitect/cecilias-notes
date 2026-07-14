@@ -151,6 +151,13 @@ struct ShapeElementsOverlayView: View, Equatable {
             }
             .allowsHitTesting(inputs.selectedTool.isCursorMode)
             .position(x: rect.midX, y: rect.midY)
+            // Apply the stored rotation — WITHOUT this a shape rotated
+            // via the lasso saved its `rotation` but rendered upright,
+            // so the selection box turned while the shape stayed put
+            // (the "detached box" report). `lassoRotationPreview`
+            // rotates it live during the drag, matching the chrome.
+            .rotationEffect(.radians(element.rotation))
+            .lassoRotationPreview(elementId: element.id, frameOrigin: rect.origin)
     }
 
     /// Populate `LassoSelectionState` with this single shape so

@@ -333,10 +333,11 @@ private struct AudioElementStripContent: View {
     @State private var seekDragSeconds: Double? = nil
 
     private var isRecording: Bool {
-        guard case .voiceNote(let ctx) = recordingSession.state else {
-            return false
+        switch recordingSession.state {
+        case .voiceNote(let ctx):  return ctx.audioElementId == elementId
+        case .dictation(let ctx):  return ctx.audioElementId == elementId
+        case .idle:                return false
         }
-        return ctx.audioElementId == elementId
     }
 
     var body: some View {

@@ -110,6 +110,31 @@ enum DictationFlowCommit {
         return elementId
     }
 
+    // MARK: - Step 1b: live recording pill (created at START)
+
+    /// Create the audio pill at dictation START — above the transcript
+    /// element — so the user sees the recording is live (pulsing dot +
+    /// timer) the moment they begin. `finalizeDictation` promotes THIS
+    /// pill on stop (attaches the file, duration, transcript) rather
+    /// than creating a second one. Returns the pill's PageElement id.
+    @discardableResult
+    static func createRecordingPill(
+        pageId: UUID,
+        notebookId: UUID,
+        pageSize: CGSize,
+        contentId: UUID
+    ) -> UUID {
+        AudioElementCommit.createRecordingPlaceholder(
+            contentId: contentId,
+            pageId: pageId,
+            notebookId: notebookId,
+            pageSize: pageSize,
+            normalizedX: (1 - textElementWidth) / 2,
+            normalizedY: stripTopInset,
+            normalizedWidth: textElementWidth
+        )
+    }
+
     // MARK: - Step 2: live text update
 
     /// Save throttle for live dictation. The recogniser delivers
@@ -261,13 +286,15 @@ enum DictationFlowCommit {
 
     // MARK: - Step 4: finalize on stop
 
-    /// Final stop-time write. Creates the AudioContent + audio
-    /// strip element above the first transcript text on the
-    /// original dictation page, links AudioContent.anchorText →
-    /// first TextContent (the architecture's paired-block design
-    /// per §9), and posts the audioElementsChanged notification so
-    /// overlays refetch.
+    /// Final stop-time write. PROMOTES the live recording pill created
+    /// at start (`createRecordingPill`, same `contentId`) to its ready
+    /// state — sets duration + transcript, repositions it tight above
+    /// the first transcript element, and links AudioContent.anchorText
+    /// → first TextContent (paired-block design §9). Falls back to
+    /// creating a fresh strip only if the user deleted the pill
+    /// mid-dictation. Posts audioElementsChanged so overlays refetch.
     static func finalizeDictation(
+        audioElementId: UUID,
         contentId: UUID,
         originalPageId: UUID,
         notebookId: UUID,
@@ -307,32 +334,54 @@ enum DictationFlowCommit {
             stripWidth = textElementWidth
         }
 
-        // Create the audio strip element with its own
-        // PageElement(.audio) + AudioContent. Link the content's
-        // anchorText to the first TextContent so playback can
-        // resolve back to the on-page transcript.
-        let stripElement = PageElement(
-            id: UUID(),
-            pageId: originalPageId,
-            notebookId: notebookId,
-            kind: .audio,
-            normalizedX: stripX,
-            normalizedY: stripY,
-            normalizedWidth: stripWidth,
-            normalizedHeight: stripHeight,
-            zIndex: nextZIndex(forPageId: originalPageId, context: context)
-        )
-        let audioContent = AudioContent(
-            id: contentId,
-            filename: "\(contentId.uuidString).m4a",
-            durationSeconds: durationSeconds,
-            transcript: transcript
-        )
+        // Promote the live pill created at start (its AudioContent
+        // already carries `contentId`). Only fall back to a fresh
+        // element if the pill was deleted mid-dictation.
+        let existingPill: PageElement? = {
+            let descriptor = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.id == audioElementId && $0.deletedAt == nil
+                }
+            )
+            return try? context.fetch(descriptor).first
+        }()
+
+        let audioContent: AudioContent
+        if let pill = existingPill, let content = pill.audioContent {
+            pill.normalizedX = stripX
+            pill.normalizedY = stripY
+            pill.normalizedWidth = stripWidth
+            pill.normalizedHeight = stripHeight
+            pill.updatedAt = Date()
+            content.durationSeconds = durationSeconds
+            content.transcript = transcript
+            content.updatedAt = Date()
+            audioContent = content
+        } else {
+            let stripElement = PageElement(
+                id: UUID(),
+                pageId: originalPageId,
+                notebookId: notebookId,
+                kind: .audio,
+                normalizedX: stripX,
+                normalizedY: stripY,
+                normalizedWidth: stripWidth,
+                normalizedHeight: stripHeight,
+                zIndex: nextZIndex(forPageId: originalPageId, context: context)
+            )
+            let content = AudioContent(
+                id: contentId,
+                filename: "\(contentId.uuidString).m4a",
+                durationSeconds: durationSeconds,
+                transcript: transcript
+            )
+            stripElement.audioContent = content
+            context.insert(stripElement)
+            audioContent = content
+        }
         if let firstElement, let firstText = firstElement.textContent {
             audioContent.anchorText = firstText
         }
-        stripElement.audioContent = audioContent
-        context.insert(stripElement)
         do {
             try context.save()
         } catch {
