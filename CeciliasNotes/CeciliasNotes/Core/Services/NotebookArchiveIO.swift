@@ -226,6 +226,15 @@ enum NotebookArchiveIO {
             template: PageTemplate.from(jsonString: archive.notebook.defaultTemplate)
         ) else { return nil }
 
+        let sortedPages = archive.pages.sorted { $0.index < $1.index }
+
+        // A well-formed archive always has ≥1 page (the exporter
+        // guards it). A corrupt/hand-crafted file with zero pages
+        // would otherwise leave an empty notebook once the seed is
+        // deleted — which the editor can't open. Keep the seed page
+        // in that degenerate case.
+        guard !sortedPages.isEmpty else { return notebook }
+
         // Drop the auto-seeded blank page — we rebuild pages from the
         // archive verbatim.
         for seed in storage.fetchPages(in: notebook) { context.delete(seed) }
@@ -234,8 +243,6 @@ enum NotebookArchiveIO {
         // to their pdfPage, and PDFs de-dupe per document.
         var pdfDocIdMap: [String: UUID] = [:]
         var pdfPageContentIdMap: [String: UUID] = [:]
-
-        let sortedPages = archive.pages.sorted { $0.index < $1.index }
         for (offset, ap) in sortedPages.enumerated() {
             let page = Page(
                 notebookId: notebook.id,
@@ -246,7 +253,15 @@ enum NotebookArchiveIO {
             page.notebook = notebook
             context.insert(page)
 
-            for ae in ap.elements {
+            // Build PDF pages BEFORE anything else on the page so a
+            // highlight's `pdfPageRef` always resolves to an
+            // already-created pdfPage content id (highlights re-link
+            // via `pdfPageContentIdMap`), regardless of the element
+            // order in the file. Partition preserves relative order.
+            let pdfKind = ElementKind.pdfPage.rawValue
+            let ordered = ap.elements.filter { $0.kind == pdfKind }
+                + ap.elements.filter { $0.kind != pdfKind }
+            for ae in ordered {
                 buildElement(
                     ae, page: page, notebook: notebook,
                     media: archive.media, pdfDocuments: archive.pdfDocuments,
