@@ -412,6 +412,15 @@ struct LibraryView: View {
                 }
             )
         }
+        // Full-fidelity notebook share (.ceciliabook). Present the
+        // system share sheet so the user can AirDrop / save to Drive /
+        // Mail the file; tapping it on any device re-imports it.
+        .sheet(item: Binding(
+            get: { viewModel.shareArchiveURL.map { IdentifiableURL(url: $0) } },
+            set: { if $0 == nil { viewModel.shareArchiveURL = nil } }
+        )) { wrapper in
+            ActivityView(url: wrapper.url)
+        }
         .onChange(of: reExportNotebookId) { _, id in
             guard let id, let notebook = viewModel.notebook(id: id) else { return }
             DispatchQueue.main.async { reExportNotebookId = nil }
@@ -573,6 +582,12 @@ struct LibraryView: View {
     /// Same shape as `SharedPDFURL`, separate type so the two
     /// `.sheet(item:)` bindings stay independent.
     private struct SharedImageURL: Identifiable {
+        let url: URL
+        var id: String { url.path }
+    }
+
+    /// Drives the `.ceciliabook` share sheet off `viewModel.shareArchiveURL`.
+    struct IdentifiableURL: Identifiable {
         let url: URL
         var id: String { url.path }
     }

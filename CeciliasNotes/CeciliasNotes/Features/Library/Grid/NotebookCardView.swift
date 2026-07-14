@@ -560,6 +560,15 @@ struct NotebookCardView: View {
             Label("Share as PDF…", systemImage: "square.and.arrow.up")
         }
 
+        // Full-fidelity share: a .ceciliabook carrying every element,
+        // editable and re-openable in Cecilia's Notes (AirDrop, Drive,
+        // Mail). Tapping the file on any device imports it as a copy.
+        Button {
+            viewModel.shareNotebookArchive(notebook)
+        } label: {
+            Label("Share Notebook…", systemImage: "arrow.up.doc")
+        }
+
         // Cross-account sharing: paired devices on this Wi-Fi that
         // DON'T share our Apple Account (same-account devices sync
         // via iCloud on their own, so they're filtered out).

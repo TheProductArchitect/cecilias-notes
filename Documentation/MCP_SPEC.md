@@ -164,8 +164,32 @@ guarantee (§4) covers cross-transport races.
 - **Orphaned V6 elements**: a `replace` with *changed* page ids
   leaves old pages' `PageElement` rows unreachable (no cascade).
   Harmless today; a reaper sweep is a candidate follow-up.
-- Only text-family blocks exist; images/audio in the schema are
-  future work.
+- Only text-family blocks exist; images/audio in the `.inkbook`
+  schema are future work.
+
+## 10. Full-fidelity share format (`.ceciliabook`)
+
+`.inkbook` is the AGENT-authored, text-only mirror. A separate,
+app-authored format carries a notebook **as it is** for
+user-to-user sharing:
+
+- **`.ceciliabook`** — one self-contained JSON file
+  (`NotebookArchive`) with every V6 element (text + rich
+  formatting, images, audio, Pencil ink, sticky notes, shapes,
+  highlights, PDF pages) and the media base64-embedded. IO lives
+  in `NotebookArchiveIO` (export/import); registered as a document
+  type (UTI `app.ceciliasnotes.notebook`) in both targets so
+  tapping the file opens Cecilia's Notes and imports it as a fresh
+  editable copy (all new IDs — can't collide with the sender's).
+- **Transports**: system share sheet (Library → "Share Notebook…",
+  for Drive / AirDrop / Mail) and the multipeer "Send to Device"
+  path (`MultipeerNotebookShare` now frames a `.ceciliabook`, not
+  the text-only `.inkbook`). The Inbox watcher routes inbound
+  `.ceciliabook` files to `NotebookArchiveIO`.
+- **Cross-account only** over multipeer: same-Apple-Account devices
+  sync live via CloudKit and are NOT offered a send (importing a
+  copy alongside CloudKit would duplicate the notebook). A green
+  `LivePresencePill` shows all paired devices connected right now.
 
 ## 9. Checklist for future changes (keep this doc honest)
 

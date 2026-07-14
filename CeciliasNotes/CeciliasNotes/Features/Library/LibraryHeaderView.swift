@@ -214,6 +214,11 @@ struct LibraryHeaderView: View {
 
     private var normalStrip: some View {
         HStack(spacing: 4) {
+            // Live-presence pill — shows paired devices connected on
+            // the local network right now. Self-hides when none are
+            // connected, so it costs no space normally.
+            LivePresencePill()
+
             // Step 10: sync state badge — leftmost in the strip so
             // it sits at the natural reading-order start without
             // displacing the existing actions. Read-only surface

@@ -32,6 +32,20 @@ final class DeepLinkRouter: ObservableObject {
     /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://notebook/{id}/page/{id}`,
     /// `ceciliasnotes://library`, `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
     func handle(_ url: URL) {
+        // Tap-to-open a `.ceciliabook` file (Files, AirDrop, Drive,
+        // Mail attachment). Import it as a fresh editable copy, then
+        // route the Library to open it. Files delivered from outside
+        // the sandbox need a security scope while we read them.
+        if url.isFileURL,
+           url.pathExtension.lowercased() == NotebookArchive.fileExtension {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            if let notebook = NotebookArchiveIO.importArchive(from: url) {
+                openNotebookId = notebook.id
+                openPageId = nil
+            }
+            return
+        }
         guard url.scheme == "ceciliasnotes" else { return }
         switch url.host {
         case "open":

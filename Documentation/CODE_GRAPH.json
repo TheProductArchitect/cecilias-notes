@@ -5,8 +5,8 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 350,
-    "types": 690,
+    "files": 354,
+    "types": 705,
     "notifications_declared": 90,
     "notification_symbols_referenced": 108
   },
@@ -757,7 +757,7 @@
         ".ceciliasNotesInboxEventsChanged"
       ],
       "observes": [],
-      "lines": 285
+      "lines": 296
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesImporter.swift",
@@ -875,7 +875,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 70
+      "lines": 84
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/GreetingPicker.swift",
@@ -1166,7 +1166,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 131
+      "lines": 135
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerPairingStore.swift",
@@ -1253,6 +1253,51 @@
       "posts": [],
       "observes": [],
       "lines": 40
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation",
+        "SwiftData"
+      ],
+      "declared_types": [
+        "ArchiveNotebook",
+        "ArchivePage",
+        "ArchiveElement",
+        "ArchiveText",
+        "ArchiveImage",
+        "ArchiveAudio",
+        "ArchiveStroke",
+        "ArchiveSticky",
+        "ArchiveShape",
+        "ArchiveHighlight",
+        "ArchivePDFPage"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 148
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation",
+        "SwiftData"
+      ],
+      "declared_types": [
+        "NotebookArchiveIO"
+      ],
+      "extends": [],
+      "posts": [
+        ".textElementsChanged",
+        ".audioElementsChanged"
+      ],
+      "observes": [],
+      "lines": 403
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookMarkdownExport.swift",
@@ -1641,7 +1686,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2379
+      "lines": 2417
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -2624,7 +2669,7 @@
         "MultipeerNotebookHint.changedNotification",
         "UserDefaults.didChangeNotification"
       ],
-      "lines": 2716
+      "lines": 2725
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/HeaderVisibility.swift",
@@ -2995,7 +3040,7 @@
       "observes": [
         ".AVAudioEngineConfigurationChange"
       ],
-      "lines": 1230
+      "lines": 1235
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/ImageImportPicker.swift",
@@ -3319,6 +3364,21 @@
       "lines": 402
     },
     {
+      "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/DictationSummaryPreference.swift",
+      "module": "Features",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation"
+      ],
+      "declared_types": [
+        "DictationSummaryPreference"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 23
+    },
+    {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/FloatingRecordingControls.swift",
       "module": "Features",
       "target": "CeciliasNotes",
@@ -3333,7 +3393,7 @@
         ".recordingScrollToActivePage"
       ],
       "observes": [],
-      "lines": 125
+      "lines": 159
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/MeetingSummaryCommit.swift",
@@ -3352,7 +3412,7 @@
         ".textElementsChanged"
       ],
       "observes": [],
-      "lines": 131
+      "lines": 132
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift",
@@ -3397,7 +3457,7 @@
       "observes": [
         "AVAudioSession.interruptionNotification"
       ],
-      "lines": 709
+      "lines": 717
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/PencilFingerDragSurface.swift",
@@ -4365,7 +4425,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 612
+      "lines": 621
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/Grid/NotebookGridView.swift",
@@ -4447,7 +4507,7 @@
       "observes": [
         ".ceciliasNotesOpenAsk"
       ],
-      "lines": 563
+      "lines": 568
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift",
@@ -4460,7 +4520,8 @@
       "declared_types": [
         "LibraryView",
         "SharedPDFURL",
-        "SharedImageURL"
+        "SharedImageURL",
+        "IdentifiableURL"
       ],
       "extends": [],
       "posts": [],
@@ -4477,7 +4538,7 @@
         ".shareInboxImageArrived",
         ".shareInboxCaptureArrived"
       ],
-      "lines": 734
+      "lines": 749
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift",
@@ -4516,7 +4577,7 @@
         ".imageImportCompleted",
         ".imageImportCancelled"
       ],
-      "lines": 1599
+      "lines": 1610
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/MacSmartList.swift",
@@ -4934,7 +4995,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 242
+      "lines": 265
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift",
@@ -5156,6 +5217,21 @@
       "posts": [],
       "observes": [],
       "lines": 34
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Features/Sync/LivePresencePill.swift",
+      "module": "Features",
+      "target": "CeciliasNotes",
+      "imports": [
+        "SwiftUI"
+      ],
+      "declared_types": [
+        "LivePresencePill"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 60
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Sync/MultipeerSettingsSection.swift",
@@ -5431,7 +5507,7 @@
         ".textElementsChanged"
       ],
       "observes": [],
-      "lines": 174
+      "lines": 192
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Capture/MacNotebookTemplateService.swift",
@@ -5496,7 +5572,7 @@
         ".macScrollToRecordingPage"
       ],
       "observes": [],
-      "lines": 439
+      "lines": 436
     },
     {
       "path": "CeciliasNotes/CeciliasNotesMac/Capture/MacVoiceMemoRecordingView.swift",
@@ -6799,11 +6875,99 @@
       "conforms_to": []
     },
     {
+      "name": "ArchiveAudio",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
       "name": "ArchiveBox",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementView.swift",
       "conforms_to": [
         "@unchecked Sendable"
+      ]
+    },
+    {
+      "name": "ArchiveElement",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveHighlight",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveImage",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveNotebook",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchivePDFPage",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchivePage",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveShape",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveSticky",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveStroke",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
+      ]
+    },
+    {
+      "name": "ArchiveText",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchive.swift",
+      "conforms_to": [
+        "Codable"
       ]
     },
     {
@@ -7573,6 +7737,12 @@
       "conforms_to": []
     },
     {
+      "name": "DictationSummaryPreference",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/DictationSummaryPreference.swift",
+      "conforms_to": []
+    },
+    {
       "name": "DictationTimeoutError",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift",
@@ -8026,6 +8196,14 @@
       "conforms_to": []
     },
     {
+      "name": "IdentifiableURL",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift",
+      "conforms_to": [
+        "Identifiable"
+      ]
+    },
+    {
       "name": "Identity",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Tools/CeciliasNotesTool.swift",
@@ -8413,6 +8591,14 @@
       "conforms_to": [
         "String",
         "Codable"
+      ]
+    },
+    {
+      "name": "LivePresencePill",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Features/Sync/LivePresencePill.swift",
+      "conforms_to": [
+        "View"
       ]
     },
     {
@@ -9746,6 +9932,12 @@
       "name": "Notebook",
       "kind": "class",
       "file": "CeciliasNotes/CeciliasNotes/Core/Models/Notebook.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "NotebookArchiveIO",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift",
       "conforms_to": []
     },
     {
@@ -12318,6 +12510,7 @@
       {
         "name": "audioElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift",
           "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift",
@@ -13268,6 +13461,7 @@
       {
         "name": "textElementsChanged",
         "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift",
           "CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift",
           "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift",

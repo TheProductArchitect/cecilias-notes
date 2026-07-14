@@ -81,14 +81,18 @@ enum MultipeerNotebookShare {
         guard let key = MultipeerPairingStore.sharedKey(forPeerName: name) else {
             return .notConnected
         }
-        guard let body = CeciliasNotesExporter.shared.inkbookData(for: notebook) else {
+        // Full-fidelity `.ceciliabook` (all elements + media) so the
+        // recipient gets the notebook AS IT IS, editable — not the
+        // text-only `.inkbook` mirror. The receiver's Inbox watcher
+        // routes `.ceciliabook` to `NotebookArchiveIO`.
+        guard let body = NotebookArchiveIO.archiveData(for: notebook) else {
             return .exportFailed
         }
         guard body.count <= CeciliasNotesParser.maxFileBytes else {
             return .tooLarge
         }
         let payload = buildFilePayload(
-            filename: "\(notebook.id.uuidString).inkbook",
+            filename: "\(notebook.id.uuidString).\(NotebookArchive.fileExtension)",
             body: body,
             key: key
         )

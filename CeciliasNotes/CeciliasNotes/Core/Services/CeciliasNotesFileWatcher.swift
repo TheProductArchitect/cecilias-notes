@@ -188,6 +188,17 @@ final class CeciliasNotesFileWatcher {
             case "inkbook":
                 recordEvent(filename: url.lastPathComponent, kind: .imported)
                 CeciliasNotesImporter.shared.importFile(at: url)
+            case NotebookArchive.fileExtension:
+                // Full-fidelity notebook received (multipeer send or a
+                // .ceciliabook dropped into the Inbox). Import as a
+                // fresh editable copy with all elements + media.
+                recordEvent(filename: url.lastPathComponent, kind: .imported)
+                Task { @MainActor in
+                    if let nb = NotebookArchiveIO.importArchive(from: url) {
+                        MultipeerNotebookHint.broadcastNotebookChanged(notebookId: nb.id)
+                    }
+                    try? FileManager.default.removeItem(at: url)
+                }
             case "json" where url.lastPathComponent.hasPrefix("quiz_generation_response"):
                 recordEvent(filename: url.lastPathComponent, kind: .imported)
                 QuizMCPImporter.shared.importResponse(at: url)

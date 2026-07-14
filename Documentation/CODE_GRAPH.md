@@ -11,8 +11,8 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 
 ## Snapshot
 
-- Swift files scanned: **350**
-- Types declared: **690**
+- Swift files scanned: **354**
+- Types declared: **705**
 - `Notification.Name` declarations: **90**
 - Notification symbols referenced (post/observe): **108**
 
@@ -23,9 +23,9 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | Module | Files | Lines |
 | --- | ---: | ---: |
 | `App/` | 3 | 926 |
-| `Core/` | 97 | 16,721 |
+| `Core/` | 99 | 17,339 |
 | `DesignSystem/` | 15 | 1,777 |
-| `Features/` | 166 | 52,350 |
+| `Features/` | 168 | 52,553 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -34,7 +34,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | --- | ---: | ---: |
 | `(root)/` | 3 | 763 |
 | `App/` | 4 | 373 |
-| `Capture/` | 11 | 1,724 |
+| `Capture/` | 11 | 1,739 |
 | `DesignSystem/` | 1 | 23 |
 | `Editor/` | 25 | 7,491 |
 | `Export/` | 8 | 905 |
@@ -50,25 +50,25 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 
 | Lines | File |
 | ---: | --- |
-| 2,716 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift) |
+| 2,725 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift) |
 | 2,609 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
-| 2,379 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
-| 1,599 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
+| 2,417 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
+| 1,610 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
 | 1,396 | [`CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift`](../CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift) |
 | 1,254 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
-| 1,230 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
+| 1,235 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
 | 1,227 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Tools/ToolPaletteView.swift) |
 | 1,034 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextController.swift) |
 | 969 | [`CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Sidebar/SubjectSidebarView.swift) |
 | 955 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Customise/CustomisePanel.swift) |
 | 945 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRichTextEditor.swift) |
 | 921 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoOverlayView.swift) |
+| 749 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
 | 745 | [`CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift) |
 | 740 | [`CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift) |
 | 739 | [`CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
-| 734 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
 | 732 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
-| 709 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
+| 717 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingSession.swift) |
 | 702 | [`CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocBlock.swift) |
 | 694 | [`CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift`](../CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift) |
 | 686 | [`CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift) |
@@ -86,7 +86,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | `CKAccountChanged` | — | — | [`CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
 | `NSMetadataQueryDidFinishGathering` | — | — | [`CloudSyncManager.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/CloudSyncManager.swift) |
 | `Name("pdfPageElementsChanged"` | — | [`LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift), [`MacPDFImport.swift`](../CeciliasNotes/CeciliasNotesMac/Services/MacPDFImport.swift) | — |
-| **`audioElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift), [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift), [`LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift), … +4 | [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift) |
+| **`audioElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`NotebookArchiveIO.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift), [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift), [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift), … +5 | [`AudioElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementsOverlayView.swift) |
 | **`audioSeekRequested`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift) | [`TextElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift) | [`AudioElementView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementView.swift), [`MacRendering.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRendering.swift) |
 | `boundsDidChangeNotification` | — | — | [`MacDocScrollBridge.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/DocMode/MacDocScrollBridge.swift) |
 | **`ceciliasNotesCanvasShouldPanTo`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift) | [`MinimapView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Minimap/MinimapView.swift) | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
@@ -186,7 +186,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | **`strokeContentRewritten`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift) | [`LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift), [`LassoTransformUndo.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift) | [`ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
 | **`syncConflictLogChanged`** | [`CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift) | [`SyncConflictLog.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift) | [`CloudConflictResolutionSection.swift`](../CeciliasNotes/CeciliasNotes/Features/Sync/CloudConflictResolutionSection.swift), [`MacCloudSettingsView.swift`](../CeciliasNotes/CeciliasNotesMac/Settings/MacCloudSettingsView.swift) |
 | **`syntheticDataDidChange`** | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) | [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) | [`LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
-| **`textElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift) | [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift), [`LassoTransformUndo.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift), [`PageElementUndo.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/PageElementUndo.swift), … +8 | [`TextElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift) |
+| **`textElementsChanged`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementCommit.swift) | [`NotebookArchiveIO.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/NotebookArchiveIO.swift), [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift), [`LassoTransformUndo.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift), … +9 | [`TextElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/TextElements/TextElementsOverlayView.swift) |
 | **`themeDidChange`** | [`CeciliasNotes/CeciliasNotes/DesignSystem/ThemeManager.swift`](../CeciliasNotes/CeciliasNotes/DesignSystem/ThemeManager.swift) | [`ThemeManager.swift`](../CeciliasNotes/CeciliasNotes/DesignSystem/ThemeManager.swift) | — |
 | **`userDataReset`** | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) | [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) | [`LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
 | `willEnterForegroundNotification` | — | — | [`LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
@@ -199,14 +199,14 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`App`** — 2 conformers: `CeciliasNotesApp`, `CeciliasNotesMacApp`
 - **`AppIntent`** — 4 conformers: `AskMyNotesIntent`, `CreateNotebookIntent`, `OpenNotebookIntent`, `OpenQuickCaptureIntent`
 - **`CaseIterable`** — 49 conformers: `Category`, `Command`, `Corner`, `CoverTexture`, `DoubleTapAction`, `ElementKind`, `EraserMode`, `ExportDeliveryFormat`, `FingerDrawingMode`, `HeadingLevel`, `HighlightStyle`, `Identity`, … +37
-- **`Codable`** — 54 conformers: `AITier`, `Agent`, `Block`, `CalloutKind`, `CoverTexture`, `ElementKind`, `EraserMode`, `ExportRecord`, `FingerDrawingMode`, `FlashcardRating`, `HighlightStyle`, `Identity`, … +42
+- **`Codable`** — 65 conformers: `AITier`, `Agent`, `ArchiveAudio`, `ArchiveElement`, `ArchiveHighlight`, `ArchiveImage`, `ArchiveNotebook`, `ArchivePDFPage`, `ArchivePage`, `ArchiveShape`, `ArchiveSticky`, `ArchiveStroke`, … +53
 - **`Commands`** — 2 conformers: `CeciliasNotesCommands`, `MacAppCommands`
 - **`Decodable`** — 4 conformers: `DeleteRequest`, `Header`, `ResponseEnvelope`, `ResponseQuestion`
 - **`Encodable`** — 2 conformers: `RequestEnvelope`, `SourceBlock`
 - **`Equatable`** — 46 conformers: `AIError`, `AppError`, `AudioElementsOverlayView`, `CeciliasNotesTool`, `DictationContext`, `DiscoveredDevice`, `EditorPageOverlayInputs`, `ElementSnapshot`, `ExportViewState`, `HighlightElementsOverlayView`, `ImageElementsOverlayView`, `Issue`, … +34
 - **`Error`** — 8 conformers: `AIError`, `AudioRecorderError`, `DictationTimeoutError`, `ExportError`, `Issue`, `LectureRecorderError`, `ParseError`, `RangeParseError`
 - **`Hashable`** — 13 conformers: `AnnotationListItem`, `AskCitation`, `InteractionReason`, `Key`, `LibraryContext`, `MacHeaderInteraction`, `NotebookSummary`, `PageCoordinateSpace`, `PageTemplate`, `TemplateCategory`, `Theme`, `TranscriptionSegment`, … +1
-- **`Identifiable`** — 28 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, `MacSmartList`, … +16
+- **`Identifiable`** — 29 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `IdentifiableURL`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, … +17
 - **`LocalizedError`** — 10 conformers: `AppError`, `AudioRecorderError`, `CeciliasNotesStorageError`, `CloudSyncError`, `Error`, `ExportError`, `ImageProcessingError`, `LectureRecorderError`, `MacExportError`, `PDFImportError`
 - **`NSObject`** — 12 conformers: `AudioPlaybackController`, `CameraPickerDelegate`, `CeciliasNotesAppDelegate`, `Coordinator`, `DocumentPickerDelegate`, `MacAppDelegate`, `MacQuickCaptureController`, `MetricKitCollector`, `MultipeerSendService`, `MultipeerSyncService`, `PhotoPickerDelegate`, `PickerDelegate`
 - **`NSView`** — 2 conformers: `MacDocTextContainer`, `MacInlineTextContainer`
@@ -221,7 +221,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`UIViewControllerRepresentable`** — 10 conformers: `ActivityView`, `AudioFilePicker`, `CameraPicker`, `DocumentScannerPicker`, `FilesPicker`, `IICameraPicker`, `IIFilesPicker`, `IIPhotosPicker`, `PhotoLibraryPicker`, `ShareTextActivityView`
 - **`UIViewRepresentable`** — 8 conformers: `ContinuousCanvasView`, `PencilFingerDragSurface`, `PencilSqueezeDetector`, `SplashSVGView`, `StickyTextEditor`, `TextBlockView`, `TextEditorRepresentable`, `TwoFingerLongPressDetector`
 - **`VersionedSchema`** — 2 conformers: `CeciliasNotesSchemaV5`, `CeciliasNotesSchemaV6`
-- **`View`** — 200 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +188
+- **`View`** — 201 conformers: `AboutSettingsView`, `AddPageTemplatePicker`, `AgentBannerView`, `AllNotesListRow`, `AllQuizzesListRow`, `AllQuizzesView`, `AllSubjectsListRow`, `AllSubjectsView`, `AnimationRow`, `AnnotationListSheet`, `AnnotationRow`, `AppearanceSettingsView`, … +189
 - **`ViewModifier`** — 5 conformers: `CeciliasNotesCardModifier`, `EditorPageHandoffModifier`, `LassoRotationPreviewModifier`, `MacElementTransformModifier`, `ModalHostView`
 
 ## Entry points
@@ -243,7 +243,7 @@ Files that own app startup or top-level scene composition. Read these first if y
 
 ## Cross-target sharing
 
-- iOS target files: **282**
+- iOS target files: **286**
 - Mac target files: **68**
 - The Mac target compiles most iOS files directly via `PBXFileSystemSynchronizedRootGroup` synced folders with per-file exceptions. Search the pbxproj for `PBXFileSystemSynchronizedBuildFileExceptionSet` to see the exclusion lists.
 - Platform guards to look for: `#if canImport(UIKit)`, `#if canImport(AppKit)`, `#if os(iOS)`. Anything wrapped in these is asymmetric and worth an extra read when debugging cross-platform.

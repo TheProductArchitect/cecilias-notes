@@ -1515,6 +1515,17 @@ final class LibraryViewModel: ObservableObject {
         pendingExportNotebookId = notebook.id
     }
 
+    /// Full-fidelity `.ceciliabook` export (all elements: text, ink,
+    /// images, audio, shapes, stickies, highlights). When set, the
+    /// Library presents a share sheet; the file opens back in
+    /// Cecilia's Notes on any device that taps it.
+    @Published var shareArchiveURL: URL?
+
+    func shareNotebookArchive(_ notebook: Notebook) {
+        guard let url = NotebookArchiveIO.exportToFile(notebook) else { return }
+        shareArchiveURL = url
+    }
+
     func moveNotebook(_ notebook: Notebook, to subjectId: UUID?) {
         try? storage.moveNotebook(notebook, to: subjectId)
         refresh()
