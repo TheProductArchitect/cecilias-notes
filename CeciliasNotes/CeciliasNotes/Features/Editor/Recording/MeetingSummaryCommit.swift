@@ -6,21 +6,25 @@ import UIKit
 /// iPad/iPhone tail of the meeting-assistant flow: when a dictation
 /// stops, distill the transcript with on-device Apple Intelligence
 /// (`MeetingSummarizer`, shared prompts with the Mac) and place the
-/// summary at the TOP of the transcript block — prepended INTO the
-/// same text element, so the page reads summary-first.
+/// summary as its OWN text element at the top of the dictation
+/// cluster, shifting the audio pill and transcript down beneath it —
+/// so every device reads **summary → audio pill → transcript**.
 ///
-/// Prepending (rather than inserting a separate element above) is
-/// deliberate: the iPad canvas is free-form, and a separate element
-/// had to guess at pixel geometry — on real pages it overlapped ink
-/// and neighbouring blocks. Inside the block there is nothing to
-/// collide with: the summary scrolls, moves, and exports with its
-/// transcript.
+/// This runs on a freshly-created dictation page whose only elements
+/// are the pill and the transcript, so shifting that pair down can't
+/// collide with unrelated content. Every geometry write is clamped
+/// finite and inside [0, 0.92] — the earlier "poisoned geometry"
+/// crash came from writing a negative/infinite `normalizedHeight`.
 ///
 /// Failure paths all degrade to "just the transcript": no Apple
 /// Intelligence → nothing happens; generation fails → nothing
 /// happens. The page never shows an error or placeholder state.
 @MainActor
 enum MeetingSummaryCommit {
+
+    /// Highest normalised Y a block's top may sit at (leaves a bottom
+    /// margin). Shared with the geometry clamps below.
+    private static let bottomCap: Double = 0.92
 
     static func generateIfWorthwhile(
         transcript: String,
@@ -34,39 +38,31 @@ enum MeetingSummaryCommit {
 
         Task { @MainActor in
             guard let summary = try? await MeetingSummarizer.summarize(transcript: trimmed) else { return }
-            prependSummary(summary, toElementId: firstElementId, notebookId: notebookId)
+            commitSummary(summary, transcriptElementId: firstElementId, notebookId: notebookId)
         }
     }
 
-    // MARK: - Prepend into the transcript block
+    // MARK: - Summary as a separate top element
 
     /// Internal (not private) so the unit suite can drive the commit
     /// tail directly — `MeetingSummarizer.canRun` is always false in
     /// simulators, so without this seam the entire post-summary write
     /// path (archiving, geometry, save, notifications) ships untested.
-    static func prependSummary(
+    static func commitSummary(
         _ summary: String,
-        toElementId elementId: UUID,
+        transcriptElementId elementId: UUID,
         notebookId: UUID
     ) {
-        guard let element = fetchElement(elementId),
-              let content = element.textContent else { return }
+        guard let transcript = fetchElement(elementId),
+              transcript.textContent != nil else { return }
+        let storage = StorageService.shared
+        let context = storage.context
+        let pageId = transcript.pageId
+        guard let page = storage.fetchPage(id: pageId) else { return }
+        let pageSize = page.pageSize.pointSize
+        guard pageSize.height > 0, pageSize.width > 0 else { return }
 
-        // Existing transcript content, styled — dictation writes
-        // plain text, so fall back to the shared editorial defaults.
-        let existing: NSAttributedString
-        if let data = content.attributedTextData, !data.isEmpty,
-           let decoded = try? NSKeyedUnarchiver.unarchivedObject(
-               ofClass: NSAttributedString.self, from: data
-           ) {
-            existing = decoded
-        } else {
-            existing = NSAttributedString(
-                string: content.text,
-                attributes: RichTextController.defaultAttributes(ink: .label)
-            )
-        }
-
+        // Build the summary block: SUMMARY eyebrow + body.
         let composed = NSMutableAttributedString()
         composed.append(NSAttributedString(
             string: "SUMMARY\n",
@@ -78,47 +74,69 @@ enum MeetingSummaryCommit {
             ]
         ))
         composed.append(NSAttributedString(
-            string: summary + "\n\n",
+            string: summary,
             attributes: RichTextController.defaultAttributes(ink: .label)
         ))
-        composed.append(existing)
 
-        content.text = "Summary\n\(summary)\n\n\(content.text)"
-        content.attributedTextData = try? NSKeyedArchiver.archivedData(
-            withRootObject: composed,
-            requiringSecureCoding: true
-        )
-        content.updatedAt = Date()
-        element.updatedAt = Date()
+        // Measure the summary's height — guarded against non-finite.
+        let contentWidth = max(40, CGFloat(transcript.normalizedWidth) * pageSize.width)
+        let measured = ceil(composed.boundingRect(
+            with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            context: nil
+        ).height)
+        guard measured.isFinite, measured > 0 else { return }
+        let summaryHeight = min(0.4, max(0.04, Double((measured + 12) / pageSize.height)))
 
-        // Grow the element for the added lines so the block doesn't
-        // clip until the next edit re-measures it. Every input is
-        // guarded: an element sitting below 92% page height makes
-        // `0.92 - normalizedY` NEGATIVE, and a zero page height makes
-        // `normalized` infinite — either writes poisoned geometry
-        // that every later render of this element inherits.
-        let storage = StorageService.shared
-        if let page = storage.fetchPage(id: element.pageId) {
-            let pageSize = page.pageSize.pointSize
-            if pageSize.height > 0 {
-                let contentWidth = max(40, CGFloat(element.normalizedWidth) * pageSize.width)
-                let measured = ceil(composed.boundingRect(
-                    with: CGSize(width: contentWidth, height: .greatestFiniteMagnitude),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    context: nil
-                ).height)
-                let normalized = Double((measured + 10) / pageSize.height)
-                let cap = 0.92 - element.normalizedY
-                if normalized.isFinite, cap > element.normalizedHeight {
-                    element.normalizedHeight = min(cap, max(element.normalizedHeight, normalized))
-                }
-            }
+        // The audio pill (created at stop, sitting just above the
+        // transcript). May be absent if the user turned audio-clip
+        // saving off — then the order is simply summary → transcript.
+        let pill = fetchAudioElement(pageId: pageId)
+
+        // Top of the existing dictation cluster.
+        let clusterTop = min(pill?.normalizedY ?? transcript.normalizedY, transcript.normalizedY)
+        let summaryY = clamp(min(clusterTop, bottomCap - summaryHeight))
+
+        // Shift the pill + transcript down so the summary owns the top.
+        let shift = summaryHeight + 0.012
+        for el in [pill, transcript].compactMap({ $0 }) {
+            let maxY = max(0, bottomCap - el.normalizedHeight)
+            let newY = clamp(min(maxY, el.normalizedY + shift))
+            el.normalizedY = newY
+            el.updatedAt = Date()
         }
 
-        Page.clearInkbookStash(forPageId: element.pageId, context: storage.context)
-        try? storage.context.save()
+        // Create the summary element above them.
+        let summaryEl = PageElement(
+            pageId: pageId,
+            notebookId: notebookId,
+            kind: .text,
+            normalizedX: transcript.normalizedX,
+            normalizedY: summaryY,
+            normalizedWidth: transcript.normalizedWidth,
+            normalizedHeight: summaryHeight,
+            zIndex: nextZIndex(pageId: pageId, context: context)
+        )
+        let sc = TextContent(text: "Summary\n\(summary)", source: .ai, size: .body)
+        sc.attributedTextData = try? NSKeyedArchiver.archivedData(
+            withRootObject: composed, requiringSecureCoding: true
+        )
+        summaryEl.textContent = sc
+        context.insert(summaryEl)
+
+        Page.clearInkbookStash(forPageId: pageId, context: context)
+        try? context.save()
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+        // The pill moved — nudge the audio overlay to re-fetch.
+        NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
         MultipeerNotebookHint.broadcastNotebookChanged(notebookId: notebookId)
+    }
+
+    // MARK: - Helpers
+
+    private static func clamp(_ v: Double) -> Double {
+        guard v.isFinite else { return 0.01 }
+        return min(bottomCap, max(0, v))
     }
 
     private static func fetchElement(_ id: UUID) -> PageElement? {
@@ -126,6 +144,22 @@ enum MeetingSummaryCommit {
             predicate: #Predicate<PageElement> { $0.id == id }
         )
         return try? StorageService.shared.context.fetch(descriptor).first
+    }
+
+    private static func fetchAudioElement(pageId: UUID) -> PageElement? {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pageId && $0.deletedAt == nil }
+        )
+        let elements = (try? StorageService.shared.context.fetch(descriptor)) ?? []
+        return elements.first { $0.kind == .audio }
+    }
+
+    private static func nextZIndex(pageId: UUID, context: ModelContext) -> Int {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pageId && $0.deletedAt == nil }
+        )
+        let elements = (try? context.fetch(descriptor)) ?? []
+        return (elements.map(\.zIndex).max() ?? 0) + 1
     }
 }
 #endif

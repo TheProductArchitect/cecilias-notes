@@ -5,9 +5,14 @@ import SwiftData
 /// Regression suite for the post-dictation summary commit — the
 /// "post diction and summary" window where device crashes were
 /// reported. `MeetingSummarizer.canRun` is always false in the
-/// simulator, so without driving `prependSummary` directly this
+/// simulator, so without driving `commitSummary` directly this
 /// entire write path (attributed-string archiving, geometry math,
 /// SwiftData save, notification fan-out) ships untested.
+///
+/// The summary is now a SEPARATE text element placed above the audio
+/// pill (order: summary → pill → transcript), not prepended into the
+/// transcript. These tests lock in the ordering AND the geometry
+/// clamps that keep the write off the poisoned-geometry crash path.
 @MainActor
 final class MeetingSummaryCommitTests: XCTestCase {
 
@@ -25,11 +30,11 @@ final class MeetingSummaryCommitTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeNotebookPageElement(
-        normalizedY: Double = 0.1,
-        normalizedHeight: Double = 0.1,
+    private func makeNotebookWithTranscript(
+        transcriptY: Double = 0.1,
+        transcriptHeight: Double = 0.1,
         transcript: String = "we agreed to ship the beta on friday and cecilia owns the release notes"
-    ) throws -> (notebookId: UUID, pageId: UUID, elementId: UUID) {
+    ) throws -> (notebookId: UUID, pageId: UUID, transcriptId: UUID) {
         let storage = StorageService.shared
         let notebook = try storage.createNotebook(
             title: "Summary Test",
@@ -47,15 +52,36 @@ final class MeetingSummaryCommitTests: XCTestCase {
             notebookId: notebook.id,
             kind: .text,
             normalizedX: 0.1,
-            normalizedY: normalizedY,
+            normalizedY: transcriptY,
             normalizedWidth: 0.8,
-            normalizedHeight: normalizedHeight,
+            normalizedHeight: transcriptHeight,
             zIndex: 1
         )
         element.textContent = TextContent(text: transcript, source: .dictated)
         storage.context.insert(element)
         try storage.context.save()
         return (notebook.id, page.id, element.id)
+    }
+
+    /// Adds an audio pill above the transcript (as `finalizeDictation`
+    /// does at stop) so the ordering can be exercised.
+    private func addPill(notebookId: UUID, pageId: UUID, y: Double, height: Double = 0.04) throws -> UUID {
+        let storage = StorageService.shared
+        let pill = PageElement(
+            id: UUID(),
+            pageId: pageId,
+            notebookId: notebookId,
+            kind: .audio,
+            normalizedX: 0.1,
+            normalizedY: y,
+            normalizedWidth: 0.8,
+            normalizedHeight: height,
+            zIndex: 2
+        )
+        pill.audioContent = AudioContent(id: UUID(), filename: "a.m4a", durationSeconds: 3)
+        storage.context.insert(pill)
+        try storage.context.save()
+        return pill.id
     }
 
     private func fetchElement(_ id: UUID) throws -> PageElement {
@@ -65,27 +91,40 @@ final class MeetingSummaryCommitTests: XCTestCase {
         return try XCTUnwrap(StorageService.shared.context.fetch(descriptor).first)
     }
 
+    private func elementsOnPage(_ pageId: UUID) -> [PageElement] {
+        let descriptor = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pageId && $0.deletedAt == nil }
+        )
+        return (try? StorageService.shared.context.fetch(descriptor)) ?? []
+    }
+
     // MARK: - Happy path
 
-    func test_prependSummary_putsSummaryAboveTranscript_andArchivesAttributed() throws {
-        let ids = try makeNotebookPageElement()
+    func test_commitSummary_insertsSeparateElement_andPreservesTranscript() throws {
+        let ids = try makeNotebookWithTranscript()
         let summary = "Beta ships friday. Cecilia owns release notes."
 
-        MeetingSummaryCommit.prependSummary(
-            summary, toElementId: ids.elementId, notebookId: ids.notebookId
+        MeetingSummaryCommit.commitSummary(
+            summary, transcriptElementId: ids.transcriptId, notebookId: ids.notebookId
         )
 
-        let element = try fetchElement(ids.elementId)
-        let content = try XCTUnwrap(element.textContent)
-        XCTAssertTrue(content.text.hasPrefix("Summary\n\(summary)\n\n"),
-                      "Summary must be prepended above the transcript")
-        XCTAssertTrue(content.text.hasSuffix("owns the release notes"),
-                      "Transcript must be preserved verbatim below the summary")
+        // Transcript element is untouched (verbatim, still .dictated).
+        let transcript = try fetchElement(ids.transcriptId)
+        let tContent = try XCTUnwrap(transcript.textContent)
+        XCTAssertEqual(tContent.text, "we agreed to ship the beta on friday and cecilia owns the release notes")
+        XCTAssertEqual(tContent.source, .dictated)
 
-        // The archived attributed string must decode and mirror the
-        // plain text's structure — a decode failure here is exactly
-        // the poisoned-block state a device crash would leave behind.
-        let data = try XCTUnwrap(content.attributedTextData)
+        // A NEW summary element exists, is .ai, and carries the summary.
+        let summaryEls = elementsOnPage(ids.pageId)
+            .filter { $0.id != ids.transcriptId && $0.kind == .text }
+        XCTAssertEqual(summaryEls.count, 1, "Exactly one summary element must be created")
+        let summaryEl = try XCTUnwrap(summaryEls.first)
+        let sContent = try XCTUnwrap(summaryEl.textContent)
+        XCTAssertEqual(sContent.source, .ai)
+        XCTAssertTrue(sContent.text.contains(summary))
+
+        // Its archived attributed string decodes and leads with the eyebrow.
+        let data = try XCTUnwrap(sContent.attributedTextData)
         let decoded = try XCTUnwrap(
             NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data)
         )
@@ -93,89 +132,106 @@ final class MeetingSummaryCommitTests: XCTestCase {
         XCTAssertTrue(decoded.string.contains(summary))
     }
 
-    func test_prependSummary_growsElement_withinPageBounds() throws {
-        let ids = try makeNotebookPageElement(normalizedY: 0.1, normalizedHeight: 0.05)
+    func test_commitSummary_ordersSummaryAbovePillAboveTranscript() throws {
+        let ids = try makeNotebookWithTranscript(transcriptY: 0.12)
+        // Pill sits just above the transcript, as at stop.
+        let pillId = try addPill(notebookId: ids.notebookId, pageId: ids.pageId, y: 0.06)
+
+        MeetingSummaryCommit.commitSummary(
+            "Recap.", transcriptElementId: ids.transcriptId, notebookId: ids.notebookId
+        )
+
+        let transcript = try fetchElement(ids.transcriptId)
+        let pill = try fetchElement(pillId)
+        let summaryEl = try XCTUnwrap(
+            elementsOnPage(ids.pageId).first { $0.id != ids.transcriptId && $0.kind == .text }
+        )
+
+        XCTAssertLessThan(summaryEl.normalizedY, pill.normalizedY,
+                          "Summary must sit above the audio pill")
+        XCTAssertLessThan(pill.normalizedY, transcript.normalizedY,
+                          "Audio pill must sit above the transcript")
+    }
+
+    func test_commitSummary_allGeometryStaysWithinPageBounds() throws {
+        let ids = try makeNotebookWithTranscript(transcriptY: 0.1, transcriptHeight: 0.05)
+        _ = try addPill(notebookId: ids.notebookId, pageId: ids.pageId, y: 0.05)
         let longSummary = Array(repeating: "a decision was made about the roadmap.", count: 20)
             .joined(separator: " ")
 
-        MeetingSummaryCommit.prependSummary(
-            longSummary, toElementId: ids.elementId, notebookId: ids.notebookId
+        MeetingSummaryCommit.commitSummary(
+            longSummary, transcriptElementId: ids.transcriptId, notebookId: ids.notebookId
         )
 
-        let element = try fetchElement(ids.elementId)
-        XCTAssertGreaterThanOrEqual(element.normalizedHeight, 0.05,
-                                    "Element must not shrink")
-        XCTAssertLessThanOrEqual(element.normalizedHeight, 0.92 - element.normalizedY + 0.0001,
-                                 "Element must stay within the page")
-        XCTAssertGreaterThan(element.normalizedHeight, 0,
-                             "Geometry must never go non-positive")
-        XCTAssertTrue(element.normalizedHeight.isFinite)
+        for el in elementsOnPage(ids.pageId) {
+            XCTAssertTrue(el.normalizedY.isFinite && el.normalizedHeight.isFinite,
+                          "No element may carry non-finite geometry")
+            XCTAssertGreaterThanOrEqual(el.normalizedY, 0)
+            XCTAssertGreaterThan(el.normalizedHeight, 0)
+            XCTAssertLessThanOrEqual(el.normalizedY, 0.92 + 0.0001)
+        }
     }
 
-    // MARK: - The geometry trap: element parked near the page bottom
+    // MARK: - The geometry trap: transcript parked near the page bottom
 
-    func test_prependSummary_elementBelowPageCap_neverWritesNegativeHeight() throws {
-        // normalizedY = 0.95 puts the cap (0.92 - y) at -0.03: the
-        // pre-guard code assigned min(-0.03, …) — a NEGATIVE height
-        // that every subsequent render of the element inherits.
-        let ids = try makeNotebookPageElement(normalizedY: 0.95, normalizedHeight: 0.04)
+    func test_commitSummary_transcriptNearBottom_neverWritesInvalidGeometry() throws {
+        // A transcript at 0.95 leaves almost no room; the shift + clamp
+        // must never push anything to a negative or non-finite value.
+        let ids = try makeNotebookWithTranscript(transcriptY: 0.95, transcriptHeight: 0.04)
 
-        MeetingSummaryCommit.prependSummary(
-            "Short summary.", toElementId: ids.elementId, notebookId: ids.notebookId
+        MeetingSummaryCommit.commitSummary(
+            "Short summary.", transcriptElementId: ids.transcriptId, notebookId: ids.notebookId
         )
 
-        let element = try fetchElement(ids.elementId)
-        XCTAssertEqual(element.normalizedHeight, 0.04, accuracy: 0.0001,
-                       "Height must be left alone when the cap is below the current height")
-        XCTAssertGreaterThan(element.normalizedHeight, 0)
-
-        // The text itself must still commit — geometry safety must
-        // not cost the user their summary.
-        let content = try XCTUnwrap(element.textContent)
-        XCTAssertTrue(content.text.hasPrefix("Summary\n"))
+        for el in elementsOnPage(ids.pageId) {
+            XCTAssertTrue(el.normalizedY.isFinite)
+            XCTAssertGreaterThanOrEqual(el.normalizedY, 0)
+            XCTAssertLessThanOrEqual(el.normalizedY, 0.92 + 0.0001)
+            XCTAssertGreaterThan(el.normalizedHeight, 0)
+        }
+        // The summary still commits — geometry safety must not cost
+        // the user their summary.
+        let summaryEls = elementsOnPage(ids.pageId)
+            .filter { $0.id != ids.transcriptId && $0.kind == .text }
+        XCTAssertEqual(summaryEls.count, 1)
     }
 
     // MARK: - Missing rows degrade to no-ops
 
-    func test_prependSummary_missingElement_isQuietNoOp() throws {
-        MeetingSummaryCommit.prependSummary(
-            "Orphan summary.", toElementId: UUID(), notebookId: UUID()
+    func test_commitSummary_missingElement_isQuietNoOp() throws {
+        MeetingSummaryCommit.commitSummary(
+            "Orphan summary.", transcriptElementId: UUID(), notebookId: UUID()
         )
-        // Passes by not crashing and not inserting anything.
         let descriptor = FetchDescriptor<PageElement>()
         let all = (try? StorageService.shared.context.fetch(descriptor)) ?? []
         XCTAssertTrue(all.allSatisfy { $0.textContent?.text.contains("Orphan") != true })
     }
 
-    // MARK: - Pre-styled block round-trip
+    // MARK: - Pre-styled transcript is left alone
 
-    func test_prependSummary_preservesExistingAttributedText() throws {
-        let ids = try makeNotebookPageElement()
-        let element = try fetchElement(ids.elementId)
-        let content = try XCTUnwrap(element.textContent)
+    func test_commitSummary_leavesExistingAttributedTextUntouched() throws {
+        let ids = try makeNotebookWithTranscript()
+        let transcript = try fetchElement(ids.transcriptId)
+        let content = try XCTUnwrap(transcript.textContent)
 
-        // Simulate the structurer having already written attributed
-        // data for the block (the structure → summary sequence).
         let styled = NSAttributedString(
             string: content.text,
             attributes: RichTextController.defaultAttributes(ink: .label)
         )
-        content.attributedTextData = try NSKeyedArchiver.archivedData(
+        let originalData = try NSKeyedArchiver.archivedData(
             withRootObject: styled, requiringSecureCoding: true
         )
+        content.attributedTextData = originalData
         try StorageService.shared.context.save()
 
-        MeetingSummaryCommit.prependSummary(
-            "Recap.", toElementId: ids.elementId, notebookId: ids.notebookId
+        MeetingSummaryCommit.commitSummary(
+            "Recap.", transcriptElementId: ids.transcriptId, notebookId: ids.notebookId
         )
 
-        let updated = try XCTUnwrap(try fetchElement(ids.elementId).textContent)
-        let data = try XCTUnwrap(updated.attributedTextData)
-        let decoded = try XCTUnwrap(
-            NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data)
-        )
-        XCTAssertTrue(decoded.string.hasPrefix("SUMMARY\nRecap.\n\n"))
-        XCTAssertTrue(decoded.string.hasSuffix("owns the release notes"),
-                      "Pre-styled transcript must survive the prepend")
+        // Transcript's own attributed payload is unchanged (the summary
+        // lives in its own element now).
+        let updated = try XCTUnwrap(try fetchElement(ids.transcriptId).textContent)
+        XCTAssertEqual(updated.attributedTextData, originalData,
+                       "Transcript attributed data must be untouched by the summary commit")
     }
 }

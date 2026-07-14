@@ -60,10 +60,15 @@ Previous phase — **Production push: cross-device sync UX + Mac meeting assista
    transcript in place (paragraphs, headings, speaker labels — words
    verbatim, single-block sessions only), then `MeetingSummarizer`
    distills it with on-device Apple Intelligence (chunked map-reduce).
-   Placement differs by canvas: the Mac inserts a "SUMMARY" block ABOVE
-   the transcript (doc-mode reflow handles geometry); the iPad PREPENDS
-   the summary INTO the transcript element (`MeetingSummaryCommit`) — a
-   separate element had to guess free-canvas geometry and overlapped ink.
+   Both canvases now read **summary → audio pill → transcript**
+   (2026-07-14). The Mac inserts the summary above the page's topmost
+   element and places the pill directly above the transcript
+   (`MacMeetingSummary` / `MacRecordingSession`); the iPad
+   `MeetingSummaryCommit.commitSummary` inserts the summary as its OWN
+   text element at the cluster top and shifts the pill + transcript
+   down, every geometry write clamped finite and in-bounds (the old
+   in-transcript prepend caused the "post-dictation" poisoned-geometry
+   crash; `MeetingSummaryCommitTests` locks the ordering + clamps).
    All failures degrade to transcript-only, never an error state on the
    page.
 4. **Dictation continues sentences.** Utterance boundaries from

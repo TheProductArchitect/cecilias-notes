@@ -31,29 +31,37 @@ struct LivePresencePill: View {
     var body: some View {
         let names = liveNames
         if !names.isEmpty {
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 Circle()
                     .fill(Color.green)
-                    .frame(width: 8, height: 8)
+                    .frame(width: 7, height: 7)
                     .scaleEffect(pulsing ? 1.15 : 0.9)
                     .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
                 Text(label(for: names))
+                    // Single line, sized to content — device names can
+                    // be long, and the toolbar column is narrow; without
+                    // this the label wrapped character-by-character into
+                    // a tall vertical capsule.
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.foreground)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
             .background(Capsule().fill(.ultraThinMaterial))
             .overlay(Capsule().strokeBorder(Color.green.opacity(0.35), lineWidth: 1))
+            .fixedSize()
+            .help(names.joined(separator: ", "))
             .accessibilityLabel("Live: \(names.joined(separator: ", "))")
             .onAppear { pulsing = true }
         }
     }
 
+    /// Compact label — no device names in the pill itself (they can be
+    /// long and clutter the toolbar); the full list is in the tooltip /
+    /// accessibility label. Just "Live" for one, "Live · N" for more.
     private func label(for names: [String]) -> String {
-        switch names.count {
-        case 1:  return "Live · \(names[0])"
-        default: return "Live · \(names.count) devices"
-        }
+        names.count == 1 ? "Live" : "Live · \(names.count)"
     }
 }
