@@ -35,6 +35,9 @@ struct MultipeerSettingsSection: View {
             }
 
             if multipeer.isEnabled {
+                // Live-presence pill — which paired devices are
+                // connected on the LAN right now. Self-hides when none.
+                LivePresencePill()
                 pairingControls
                 if !multipeer.pairedPeerNames.isEmpty {
                     pairedDevicesList

@@ -82,7 +82,9 @@ struct StickyNoteElementView: View {
                 .frame(width: displayed.width, height: displayed.height)
                 .overlay(textLayer)
                 .overlay(borderOverlay)
-                .rotationEffect(.radians(element.rotation))
+                // Committed rotation + live lasso preview, around the
+                // card's OWN centre, BEFORE `.position`.
+                .elementRotation(elementId: element.id, radians: element.rotation)
                 .contentShape(Rectangle())
                 // Quick tap → edit immediately.
                 .simultaneousGesture(
@@ -146,7 +148,6 @@ struct StickyNoteElementView: View {
                         }
                 )
                 .position(x: displayed.midX, y: displayed.midY)
-                .lassoRotationPreview(elementId: element.id, frameOrigin: displayed.origin)
 
             if isSelected && !isEditing {
                 colorPickerStrip(displayed: displayed)

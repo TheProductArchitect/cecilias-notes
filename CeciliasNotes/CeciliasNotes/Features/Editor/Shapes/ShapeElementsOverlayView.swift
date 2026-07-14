@@ -144,6 +144,12 @@ struct ShapeElementsOverlayView: View, Equatable {
         )
         renderShape(element: element, content: content)
             .frame(width: rect.width, height: rect.height)
+            // Rotate around the shape's OWN centre — applied BEFORE
+            // `.position` so the anchor is the shape frame, not the
+            // page. (Applied after position, a rotated shape revolved
+            // around the page centre and its saved angle rendered
+            // upright — the "detached box" report.)
+            .elementRotation(elementId: element.id, radians: element.rotation)
             .contentShape(Rectangle())
             .onTapGesture {
                 guard inputs.selectedTool.isCursorMode else { return }
@@ -151,13 +157,6 @@ struct ShapeElementsOverlayView: View, Equatable {
             }
             .allowsHitTesting(inputs.selectedTool.isCursorMode)
             .position(x: rect.midX, y: rect.midY)
-            // Apply the stored rotation — WITHOUT this a shape rotated
-            // via the lasso saved its `rotation` but rendered upright,
-            // so the selection box turned while the shape stayed put
-            // (the "detached box" report). `lassoRotationPreview`
-            // rotates it live during the drag, matching the chrome.
-            .rotationEffect(.radians(element.rotation))
-            .lassoRotationPreview(elementId: element.id, frameOrigin: rect.origin)
     }
 
     /// Populate `LassoSelectionState` with this single shape so

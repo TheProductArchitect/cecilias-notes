@@ -87,7 +87,11 @@ struct ImageElementView: View {
             //   frame → overlays/effects → contentShape →
             //   gestures → position.
             ImageDataView(content: content)
-                .rotationEffect(.radians(liveRotation ?? element.rotation))
+                // Rotation around the image's OWN centre (applied
+                // before `.frame`/`.position`): the committed angle or
+                // the live handle drag (`liveRotation`), PLUS any live
+                // lasso-rotation delta for this element.
+                .elementRotation(elementId: element.id, radians: liveRotation ?? element.rotation)
                 .frame(width: displayed.width, height: displayed.height)
                 .contentShape(Rectangle())
                 .simultaneousGesture(
@@ -109,7 +113,6 @@ struct ImageElementView: View {
                 .gesture(isSelected ? imageDragGesture : nil)
                 .gesture(isSelected ? pinchResizeGesture : nil)
                 .position(x: displayed.midX, y: displayed.midY)
-                .lassoRotationPreview(elementId: element.id, frameOrigin: displayed.origin)
 
             if isSelected {
                 selectionChrome(imageRect: displayed)

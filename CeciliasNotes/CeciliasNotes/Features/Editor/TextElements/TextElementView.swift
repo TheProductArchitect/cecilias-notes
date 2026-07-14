@@ -190,6 +190,10 @@ struct TextElementView: View {
             )
         }
         .frame(width: width, height: height, alignment: .topLeading)
+        // Rotate around the element's OWN centre — BEFORE `.position`
+        // so the anchor is the text frame, not the page (applied
+        // after `.position` it revolved around the page centre).
+        .elementRotation(elementId: element.id, radians: element.rotation)
         .contentShape(Rectangle())
         // Tap while selected (not editing) enters edit mode. The
         // overlay's tap catcher unmounts once the element is
@@ -200,8 +204,6 @@ struct TextElementView: View {
         }
         .gesture(isSelected && !isEditing ? moveGesture : nil)
         .position(x: origin.x + width / 2, y: origin.y + height / 2)
-        .rotationEffect(.radians(element.rotation))
-        .lassoRotationPreview(elementId: element.id, frameOrigin: origin)
         .onAppear {
             seedIfNeeded()
             remeasureContentHeight()

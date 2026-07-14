@@ -50,26 +50,6 @@ final class LassoLiveDrag: ObservableObject {
     /// rotation gesture to the selection's bbox centre.
     @Published var rotationCenter: CGPoint = .zero
 
-    /// The CGAffineTransform that rotates around `rotationCenter`
-    /// by `rotationAngle`, expressed in the coordinate space of a
-    /// view whose top-leading corner sits at `frameOrigin` (page
-    /// coords). `transformEffect` operates in the VIEW'S OWN local
-    /// space — feeding it the page-coord pivot directly made every
-    /// element orbit a point displaced by its own page position
-    /// ("rotates in a circle centred somewhere on the page"), then
-    /// snap correct on release because the commit math was right.
-    func rotationTransform(frameOrigin: CGPoint) -> CGAffineTransform {
-        guard rotationAngle != 0 else { return .identity }
-        let localPivot = CGPoint(
-            x: rotationCenter.x - frameOrigin.x,
-            y: rotationCenter.y - frameOrigin.y
-        )
-        return CGAffineTransform.identity
-            .translatedBy(x: localPivot.x, y: localPivot.y)
-            .rotated(by: rotationAngle)
-            .translatedBy(x: -localPivot.x, y: -localPivot.y)
-    }
-
     func reset() {
         transientOffset = .zero
         isManipulating = false
@@ -80,52 +60,44 @@ final class LassoLiveDrag: ObservableObject {
 
 // MARK: - Live rotation preview modifier
 
-/// Attaches a live `.transformEffect` to any element view whose
-/// underlying `PageElement.id` is in the lasso selection while a
-/// rotation gesture is in flight. The transform pivots the
-/// element around the bbox centre, so during the drag the visible
-/// content rotates with the dashed bounding rectangle instead of
-/// standing still and snapping into place on release.
+/// Rotates an element around its OWN centre: the committed
+/// `element.rotation` plus any in-flight lasso-rotation delta for
+/// this element. Both apply via `.rotationEffect(anchor: .center)`,
+/// which anchors on the CENTRE OF THE VIEW IT MODIFIES.
 ///
-/// Non-selected element views read `isManipulating == false` /
-/// `rotationAngle == 0` and skip the transform entirely.
+/// This MUST be applied to the framed element BEFORE `.position(...)`.
+/// `.position` expands the view to fill the page, so a rotation
+/// applied after it anchors on the PAGE centre — making every
+/// off-centre element revolve around a point on the page instead of
+/// spinning in place. Applied before `.position`, the modified view
+/// IS the element frame, so the anchor is the element's own centre.
 struct LassoRotationPreviewModifier: ViewModifier {
 
     let elementId: UUID
-    /// The element's top-leading corner in page coordinates — the
-    /// same space as `LassoLiveDrag.rotationCenter`. Needed to
-    /// convert the pivot into the view's local space (see
-    /// `rotationTransform(frameOrigin:)`).
-    let frameOrigin: CGPoint
+    /// The committed rotation for this element (radians).
+    let committed: Double
 
     @ObservedObject private var selection = LassoSelectionState.shared
     @ObservedObject private var liveDrag  = LassoLiveDrag.shared
 
-    private var isPreviewing: Bool {
-        liveDrag.isManipulating
-            && liveDrag.rotationAngle != 0
-            && selection.selectedElementIds.contains(elementId)
+    private var liveDelta: Double {
+        guard liveDrag.isManipulating,
+              liveDrag.rotationAngle != 0,
+              selection.selectedElementIds.contains(elementId)
+        else { return 0 }
+        return liveDrag.rotationAngle
     }
 
     func body(content: Content) -> some View {
-        if isPreviewing {
-            content.transformEffect(
-                liveDrag.rotationTransform(frameOrigin: frameOrigin)
-            )
-        } else {
-            content
-        }
+        content.rotationEffect(.radians(committed + liveDelta), anchor: .center)
     }
 }
 
 extension View {
-    /// Apply the rotation preview to an element view. Call after
-    /// the view's own `.position(...)` so the transform composes
-    /// with the element's resting placement; pass the element's
-    /// page-space top-leading corner.
-    func lassoRotationPreview(elementId: UUID, frameOrigin: CGPoint) -> some View {
-        modifier(LassoRotationPreviewModifier(
-            elementId: elementId, frameOrigin: frameOrigin
-        ))
+    /// Rotate an element around its OWN centre — committed angle plus
+    /// the live lasso-rotation preview. Apply to the FRAMED element
+    /// BEFORE `.position(...)` (see the modifier's note).
+    func elementRotation(elementId: UUID, radians: Double) -> some View {
+        modifier(LassoRotationPreviewModifier(elementId: elementId, committed: radians))
     }
 }
