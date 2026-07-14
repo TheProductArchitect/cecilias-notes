@@ -19,6 +19,7 @@ struct FloatingRecordingControls: View {
 
     @ObservedObject var session: RecordingSession = .shared
     @Environment(\.theme) private var theme
+    @State private var summaryOn: Bool = DictationSummaryPreference.isEnabled
 
     var body: some View {
         if session.state.isRecording {
@@ -26,6 +27,9 @@ struct FloatingRecordingControls: View {
                 Spacer()
                 VStack(spacing: 12) {
                     timerPill
+                    if session.state.isDictation && MeetingSummarizer.canRun {
+                        summaryChip
+                    }
                     stopButton
                 }
                 .padding(.trailing, 20)
@@ -33,6 +37,36 @@ struct FloatingRecordingControls: View {
             .transition(.move(edge: .trailing).combined(with: .opacity))
             .animation(.easeInOut(duration: 0.2), value: session.state.isRecording)
         }
+    }
+
+    // MARK: - Summary chip (dictation only)
+
+    /// Floating "flag" that lets the user choose whether this
+    /// dictation gets an AI summary on stop — without leaving the
+    /// page. Reflects and writes `DictationSummaryPreference` (also
+    /// in Settings → Audio & Transcription), so the choice sticks as
+    /// the new default. Only shown when Apple Intelligence can run.
+    private var summaryChip: some View {
+        Button {
+            summaryOn.toggle()
+            DictationSummaryPreference.setEnabled(summaryOn)
+            HapticManager.shared.toolSwitched()
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: summaryOn ? "sparkles" : "sparkles.slash")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(summaryOn ? "Summary on" : "Summary off")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(summaryOn ? theme.accent : theme.foregroundMuted)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(Capsule().strokeBorder(theme.borderSubtle, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(summaryOn ? "Summary on. Tap to turn off." : "Summary off. Tap to turn on.")
     }
 
     // MARK: - Timer pill

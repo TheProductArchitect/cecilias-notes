@@ -56,6 +56,14 @@ final class RecordingSession: ObservableObject {
             return true
         }
 
+        /// True only for a dictation session (drives the in-editor
+        /// "summarise?" chip, which is meaningless for a plain voice
+        /// note).
+        var isDictation: Bool {
+            if case .dictation = self { return true }
+            return false
+        }
+
         /// The notebook id the active recording belongs to, if any.
         /// Used by `RecordingPill` to navigate back to the right
         /// notebook when the user taps the pill from outside the

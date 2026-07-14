@@ -1021,6 +1021,44 @@ extension StorageService {
         scheduleWidgetSnapshot()
     }
 
+    /// Re-template every EMPTY page in a notebook (no ink, no
+    /// non-background elements) to `template`. Called when the
+    /// notebook's default template changes so a fresh notebook's
+    /// untouched page 1 — created with `.blank` before the user
+    /// picked a template in the Customise panel — adopts the choice,
+    /// while pages that already have content keep their template
+    /// (the deliberate forward-only rule). Returns the number of
+    /// pages changed.
+    @discardableResult
+    func retemplateEmptyPages(in notebook: Notebook, to template: PageTemplate) -> Int {
+        let notebookId = notebook.id
+        let pageDesc = FetchDescriptor<Page>(
+            predicate: #Predicate { $0.notebookId == notebookId && $0.isDeleted == false }
+        )
+        guard let pages = try? context.fetch(pageDesc) else { return 0 }
+        var changed = 0
+        for page in pages where page.backgroundTemplate != template {
+            // Ink?
+            if let data = strokeData(for: page), !data.isEmpty { continue }
+            // Any non-background element? (a full-bleed `.pdfPage`
+            // element IS the page's background, so it doesn't block
+            // a template change; everything else is user content.)
+            let pid = page.id
+            let elemDesc = FetchDescriptor<PageElement>(
+                predicate: #Predicate<PageElement> {
+                    $0.pageId == pid && $0.deletedAt == nil
+                }
+            )
+            let elements = (try? context.fetch(elemDesc)) ?? []
+            let hasUserContent = elements.contains { $0.kind != .pdfPage }
+            if hasUserContent { continue }
+            page.backgroundTemplate = template
+            page.updatedAt = Date()
+            changed += 1
+        }
+        return changed
+    }
+
     func updateNotebook(
         _ notebook: Notebook,
         title: String?,

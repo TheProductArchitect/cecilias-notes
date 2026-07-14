@@ -2526,12 +2526,13 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
-    /// Apply a page template. Forward-only: only pages added after
-    /// this call inherit the new template. Existing pages — including
-    /// an empty page 1 — keep whatever template they were created
-    /// with, so the user can change the default mid-notebook to give
-    /// the next added page a different template without altering
-    /// any page already on screen.
+    /// Apply a page template. Pages that already carry user content
+    /// (ink or non-background elements) keep their template — the
+    /// forward-only rule that lets the user change the default
+    /// mid-notebook without disturbing pages on screen. EMPTY pages
+    /// DO adopt the new template, which is what makes a fresh
+    /// notebook's untouched page 1 (created `.blank` before the
+    /// Customise panel opened) follow the template the user picks.
     func applyCustomTemplate(_ template: PageTemplate) {
         do {
             try storage.updateNotebook(
@@ -2542,6 +2543,14 @@ final class EditorViewModel: ObservableObject {
                 tags:            nil,
                 defaultTemplate: template
             )
+            let changed = storage.retemplateEmptyPages(in: notebook, to: template)
+            if changed > 0 {
+                try? storage.context.save()
+                // Republish `pages` so the canvas's updateUIView →
+                // applyPageMetadataChanges detects the background
+                // change and repaints the template layer in place.
+                refreshPages()
+            }
             // Intentionally NOT writing to `ceciliasnotes.lastUsed.template`.
             // Per-notebook persistence happens via `Notebook.defaultTemplate`
             // above; mirroring to the global key here used to leak this

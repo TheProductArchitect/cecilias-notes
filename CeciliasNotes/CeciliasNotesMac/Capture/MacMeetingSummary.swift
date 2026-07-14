@@ -28,6 +28,11 @@ enum MacMeetingSummary {
         firstElementId: UUID,
         notebookId: UUID
     ) {
+        // Summary opt-in — same UserDefaults key as the iPad
+        // `DictationSummaryPreference` (that type lives in the
+        // iOS-only Recording folder; read the key directly here to
+        // avoid a cross-target dependency). Default ON.
+        guard UserDefaults.standard.object(forKey: "ceciliasnotes.dictation.autoSummary") as? Bool ?? true else { return }
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= MeetingSummarizer.minimumTranscriptCharacters else { return }
         guard MeetingSummarizer.canRun else { return }
@@ -75,13 +80,26 @@ enum MacMeetingSummary {
             .pageSize.pointSize.height ?? PageSize.a4.pointSize.height
         let measuredHeight = estimateNormalizedHeight(attributed, anchor: anchor, pageHeight: pageHeight)
 
+        // Summary goes to the TOP of the stack — above the audio pill
+        // (which sits just above the transcript). Anchoring only to the
+        // transcript would drop the summary BETWEEN the pill and the
+        // transcript. The reflow packs by normalizedY, so a Y below the
+        // page's current topmost element orders the summary first.
+        let pid = anchor.pageId
+        let siblingDesc = FetchDescriptor<PageElement>(
+            predicate: #Predicate<PageElement> { $0.pageId == pid && $0.deletedAt == nil }
+        )
+        let minY = ((try? context.fetch(siblingDesc)) ?? [])
+            .filter { $0.kind != .stroke }
+            .map(\.normalizedY)
+            .min() ?? anchor.normalizedY
         let element = PageElement(
             id: UUID(),
             pageId: anchor.pageId,
             notebookId: notebookId,
             kind: .text,
             normalizedX: anchor.normalizedX,
-            normalizedY: max(0, anchor.normalizedY - 0.001),
+            normalizedY: max(0, minY - 0.001),
             normalizedWidth: anchor.normalizedWidth,
             normalizedHeight: measuredHeight,
             zIndex: anchor.zIndex

@@ -27,6 +27,7 @@ enum MeetingSummaryCommit {
         firstElementId: UUID,
         notebookId: UUID
     ) {
+        guard DictationSummaryPreference.isEnabled else { return }
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= MeetingSummarizer.minimumTranscriptCharacters else { return }
         guard MeetingSummarizer.canRun else { return }

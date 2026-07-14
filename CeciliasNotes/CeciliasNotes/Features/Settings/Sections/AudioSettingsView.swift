@@ -18,6 +18,13 @@ struct AudioSettingsView: View {
     @AppStorage("ceciliasnotes.transcription.quality")
     private var transcriptionQuality: TranscriptionQuality = .accurate
 
+    /// Master gate for the post-dictation AI summary. Read by
+    /// `MeetingSummaryCommit` (iPad) and `MacMeetingSummary` (Mac).
+    /// Default ON; the in-editor floating prompt lets the user flip
+    /// it per-session without visiting Settings.
+    @AppStorage(DictationSummaryPreference.key)
+    private var autoSummary: Bool = true
+
     private var selectedLocaleName: String {
         guard !viewModel.transcriptionLocale.isEmpty else { return "System default" }
         return Locale.current.localizedString(forIdentifier: viewModel.transcriptionLocale)
@@ -115,6 +122,22 @@ struct AudioSettingsView: View {
                             .font(.ceciliasNotesBody)
                             .foregroundColor(theme.foreground)
                         Text("Convert speech to text on-device. Dictation always transcribes regardless of this setting.")
+                            .font(.ceciliasNotesCaption)
+                            .foregroundColor(theme.foregroundSubtle)
+                    }
+                }
+                .toggleStyle(.switch)
+                .tint(theme.accent)
+                .padding(.vertical, 10)
+
+                Divider()
+
+                Toggle(isOn: $autoSummary) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Summarise dictations")
+                            .font(.ceciliasNotesBody)
+                            .foregroundColor(theme.foreground)
+                        Text("After a dictation, add a short AI summary above the transcript. On-device; needs Apple Intelligence.")
                             .font(.ceciliasNotesCaption)
                             .foregroundColor(theme.foregroundSubtle)
                     }

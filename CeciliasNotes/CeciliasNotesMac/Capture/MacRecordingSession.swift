@@ -306,25 +306,22 @@ final class MacRecordingSession: ObservableObject {
 
             let marginX = MacDocPageLayout.normalizedHorizontalMargin(pageWidth: pageSize.width)
             let contentWidth = MacDocPageLayout.normalizedContentWidth(pageWidth: pageSize.width)
-            let audioHeight = AudioElementCommit.defaultStripHeight(forPagePoints: Double(pageSize.height))
-            var audioY: Double
+            // Order (summary → audio → transcript): the audio pill sits
+            // directly ABOVE the transcript, not after it. Placing it
+            // after the transcript pushed the pill far down a long
+            // transcript ("text and audio pill are far away"); the
+            // reflow packs strictly by normalizedY, so a Y just above
+            // the transcript's puts the pill adjacent to the transcript
+            // top. The summary lands above the pill (it inserts above
+            // the page's topmost element — see MacMeetingSummary).
+            let audioY: Double
             if let textElement {
-                audioY = textElement.normalizedY + textElement.normalizedHeight + 0.02
+                audioY = max(
+                    MacDocPageLayout.normalizedTopMargin(pageHeight: pageSize.height),
+                    textElement.normalizedY - 0.001
+                )
             } else {
                 audioY = MacDocPageLayout.normalizedTopMargin(pageHeight: pageSize.height)
-            }
-
-            if audioY + audioHeight > 0.92,
-               let page = storage.fetchPage(id: anchorPageId) {
-                let notebookId = ctx.notebookId
-                let notebookDescriptor = FetchDescriptor<Notebook>(
-                    predicate: #Predicate<Notebook> { $0.id == notebookId }
-                )
-                if let notebook = try? storage.context.fetch(notebookDescriptor).first,
-                   let newPage = MacPageEditing.addPage(in: notebook, after: page, storage: storage) {
-                    targetPageId = newPage.id
-                    audioY = MacDocPageLayout.normalizedTopMargin(pageHeight: newPage.pageSize.pointSize.height)
-                }
             }
 
             _ = AudioElementCommit.commit(

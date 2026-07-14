@@ -726,18 +726,23 @@ final class LectureRecorder: ObservableObject {
             // measure the same pause-paragraph rule here.
             if !committedTranscript.isEmpty {
                 currentUtteranceSeparator =
-                    silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : " "
+                    silenceGap >= Self.paragraphPauseSeconds ? "\n" : " "
             }
         } else if isHypothesisReset(previous: lastSessionPartial, current: partial) {
             // The just-finished utterance folds into committed (with
             // ITS separator); the new one continues the sentence —
             // or opens a paragraph when a real pause preceded it.
+            // A SINGLE newline starts a new paragraph; the rendered
+            // paragraph style already adds a 10pt `paragraphSpacing`
+            // gap, so `\n\n` (used previously) stacked a full empty
+            // line ON TOP of that spacing — the "huge gap between
+            // paragraphs" report.
             committedTranscript = Self.join(
                 committedTranscript, lastSessionPartial,
                 separator: currentUtteranceSeparator
             )
             currentUtteranceSeparator =
-                silenceGap >= Self.paragraphPauseSeconds ? "\n\n" : " "
+                silenceGap >= Self.paragraphPauseSeconds ? "\n" : " "
             #if DEBUG
             dlog("[Dictation] in-session hypothesis reset — folded \(lastSessionPartial.count)-char partial into committed (now \(committedTranscript.count) chars)")
             #endif
