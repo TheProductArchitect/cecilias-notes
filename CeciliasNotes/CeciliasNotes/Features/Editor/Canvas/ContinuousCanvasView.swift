@@ -459,6 +459,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private let pageGap: CGFloat
         private let warmBandPaddingFactor: CGFloat
         private let overlayWarmBandPaddingFactor: CGFloat
+        /// Ceiling on simultaneously-mounted PKCanvasViews while a
+        /// scroll is in flight. Unmounts are normally deferred to
+        /// scroll-rest (mid-scroll teardown caused hitches), but with
+        /// no ceiling a long fling accumulated one Metal-backed canvas
+        /// per crossed page. Above the ceiling, pages outside the keep
+        /// band (a full viewport away) are evicted even mid-scroll.
+        /// 8 ≈ two viewports of A4 pages at 1× zoom — comfortably more
+        /// than the warm band can legitimately hold.
+        static let maxCanvasesWhileScrolling = 8
 
         weak var host:         UIView?
         weak var scrollView:   UIScrollView?
@@ -1560,6 +1569,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let keepPad = scrollView.bounds.height
             var deferredUnmountSaves = false
             var didMountThisPass = false
+            var mountedCanvasCount = hosts.reduce(0) { $0 + ($1.canvasView != nil ? 1 : 0) }
 
             for i in hosts.indices {
                 let f = hosts[i].frame
@@ -1590,17 +1600,32 @@ struct ContinuousCanvasView: UIViewRepresentable {
                                scaled.maxY >= viewportTop, scaled.minY <= viewportBottom {
                                 didMountThisPass = true
                                 mountCanvas(at: i, in: contentView)
+                                mountedCanvasCount += 1
                             } else {
                                 pendingCanvasMountIndices.insert(i)
                             }
                         } else {
                             mountCanvas(at: i, in: contentView)
+                            mountedCanvasCount += 1
                         }
                     }
-                } else if !inCanvasKeepBand && hosts[i].canvasView != nil && !force
-                            && !isActivelyScrolling {
-                    unmountCanvas(at: i, deferStorageSave: true)
-                    deferredUnmountSaves = true
+                } else if !inCanvasKeepBand && hosts[i].canvasView != nil && !force {
+                    // At rest: normal trim. Mid-scroll: only under
+                    // pressure — a long fling otherwise accumulates
+                    // every crossed PKCanvasView (device log: all 13
+                    // of a 13-page notebook mounted at once), and a
+                    // dozen live Metal-backed canvases is compositor
+                    // load the user reads as "laggy". The keep band
+                    // sits a full viewport beyond the warm band, so an
+                    // evicted page can't flip back next tick; dirty
+                    // drawings go through the deferred/async save path
+                    // either way.
+                    if !isActivelyScrolling
+                        || mountedCanvasCount > Self.maxCanvasesWhileScrolling {
+                        unmountCanvas(at: i, deferStorageSave: true)
+                        mountedCanvasCount -= 1
+                        deferredUnmountSaves = true
+                    }
                 }
                 // Any page inside the overlay band queues its overlay
                 // mount (batched 1/16 ms by the scheduler). The old
@@ -1969,21 +1994,23 @@ struct ContinuousCanvasView: UIViewRepresentable {
             let activeId = hosts[bestIdx].pageId
             guard force || activeId != lastActivePageId else { return }
 
-            let previousActiveId = lastActivePageId
             lastActivePageId = activeId
             if let canvas = hosts[bestIdx].canvasView {
                 viewModel.canvasView = canvas
             }
 
-            // Drop the overlay for the page we're leaving mid-scroll —
-            // remounts on scroll-rest for the landing page only.
-            if isActivelyScrolling,
-               let prev = previousActiveId,
-               prev != activeId,
-               let prevIdx = hosts.firstIndex(where: { $0.pageId == prev }),
-               hosts[prevIdx].overlaysHost != nil {
-                unmountOverlays(at: prevIdx)
-            }
+            // NOTE (2026-07-15, device-log confirmed): the old "drop
+            // the overlay for the page we're leaving mid-scroll" rule
+            // that lived here is GONE. It predates band-based overlay
+            // membership — once `updateCanvasMembership` started
+            // mounting overlays for every in-band page (the element
+            // pop-in fix), this unmount was immediately undone by the
+            // next membership pass, so every active-page crossing paid
+            // a full overlay-tree teardown + rebuild (SwiftData fetch,
+            // UITextView, AVAudioPlayer prepare — all on main) for a
+            // page still on screen. A 13-page scroll sweep produced 61
+            // overlay mounts. Band + keep-band hysteresis owns the
+            // overlay lifecycle now.
 
             // While the user is actively scrolling, skip @Published
             // `currentPageIndex` writes — they re-render every mounted
