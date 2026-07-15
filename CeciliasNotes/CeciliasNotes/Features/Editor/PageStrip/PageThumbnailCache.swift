@@ -221,8 +221,22 @@ final class PageThumbnailCache {
         return elements
             .filter { $0.kind == .image }
             .compactMap { element -> ImageLayer? in
-                guard let data = element.imageContent?.imageData,
-                      let image = UIImage(data: data) else { return nil }
+                guard let content = element.imageContent else { return nil }
+                // In-row bytes first (canonical, CloudKit-synced),
+                // falling back to the on-disk file for legacy rows
+                // that predate the in-row column — those images
+                // rendered in the editor but were missing from the
+                // strip thumbnail. Crop applied to match the editor
+                // (ImageDataView crops; an uncropped thumbnail lied
+                // about the page).
+                let bytes = content.imageData
+                    ?? (try? Data(contentsOf: content.fileURL))
+                guard let bytes, let raw = UIImage(data: bytes) else { return nil }
+                let image = ImageDataView.applyCrop(
+                    to: raw,
+                    x: content.cropOriginX, y: content.cropOriginY,
+                    w: content.cropWidth, h: content.cropHeight
+                )
                 return ImageLayer(
                     image: image,
                     rect: CGRect(

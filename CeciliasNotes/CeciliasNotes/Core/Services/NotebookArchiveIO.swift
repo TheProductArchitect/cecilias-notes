@@ -209,6 +209,14 @@ enum NotebookArchiveIO {
         let storage = StorageService.shared
         let context = storage.context
 
+        // The media writes below (`try? bytes.write`) fail silently if
+        // the MediaAttachments tree doesn't exist yet — possible on a
+        // fresh install whose first action is receiving a share.
+        // Images/audio would still render from their in-row bytes, but
+        // PDFs have NO in-row fallback: a missing pdfs/ directory means
+        // every imported PDF page renders a placeholder forever.
+        MediaStorage.ensureDirectoriesExist()
+
         // Resolve subject by name (find-or-fallback); nil lets
         // createNotebook drop it into the first subject / Imports.
         let subjectId: UUID? = archive.notebook.subjectName.flatMap { name in

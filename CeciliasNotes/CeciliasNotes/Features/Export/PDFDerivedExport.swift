@@ -336,9 +336,20 @@ enum PDFDerivedExport {
         let elements = ((try? context.fetch(descriptor)) ?? [])
             .filter { $0.kind == .image }
         for element in elements {
-            guard let content = element.imageContent,
-                  let image = UIImage(contentsOfFile: content.fileURL.path)
-            else { continue }
+            guard let content = element.imageContent else { continue }
+            // In-row bytes first — a notebook imported from a
+            // `.ceciliabook` (or synced via CloudKit) may not have
+            // its local file cache written yet; exporting before
+            // viewing the page dropped those images. Crop applied to
+            // match the editor's rendering.
+            let bytes = content.imageData
+                ?? (try? Data(contentsOf: content.fileURL))
+            guard let bytes, let raw = UIImage(data: bytes) else { continue }
+            let image = ImageDataView.applyCrop(
+                to: raw,
+                x: content.cropOriginX, y: content.cropOriginY,
+                w: content.cropWidth, h: content.cropHeight
+            )
             let w = CGFloat(element.normalizedWidth)  * bounds.width
             let h = CGFloat(element.normalizedHeight) * bounds.height
             let x = CGFloat(element.normalizedX) * bounds.width
