@@ -504,9 +504,21 @@ struct LassoOverlayView: View {
                 // gutter beside the notebook (or above the masthead)
                 // and the user can't tap it.
                 let badgeRadius: CGFloat = 22
-                let badgeX = max(badgeRadius,
-                                 min(pageSize.width  - badgeRadius,
-                                     displayed.maxX + 24))
+                let badgeGap: CGFloat = 24
+                // Prefer OUTSIDE the top-right corner. But when the
+                // bbox reaches the page's right edge (full-width text
+                // selections), the old right-edge clamp parked the
+                // badge exactly where the floating tool palette
+                // hovers over the page — the palette swallowed the
+                // tap and the selection was effectively undeletable.
+                // Mirror to the LEFT of the bbox instead; the left
+                // edge has no palette.
+                let idealX = displayed.maxX + badgeGap
+                let badgeX = idealX <= pageSize.width - badgeRadius
+                    ? max(badgeRadius, idealX)
+                    : max(badgeRadius,
+                          min(pageSize.width - badgeRadius,
+                              displayed.minX - badgeGap))
                 let badgeY = max(badgeRadius,
                                  min(pageSize.height - badgeRadius,
                                      displayed.minY - 24))

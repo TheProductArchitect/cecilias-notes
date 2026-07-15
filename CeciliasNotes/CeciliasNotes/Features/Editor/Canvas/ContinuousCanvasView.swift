@@ -372,7 +372,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
         // finger input, so single-finger pan must scroll the document
         // — otherwise the user gets a frozen-looking page.
         let fingersDrawingNow = fingerDraws && viewModel.selectedTool.isDrawingTool
-        let desiredTouches = fingersDrawingNow ? 2 : 1
+        // Shape tool + no Pencil detected: the shape overlay's
+        // PencilFingerDragSurface claims single-finger drags for
+        // shape creation, and both recognisers fire simultaneously —
+        // the page scrolled underneath the drag, so the committed
+        // rect came out squat and displaced from where the user drew.
+        // Require two fingers to scroll, exactly like finger-drawing
+        // mode. (With a Pencil, fingers scroll and the Pencil draws
+        // the shape — the allowedTouchTypes split below handles it.)
+        let inShapeMode = viewModel.selectedTool.isShapeMode
+        let fingerCreatesShapes = inShapeMode && !InputCapabilityDetector.shared.hasPencil
+        let desiredTouches = (fingersDrawingNow || fingerCreatesShapes) ? 2 : 1
         if scrollView.panGestureRecognizer.minimumNumberOfTouches != desiredTouches {
             scrollView.panGestureRecognizer.minimumNumberOfTouches = desiredTouches
         }
@@ -384,7 +394,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
         //   page that scrolled while the user tried to draw).
         // - Otherwise: both finger + Pencil scroll — the cursor-mode
         //   Pencil-scroll fix from earlier in this branch.
-        let inShapeMode = viewModel.selectedTool.isShapeMode
         let desiredTouchTypes: [NSNumber] = inShapeMode
             ? [NSNumber(value: UITouch.TouchType.direct.rawValue)]
             : [NSNumber(value: UITouch.TouchType.direct.rawValue),
