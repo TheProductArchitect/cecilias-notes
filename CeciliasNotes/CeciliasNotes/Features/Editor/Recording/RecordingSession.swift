@@ -574,8 +574,17 @@ final class RecordingSession: ObservableObject {
     }
 
     private func stopDictation(_ ctx: DictationContext) async {
-        guard let recorder = dictationRecorder else { resetSession(); return }
+        // The live recording pill was created at START — every exit
+        // from this function must either promote it (finalize) or
+        // discard it. A failure path that just resets the session
+        // leaves a dead zero-duration strip on the page.
+        guard let recorder = dictationRecorder else {
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
+            resetSession()
+            return
+        }
         guard let result = await recorder.stop() else {
+            AudioElementCommit.discardRecordingPlaceholder(elementId: ctx.audioElementId)
             resetSession()
             return
         }
@@ -597,6 +606,9 @@ final class RecordingSession: ObservableObject {
             guard adopted != nil else {
                 // File-system move failed — the .m4a is gone; tell the
                 // user rather than silently discarding the recording.
+                // The start-created pill has no audio to promote to —
+                // take it off the page with the rest of the teardown.
+                AudioElementCommit.discardRecordingPlaceholder(elementId: audioElementId)
                 self.interruptionMessage = "Recording couldn't be saved. Please check storage and try again."
                 #if DEBUG
                 dlog("[Dictation] stopDictation: adoptAudio returned nil — recording lost, sourceURL=\(sourceURL)")

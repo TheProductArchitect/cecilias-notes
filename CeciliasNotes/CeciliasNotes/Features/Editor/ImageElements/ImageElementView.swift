@@ -290,6 +290,12 @@ struct ImageElementView: View {
                         liveRotation = rotationBase + delta
                     }
                     .onEnded { value in
+                        // A tap-without-drag can deliver `.onEnded`
+                        // without any `.onChanged` tick — `rotationBase`
+                        // would then be stale from the PREVIOUS gesture
+                        // and the commit would snap the image to an old
+                        // angle. Lazy-init here mirrors `.onChanged`.
+                        if liveRotation == nil { rotationBase = element.rotation }
                         let delta = Self.angle(from: value.startLocation, to: value.location, around: center)
                         let final = rotationBase + delta
                         liveRotation = nil
