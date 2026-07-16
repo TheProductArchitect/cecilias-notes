@@ -395,6 +395,29 @@ final class MultipeerSyncService: NSObject, ObservableObject {
                 status = .connected(peerName: peer.displayName)
             }
 
+        case "live-ink":
+            // Ephemeral drawing snapshot (protocol v2.4). Same-
+            // household only on the SEND side; the receive side just
+            // requires a paired key — the editor decides whether the
+            // notebook is open and drops it otherwise. Never touches
+            // SwiftData: the canvas renders it as a transient overlay
+            // and CloudKit delivers the durable rows.
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { return }
+            guard verifyHMAC(hmacBytes, message: signedRange, key: key) else { return }
+            recentNonces.append((header.nonce, Date()))
+            if let parsed = MultipeerLiveInk.parseBody(bodyData) {
+                NotificationCenter.default.post(
+                    name: MultipeerLiveInk.receivedNotification,
+                    object: nil,
+                    userInfo: [
+                        MultipeerLiveInk.UserInfoKey.notebookId: parsed.notebookId,
+                        MultipeerLiveInk.UserInfoKey.pageId: parsed.pageId,
+                        MultipeerLiveInk.UserInfoKey.seq: parsed.seq,
+                        MultipeerLiveInk.UserInfoKey.drawingData: parsed.drawingData,
+                    ]
+                )
+            }
+
         case "ping":
             // Liveness probe — sender uses this to detect a
             // half-broken session before committing to a full file

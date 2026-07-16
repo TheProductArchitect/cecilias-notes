@@ -5,10 +5,10 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 354,
-    "types": 705,
-    "notifications_declared": 90,
-    "notification_symbols_referenced": 108
+    "files": 355,
+    "types": 708,
+    "notifications_declared": 91,
+    "notification_symbols_referenced": 109
   },
   "files": [
     {
@@ -1133,6 +1133,24 @@
       "lines": 79
     },
     {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "CryptoKit",
+        "Foundation"
+      ],
+      "declared_types": [
+        "MultipeerLiveInk",
+        "UserInfoKey",
+        "ParsedBody"
+      ],
+      "extends": [],
+      "posts": [],
+      "observes": [],
+      "lines": 195
+    },
+    {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerNotebookHint.swift",
       "module": "Core",
       "target": "CeciliasNotes",
@@ -1207,10 +1225,11 @@
         "MultipeerSendService"
       ],
       "posts": [
-        "MultipeerNotebookHint.changedNotification"
+        "MultipeerNotebookHint.changedNotification",
+        "MultipeerLiveInk.receivedNotification"
       ],
       "observes": [],
-      "lines": 533
+      "lines": 556
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift",
@@ -1234,10 +1253,11 @@
         "MultipeerSyncService"
       ],
       "posts": [
-        "MultipeerNotebookHint.changedNotification"
+        "MultipeerNotebookHint.changedNotification",
+        "MultipeerLiveInk.receivedNotification"
       ],
       "observes": [],
-      "lines": 686
+      "lines": 709
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/NewNotebookCustomiseTrigger.swift",
@@ -2415,9 +2435,10 @@
         ".pixelEraserWidthChanged",
         ".imageElementCrossPageHandoffRequested",
         ".strokeContentRewritten",
+        "MultipeerLiveInk.receivedNotification",
         "rectCacheNote"
       ],
-      "lines": 2728
+      "lines": 2921
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -9839,6 +9860,12 @@
       ]
     },
     {
+      "name": "MultipeerLiveInk",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift",
+      "conforms_to": []
+    },
+    {
       "name": "MultipeerNotebookHint",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerNotebookHint.swift",
@@ -10386,6 +10413,14 @@
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesParser.swift",
       "conforms_to": [
         "Error"
+      ]
+    },
+    {
+      "name": "ParsedBody",
+      "kind": "struct",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift",
+      "conforms_to": [
+        "Equatable"
       ]
     },
     {
@@ -11916,6 +11951,12 @@
       "conforms_to": []
     },
     {
+      "name": "UserInfoKey",
+      "kind": "enum",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift",
+      "conforms_to": []
+    },
+    {
       "name": "VoiceMemoContext",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotesMac/Capture/MacRecordingSession.swift",
@@ -12111,6 +12152,11 @@
         "symbol": "pixelEraserWidthChanged",
         "string": "editor.pixelEraserWidthChanged",
         "declared_in": "CeciliasNotes/CeciliasNotes/Core/Services/InputCapabilityDetector.swift"
+      },
+      {
+        "symbol": "receivedNotification",
+        "string": "ceciliasnotes.multipeer.liveInkReceived",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift"
       },
       {
         "symbol": "changedNotification",
@@ -13328,6 +13374,16 @@
           "CeciliasNotes/CeciliasNotes/Core/AppIntents/CeciliasNotesIntents.swift"
         ],
         "observed_in": []
+      },
+      {
+        "name": "receivedNotification",
+        "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSendService.swift",
+          "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift"
+        ],
+        "observed_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift"
+        ]
       },
       {
         "name": "recordingPillReturnTapped",

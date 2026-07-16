@@ -43,7 +43,13 @@ finger drags scrolled the canvas mid-creation; full-width selections
 parked the delete badge under the tool palette) — both fixed, all
 Lasso tests green, plus a new selection-persists-through-moves
 regression test. Full-fidelity `.ceciliabook` sharing (export/import,
-tap-to-open, multipeer send) shipped 07-14. **The next App Store
+tap-to-open, multipeer send) shipped 07-14. **Live ink (07-16,
+protocol v2.4)**: same-household devices with the same notebook open
+see each other's strokes near-instantly — throttled full-page
+snapshots over the LAN, rendered as an EPHEMERAL image layer that is
+never persisted and clears when the CloudKit-delivered durable
+drawing catches up (see MULTIPEER_SYNC_PROTOCOL §Live ink). Needs a
+two-device pass. **The next App Store
 archive must be cut from current `main` — 3.0 (3) predates ALL of
 this.**
 

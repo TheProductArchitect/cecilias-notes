@@ -551,6 +551,29 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private nonisolated(unsafe) var pixelEraserObserver: NSObjectProtocol?
         private nonisolated(unsafe) var imageHandoffObserver: NSObjectProtocol?
         private nonisolated(unsafe) var strokeRewriteObserver: NSObjectProtocol?
+        private nonisolated(unsafe) var liveInkObserver: NSObjectProtocol?
+
+        // MARK: Live-ink state (ephemeral peer preview, protocol v2.4)
+
+        /// Per-page transient overlay showing a paired peer's
+        /// in-progress ink. Plain image views — NOT canvases, NOT
+        /// persisted; removed when the durable drawing catches up,
+        /// on TTL, on unmount, and on teardown.
+        private var liveInkViews: [UUID: UIImageView] = [:]
+        /// Drop out-of-order snapshots (two lanes can race).
+        private var liveInkLastSeq: [UUID: UInt64] = [:]
+        /// Stroke count of the last applied snapshot — the durable
+        /// drawing supersedes the overlay once it has at least this
+        /// many strokes.
+        private var liveInkStrokeCount: [UUID: Int] = [:]
+        private var liveInkTTLTasks: [UUID: Task<Void, Never>] = [:]
+        /// Trailing re-send per page so the final stroke of a burst
+        /// inside the throttle window still ships.
+        private var liveInkTrailingTasks: [UUID: Task<Void, Never>] = [:]
+        /// Safety net: if CloudKit never catches up (sync off on
+        /// either side), the preview still shouldn't outlive the
+        /// glance that needed it.
+        private static let liveInkTTL: TimeInterval = 120
         private nonisolated(unsafe) var interactiveRectsObservers: [NSObjectProtocol] = []
 
         private struct PageInteractiveRects {
@@ -658,6 +681,29 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     self?.reloadCanvases(forPageIds: pageIds)
                 }
             }
+            // Live ink from a paired same-household peer (protocol
+            // v2.4). Sendable primitives extracted before the actor
+            // hop, same pattern as the handoff observer above.
+            self.liveInkObserver = NotificationCenter.default.addObserver(
+                forName: MultipeerLiveInk.receivedNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] note in
+                guard let info = note.userInfo,
+                      let notebookId = info[MultipeerLiveInk.UserInfoKey.notebookId] as? UUID,
+                      let pageId = info[MultipeerLiveInk.UserInfoKey.pageId] as? UUID,
+                      let seq = info[MultipeerLiveInk.UserInfoKey.seq] as? UInt64,
+                      let drawingData = info[MultipeerLiveInk.UserInfoKey.drawingData] as? Data
+                else { return }
+                MainActor.assumeIsolated {
+                    self?.handleIncomingLiveInk(
+                        notebookId: notebookId,
+                        pageId: pageId,
+                        seq: seq,
+                        drawingData: drawingData
+                    )
+                }
+            }
             for rectCacheNote in [
                 Notification.Name.audioElementsChanged,
                 .mediaAttachmentsChanged,
@@ -687,6 +733,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 NotificationCenter.default.removeObserver(token)
             }
             if let token = strokeRewriteObserver {
+                NotificationCenter.default.removeObserver(token)
+            }
+            if let token = liveInkObserver {
                 NotificationCenter.default.removeObserver(token)
             }
             for token in interactiveRectsObservers {
@@ -1129,6 +1178,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             pendingOverlayMountTask?.cancel()
             pendingOverlayMountTask = nil
             pendingOverlayMountIndices.removeAll()
+            removeAllLiveInk()
             flushPendingUnmountSaves()
             for i in hosts.indices {
                 if hosts[i].isDirty,
@@ -1889,6 +1939,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
                         dlog("[Canvas] drawing APPLIED (mount decode) page=\(pageId.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
                         canvas.drawing = drawing
                         StrokeCache.shared.cache(drawing, forPage: pageId)
+                        self.clearLiveInkIfSuperseded(
+                            pageId: pageId, durableStrokeCount: drawing.strokes.count
+                        )
                     }
                 }
             }
@@ -1997,6 +2050,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
             hosts[i].strokeDecodeTask = nil
             canvas.removeFromSuperview()
             hosts[i].canvasView = nil
+            // The live-ink preview is positioned relative to this
+            // canvas — it goes with it. A still-drawing peer's next
+            // snapshot recreates it if the page remounts.
+            removeLiveInk(pageId: pageId)
             if viewModel.canvasView === canvas {
                 viewModel.canvasView = nil
             }
@@ -2308,17 +2365,148 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 if let cached = StrokeCache.shared.drawing(forPage: pid) {
                     dlog("[Canvas] drawing APPLIED (reload cache) page=\(pid.uuidString.prefix(8)) strokes=\(cached.strokes.count)")
                     canvas.drawing = cached
+                    clearLiveInkIfSuperseded(pageId: pid, durableStrokeCount: cached.strokes.count)
                 } else if let page = page(for: pid),
                           let data = StorageService.shared.strokeData(for: page),
                           let drawing = try? PKDrawing(data: data) {
                     dlog("[Canvas] drawing APPLIED (reload fetch) page=\(pid.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
                     canvas.drawing = drawing
                     StrokeCache.shared.cache(drawing, forPage: pid)
+                    clearLiveInkIfSuperseded(pageId: pid, durableStrokeCount: drawing.strokes.count)
                 } else {
                     dlog("[Canvas] drawing APPLIED (reload EMPTY) page=\(pid.uuidString.prefix(8))")
                     canvas.drawing = PKDrawing()
                 }
             }
+        }
+
+        // MARK: - Live ink (ephemeral peer preview, protocol v2.4)
+
+        /// Stream this page's drawing to live peers — called from
+        /// `canvasViewDrawingDidChange` (fires once per committed
+        /// stroke). Leading-edge throttled; a burst's final stroke
+        /// ships via the trailing task, which re-reads the canvas at
+        /// fire time so it never sends stale ink.
+        private func broadcastLiveInkIfPeered(pageId: UUID, canvas: PKCanvasView) {
+            guard !MultipeerLiveInk.livePeers().isEmpty else { return }
+            let notebookId = viewModel.notebook.id
+            if MultipeerLiveInk.shouldSendNow(pageId: pageId) {
+                liveInkTrailingTasks[pageId]?.cancel()
+                liveInkTrailingTasks[pageId] = nil
+                let drawing = canvas.drawing
+                Task.detached(priority: .utility) {
+                    // Encode off-main — it's the expensive step and
+                    // this path runs while the user is drawing.
+                    let data = drawing.dataRepresentation()
+                    await MainActor.run {
+                        MultipeerLiveInk.broadcast(
+                            notebookId: notebookId, pageId: pageId, drawingData: data
+                        )
+                    }
+                }
+            } else if liveInkTrailingTasks[pageId] == nil {
+                liveInkTrailingTasks[pageId] = Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(MultipeerLiveInk.minSendInterval + 0.05))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.liveInkTrailingTasks[pageId] = nil
+                        guard let i = self.hosts.firstIndex(where: { $0.pageId == pageId }),
+                              let canvas = self.hosts[i].canvasView else { return }
+                        self.broadcastLiveInkIfPeered(pageId: pageId, canvas: canvas)
+                    }
+                }
+            }
+        }
+
+        /// Receive path: decode off-main, render into a transient
+        /// image view sitting directly above the page's durable
+        /// canvas. Dropped when the page isn't mounted — the viewer
+        /// isn't looking at it, and CloudKit delivers regardless.
+        func handleIncomingLiveInk(
+            notebookId: UUID,
+            pageId: UUID,
+            seq: UInt64,
+            drawingData: Data
+        ) {
+            guard notebookId == viewModel.notebook.id else { return }
+            guard seq > (liveInkLastSeq[pageId] ?? 0) else { return }
+            liveInkLastSeq[pageId] = seq
+            guard let i = hosts.firstIndex(where: { $0.pageId == pageId }),
+                  hosts[i].canvasView != nil else { return }
+            let pageBounds = CGRect(origin: .zero, size: hosts[i].frame.size)
+            Task.detached(priority: .userInitiated) {
+                guard let drawing = try? PKDrawing(data: drawingData) else { return }
+                let strokeCount = drawing.strokes.count
+                // Rasterise at 2× — the preview is glanceable ink,
+                // not archival; the durable canvas replaces it.
+                let image = drawing.image(from: pageBounds, scale: 2.0)
+                await MainActor.run { [weak self] in
+                    self?.applyLiveInk(
+                        image: image, strokeCount: strokeCount, pageId: pageId
+                    )
+                }
+            }
+        }
+
+        private func applyLiveInk(image: UIImage, strokeCount: Int, pageId: UUID) {
+            guard let contentView,
+                  let i = hosts.firstIndex(where: { $0.pageId == pageId }),
+                  let durable = hosts[i].canvasView else {
+                removeLiveInk(pageId: pageId)
+                return
+            }
+            let view: UIImageView
+            if let existing = liveInkViews[pageId] {
+                view = existing
+            } else {
+                view = UIImageView()
+                view.isUserInteractionEnabled = false
+                view.contentMode = .scaleToFill
+                liveInkViews[pageId] = view
+            }
+            // Re-sync frame + z-order every apply (2–4/s while the
+            // peer draws) — cheaper and simpler than hooking every
+            // layout pass, and self-correcting after zoom.
+            view.frame = durable.frame
+            contentView.insertSubview(view, aboveSubview: durable)
+            view.image = image
+            liveInkStrokeCount[pageId] = strokeCount
+            armLiveInkTTL(pageId: pageId)
+        }
+
+        /// The durable drawing caught up — the overlay has nothing
+        /// the store doesn't. Called from every "drawing APPLIED"
+        /// site (mount decode + reloads).
+        func clearLiveInkIfSuperseded(pageId: UUID, durableStrokeCount: Int) {
+            guard let liveCount = liveInkStrokeCount[pageId] else { return }
+            if durableStrokeCount >= liveCount {
+                removeLiveInk(pageId: pageId)
+            }
+        }
+
+        private func armLiveInkTTL(pageId: UUID) {
+            liveInkTTLTasks[pageId]?.cancel()
+            liveInkTTLTasks[pageId] = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(Self.liveInkTTL))
+                guard !Task.isCancelled else { return }
+                await MainActor.run { self?.removeLiveInk(pageId: pageId) }
+            }
+        }
+
+        private func removeLiveInk(pageId: UUID) {
+            liveInkViews[pageId]?.removeFromSuperview()
+            liveInkViews[pageId] = nil
+            liveInkStrokeCount[pageId] = nil
+            liveInkTTLTasks[pageId]?.cancel()
+            liveInkTTLTasks[pageId] = nil
+        }
+
+        func removeAllLiveInk() {
+            for pageId in Array(liveInkViews.keys) { removeLiveInk(pageId: pageId) }
+            liveInkLastSeq.removeAll()
+            for task in liveInkTrailingTasks.values { task.cancel() }
+            liveInkTrailingTasks.removeAll()
         }
 
         // MARK: - UIScrollViewDelegate
@@ -2555,6 +2743,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard let i = hosts.firstIndex(where: { $0.canvasView === canvasView }) else { return }
             let pageId = hosts[i].pageId
+            // Live-ink stream to paired same-household peers — a
+            // cheap no-op when none are connected. Runs BEFORE the
+            // dirty bookkeeping so a peer sees the stroke on the
+            // same beat the save debounce starts.
+            broadcastLiveInkIfPeered(pageId: pageId, canvas: canvasView)
             hosts[i].isDirty = true
             hosts[i].saveTask?.cancel()
             hosts[i].saveTask = Task { [weak self] in

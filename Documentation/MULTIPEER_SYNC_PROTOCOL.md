@@ -1,4 +1,4 @@
-# Multipeer Sync — Wire Protocol (v2.3 — household exchange + hardening)
+# Multipeer Sync — Wire Protocol (v2.4 — live ink)
 
 Direct device-to-device notebook delivery from a Mac running
 `cecilias-notes-mcp` to an iPad running Cecilia's Notes, bypassing
@@ -223,6 +223,37 @@ The key is whichever key applies:
 - For `type == "pairing-result"`: empty (zero bytes). The
   `result` lives in the header.
 - For `type == "ping"` and `type == "pong"`: empty (zero bytes).
+- For `type == "live-ink"`: binary, `[16B notebookId][16B pageId]
+  [8B seq, big-endian][PKDrawing dataRepresentation]` (see below).
+
+## Live ink (v2.4)
+
+Ephemeral drawing preview between paired **same-household** devices.
+While a user draws, the sender streams throttled FULL-page drawing
+snapshots (one per committed stroke, ≥250 ms apart, ≤4 MB); a
+receiver with the same notebook open renders the snapshot as a
+transient image layer above that page's canvas. **Never persisted**:
+the receiver writes nothing to SwiftData — CloudKit remains the only
+durable path, and the overlay clears itself when the durable drawing
+reaches the snapshot's stroke count (or after a 120 s TTL, or when
+the page/editor unmounts). Full snapshots (not deltas) make every
+message idempotent: a dropped or reordered frame costs one refresh
+interval, never a desync, and erases need no special casing.
+
+Rules:
+- **Send** only to connected, key-authenticated peers whose recorded
+  `householdHash` matches ours (`MultipeerNotebookShare.isSameHousehold
+  == true`). Cross-account peers never receive live ink — their lane
+  stays the explicit "Send to Device" file transfer.
+- **Receive**: HMAC-verified with the pairing key like every other
+  message; `seq` is monotonically increasing per page — receivers
+  drop `seq <=` the last applied (the two lanes can race).
+- The receiver drops snapshots for notebooks it doesn't have open or
+  pages it doesn't have mounted — no buffering.
+- Code: `MultipeerLiveInk` (transport, unit-tested in
+  `MultipeerLiveInkTests`); overlay lifecycle in the canvas
+  coordinator (`handleIncomingLiveInk` / `applyLiveInk` /
+  `clearLiveInkIfSuperseded`).
 
 ## Ping / pong (liveness probe)
 

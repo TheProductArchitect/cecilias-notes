@@ -343,6 +343,29 @@ final class MultipeerSendService: NSObject, ObservableObject {
             return
         }
 
+        if header.type == "live-ink" {
+            // Ephemeral drawing snapshot (protocol v2.4) — see the
+            // matching branch in MultipeerSyncService. Verified, then
+            // handed to the canvas via notification; never persisted.
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { return }
+            let signed = headerData + bodyData
+            let computed = Data(HMAC<SHA256>.authenticationCode(for: signed, using: key))
+            guard hmacBytes == computed,
+                  let parsed = MultipeerLiveInk.parseBody(bodyData)
+            else { return }
+            NotificationCenter.default.post(
+                name: MultipeerLiveInk.receivedNotification,
+                object: nil,
+                userInfo: [
+                    MultipeerLiveInk.UserInfoKey.notebookId: parsed.notebookId,
+                    MultipeerLiveInk.UserInfoKey.pageId: parsed.pageId,
+                    MultipeerLiveInk.UserInfoKey.seq: parsed.seq,
+                    MultipeerLiveInk.UserInfoKey.drawingData: parsed.drawingData,
+                ]
+            )
+            return
+        }
+
         guard header.type == "pairing-result" else { return }
         guard let key = pairingKey(for: peer) else { return }
 
