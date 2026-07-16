@@ -1604,9 +1604,23 @@ struct ContinuousCanvasView: UIViewRepresentable {
                             } else {
                                 pendingCanvasMountIndices.insert(i)
                             }
-                        } else {
+                        } else if scaled.maxY >= viewportTop, scaled.minY <= viewportBottom {
+                            // Visible RIGHT NOW — the user is looking
+                            // at this page, so its ink mounts
+                            // synchronously.
                             mountCanvas(at: i, in: contentView)
                             mountedCanvasCount += 1
+                        } else {
+                            // At-rest warm-band prefetch. Mounting
+                            // these synchronously stacked every
+                            // off-screen PKCanvasView alloc +
+                            // PKDrawing decode into ONE pass — at
+                            // editor open that was 3-4 canvas decodes
+                            // in a single frame, the "laggy initially"
+                            // report. The scheduler mounts one per
+                            // runloop tick and re-checks the band at
+                            // mount time.
+                            pendingCanvasMountIndices.insert(i)
                         }
                     }
                 } else if !inCanvasKeepBand && hosts[i].canvasView != nil && !force {
@@ -1655,6 +1669,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // sweep pays at most a frame here and there instead of
             // showing element-less pages until rest.
             flushPendingOverlayMounts()
+            // At rest, drain the warm-band canvas prefetch queue too
+            // (one mount per tick). Mid-scroll the queue keeps
+            // deferring to the rest flush in `setActivelyScrolling`,
+            // preserving the scroll-time mount policy.
+            if !isActivelyScrolling {
+                flushPendingCanvasMounts()
+            }
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
             }

@@ -122,6 +122,13 @@ final class LectureRecorder: ObservableObject {
     /// PARAGRAPH in the transcript instead of just a new line — the
     /// speaker moving to a new thought should read as one.
     private static let paragraphPauseSeconds: TimeInterval = 2.5
+    /// Pause length that makes a diverging partial read as a NEW
+    /// utterance (fold the previous one into committed) rather than
+    /// an in-place revision of the current one. Deliberately well
+    /// under `paragraphPauseSeconds`: this guards against losing
+    /// words, not paragraph layout. In-train revisions arrive well
+    /// under a second apart.
+    private static let resetPauseSeconds: TimeInterval = 1.2
     /// When the last partial arrived — the gap to the next one is
     /// the silence that separates utterances.
     private var lastPartialArrivalAt: Date = .distantPast
@@ -728,7 +735,9 @@ final class LectureRecorder: ObservableObject {
                 currentUtteranceSeparator =
                     silenceGap >= Self.paragraphPauseSeconds ? "\n" : " "
             }
-        } else if isHypothesisReset(previous: lastSessionPartial, current: partial) {
+        } else if isHypothesisReset(previous: lastSessionPartial,
+                                    current: partial,
+                                    silenceGap: silenceGap) {
             // The just-finished utterance folds into committed (with
             // ITS separator); the new one continues the sentence —
             // or opens a paragraph when a real pause preceded it.
@@ -785,7 +794,11 @@ final class LectureRecorder: ObservableObject {
     /// regardless of length. We compare a 12-character opening prefix
     /// (not just the first word) so same-first-word sentence changes
     /// are caught.
-    private func isHypothesisReset(previous: String, current: String) -> Bool {
+    private func isHypothesisReset(
+        previous: String,
+        current: String,
+        silenceGap: TimeInterval
+    ) -> Bool {
         guard !previous.isEmpty else { return false }
         let p = previous.lowercased()
         let c = current.lowercased()
@@ -799,10 +812,19 @@ final class LectureRecorder: ObservableObject {
             || trimmedPrev.hasSuffix("?")
         // Diverging opening counts as a reset when the previous looks
         // finished (punctuation) OR the new partial is shorter (the
-        // recogniser dropped its prior context). A diverging opening on
-        // a longer, unpunctuated partial is more likely a first-word
-        // revision, so we leave it as a revision.
-        return endsSentence || current.count < previous.count
+        // recogniser dropped its prior context) OR a real pause
+        // preceded it. The pause test closes the hole the other two
+        // left (device-log reproduced: "Hello" → pause → "Thank you"
+        // — longer AND unpunctuated, so it was classed as a revision
+        // and REPLACED the greeting on the page): a genuine first-
+        // word revision arrives inside the recogniser's sub-second
+        // callback train while speech is active; a diverging partial
+        // that lands after the speaker audibly stopped is a new
+        // utterance, and the old one must fold into committed.
+        let pausedBeforeArrival = silenceGap >= Self.resetPauseSeconds
+        return endsSentence
+            || pausedBeforeArrival
+            || current.count < previous.count
     }
 
     private func rotateRecognitionTaskIfStillRecording(finalSegment: String?) async {
