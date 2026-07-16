@@ -199,7 +199,14 @@ final class MultipeerSendService: NSObject, ObservableObject {
         ensureBrowsing()
         status = .connecting(peerName: peer.displayName)
         guard let session else { return }
-        browser?.invitePeer(peer, to: session, withContext: nil, timeout: 30)
+        // Pairing invites keep the long window — a human is reading a
+        // code off a screen on the other device. Auto-reconnects get a
+        // short one: against a ghost peer (record still cached, no app
+        // listening — Mac awake with Cecilia's Notes closed) every
+        // second of invite window is a second of DTLS handshake
+        // retransmits ("No route to host" storm in the device logs).
+        let timeout: TimeInterval = reason == .reconnect ? 8 : 30
+        browser?.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
         if reason != .reconnect {
             schedulePairingTimeout(peerName: peer.displayName)
         }
@@ -245,6 +252,14 @@ final class MultipeerSendService: NSObject, ObservableObject {
             await MainActor.run {
                 guard let self else { return }
                 guard self.session?.connectedPeers.contains(peer) != true else { return }
+                // Only chase peers Bonjour can still see. Once the
+                // record expires (app closed on the other device),
+                // an invite can't be delivered — it just burns a
+                // DTLS retry window. When the peer re-advertises,
+                // `foundPeer` → `considerAutoConnect` reconnects it
+                // through the same backoff gate.
+                guard self.discoveredDevices.contains(where: { $0.id == peer.displayName })
+                else { return }
                 self.invite(peer: peer, reason: .reconnect)
             }
         }
@@ -451,6 +466,13 @@ extension MultipeerSendService: MCNearbyServiceBrowserDelegate {
             if selectedDeviceID == peerID.displayName {
                 selectedDeviceID = discoveredDevices.first?.id
             }
+            // The peer is gone from Bonjour — a queued reconnect
+            // can't reach it. Cancel rather than let it fire into a
+            // dead endpoint; rediscovery re-arms via
+            // `considerAutoConnect` (attempt counter intact, so a
+            // flapping record doesn't reset the backoff).
+            reconnectTasks[peerID.displayName]?.cancel()
+            reconnectTasks[peerID.displayName] = nil
         }
     }
 
