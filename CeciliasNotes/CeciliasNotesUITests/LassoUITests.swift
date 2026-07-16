@@ -426,6 +426,67 @@ final class LassoUITests: XCTestCase {
                        "Undo should restore the shape's unrotated bounds")
     }
 
+    /// Selection survives a move; only a blank-space tap clears it.
+    /// Regression coverage for the device report "lasso gets
+    /// deselected automatically after the user moves the element
+    /// once (tested with strokes)" — the user expects the selection
+    /// box to persist through consecutive moves until they tap
+    /// empty canvas.
+    @MainActor
+    func test_lasso_moveStrokes_keepsSelection_untilBlankTap() throws {
+        let app = makeApp()
+        app.launch()
+        completeOnboarding(name: "Keep", in: app)
+        openFreshNotebook(in: app)
+
+        let window = app.windows.firstMatch
+
+        // Draw two strokes with the pen.
+        selectTool(named: "Pen", in: app)
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.40))
+            .press(forDuration: 0.05,
+                   thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.50)))
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.38, dy: 0.48))
+            .press(forDuration: 0.05,
+                   thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.58, dy: 0.58)))
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Lasso-select the strokes.
+        selectTool(named: "Lasso", in: app)
+        XCTAssertTrue(
+            lassoAcross(from: CGVector(dx: 0.25, dy: 0.32),
+                        to: CGVector(dx: 0.68, dy: 0.64), in: app),
+            "Lasso across handwriting should select the strokes"
+        )
+        let trashBadge = app.buttons["trash.circle.fill"].firstMatch
+
+        // Move the selection by dragging the chrome body (centre of
+        // the selection), then verify the chrome SURVIVES the commit.
+        let dragStart = CGVector(dx: 0.46, dy: 0.49)
+        let dragEnd   = CGVector(dx: 0.46, dy: 0.62)
+        window.coordinate(withNormalizedOffset: dragStart)
+            .press(forDuration: 0.1,
+                   thenDragTo: window.coordinate(withNormalizedOffset: dragEnd))
+        Thread.sleep(forTimeInterval: 1.0)
+        XCTAssertTrue(trashBadge.exists,
+                      "Selection chrome should survive the first move")
+
+        // A SECOND move must work on the same selection (a stale or
+        // silently-cleared selection would leave this drag inert).
+        window.coordinate(withNormalizedOffset: dragEnd)
+            .press(forDuration: 0.1,
+                   thenDragTo: window.coordinate(withNormalizedOffset: dragStart))
+        Thread.sleep(forTimeInterval: 1.0)
+        XCTAssertTrue(trashBadge.exists,
+                      "Selection chrome should survive consecutive moves")
+
+        // Blank-space tap clears.
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.15)).tap()
+        Thread.sleep(forTimeInterval: 0.5)
+        XCTAssertFalse(trashBadge.exists,
+                       "Tapping blank canvas should clear the selection")
+    }
+
     /// Cursor ("select") tool flow on a shape: create a shape with
     /// the shape tool, tap it with the cursor tool to select (this
     /// routes through the same lasso chrome), delete via the badge,

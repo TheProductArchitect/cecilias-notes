@@ -1722,6 +1722,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     self?.updateCanvasMembership()
                 }
             }
+            #if DEBUG
+            // Invariant tripwire. The mount/unmount policy above has
+            // regressed twice by ACCUMULATION (13 canvases after a
+            // fling; 13 overlay trees whose one-frame teardown was a
+            // visible hitch) — and both were only caught by reading
+            // device logs after a "feels laggy" report. Slack of
+            // budget+2 over the scroll caps covers legitimate
+            // transients (zoomed-out bands, trim in flight). If this
+            // line ever appears in a log, the membership policy is
+            // piling hosts up again — treat it as a bug, not noise.
+            let capSlack = Self.maxCanvasesWhileScrolling + unmountBudget + 2
+            let overlaySlack = Self.maxOverlaysWhileScrolling + unmountBudget + 2
+            if mountedCanvasCount > capSlack || mountedOverlayCount > overlaySlack {
+                dlog("[Membership] INVARIANT VIOLATION — canvases=\(mountedCanvasCount)/\(capSlack) overlays=\(mountedOverlayCount)/\(overlaySlack) scrolling=\(isActivelyScrolling); host pile-up regression, see 53338b4")
+            }
+            #endif
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
             }

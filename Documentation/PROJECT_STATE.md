@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-12
+Last updated: 2026-07-16
 
 ## Elevator pitch
 
@@ -15,7 +15,39 @@ Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit contai
 
 ## Current phase
 
-**Stability sprint: crash/ANR elimination + device-feedback fixes
+**Stability sprint continued: audits, scroll/dictation feel, sharing
+fidelity (2026-07-13 → 07-16).** Two code audits swept every commit of
+the sprint; five defects found and fixed (dictation-pill orphaning on
+stop-failure, stale image-rotation base, archive-import media-directory
+bring-up — PDFs have no in-row fallback — and thumbnail/PDF-export image
+parity: in-row↔disk fallback + crop rect on both paths). Element
+rotation now pivots on each element's own centre via one
+`elementRotation` modifier applied BEFORE `.position` (after-position
+rotation anchors on the PAGE centre — the "revolves around a point"
+class of bug). Dictation: the live pill mounts at record-start and is
+promoted on stop; a pause-aware hypothesis-reset test (`silenceGap ≥
+1.2 s` + diverging prefix) stops the recogniser's post-pause restarts
+from REPLACING earlier words on the page. Scroll feel took four rounds,
+each verified against device logs: killed the stale active-page overlay
+pruner (61 mounts per 13-page sweep), capped mid-scroll canvases AND
+overlay trees at 8, staggered editor-open warm-band mounts (one per
+runloop tick), and budgeted the at-rest trim (≤3+3 per pass, chained
+passes) so the cleanup never lands in one frame. A DEBUG
+`[Membership] INVARIANT VIOLATION` tripwire now logs any future host
+pile-up. Multipeer stopped chasing ghost peers (8 s reconnect probes,
+discovery-gated, cancelled on lostPeer) and the notebook-changed hint
+now actually refreshes the Library (the receiver was only nudging
+`CloudSyncManager`; the documented library refresh was never wired).
+Long-failing LassoUITests were root-caused as PRODUCT bugs (shape-tool
+finger drags scrolled the canvas mid-creation; full-width selections
+parked the delete badge under the tool palette) — both fixed, all
+Lasso tests green, plus a new selection-persists-through-moves
+regression test. Full-fidelity `.ceciliabook` sharing (export/import,
+tap-to-open, multipeer send) shipped 07-14. **The next App Store
+archive must be cut from current `main` — 3.0 (3) predates ALL of
+this.**
+
+Previous phase — **Stability sprint: crash/ANR elimination + device-feedback fixes
 (2026-07-10 → 07-12).** The "app freezes no matter what I do"
 hunt ran six device-capture rounds and ended at a single root
 cause: a `UIColor(dynamicProvider:)` closure that silently
@@ -43,13 +75,20 @@ Previous phase — **Production push: cross-device sync UX + Mac meeting assista
 1. **Same-Apple-Account devices on one LAN feel live.** Every platform now
    runs both multipeer lanes (advertise + browse — previously only the Mac
    browsed), auto-pairs via the iCloud-Keychain household key, and receive
-   defaults ON. Notebook mutations broadcast `notebook-changed` hints; the
-   receiver refreshes the library, refreshes the open editor (guarded on
-   `isDirty`), and nudges `CloudSyncManager.syncNow()` for media. Content
-   truth stays CloudKit — the hint layer removes the "why isn't it here
-   yet" dead air. Do NOT ship notebook content over multipeer between
-   same-account devices: importing a mirror alongside CloudKit duplicates
-   the V5/V6 text layers.
+   defaults ON. Notebook mutations broadcast `notebook-changed` hints.
+   What the receiver ACTUALLY does with a hint (audited 2026-07-16 —
+   this paragraph previously over-claimed): `CloudSyncManager` schedules
+   a debounced (10 s) `syncNow()` metadata pass for ubiquity-container
+   media, gated on ITS OWN toggle, and the Library refreshes from the
+   local store (wired 07-16; it never was before). There is NO open-
+   editor refresh on hints. Content truth stays CloudKit
+   (`cloudKitDatabase: .private`) — same-account devices sync ROWS via
+   iCloud only; the LAN never carries content between them, so "live"
+   is bounded by CloudKit round-trip latency, and a device with the
+   iCloud-sync preference OFF does not sync at all, LAN or no LAN. Do
+   NOT ship notebook content over multipeer between same-account
+   devices: importing a mirror alongside CloudKit duplicates the V5/V6
+   text layers.
 2. **Cross-Apple-Account share ("Send to Device").** Paired-but-different-
    account peers get a context-menu send (`MultipeerNotebookShare` →
    `"file"` payload → receiver Inbox → importer, merge-by-default).

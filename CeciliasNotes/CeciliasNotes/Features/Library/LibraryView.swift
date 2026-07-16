@@ -170,6 +170,17 @@ struct LibraryView: View {
                 guard let id = note.userInfo?[CeciliasNotesIntentKeys.notebookId] as? UUID else { return }
                 Task { @MainActor in deepLink.openNotebookId = id }
             }
+            // Paired peer says a notebook changed (multipeer hint —
+            // the LAN lane carries only this nudge; the data itself
+            // rides CloudKit for same-account devices). Both receive
+            // lanes verified + posted this notification since the
+            // hint shipped, but NOTHING observed it — the "live"
+            // refresh was dead code and the library sat stale until
+            // the next foreground. Refresh from the local store so
+            // whatever CloudKit has already delivered shows up now.
+            .onReceive(NotificationCenter.default.publisher(for: MultipeerNotebookHint.changedNotification)) { _ in
+                Task { @MainActor in viewModel.refresh() }
+            }
             .task { handleQuickCaptureOnLaunch() }
     }
 

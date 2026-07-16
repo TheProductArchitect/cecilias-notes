@@ -59,6 +59,18 @@ mountCanvas
 
 **Mitigations applied:** Active-page-first canvas mount; async stroke blob fetch + decode with generation/isDirty guard (the blob READ used to run on main per mount — the 8-inked-pages scroll ANR); cached overlay fetches (Audio/Image/PDF/Highlight).
 
+**Membership policy invariants (2026-07-15/16, device-log confirmed twice):**
+mount and unmount bands MUST differ (hysteresis; keep band = warm band +
+one viewport); mid-scroll canvases AND overlay trees are capped at 8 —
+above the cap, only out-of-keep-band pages evict; at-rest trims are
+budgeted (≤3 canvases + ≤3 overlays per pass, chained passes drain the
+rest) because a one-frame mass teardown after a fling was a visible
+hitch; at-rest warm-band mounts go through the one-per-runloop-tick
+scheduler (a single-pass mount burst was the "laggy editor open").
+Regressions here present as ACCUMULATION, not crashes — a DEBUG
+tripwire logs `[Membership] INVARIANT VIOLATION` when mounted hosts
+exceed cap+budget+2; treat any occurrence in a device log as a bug.
+
 ### 3. Drawing & autosave
 
 ```
