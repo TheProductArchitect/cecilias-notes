@@ -12,7 +12,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 ## Snapshot
 
 - Swift files scanned: **355**
-- Types declared: **708**
+- Types declared: **707**
 - `Notification.Name` declarations: **91**
 - Notification symbols referenced (post/observe): **109**
 
@@ -23,7 +23,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | Module | Files | Lines |
 | --- | ---: | ---: |
 | `App/` | 3 | 926 |
-| `Core/` | 100 | 17,632 |
+| `Core/` | 100 | 17,719 |
 | `DesignSystem/` | 15 | 1,777 |
 | `Features/` | 168 | 53,123 |
 | `Resources/` | 1 | 248 |
@@ -204,7 +204,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`Commands`** — 2 conformers: `CeciliasNotesCommands`, `MacAppCommands`
 - **`Decodable`** — 4 conformers: `DeleteRequest`, `Header`, `ResponseEnvelope`, `ResponseQuestion`
 - **`Encodable`** — 2 conformers: `RequestEnvelope`, `SourceBlock`
-- **`Equatable`** — 47 conformers: `AIError`, `AppError`, `AudioElementsOverlayView`, `CeciliasNotesTool`, `DictationContext`, `DiscoveredDevice`, `EditorPageOverlayInputs`, `ElementSnapshot`, `ExportViewState`, `HighlightElementsOverlayView`, `ImageElementsOverlayView`, `Issue`, … +35
+- **`Equatable`** — 46 conformers: `AIError`, `AppError`, `AudioElementsOverlayView`, `CeciliasNotesTool`, `DictationContext`, `DiscoveredDevice`, `EditorPageOverlayInputs`, `ElementSnapshot`, `ExportViewState`, `HighlightElementsOverlayView`, `ImageElementsOverlayView`, `Issue`, … +34
 - **`Error`** — 8 conformers: `AIError`, `AudioRecorderError`, `DictationTimeoutError`, `ExportError`, `Issue`, `LectureRecorderError`, `ParseError`, `RangeParseError`
 - **`Hashable`** — 13 conformers: `AnnotationListItem`, `AskCitation`, `InteractionReason`, `Key`, `LibraryContext`, `MacHeaderInteraction`, `NotebookSummary`, `PageCoordinateSpace`, `PageTemplate`, `TemplateCategory`, `Theme`, `TranscriptionSegment`, … +1
 - **`Identifiable`** — 29 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `IdentifiableURL`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, … +17

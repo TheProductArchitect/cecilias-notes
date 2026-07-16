@@ -125,6 +125,16 @@ Invariants:
 - **Layout:** each page's blocks render into one full-width rich-text
   block at `x=0.10, y=0.06, width=0.80, height=0.88` (10% side
   gutters, matching the editor's own text margin).
+- **Inline styling (2026-07-16):** content strings support inline
+  markdown — `**bold**`, `*italic*` / word-bounded `_italic_`, and
+  `` `code` `` chips — parsed at render time by
+  `CeciliasNotesParser.inlineStyled`. Conservative: unbalanced
+  markers stay literal, `2 * 3` and snake_case are untouched, and
+  `code` BLOCKS never run the inline pass (verbatim by definition).
+  Before this, agent markdown landed as literal asterisks — the
+  "MCP can't push text formatting" report. The stashed blocks keep
+  the raw markers (see below), so the mirror round-trip is still
+  byte-identical and re-imports restyle consistently.
 - Source blocks are stashed verbatim on `Page.inkbookBlocksJSON` so
   the mirror re-emits them byte-identically (no lossy round-trip).
 

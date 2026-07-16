@@ -180,16 +180,14 @@ nonisolated enum CeciliasNotesParser {
         case .heading(let content, let level):
             let size: CGFloat   = level == 1 ? 22 : (level == 2 ? 18 : 15)
             let weight: ParserFont.Weight = level == 1 ? .bold : .semibold
-            return NSAttributedString(string: content, attributes: [
-                .font: weightedFont(size: size, weight: weight),
-                .foregroundColor: headingColor
-            ])
+            return inlineStyled(content,
+                                font: weightedFont(size: size, weight: weight),
+                                color: headingColor)
 
         case .paragraph(let content):
-            return NSAttributedString(string: content, attributes: [
-                .font: regularFont(size: 15),
-                .foregroundColor: bodyColor
-            ])
+            return inlineStyled(content,
+                                font: regularFont(size: 15),
+                                color: bodyColor)
 
         case .list(let style, let items):
             let lines = items.enumerated().map { (i, item) -> String in
@@ -198,12 +196,13 @@ nonisolated enum CeciliasNotesParser {
                 case .numbered: return "\(i + 1).  \(item)"
                 }
             }
-            return NSAttributedString(string: lines.joined(separator: "\n"), attributes: [
-                .font: regularFont(size: 15),
-                .foregroundColor: bodyColor
-            ])
+            return inlineStyled(lines.joined(separator: "\n"),
+                                font: regularFont(size: 15),
+                                color: bodyColor)
 
         case .code(let content, _):
+            // Verbatim by definition — no inline pass, a code block
+            // full of asterisks must render exactly as written.
             return NSAttributedString(string: content, attributes: [
                 .font: monospacedFont(size: 13),
                 .foregroundColor: headingColor,
@@ -218,10 +217,9 @@ nonisolated enum CeciliasNotesParser {
 
         case .quote(let content, let attribution):
             let text = attribution.map { "\(content)\n— \($0)" } ?? content
-            return NSAttributedString(string: text, attributes: [
-                .font: italicFont(size: 15),
-                .foregroundColor: muteColor
-            ])
+            return inlineStyled(text,
+                                font: italicFont(size: 15),
+                                color: muteColor)
 
         case .callout(let content, let kind):
             let prefix: String = {
@@ -231,14 +229,103 @@ nonisolated enum CeciliasNotesParser {
                 case .note:    return "ℹ️ "
                 }
             }()
-            return NSAttributedString(string: prefix + content, attributes: [
-                .font: regularFont(size: 14),
-                .foregroundColor: bodyColor,
-                .backgroundColor: calloutBackground
-            ])
+            return inlineStyled(prefix + content,
+                                font: regularFont(size: 14),
+                                color: bodyColor,
+                                background: calloutBackground)
 
         case .unknown:
             return NSAttributedString()
         }
+    }
+
+    // MARK: Inline markdown
+
+    /// Inline emphasis inside block content: `**bold**`, `*italic*`
+    /// (or word-bounded `_italic_`), and `` `code` `` spans. Agents
+    /// writing through the MCP produce these reflexively, and they
+    /// used to land on the page as literal asterisks and backticks —
+    /// the "MCP can't push text formatting" report. Conservative by
+    /// design: unbalanced markers stay literal, `*` must hug its
+    /// content (`2 * 3` untouched), `_` only fires on word
+    /// boundaries so snake_case identifiers survive.
+    private static let inlinePattern: NSRegularExpression = {
+        let pattern =
+            "(`[^`\\n]+`)"
+            + "|(\\*\\*(?!\\s)(?:[^*\\n]|\\*(?!\\*))+?(?<!\\s)\\*\\*)"
+            + "|(\\*(?!\\s)[^*\\n]+?(?<!\\s)\\*)"
+            + "|((?<![A-Za-z0-9_])_(?!\\s)[^_\\n]+?(?<!\\s)_(?![A-Za-z0-9_]))"
+        // Force-try: the pattern is a compile-time constant; a typo
+        // fails the first unit test, never a device.
+        // swiftlint:disable:next force_try
+        return try! NSRegularExpression(pattern: pattern)
+    }()
+
+    private static func inlineStyled(
+        _ text: String,
+        font: ParserFont,
+        color: ParserColor,
+        background: ParserColor? = nil
+    ) -> NSAttributedString {
+        var baseAttrs: [NSAttributedString.Key: Any] = [
+            .font: font, .foregroundColor: color
+        ]
+        if let background { baseAttrs[.backgroundColor] = background }
+        let ns = text as NSString
+        let matches = inlinePattern.matches(
+            in: text, range: NSRange(location: 0, length: ns.length)
+        )
+        guard !matches.isEmpty else {
+            return NSAttributedString(string: text, attributes: baseAttrs)
+        }
+
+        let out = NSMutableAttributedString()
+        var cursor = 0
+        for m in matches {
+            let r = m.range
+            if r.location > cursor {
+                let plain = ns.substring(with: NSRange(location: cursor, length: r.location - cursor))
+                out.append(NSAttributedString(string: plain, attributes: baseAttrs))
+            }
+            let token = ns.substring(with: r)
+            var attrs = baseAttrs
+            let inner: String
+            if token.hasPrefix("`") {
+                inner = String(token.dropFirst().dropLast())
+                attrs[.font] = monospacedFont(size: max(11, font.pointSize - 2))
+                attrs[.backgroundColor] = codeBackground
+            } else if token.hasPrefix("**") {
+                inner = String(token.dropFirst(2).dropLast(2))
+                attrs[.font] = addingTraits(font, bold: true)
+            } else {
+                inner = String(token.dropFirst().dropLast())
+                attrs[.font] = addingTraits(font, italic: true)
+            }
+            out.append(NSAttributedString(string: inner, attributes: attrs))
+            cursor = r.location + r.length
+        }
+        if cursor < ns.length {
+            out.append(NSAttributedString(string: ns.substring(from: cursor), attributes: baseAttrs))
+        }
+        return out
+    }
+
+    private static func addingTraits(
+        _ font: ParserFont, bold: Bool = false, italic: Bool = false
+    ) -> ParserFont {
+#if canImport(UIKit)
+        var traits = font.fontDescriptor.symbolicTraits
+        if bold { traits.insert(.traitBold) }
+        if italic { traits.insert(.traitItalic) }
+        guard let descriptor = font.fontDescriptor.withSymbolicTraits(traits) else {
+            return font
+        }
+        return UIFont(descriptor: descriptor, size: font.pointSize)
+#else
+        var converted = font
+        if bold { converted = NSFontManager.shared.convert(converted, toHaveTrait: .boldFontMask) }
+        if italic { converted = NSFontManager.shared.convert(converted, toHaveTrait: .italicFontMask) }
+        return converted
+#endif
     }
 }

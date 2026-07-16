@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 355,
-    "types": 708,
+    "types": 707,
     "notifications_declared": 91,
     "notification_symbols_referenced": 109
   },
@@ -791,7 +791,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 245
+      "lines": 332
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesStorageError.swift",
@@ -1142,8 +1142,7 @@
       ],
       "declared_types": [
         "MultipeerLiveInk",
-        "UserInfoKey",
-        "ParsedBody"
+        "UserInfoKey"
       ],
       "extends": [],
       "posts": [],
@@ -10413,14 +10412,6 @@
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesParser.swift",
       "conforms_to": [
         "Error"
-      ]
-    },
-    {
-      "name": "ParsedBody",
-      "kind": "struct",
-      "file": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerLiveInk.swift",
-      "conforms_to": [
-        "Equatable"
       ]
     },
     {
