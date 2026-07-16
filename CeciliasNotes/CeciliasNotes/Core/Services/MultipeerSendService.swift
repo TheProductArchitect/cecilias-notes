@@ -206,6 +206,13 @@ final class MultipeerSendService: NSObject, ObservableObject {
         // second of invite window is a second of DTLS handshake
         // retransmits ("No route to host" storm in the device logs).
         let timeout: TimeInterval = reason == .reconnect ? 8 : 30
+        #if DEBUG
+        // One line per invite so a device log shows the chase cadence
+        // directly — the DTLS retransmit storm has no attribution of
+        // its own, and distinguishing "still inviting a ghost" from
+        // "MCSession internals" was guesswork without this.
+        dlog("[Multipeer] invite → \(peer.displayName) reason=\(reason) timeout=\(Int(timeout))s attempts=\(reconnectAttempts[peer.displayName, default: 0])")
+        #endif
         browser?.invitePeer(peer, to: session, withContext: nil, timeout: timeout)
         if reason != .reconnect {
             schedulePairingTimeout(peerName: peer.displayName)

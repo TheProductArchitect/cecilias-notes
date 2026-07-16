@@ -468,6 +468,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// 8 ≈ two viewports of A4 pages at 1× zoom — comfortably more
         /// than the warm band can legitimately hold.
         static let maxCanvasesWhileScrolling = 8
+        /// Same idea for overlay trees (the heavier per-page build).
+        /// Without a mid-scroll ceiling a long fling accumulated 13
+        /// live overlay hosts, and their one-frame teardown at rest
+        /// was the "stuck at the end of a scroll" hitch.
+        static let maxOverlaysWhileScrolling = 8
 
         weak var host:         UIView?
         weak var scrollView:   UIScrollView?
@@ -1570,6 +1575,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
             var deferredUnmountSaves = false
             var didMountThisPass = false
             var mountedCanvasCount = hosts.reduce(0) { $0 + ($1.canvasView != nil ? 1 : 0) }
+            var mountedOverlayCount = hosts.reduce(0) { $0 + ($1.overlaysHost != nil ? 1 : 0) }
+            // Unmount budget per pass. The first rest pass after a
+            // long fling used to tear down EVERY out-of-band host in
+            // one frame — device log: 8 overlay trees + 5 canvases
+            // dismantled together, felt as a "stuck" beat right as
+            // the scroll settles. Trim a few per pass; `trimBacklog`
+            // chains another (cheap) pass next runloop tick until
+            // clean.
+            let unmountBudget = 3
+            var canvasUnmountsThisPass = 0
+            var overlayUnmountsThisPass = 0
+            var trimBacklog = false
 
             for i in hosts.indices {
                 let f = hosts[i].frame
@@ -1636,9 +1653,14 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     // either way.
                     if !isActivelyScrolling
                         || mountedCanvasCount > Self.maxCanvasesWhileScrolling {
-                        unmountCanvas(at: i, deferStorageSave: true)
-                        mountedCanvasCount -= 1
-                        deferredUnmountSaves = true
+                        if canvasUnmountsThisPass < unmountBudget {
+                            unmountCanvas(at: i, deferStorageSave: true)
+                            canvasUnmountsThisPass += 1
+                            mountedCanvasCount -= 1
+                            deferredUnmountSaves = true
+                        } else {
+                            trimBacklog = true
+                        }
                     }
                 }
                 // Any page inside the overlay band queues its overlay
@@ -1653,15 +1675,30 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     if hosts[i].overlaysHost == nil {
                         pendingOverlayMountIndices.insert(i)
                     }
-                } else if hosts[i].overlaysHost != nil && !inOverlayKeepBand && !force
-                            && !isActivelyScrolling {
+                } else if hosts[i].overlaysHost != nil && !inOverlayKeepBand && !force {
                     // Sticky overlays: a page that already paid the
                     // overlay-tree build cost keeps it while anywhere
                     // near the viewport. The old rule unmounted every
                     // non-active page's overlays on every at-rest
                     // pass, so sweeping N pages churned N mount+
                     // unmount cycles of the heaviest per-page cost.
-                    unmountOverlays(at: i)
+                    //
+                    // Mid-scroll, trim only under pressure (mirror of
+                    // the canvas cap): with the active-page pruner
+                    // gone, a long fling piled up 13 live overlay
+                    // trees whose teardown then landed in one frame
+                    // at rest — the "stuck at the end of a big
+                    // scroll" report.
+                    if !isActivelyScrolling
+                        || mountedOverlayCount > Self.maxOverlaysWhileScrolling {
+                        if overlayUnmountsThisPass < unmountBudget {
+                            unmountOverlays(at: i)
+                            overlayUnmountsThisPass += 1
+                            mountedOverlayCount -= 1
+                        } else {
+                            trimBacklog = true
+                        }
+                    }
                 }
             }
             // Flush even mid-scroll: the scheduler batches one overlay
@@ -1675,6 +1712,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // preserving the scroll-time mount policy.
             if !isActivelyScrolling {
                 flushPendingCanvasMounts()
+            }
+            // Unmount budget hit with hosts still out of band — chain
+            // one more (cheap) pass next tick so the trim drains a
+            // few per frame instead of all at once. Mid-scroll the
+            // ongoing scroll ticks drive the next pass anyway.
+            if trimBacklog && !isActivelyScrolling {
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateCanvasMembership()
+                }
             }
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
