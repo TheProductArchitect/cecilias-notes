@@ -186,12 +186,6 @@ struct ImageElementsOverlayView: View, Equatable {
     }
 }
 
-// MARK: - Notification name
-
-extension Notification.Name {
-    /// Step 4: relocated here when `MediaAttachmentStore` was
-    /// retired. Posted by the image import pipeline and by this
-    /// overlay's soft-delete path so listeners can refetch from
-    /// SwiftData without polling.
-    static let mediaAttachmentsChanged = Notification.Name("mediaAttachmentsChanged")
-}
+// `Notification.Name.mediaAttachmentsChanged` is declared in
+// `Core/Extensions/ElementChangeNotifications.swift` — shared with
+// the Mac target, which posts it from trash restore.

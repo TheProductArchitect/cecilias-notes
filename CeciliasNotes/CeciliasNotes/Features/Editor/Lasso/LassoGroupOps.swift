@@ -658,12 +658,6 @@ enum LassoGroupOps {
     }
 }
 
-// MARK: - Notification name
-
-extension Notification.Name {
-    /// Posted by `LassoGroupOps` after any operation rewrites
-    /// `StrokeContent.strokeData` (or soft-deletes a whole stroke
-    /// element) so the canvas coordinator can reload the affected
-    /// pages' PKCanvasViews. userInfo: `"pageIds": [UUID]`.
-    static let strokeContentRewritten = Notification.Name("strokeContentRewritten")
-}
+// `Notification.Name.strokeContentRewritten` is declared in
+// `Core/Extensions/ElementChangeNotifications.swift` — shared with
+// the Mac target, which posts it from trash restore.

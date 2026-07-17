@@ -124,12 +124,6 @@ enum StickyNoteCommit {
     }
 }
 
-// MARK: - Notification
-
-extension Notification.Name {
-    /// Posted whenever a sticky element is created or soft-deleted.
-    /// Carried over from the legacy `StickyNoteStore` so consumers
-    /// (annotation list sheet, customise count row) keep working
-    /// without notification-name churn during the Step 7 cut-over.
-    static let stickyNotesChanged = Notification.Name("stickyNotesChanged")
-}
+// `Notification.Name.stickyNotesChanged` is declared in
+// `Core/Extensions/ElementChangeNotifications.swift` — shared with
+// the Mac target, which posts it from trash restore.

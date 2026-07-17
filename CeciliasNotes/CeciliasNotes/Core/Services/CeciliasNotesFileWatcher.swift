@@ -93,15 +93,21 @@ final class CeciliasNotesFileWatcher {
         let q = NSMetadataQuery()
         q.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
         // `BEGINSWITH` matches anything inside the Inbox subtree; the
-        // extension filter keeps it narrow. We now accept both:
-        //   • `.inkbook` — agent-authored notebooks (existing flow).
-        //   • `.json`   — quiz MCP responses (handled by
-        //                 `QuizMCPImporter` after dispatch).
+        // extension filter keeps it narrow. We accept:
+        //   • `.inkbook`     — agent-authored notebooks (existing flow).
+        //   • `.json`        — quiz MCP responses (handled by
+        //                      `QuizMCPImporter` after dispatch).
+        //   • `.ceciliabook` — full-fidelity archives from multipeer
+        //                      "Send to Device". The dispatch switch
+        //                      below always handled these, but the
+        //                      query never surfaced them — the branch
+        //                      was unreachable until this clause.
         q.predicate = NSPredicate(
-            format: "(%K BEGINSWITH %@) AND ((%K ENDSWITH %@) OR (%K ENDSWITH %@))",
+            format: "(%K BEGINSWITH %@) AND ((%K ENDSWITH %@) OR (%K ENDSWITH %@) OR (%K ENDSWITH %@))",
             NSMetadataItemPathKey, inbox.path,
             NSMetadataItemFSNameKey, ".inkbook",
-            NSMetadataItemFSNameKey, ".json"
+            NSMetadataItemFSNameKey, ".json",
+            NSMetadataItemFSNameKey, ".\(NotebookArchive.fileExtension)"
         )
 
         let center = NotificationCenter.default

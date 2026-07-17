@@ -62,6 +62,11 @@ final class MultipeerSendService: NSObject, ObservableObject {
     private var reconnectTasks: [String: Task<Void, Never>] = [:]
     /// When true, browsing stays active and known peers reconnect automatically.
     private var keepBrowsingAlive = false
+    /// Nonce de-dupe for `"file"` payloads received on this lane —
+    /// mirrors `MultipeerSyncService.recentNonces` (files write to
+    /// disk and trigger imports, so they get the full replay gauntlet;
+    /// the idempotent hint types stay HMAC-only).
+    private var recentNonces: [(nonce: String, seenAt: Date)] = []
 
     private override init() {
         super.init()
@@ -324,9 +329,44 @@ final class MultipeerSendService: NSObject, ObservableObject {
             let type: String
             let result: String?
             let householdHash: String?
+            let filename: String?
+            let timestamp: Int64?
+            let nonce: String?
         }
         guard let header = try? JSONDecoder().decode(Header.self, from: headerData)
         else { return }
+
+        if header.type == "file" {
+            // Files land on this lane too: which session carries a
+            // payload depends on who invited whom — both devices run
+            // an advertiser AND a browser, and the share facade tries
+            // the advertiser session first. Dropping "file" here
+            // silently lost cross-account "Send to Device" transfers
+            // while the sender showed Sent. Same gauntlet as the
+            // advertiser lane: paired key, replay window, nonce
+            // de-dupe, HMAC — then hand off so the inbox write and
+            // received-status UX stay in one place.
+            guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName),
+                  let timestamp = header.timestamp,
+                  let nonce = header.nonce
+            else { return }
+            let age = Date().timeIntervalSince1970 - TimeInterval(timestamp)
+            guard abs(age) < MultipeerSyncService.replayWindow else { return }
+            let cutoff = Date().addingTimeInterval(-MultipeerSyncService.replayWindow)
+            recentNonces.removeAll { $0.seenAt < cutoff }
+            if recentNonces.count >= MultipeerSyncService.maxRecentNonces {
+                recentNonces.removeFirst(recentNonces.count - MultipeerSyncService.maxRecentNonces / 2)
+            }
+            guard !recentNonces.contains(where: { $0.nonce == nonce }) else { return }
+            let signed = headerData + bodyData
+            let computed = Data(HMAC<SHA256>.authenticationCode(for: signed, using: key))
+            guard hmacBytes == computed else { return }
+            recentNonces.append((nonce, Date()))
+            MultipeerSyncService.shared.receiveVerifiedFile(
+                filename: header.filename, body: bodyData, peer: peer
+            )
+            return
+        }
 
         if header.type == "notebook-changed" {
             guard let key = MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) else { return }

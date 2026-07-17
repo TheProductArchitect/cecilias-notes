@@ -60,14 +60,17 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     static let pairingModeWindow: TimeInterval = 90
 
     /// Replay window — any payload with a timestamp older than this
-    /// is rejected even if the HMAC is valid.
-    private static let replayWindow: TimeInterval = 60
+    /// is rejected even if the HMAC is valid. Internal (not private)
+    /// because the browse lane (`MultipeerSendService`) applies the
+    /// same window to `"file"` payloads — one constant, two lanes.
+    static let replayWindow: TimeInterval = 60
     /// Defence-in-depth cap on `recentNonces`. The window prune is
     /// the primary mechanism; this guards against a flood of
     /// fresh-nonce probes spiking memory inside a single 60-second
     /// window. 2000 entries is comfortably above any legitimate
     /// send rate (Mac MCP sends one payload per notebook write).
-    private static let maxRecentNonces: Int = 2000
+    /// Shared with the browse lane like `replayWindow`.
+    static let maxRecentNonces: Int = 2000
 
     /// User-visible status. Drives Settings caption + status line.
     enum Status: Equatable {
@@ -306,7 +309,9 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     ///
     /// ```json
     /// {
-    ///   "type": "file" | "pairing-hello",
+    ///   "type": "file" | "notebook-changed" | "live-ink" | "ping"
+    ///         | "pairing-hello",       // this lane; replies use
+    ///                                  // "pong" / "pairing-result"
     ///   "filename": "X.inkbook",      // file type only
     ///   "timestamp": 1718817100,      // epoch seconds
     ///   "nonce": "base64-16-bytes"
@@ -510,7 +515,18 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             sendPairingResult(result: "ok", to: peer, key: candidate)
 
         default:
-            status = .error("Unknown payload type from \(peer.displayName)")
+            // Protocol rule: unknown types are IGNORED (see
+            // MULTIPEER_SYNC_PROTOCOL.md — the sidecar already does).
+            // Painting an error status here turned every protocol
+            // addition into a user-visible "Unknown payload type"
+            // scare on devices still running the older build — v2.4's
+            // live-ink did exactly that to 3.0(3). A quiet drop costs
+            // nothing: the payload is either from a newer version
+            // (fine) or noise the HMAC layer never blessed (also fine).
+            #if DEBUG
+            dlog("[Multipeer] ignoring unknown payload type \"\(header.type)\" from \(peer.displayName)")
+            #endif
+            break
         }
     }
 
@@ -592,6 +608,16 @@ final class MultipeerSyncService: NSObject, ObservableObject {
         return diff == 0
     }
 
+    /// Browse-lane hand-off. A `"file"` payload can arrive on EITHER
+    /// end of either session — which lane it lands on depends on who
+    /// invited whom (both devices run an advertiser AND a browser),
+    /// not on who is sending the file. `MultipeerSendService` verifies
+    /// key + HMAC + replay, then routes here so the inbox write and
+    /// the user-visible received/error status live in one place.
+    func receiveVerifiedFile(filename: String?, body: Data, peer: MCPeerID) {
+        writeFileToInbox(filename: filename, body: body, peer: peer)
+    }
+
     private func writeFileToInbox(filename: String?, body: Data, peer: MCPeerID) {
         guard body.count <= CeciliasNotesParser.maxFileBytes else {
             status = .error("File from \(peer.displayName) too large — rejected")
@@ -618,7 +644,12 @@ final class MultipeerSyncService: NSObject, ObservableObject {
             .components(separatedBy: CharacterSet(charactersIn: "/\\"))
             .last ?? ""
         let ext = (stripped as NSString).pathExtension.lowercased()
-        let allowed = ["inkbook", "json"]
+        // `.ceciliabook` is the full-fidelity archive "Send to
+        // Device" transmits — stripping it to `.inkbook` here routed
+        // the archive to the text-mirror importer, which can't read
+        // it. The extension decides which importer runs, so it must
+        // survive sanitisation.
+        let allowed = ["inkbook", "json", NotebookArchive.fileExtension]
         if !stripped.isEmpty, allowed.contains(ext) { return stripped }
         return "\(UUID().uuidString).inkbook"
     }

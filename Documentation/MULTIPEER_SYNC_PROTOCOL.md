@@ -21,6 +21,17 @@ enforced via `MCSession.encryptionPreference = .required` (handles
 link-layer encryption; the HMAC layer is what protects against a
 peer-name-spoofing attacker who *also* establishes a session).
 
+**Lane symmetry.** Every in-app device runs BOTH an advertiser
+(`MultipeerSyncService`) and a browser (`MultipeerSendService`), so a
+pair of devices can hold two live sessions at once, and which session
+carries a given payload depends on who invited whom — not on who is
+sending. Receivers MUST therefore accept every message type they
+implement on **either** end of either session. (Historically the
+browser end dropped `"file"` payloads, which silently lost
+"Send to Device" transfers whenever the sender's advertiser session
+was the connected one.) The MCP sidecar is browse-only and is exempt:
+nothing sends files *to* the sidecar.
+
 ## Discovery
 
 - **Service type**: `cn-sync`
@@ -170,7 +181,8 @@ A single binary blob sent via
 
 ```json
 {
-  "type": "file" | "pairing-hello" | "pairing-result" | "ping" | "pong",
+  "type": "file" | "notebook-changed" | "live-ink" | "pairing-hello"
+        | "pairing-result" | "ping" | "pong",
   "filename": "Sketchbook.inkbook",
   "result": "ok" | "wrong_code" | "no_pairing_window",
   "timestamp": 1718817100,
@@ -189,7 +201,10 @@ A single binary blob sent via
   MAY be added; the Mac SHOULD treat an unknown value as a
   generic failure.
 - `filename` is required when `type == "file"`. iPad strips path
-  separators and rejects extensions other than `.inkbook` / `.json`.
+  separators and rejects extensions other than `.inkbook` / `.json` /
+  `.ceciliabook` (the full-fidelity archive "Send to Device" ships;
+  the extension routes the receiver's importer, so it must survive
+  sanitisation).
 - `timestamp` is epoch seconds. Payloads outside a ±60 second window
   from the iPad's current time are rejected (replay protection).
 - `nonce` is a 16-byte cryptographically-random value, base64-encoded.

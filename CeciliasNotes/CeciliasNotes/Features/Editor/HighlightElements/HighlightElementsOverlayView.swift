@@ -213,12 +213,6 @@ struct HighlightElementsOverlayView: View, Equatable {
     }
 }
 
-// MARK: - Notification name
-
-extension Notification.Name {
-    /// Posted by `HighlightCommit` and this overlay's soft-delete
-    /// handler whenever a highlight element is inserted or
-    /// deleted. Overlays refetch; the notification is a "now
-    /// would be a good time to refetch" hint, not a payload.
-    static let highlightElementsChanged = Notification.Name("highlightElementsChanged")
-}
+// `Notification.Name.highlightElementsChanged` is declared in
+// `Core/Extensions/ElementChangeNotifications.swift` — shared with
+// the Mac target, which posts it from trash restore.
