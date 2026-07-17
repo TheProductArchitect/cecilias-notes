@@ -1359,6 +1359,30 @@ extension StorageService {
     /// Clone V6 page elements when duplicating a whole notebook.
     /// Skips strokes (handled by `cloneStrokeContent`) and PDF
     /// highlights (re-anchor is non-trivial).
+    /// Fresh `PageElement` carrying every geometry + presentation
+    /// field of `source`. One place so a new field can't be missed
+    /// by half the clone cases again (rotation/opacity/isLocked
+    /// coverage was inconsistent before the 2026-07-17 audit).
+    private func cloneScaffold(
+        of source: PageElement,
+        destination: Page,
+        notebookId: UUID
+    ) -> PageElement {
+        PageElement(
+            pageId: destination.id,
+            notebookId: notebookId,
+            kind: source.kind,
+            normalizedX: source.normalizedX,
+            normalizedY: source.normalizedY,
+            normalizedWidth: source.normalizedWidth,
+            normalizedHeight: source.normalizedHeight,
+            rotation: source.rotation,
+            zIndex: source.zIndex,
+            opacity: source.opacity,
+            isLocked: source.isLocked
+        )
+    }
+
     func cloneV6PageElements(fromPageId sourcePageId: UUID, toPage destination: Page, notebookId: UUID) {
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {
@@ -1368,24 +1392,63 @@ extension StorageService {
         )
         guard let sourceElements = try? context.fetch(descriptor) else { return }
 
+        // PDF pages clone FIRST so highlights can re-link to the
+        // fresh PDFPageContent ids (2026-07-17 audit: pdfPage and
+        // highlight were skipped entirely — duplicating a
+        // PDF-derived notebook produced blank pages with ink, and
+        // page-level duplicate lost every V6 element; see
+        // `duplicatePage`). The PDF FILE is shared by design
+        // (dedupe by `pdfDocumentId`) — only the content row and
+        // its preview PNG are per-clone.
+        var pdfPageContentIdMap: [UUID: UUID] = [:]
+        for source in sourceElements where source.kind == .pdfPage {
+            guard let sc = source.pdfPageContent else { continue }
+            let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
+            let content = PDFPageContent(
+                pdfDocumentId: sc.pdfDocumentId,
+                pageIndex: sc.pageIndex,
+                originalPageWidth: sc.originalPageWidth,
+                originalPageHeight: sc.originalPageHeight
+            )
+            content.extractedText = sc.extractedText
+            if let previewName = sc.previewImageFilename {
+                let src = MediaStorage.pdfPreviewDirectory.appendingPathComponent(previewName)
+                let newName = "\(content.id.uuidString).png"
+                let dst = MediaStorage.pdfPreviewDirectory.appendingPathComponent(newName)
+                if FileManager.default.fileExists(atPath: src.path),
+                   (try? FileManager.default.copyItem(at: src, to: dst)) != nil {
+                    content.previewImageFilename = newName
+                }
+            }
+            content.element = element
+            element.pdfPageContent = content
+            context.insert(element)
+            pdfPageContentIdMap[sc.id] = content.id
+        }
+
         for source in sourceElements {
             switch source.kind {
-            case .stroke, .pdfPage, .highlight:
-                continue
+            case .stroke, .pdfPage:
+                continue    // strokes: `cloneStrokeContent`; pdfPage: pass above
+            case .highlight:
+                guard let sc = source.highlightContent else { continue }
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
+                let content = HighlightContent(
+                    pdfPageContentId: pdfPageContentIdMap[sc.pdfPageContentId] ?? sc.pdfPageContentId,
+                    rectOriginX: sc.rectOriginX,
+                    rectOriginY: sc.rectOriginY,
+                    rectWidth: sc.rectWidth,
+                    rectHeight: sc.rectHeight,
+                    style: sc.style,
+                    colorVariant: sc.colorVariant
+                )
+                content.capturedText = sc.capturedText
+                content.element = element
+                element.highlightContent = content
+                context.insert(element)
             case .text:
                 guard let sc = source.textContent else { continue }
-                let element = PageElement(
-                    pageId: destination.id,
-                    notebookId: notebookId,
-                    kind: .text,
-                    normalizedX: source.normalizedX,
-                    normalizedY: source.normalizedY,
-                    normalizedWidth: source.normalizedWidth,
-                    normalizedHeight: source.normalizedHeight,
-                    zIndex: source.zIndex
-                )
-                element.rotation = source.rotation
-                element.opacity = source.opacity
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
                 let content = TextContent(
                     text: sc.text,
                     source: sc.source,
@@ -1398,57 +1461,34 @@ extension StorageService {
                 context.insert(element)
             case .stickyNote:
                 guard let sc = source.stickyNoteContent else { continue }
-                let element = PageElement(
-                    pageId: destination.id,
-                    notebookId: notebookId,
-                    kind: .stickyNote,
-                    normalizedX: source.normalizedX,
-                    normalizedY: source.normalizedY,
-                    normalizedWidth: source.normalizedWidth,
-                    normalizedHeight: source.normalizedHeight,
-                    zIndex: source.zIndex
-                )
-                element.rotation = source.rotation
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
                 let content = StickyNoteContent(text: sc.text, colorVariant: sc.colorVariant)
                 content.element = element
                 element.stickyNoteContent = content
                 context.insert(element)
             case .shape:
                 guard let sc = source.shapeContent else { continue }
-                let element = PageElement(
-                    pageId: destination.id,
-                    notebookId: notebookId,
-                    kind: .shape,
-                    normalizedX: source.normalizedX,
-                    normalizedY: source.normalizedY,
-                    normalizedWidth: source.normalizedWidth,
-                    normalizedHeight: source.normalizedHeight,
-                    zIndex: source.zIndex
-                )
-                element.rotation = source.rotation
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
                 let content = ShapeContent(
                     shapeKind: sc.shapeKind,
                     strokeColorHex: sc.strokeColorHex,
                     strokeWidth: sc.strokeWidth,
                     strokeStyle: sc.strokeStyle
                 )
+                // Fill + contained text were dropped by the old
+                // clone — a duplicated filled/labelled shape came
+                // out hollow and unlabelled (2026-07-17 audit).
+                content.fillColorHex = sc.fillColorHex
+                content.fillOpacity = sc.fillOpacity
+                content.containedText = sc.containedText
+                content.containedTextStyle = sc.containedTextStyle
                 content.element = element
                 element.shapeContent = content
                 context.insert(element)
             case .image:
                 guard let sc = source.imageContent else { continue }
                 let newImageId = UUID()
-                let element = PageElement(
-                    pageId: destination.id,
-                    notebookId: notebookId,
-                    kind: .image,
-                    normalizedX: source.normalizedX,
-                    normalizedY: source.normalizedY,
-                    normalizedWidth: source.normalizedWidth,
-                    normalizedHeight: source.normalizedHeight,
-                    zIndex: source.zIndex
-                )
-                element.rotation = source.rotation
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
                 let content = ImageContent(
                     id: newImageId,
                     filename: "\(newImageId.uuidString).\(sc.fileFormat)",
@@ -1457,6 +1497,13 @@ extension StorageService {
                     originalPixelHeight: sc.originalPixelHeight,
                     imageData: sc.imageData
                 )
+                // The crop rect was dropped by the old clone — a
+                // duplicated cropped image reverted to the full
+                // uncropped bitmap.
+                content.cropOriginX = sc.cropOriginX
+                content.cropOriginY = sc.cropOriginY
+                content.cropWidth = sc.cropWidth
+                content.cropHeight = sc.cropHeight
                 content.element = element
                 element.imageContent = content
                 context.insert(element)
@@ -1473,17 +1520,7 @@ extension StorageService {
             case .audio:
                 guard let sc = source.audioContent else { continue }
                 let newAudioId = UUID()
-                let element = PageElement(
-                    pageId: destination.id,
-                    notebookId: notebookId,
-                    kind: .audio,
-                    normalizedX: source.normalizedX,
-                    normalizedY: source.normalizedY,
-                    normalizedWidth: source.normalizedWidth,
-                    normalizedHeight: source.normalizedHeight,
-                    zIndex: source.zIndex
-                )
-                element.rotation = source.rotation
+                let element = cloneScaffold(of: source, destination: destination, notebookId: notebookId)
                 let content = AudioContent(
                     id: newAudioId,
                     filename: "\(newAudioId.uuidString).m4a",
@@ -1555,12 +1592,16 @@ extension StorageService {
         try context.save()
     }
 
-    /// INTENTIONAL: `duplicatePage` is a lightweight copy — strokes
-    /// and text blocks only. Media attachments and audio annotations
-    /// belong to the notebook, not to an individual page copy, so
-    /// they are not duplicated when a single page is duplicated.
-    /// Notebook-level duplication (`duplicateNotebook`) does carry
-    /// media + audio across.
+    /// Full-fidelity page copy: strokes, legacy text blocks, and
+    /// every V6 element (text, image, sticky, shape, audio,
+    /// pdfPage, highlight) via `cloneV6PageElements`.
+    ///
+    /// HISTORY: this used to claim "lightweight copy — strokes and
+    /// text blocks only" was intentional because "media belongs to
+    /// the notebook". That rationale was V5-era (media lived in
+    /// notebook-scoped side stores); in V6 every element is a
+    /// page-scoped row, and a duplicate that silently dropped the
+    /// page's images/text/shapes was just a bug (2026-07-17 audit).
     func duplicatePage(_ page: Page) throws -> Page {
         guard let notebook = notebookById(page.notebookId) else {
             throw CeciliasNotesStorageError.notebookNotFound
@@ -1603,6 +1644,13 @@ extension StorageService {
             context.insert(nb)
             newPage.textBlocks = (newPage.textBlocks ?? []) + [nb]
         }
+
+        // V6 elements — text, images, stickies, shapes, audio,
+        // pdfPage, highlights. Page-level duplicate never called
+        // this (2026-07-17 audit): only ink + legacy TextBlocks
+        // survived, every modern element silently vanished from
+        // the copy. `duplicateNotebook` always had it.
+        cloneV6PageElements(fromPageId: page.id, toPage: newPage, notebookId: notebook.id)
 
         notebook.totalPageCount = (notebook.pages ?? []).filter { !$0.isDeleted }.count
         notebook.markModified()
@@ -2015,15 +2063,25 @@ extension StorageService {
     func purgeExpiredDeletedRecords() throws {
         let cutoff = Date().addingTimeInterval(-30 * 24 * 3600)
 
-        // Subjects
+        // Subjects. Purge each notebook underneath BEFORE the row
+        // delete — the Subject cascade drops Notebook + Page rows on
+        // its own, but without the explicit purge every media file
+        // and every pageId-keyed element row was orphaned
+        // (2026-07-17 audit: reaper-expiring a subject leaked the
+        // whole notebook's assets).
         let deletedSubjects = (try? context.fetch(
             FetchDescriptor<Subject>(predicate: #Predicate { $0.isDeleted == true })
         )) ?? []
         for s in deletedSubjects where (s.deletedAt ?? .distantFuture) < cutoff {
+            for nb in s.notebooks ?? [] {
+                purgeNotebookFiles(nb)
+            }
             context.delete(s)
         }
 
-        // Folders (added in V3 — same 30-day soft-delete pattern)
+        // Folders (added in V3 — same 30-day soft-delete pattern).
+        // Folders own no files and no relationship-cascading
+        // children (notebooks reference folderId by UUID).
         let deletedFolders = (try? context.fetch(
             FetchDescriptor<Folder>(predicate: #Predicate { $0.isDeleted == true })
         )) ?? []
@@ -2040,7 +2098,37 @@ extension StorageService {
             context.delete(nb)
         }
 
-        // Pages, blocks, attachments, annotations handled by cascade delete
+        // Individually-deleted pages (notebook still alive). These
+        // never expired before — the old comment claimed cascade
+        // covered them, but cascade only runs when the PARENT row
+        // dies; a page deleted on its own sat in Trash forever.
+        let deletedPages = (try? context.fetch(
+            FetchDescriptor<Page>(predicate: #Predicate { $0.isDeleted == true })
+        )) ?? []
+        for page in deletedPages where (page.deletedAt ?? .distantFuture) < cutoff {
+            purgeAllElements(forPageIds: [page.id])
+            context.delete(page)
+        }
+
+        // Individually-deleted elements (page still alive). Same
+        // gap: nothing expired them. Elements carry only
+        // `deletedAt` — no isDeleted bool.
+        let deletedElements = (try? context.fetch(
+            FetchDescriptor<PageElement>(predicate: #Predicate { $0.deletedAt != nil })
+        )) ?? []
+        let fm = FileManager.default
+        for element in deletedElements where (element.deletedAt ?? .distantFuture) < cutoff {
+            switch element.kind {
+            case .image:
+                if let content = element.imageContent { try? fm.removeItem(at: content.fileURL) }
+            case .audio:
+                if let content = element.audioContent { try? fm.removeItem(at: content.fileURL) }
+            default:
+                break
+            }
+            context.delete(element)
+        }
+
         try context.save()
     }
 
@@ -2061,10 +2149,20 @@ extension StorageService {
     }
 
     func emptyTrash() throws {
+        // Same shape as `purgeExpiredDeletedRecords` without the
+        // cutoff — and with the same 2026-07-17 fixes: subjects
+        // purge their notebooks' files + element rows before the
+        // cascade, and individually-deleted pages/elements are
+        // included (they were skipped entirely before).
         let allSubjects = (try? context.fetch(
             FetchDescriptor<Subject>(predicate: #Predicate { $0.isDeleted == true })
         )) ?? []
-        allSubjects.forEach { context.delete($0) }
+        for s in allSubjects {
+            for nb in s.notebooks ?? [] {
+                purgeNotebookFiles(nb)
+            }
+            context.delete(s)
+        }
 
         let allFolders = (try? context.fetch(
             FetchDescriptor<Folder>(predicate: #Predicate { $0.isDeleted == true })
@@ -2078,6 +2176,31 @@ extension StorageService {
             purgeNotebookFiles(nb)
             context.delete(nb)
         }
+
+        let allPages = (try? context.fetch(
+            FetchDescriptor<Page>(predicate: #Predicate { $0.isDeleted == true })
+        )) ?? []
+        for page in allPages {
+            purgeAllElements(forPageIds: [page.id])
+            context.delete(page)
+        }
+
+        let allElements = (try? context.fetch(
+            FetchDescriptor<PageElement>(predicate: #Predicate { $0.deletedAt != nil })
+        )) ?? []
+        let fm = FileManager.default
+        for element in allElements {
+            switch element.kind {
+            case .image:
+                if let content = element.imageContent { try? fm.removeItem(at: content.fileURL) }
+            case .audio:
+                if let content = element.audioContent { try? fm.removeItem(at: content.fileURL) }
+            default:
+                break
+            }
+            context.delete(element)
+        }
+
         try context.save()
     }
 
@@ -2090,15 +2213,14 @@ extension StorageService {
         purgeNotebookFiles(notebook)
     }
 
-    /// Public wrapper around `purgeImageElements` + `purgeAudioElements`
-    /// for the Trash UI's per-page permanent delete. Removes any
-    /// image / audio backing files for elements scoped to the given
-    /// pages and drops those element rows; the caller is responsible
-    /// for deleting the parent `Page` row itself.
+    /// Public wrapper around `purgeAllElements` for the Trash UI's
+    /// per-page permanent delete. Removes image/audio backing files
+    /// and drops EVERY element row scoped to the given pages; the
+    /// caller is responsible for deleting the parent `Page` row
+    /// itself.
     func purgeFiles(forPageIds pageIds: [UUID]) {
         guard !pageIds.isEmpty else { return }
-        purgeImageElements(forPageIds: pageIds)
-        purgeAudioElements(forPageIds: pageIds)
+        purgeAllElements(forPageIds: pageIds)
     }
 
     private func purgeNotebookFiles(_ notebook: Notebook) {
@@ -2117,19 +2239,10 @@ extension StorageService {
         // Step 7: `StickyNoteStore` retired — sticky elements are
         // V6 `PageElement(.stickyNote) + StickyNoteContent` rows
         // and ride the same PageElement sweep.
-        // Image attachments — Step 4 retired `MediaAttachmentStore`.
-        // V6 image elements are `PageElement(kind: .image)` rows
-        // with backing files at `MediaStorage.url(for: .images, id:)`.
-        // Fetch each element for the dead pages, remove the file
-        // by `ImageContent.id` (which matches the filename UUID),
-        // then drop the row.
-        purgeImageElements(forPageIds: pageIds)
-        // Step 5: audio elements (`PageElement(.audio)` + `AudioContent`).
-        // Same pattern as `purgeImageElements`: fetch by pageId,
-        // delete files via `AudioContent.fileURL`, then drop the
-        // rows (cascade-deletes AudioContent). LectureStore is
-        // gone — the legacy V5 lecture metadata went with it.
-        purgeAudioElements(forPageIds: pageIds)
+        // Every V6 element keyed to a dead page — image/audio files
+        // removed, ALL rows dropped (strokes, text, shapes, sticky,
+        // pdfPage, highlight included; see `purgeAllElements`).
+        purgeAllElements(forPageIds: pageIds)
         // AI caches — summary in UserDefaults, embedding in a
         // Documents/embeddings/<uuid>.bin file. Both live on-device
         // and the notebook being permanently removed means both
@@ -2146,23 +2259,47 @@ extension StorageService {
         SearchIndexService.shared.removeNotebook(id: notebook.id)
     }
 
-    /// Step 4: hard-delete every V6 image element for the given
-    /// pages AND remove the underlying image files from disk.
-    /// Called from `purgeNotebookFiles` on reaper purge. Files are
-    /// removed before the rows are deleted so we can still resolve
-    /// `ImageContent.fileURL`. SwiftData cascade-deletes
-    /// `ImageContent` when the parent `PageElement` is removed.
-    private func purgeImageElements(forPageIds pageIds: [UUID]) {
+    /// Hard-delete EVERY V6 element row for the given pages, plus
+    /// the on-disk backing files for the kinds that own one
+    /// (image / audio; removed BEFORE the rows so `fileURL` still
+    /// resolves). SwiftData cascade-deletes each element's content
+    /// row.
+    ///
+    /// ALL kinds, not just image/audio (2026-07-17 audit): `Page`
+    /// has no `@Relationship` to `PageElement` — elements are keyed
+    /// by `pageId` UUID — so a permanent page/notebook delete that
+    /// only swept image+audio left every stroke / text / shape /
+    /// sticky / pdfPage / highlight row orphaned in the store
+    /// forever: invisible to the UI, still syncing via CloudKit,
+    /// still counting storage. Orphaned `pdfPage` rows were the
+    /// worst case — their live `PDFPageContent` kept
+    /// `MediaStorage.purgeOrphanedPDFs` treating the shared PDF
+    /// file as referenced, so the file-level GC never collected it
+    /// either. PDF files themselves are deliberately NOT removed
+    /// here: once the rows are gone, the launch-time orphan sweep
+    /// reclaims them after its 30-day grace window (shared
+    /// documents may still be referenced by other notebooks).
+    private func purgeAllElements(forPageIds pageIds: [UUID]) {
         guard !pageIds.isEmpty else { return }
         let pageIdSet = Set(pageIds)
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate { pageIdSet.contains($0.pageId) }
         )
         let elements = (try? context.fetch(descriptor)) ?? []
+        guard !elements.isEmpty else { return }
         let fm = FileManager.default
-        for element in elements where element.kind == .image {
-            if let content = element.imageContent {
-                try? fm.removeItem(at: content.fileURL)
+        for element in elements {
+            switch element.kind {
+            case .image:
+                if let content = element.imageContent {
+                    try? fm.removeItem(at: content.fileURL)
+                }
+            case .audio:
+                if let content = element.audioContent {
+                    try? fm.removeItem(at: content.fileURL)
+                }
+            default:
+                break
             }
             context.delete(element)
         }
@@ -2170,34 +2307,7 @@ extension StorageService {
             try context.save()
         } catch {
             #if DEBUG
-            dlog("[Storage] purgeImageElements SAVE FAILED pageCount=\(pageIds.count): \(error)")
-            #endif
-        }
-    }
-
-    /// Step 5: hard-delete V6 audio elements + their backing m4a
-    /// files for the given pages. Mirrors `purgeImageElements`.
-    /// SwiftData cascade-deletes `AudioContent` when the parent
-    /// `PageElement` is removed.
-    private func purgeAudioElements(forPageIds pageIds: [UUID]) {
-        guard !pageIds.isEmpty else { return }
-        let pageIdSet = Set(pageIds)
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate { pageIdSet.contains($0.pageId) }
-        )
-        let elements = (try? context.fetch(descriptor)) ?? []
-        let fm = FileManager.default
-        for element in elements where element.kind == .audio {
-            if let content = element.audioContent {
-                try? fm.removeItem(at: content.fileURL)
-            }
-            context.delete(element)
-        }
-        do {
-            try context.save()
-        } catch {
-            #if DEBUG
-            dlog("[Storage] purgeAudioElements SAVE FAILED pageCount=\(pageIds.count): \(error)")
+            dlog("[Storage] purgeAllElements SAVE FAILED pageCount=\(pageIds.count): \(error)")
             #endif
         }
     }

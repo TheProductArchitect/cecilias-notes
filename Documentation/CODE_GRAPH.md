@@ -23,9 +23,9 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | Module | Files | Lines |
 | --- | ---: | ---: |
 | `App/` | 3 | 926 |
-| `Core/` | 100 | 17,719 |
+| `Core/` | 100 | 17,864 |
 | `DesignSystem/` | 15 | 1,777 |
-| `Features/` | 168 | 53,123 |
+| `Features/` | 168 | 53,160 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -52,7 +52,7 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | ---: | --- |
 | 2,921 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
 | 2,725 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift) |
-| 2,417 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
+| 2,527 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
 | 1,610 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
 | 1,396 | [`CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift`](../CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift) |
 | 1,257 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |

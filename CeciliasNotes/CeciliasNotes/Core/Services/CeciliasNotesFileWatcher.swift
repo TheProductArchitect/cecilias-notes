@@ -191,10 +191,13 @@ final class CeciliasNotesFileWatcher {
             case NotebookArchive.fileExtension:
                 // Full-fidelity notebook received (multipeer send or a
                 // .ceciliabook dropped into the Inbox). Import as a
-                // fresh editable copy with all elements + media.
+                // fresh editable copy with all elements + media —
+                // decode runs off-main (`importArchiveAsync`); only
+                // the SwiftData reconstruct touches the main actor.
                 recordEvent(filename: url.lastPathComponent, kind: .imported)
                 Task { @MainActor in
-                    if let nb = NotebookArchiveIO.importArchive(from: url) {
+                    if let data = try? Data(contentsOf: url),
+                       let nb = await NotebookArchiveIO.importArchiveAsync(data: data) {
                         MultipeerNotebookHint.broadcastNotebookChanged(notebookId: nb.id)
                     }
                     try? FileManager.default.removeItem(at: url)

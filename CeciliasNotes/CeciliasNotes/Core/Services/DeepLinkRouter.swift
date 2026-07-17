@@ -38,11 +38,20 @@ final class DeepLinkRouter: ObservableObject {
         // the sandbox need a security scope while we read them.
         if url.isFileURL,
            url.pathExtension.lowercased() == NotebookArchive.fileExtension {
+            // Read the bytes under the security scope NOW (one fast
+            // file read), decode + reconstruct async — the old
+            // synchronous import decoded up to 32 MB of JSON inside
+            // `onOpenURL` on the main thread, a guaranteed
+            // multi-second ANR for a media-heavy notebook.
             let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            if let notebook = NotebookArchiveIO.importArchive(from: url) {
-                openNotebookId = notebook.id
-                openPageId = nil
+            let data = try? Data(contentsOf: url)
+            if scoped { url.stopAccessingSecurityScopedResource() }
+            guard let data else { return }
+            Task { @MainActor [weak self] in
+                if let notebook = await NotebookArchiveIO.importArchiveAsync(data: data) {
+                    self?.openNotebookId = notebook.id
+                    self?.openPageId = nil
+                }
             }
             return
         }

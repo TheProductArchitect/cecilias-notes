@@ -200,8 +200,31 @@ enum NotebookArchiveIO {
 
     @discardableResult
     static func importArchive(data: Data) -> Notebook? {
+        guard let archive = decodeArchive(data) else { return nil }
+        return reconstruct(archive)
+    }
+
+    /// Decode is the expensive half (a media-heavy archive is tens
+    /// of MB of JSON + base64) and is pure value work — split out
+    /// so `importArchiveAsync` can run it OFF the main actor. Only
+    /// `reconstruct` (SwiftData writes) needs the main actor.
+    nonisolated private static func decodeArchive(_ data: Data) -> NotebookArchive? {
         guard let archive = try? JSONDecoder().decode(NotebookArchive.self, from: data),
               archive.format == NotebookArchive.formatIdentifier else { return nil }
+        return archive
+    }
+
+    /// Import with the decode off-main. Use this from user-facing
+    /// entry points (tap-to-open, inbox watcher) — the synchronous
+    /// `importArchive(data:)` decoded up to 32 MB of JSON inside
+    /// `onOpenURL` on the main thread, a guaranteed multi-second
+    /// ANR for a media-heavy notebook (2026-07-17 audit).
+    @discardableResult
+    static func importArchiveAsync(data: Data) async -> Notebook? {
+        let archive = await Task.detached(priority: .userInitiated) {
+            decodeArchive(data)
+        }.value
+        guard let archive else { return nil }
         return reconstruct(archive)
     }
 

@@ -152,6 +152,43 @@ final class TrashService {
             }
         }
         try context.save()
+        postRestoreRefetch(for: item)
+    }
+
+    /// The editor's per-page overlays cache their element fetches
+    /// and refetch on change notifications — without this, an
+    /// element restored while its notebook is mounted behind the
+    /// Trash sheet stays invisible until the page remounts.
+    private func postRestoreRefetch(for item: TrashItem) {
+        guard case .element(let element) = item.kind else { return }
+        let center = NotificationCenter.default
+        switch element.kind {
+        case .audio:
+            center.post(name: .audioElementsChanged, object: nil)
+        case .image:
+            center.post(name: .mediaAttachmentsChanged, object: nil)
+        case .shape:
+            center.post(name: .shapeElementsChanged, object: nil)
+        case .stickyNote:
+            center.post(name: .stickyNotesChanged, object: nil)
+        case .text:
+            center.post(name: .textElementsChanged, object: nil)
+        case .highlight:
+            center.post(name: .highlightElementsChanged, object: nil)
+        case .stroke:
+            // Mounted canvases render their own in-memory drawing —
+            // signal a reload for the restored strokes' page.
+            center.post(
+                name: .strokeContentRewritten,
+                object: nil,
+                userInfo: ["pageIds": [element.pageId]]
+            )
+        case .pdfPage:
+            // PDF overlays refetch on page (re)mount; no dedicated
+            // change notification exists. Restoring a pdfPage while
+            // its page is mounted shows on next mount — acceptable.
+            break
+        }
     }
 
     private func clearDeleted(on subject: Subject) {
@@ -176,6 +213,10 @@ final class TrashService {
         if let subjectId = notebook.subjectId, let subject = subjectById(subjectId), subject.deletedAt != nil {
             clearDeleted(on: subject)
         }
+        // Soft-delete deindexes the notebook from search/Spotlight —
+        // restore must re-index or the notebook stays unsearchable
+        // until some unrelated later save (2026-07-17 audit).
+        storage.scheduleSpotlightReindex(for: notebook)
     }
 
     // MARK: - Permanent delete

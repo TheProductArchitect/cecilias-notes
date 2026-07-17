@@ -49,6 +49,37 @@ final class CeciliasNotesExporter {
         )
     }
 
+    /// True inside the unit-test host. Mirror exports there are
+    /// meaningless AND dangerous: launch/backgrounding triggers walk
+    /// the whole (test-fixture-churned) store on a background task
+    /// while tests concurrently delete rows on the main context —
+    /// the source of the intermittent "signal trap" test crashes
+    /// (device crash report 2026-07-17: exporter's `Page.id` getter
+    /// asserting mid-build while a test tearDown saved deletes).
+    nonisolated private static let isUnitTestHost =
+        NSClassFromString("XCTestCase") != nil
+
+    /// FIFO chain so at most ONE mirror build runs at a time. The
+    /// same crash report showed TWO concurrent builds in flight
+    /// (per-save `export` racing a lifecycle `scheduleExportAll`) —
+    /// each had its own ModelContext, but doubling the in-flight
+    /// build time doubles the window in which a concurrent DELETE
+    /// (user, Trash reaper, CloudKit) can invalidate a model the
+    /// build is still reading. SwiftData's invalidated-model check
+    /// is a fatalError — not catchable — so the mitigation is
+    /// shrinking the window, not handling the error.
+    private actor ExportSerializer {
+        private var tail: Task<Void, Never>?
+        func enqueue(_ op: @escaping @Sendable () async -> Void) {
+            let previous = tail
+            tail = Task {
+                await previous?.value
+                await op()
+            }
+        }
+    }
+    private static let exportSerializer = ExportSerializer()
+
     /// Fetch → build → write for the given notebooks, sequentially,
     /// entirely off the main actor. A fresh `ModelContext` on the
     /// detached task reads the same store safely; row IDs cross the
@@ -57,15 +88,18 @@ final class CeciliasNotesExporter {
         notebookIds: [UUID],
         container: ModelContainer
     ) {
+        guard !isUnitTestHost else { return }
         Task.detached(priority: .utility) {
-            let context = ModelContext(container)
-            for notebookId in notebookIds {
-                let descriptor = FetchDescriptor<Notebook>(
-                    predicate: #Predicate { $0.id == notebookId && $0.isDeleted == false }
-                )
-                guard let notebook = (try? context.fetch(descriptor))?.first else { continue }
-                let file = buildFile(for: notebook, context: context)
-                await writeFile(file, notebookId: notebookId)
+            await exportSerializer.enqueue {
+                let context = ModelContext(container)
+                for notebookId in notebookIds {
+                    let descriptor = FetchDescriptor<Notebook>(
+                        predicate: #Predicate { $0.id == notebookId && $0.isDeleted == false }
+                    )
+                    guard let notebook = (try? context.fetch(descriptor))?.first else { continue }
+                    let file = buildFile(for: notebook, context: context)
+                    await writeFile(file, notebookId: notebookId)
+                }
             }
         }
     }
@@ -209,8 +243,24 @@ final class CeciliasNotesExporter {
             ?? resolveSubjectName(id: notebook.subjectId, context: context)
             ?? ""
 
-        let pages = (notebook.pages ?? [])
-            .sorted { $0.pageNumber < $1.pageNumber }
+        // Store-side fetch + sort instead of `notebook.pages`
+        // relationship traversal: the fetch returns only rows that
+        // exist RIGHT NOW (a concurrent delete can't hand us a
+        // doomed fault), and sorting in SQLite avoids the
+        // live-getter comparator that a 2026-07-17 crash report
+        // caught asserting mid-sort when a row vanished under it.
+        let notebookId = notebook.id
+        let pageDescriptor = FetchDescriptor<Page>(
+            predicate: #Predicate<Page> {
+                $0.notebookId == notebookId && $0.isDeleted == false
+            },
+            sortBy: [
+                SortDescriptor(\.pageNumber),
+                SortDescriptor(\.createdAt),
+            ]
+        )
+        let livePages = (try? context.fetch(pageDescriptor)) ?? []
+        let pages = livePages
             .enumerated()
             .map { idx, page -> CeciliasNotesFile.PageNode in
                 let hasInk = pageHasInk(page, context: context)

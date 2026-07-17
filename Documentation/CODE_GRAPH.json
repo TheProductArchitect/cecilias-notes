@@ -757,7 +757,7 @@
         ".ceciliasNotesInboxEventsChanged"
       ],
       "observes": [],
-      "lines": 296
+      "lines": 299
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesImporter.swift",
@@ -875,7 +875,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 84
+      "lines": 93
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/GreetingPicker.swift",
@@ -1316,7 +1316,7 @@
         ".audioElementsChanged"
       ],
       "observes": [],
-      "lines": 426
+      "lines": 449
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/NotebookMarkdownExport.swift",
@@ -1705,7 +1705,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2417
+      "lines": 2527
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -4762,7 +4762,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 362
+      "lines": 399
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/Trash/TrashView.swift",

@@ -384,7 +384,7 @@ final class ExportService {
 
         for element in elements {
             guard let content = element.imageContent,
-                  let image = UIImage(contentsOfFile: content.fileURL.path) else { continue }
+                  let image = exportImage(for: content) else { continue }
             let rect = CGRect(
                 x:      element.normalizedX      * pageBounds.width,
                 y:      element.normalizedY      * pageBounds.height,
@@ -428,27 +428,11 @@ final class ExportService {
     // stamps them as real `PDFAnnotation` objects on the exported
     // copy is queued for Step 10 (sync polish).
 
-    /// Build a one-page PDFDocument from the standard fresh-page
-    /// rendering pipeline, then extract its sole page. Used for
-    /// non-PDF pages spliced into a PDF-backed notebook's export
-    /// (e.g. a blank page the user added after import).
-    private func makeFreshPDFPage(
-        for page: Page,
-        notebook: Notebook,
-        options: ExportOptions
-    ) -> PDFPage? {
-        let bounds   = page.pageSize.pointSize.asCGRect
-        let renderer = UIGraphicsPDFRenderer(bounds: bounds, format: makePDFInfo(notebook: notebook))
-        let data = renderer.pdfData { ctx in
-            ctx.beginPage()
-            let cgCtx = ctx.cgContext
-            drawTemplate(page.backgroundTemplate, ctx: cgCtx, bounds: bounds)
-            drawMediaAttachments(page, ctx: cgCtx, bounds: bounds, notebook: notebook)
-            drawStrokes(page, ctx: cgCtx, bounds: bounds, quality: options.quality)
-            drawTextBlocks(page, ctx: cgCtx, bounds: bounds)
-        }
-        return PDFDocument(data: data)?.page(at: 0)
-    }
+    // `makeFreshPDFPage` removed (2026-07-17 audit): zero callers —
+    // superseded by `rasterisePageForFallback`, which draws the FULL
+    // V6 element set; the dead copy silently drew only
+    // template/media/strokes/text-blocks and was a trap for the
+    // next caller.
 
     /// Fallback rasteriser shared with `PDFDerivedExport` for
     /// non-PDF pages spliced into a PDF-derived notebook. Walks
@@ -909,6 +893,22 @@ final class ExportService {
 
     // MARK: - Media attachments
 
+    /// Image bytes for export: in-row `imageData` first (canonical,
+    /// CloudKit-synced — a notebook received via `.ceciliabook` or
+    /// CloudKit may have no local file cache yet), disk fallback,
+    /// crop applied to match the editor. Mirrors the 2026-07-16
+    /// `PDFDerivedExport.attachImages` fix — the main export path
+    /// had the identical disk-only + uncropped gaps.
+    private func exportImage(for content: ImageContent) -> UIImage? {
+        let bytes = content.imageData ?? (try? Data(contentsOf: content.fileURL))
+        guard let bytes, let raw = UIImage(data: bytes) else { return nil }
+        return ImageDataView.applyCrop(
+            to: raw,
+            x: content.cropOriginX, y: content.cropOriginY,
+            w: content.cropWidth, h: content.cropHeight
+        )
+    }
+
     private func drawMediaAttachments(_ page: Page, ctx: CGContext, bounds: CGRect, notebook: Notebook) {
         // Step 4: read V6 `PageElement(kind: .image)` rows in place
         // of the retired `MediaAttachmentStore`. Geometry is the
@@ -919,7 +919,7 @@ final class ExportService {
         let elements = fetchImageElements(forPageId: page.id)
         for element in elements {
             guard let content = element.imageContent,
-                  let image = UIImage(contentsOfFile: content.fileURL.path) else { continue }
+                  let image = exportImage(for: content) else { continue }
 
             let rect = CGRect(
                 x:      element.normalizedX      * bounds.width,
