@@ -131,6 +131,20 @@ struct LibraryView: View {
                     editingNotebook = nil
                 }
             }
+            // The open notebook's row vanished from the store
+            // (permanent delete propagated from another device).
+            // Dismiss the cover before any view touches the
+            // invalidated model — see EditorViewModel's remote
+            // hard-delete guard. Deferred a tick per this file's
+            // onReceive convention.
+            .onReceive(NotificationCenter.default.publisher(for: .editorNotebookVanished)) { _ in
+                Task { @MainActor in
+                    if editingNotebook != nil {
+                        editingNotebook = nil
+                    }
+                    viewModel.refresh()
+                }
+            }
             // Every `viewModel.*` mutation inside `.onReceive` is
             // deferred to the next runloop tick via `Task { @MainActor
             // in }`. Notification publishers can fire synchronously

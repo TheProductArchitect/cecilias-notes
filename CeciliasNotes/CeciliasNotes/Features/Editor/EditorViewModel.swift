@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import CoreData
 import Foundation
 import PencilKit
 import SwiftData
@@ -718,6 +719,34 @@ final class EditorViewModel: ObservableObject {
             .sink { [weak self] _ in
                 guard let self, self.canvasHasDirtyPagesHandler?() != true else { return }
                 self.refreshPages()
+            }
+            .store(in: &cancellables)
+
+        // Remote hard-delete guard (2026-07-17 audit). The editor
+        // holds live `Notebook` / `Page` models for its lifetime; a
+        // PERMANENT delete arriving via CloudKit (trash emptied on
+        // another device) invalidates them, and SwiftData's
+        // invalidated-model access is an uncatchable fatalError.
+        // Watch remote-change bursts and check existence BY VALUE
+        // (captured UUID + fetchCount — never through the held
+        // model); when the row is gone or remotely trashed, dismiss
+        // the editor before the UI touches a dead model. Soft
+        // deletes keep the model valid, but a notebook trashed
+        // elsewhere shouldn't stay open here either.
+        NotificationCenter.default.publisher(for: .NSPersistentStoreRemoteChange)
+            .debounce(for: .seconds(1), scheduler: DispatchQueue.main)
+            .sink { [weak self, notebookId = notebook.id] _ in
+                guard let self else { return }
+                let descriptor = FetchDescriptor<Notebook>(
+                    predicate: #Predicate { $0.id == notebookId && $0.isDeleted == false }
+                )
+                // Fetch failure ≠ deletion — treat as alive.
+                let alive = ((try? self.storage.context.fetchCount(descriptor)) ?? 1) > 0
+                guard !alive else { return }
+                #if DEBUG
+                dlog("[Editor] notebook \(notebookId.uuidString.prefix(8)) vanished remotely — dismissing editor")
+                #endif
+                NotificationCenter.default.post(name: .editorNotebookVanished, object: nil)
             }
             .store(in: &cancellables)
 
@@ -2721,4 +2750,13 @@ extension UIColor {
         return String(format: "#%02X%02X%02X",
                       Int(round(r * 255)), Int(round(g * 255)), Int(round(b * 255)))
     }
+}
+
+extension Notification.Name {
+    /// Posted when the open editor's notebook row disappeared from
+    /// the store (permanent delete propagated from another device
+    /// via CloudKit, or a remote soft-delete). LibraryView dismisses
+    /// the editor cover on receipt — before any view touches the
+    /// invalidated model.
+    static let editorNotebookVanished = Notification.Name("ceciliasnotes.editor.notebookVanished")
 }
