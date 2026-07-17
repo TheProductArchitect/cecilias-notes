@@ -106,6 +106,16 @@ private extension UIHostingController {
 /// directly and are unaffected.
 final class NoSystemUndoHostingController<Content: View>: UIHostingController<Content> {
     override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
+
+    // Swift 6.3.3's Release optimizer (EarlyPerfInliner) crashes while
+    // processing the SYNTHESIZED deinit of this generic
+    // UIHostingController subclass — "Command SwiftCompile failed" on
+    // every Archive/-O build; Debug is untouched (no optimizer).
+    // Coverage/profiling flags are irrelevant (reproduced without).
+    // An explicit deinit opted out of optimization sidesteps the
+    // compiler bug; there is nothing here worth optimizing anyway.
+    // Remove when a fixed toolchain lands.
+    @_optimize(none) deinit {}
 }
 
 private final class CanvasHostView: UIView {
