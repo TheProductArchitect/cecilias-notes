@@ -785,6 +785,15 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- App Store validation requires document-type apps to declare
+	     HOW they open documents. This app IMPORTS: it reads the file
+	     once (DeepLinkRouter / FileWatcher) and copies the content
+	     into its own library — it never edits the document at its
+	     source. NO keeps today's behaviour: the system may hand us an
+	     Inbox copy, and originals are never touched. Do not flip to
+	     YES without auditing every open path for in-place semantics. -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
