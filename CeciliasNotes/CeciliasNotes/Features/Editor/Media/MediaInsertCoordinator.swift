@@ -151,10 +151,14 @@ final class MediaInsertCoordinator: ObservableObject {
         saveImageRecord(first, on: vm.currentPage, notebookId: vm.notebook.id,
                         rect: firstRect, pageSize: pageSize)
 
-        // Pages 2+ → new pages.
+        // Pages 2+ → CONSECUTIVE new pages after the current one,
+        // anchor rolling forward per insert. The old no-arg
+        // `vm.addPage()` targeted the notebook's LAST page: scan
+        // page 2 landed at the end of the document.
+        var anchorPageId = vm.currentPage.id
         for extra in processed.dropFirst() {
-            vm.addPage()
-            guard let newPage = vm.pages.last else { continue }
+            guard let newPage = vm.addPage(afterPageId: anchorPageId) else { continue }
+            anchorPageId = newPage.id
             let r = centredRect(for: extra.originalSize, pageSize: pageSize)
             saveImageRecord(extra, on: newPage, notebookId: vm.notebook.id,
                             rect: r, pageSize: pageSize)
@@ -181,6 +185,7 @@ final class MediaInsertCoordinator: ObservableObject {
         isProcessing = true
         defer { isProcessing = false; processingProgress = 0 }
 
+        var pdfAnchorPageId: UUID?
         for i in 0..<pageCount {
             guard let pdfPage = doc.page(at: i)?.pageRef else { continue }
             if let img = try? await ImageProcessingService.shared.rasterisePDFPage(pdfPage) {
@@ -189,16 +194,18 @@ final class MediaInsertCoordinator: ObservableObject {
                     let r = centredRect(for: processed.originalSize, pageSize: pageSize)
 
                     if i == 0 {
+                        pdfAnchorPageId = viewModel.currentPage.id
                         saveImageRecord(processed, on: viewModel.currentPage,
                                         notebookId: viewModel.notebook.id,
                                         rect: r, pageSize: pageSize)
-                    } else {
-                        viewModel.addPage()
-                        if let newPage = viewModel.pages.last {
-                            saveImageRecord(processed, on: newPage,
-                                            notebookId: viewModel.notebook.id,
-                                            rect: r, pageSize: pageSize)
-                        }
+                    } else if let anchor = pdfAnchorPageId,
+                              let newPage = viewModel.addPage(afterPageId: anchor) {
+                        // Consecutive after the current page — same
+                        // rolling-anchor fix as the scan path above.
+                        pdfAnchorPageId = newPage.id
+                        saveImageRecord(processed, on: newPage,
+                                        notebookId: viewModel.notebook.id,
+                                        rect: r, pageSize: pageSize)
                     }
                 }
             }

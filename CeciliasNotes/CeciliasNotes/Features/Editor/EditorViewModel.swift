@@ -1879,15 +1879,25 @@ final class EditorViewModel: ObservableObject {
     /// current view and the user scrolls into it when they reach it. The
     /// previous behaviour navigated to the new page, yanking the view
     /// away from the content the user was still writing.
-    func addPage(afterPageId pageId: UUID) {
-        guard let anchor = pages.first(where: { $0.id == pageId }) else { return }
-        guard let _ = try? storage.createPage(
+    /// Returns the created page so multi-page imports (scan / PDF
+    /// rasterise) can place one image per page CONSECUTIVELY after
+    /// the current page by rolling the anchor forward. They used the
+    /// no-arg `addPage()`, which targets the LAST page number — a
+    /// 12-page notebook scanned from page 2 put scan page 2 at the
+    /// end of the document (and navigated there, once per page).
+    @discardableResult
+    func addPage(afterPageId pageId: UUID) -> Page? {
+        guard let anchor = pages.first(where: { $0.id == pageId }) else { return nil }
+        guard let created = try? storage.createPage(
             in: notebook,
             after: anchor.pageNumber,
             pageSize: globalPageSize,
             backgroundTemplate: globalTemplate
-        ) else { return }
+        ) else { return nil }
         refreshPages()
+        // Hand back the instance from the refreshed list so callers
+        // hold the same object the editor renders.
+        return pages.first(where: { $0.id == created.id }) ?? created
     }
 
     // MARK: - Toolbar state hooks

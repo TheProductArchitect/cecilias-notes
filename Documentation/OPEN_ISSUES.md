@@ -251,3 +251,24 @@ so in-place work always has its history; only leave-and-return
 loses it. Documented in ROBUSTNESS §3. Revisit only if users
 report it in practice (the 2026-07-18 undo reports were the
 button-state poll race — fixed — not this).
+
+---
+
+## 9. Library scroll: "not laggy, but not smooth" — LOW (accepted for now)
+
+**Symptom (2026-07-18).** After the July editor-scroll work the
+library grid is acceptable but not butter. User-accepted unless
+cheap.
+
+**Candidates (unprofiled).**
+  - One 12pt-radius `.shadow` per notebook card
+    (`NotebookCardView` ~line 193) — offscreen render pass per
+    card per frame while scrolling. A `.compositingGroup()`
+    before the shadow, or rasterising the card, are the usual
+    wins — but both can shift visual fidelity, so profile first.
+  - The overlay-mount publish warnings (issue 2) also fire on
+    library surfaces via the shared card/summary publishers.
+
+**Next step.** Instruments (Core Animation FPS + SwiftUI view
+body counts) on device while scrolling a 20+-notebook grid;
+change nothing without numbers.
