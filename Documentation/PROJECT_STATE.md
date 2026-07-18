@@ -2,7 +2,7 @@
 
 _Kept short and current. Any LLM opening this repo should read this file first, then [`CODE_GRAPH.md`](CODE_GRAPH.md) for a structural map._
 
-Last updated: 2026-07-16
+Last updated: 2026-07-18
 
 ## Elevator pitch
 
@@ -15,7 +15,58 @@ Universal Purchase, shared bundle id `app.ceciliasnotes`, shared CloudKit contai
 
 ## Current phase
 
-**Stability sprint continued: audits, scroll/dictation feel, sharing
+**Release-readiness push: per-device + sync audits, Archive unblock,
+live-ink echo, six-report fix round (2026-07-17 → 07-18).** Two more
+audit rounds (per-device workflows; per-tool per-device) plus the
+first Release-configuration builds in weeks surfaced and fixed:
+cross-account **Send to Device was broken at three layers** while
+reporting Sent (browser-lane endpoints silently dropped `"file"`
+payloads — every device runs an advertiser AND a browser, so which
+session carries a payload depends on who invited whom; the filename
+sanitiser stripped `.ceciliabook` to a random `.inkbook`; the inbox
+watcher's metadata query never matched archives). Protocol doc now
+states the **lane-symmetry rule** (receivers accept every implemented
+type on either end of either session). iOS gained the missing
+`_cn-sync._udp` Bonjour declaration (DTLS rides UDP); unknown payload
+types are now silently ignored per protocol instead of painting a
+user-visible error. **Archive was unblocked twice**: Swift 6.3.3's
+Release optimizer crashes on the generic hosting controller's
+synthesized deinit (worked around with an explicit
+`@_optimize(none) deinit`), and App Store validation now requires
+`LSSupportsOpeningDocumentsInPlace` (declared NO — the app imports,
+never edits in place). The Release warning list was zeroed (7
+`nonisolated` declarations for deliberately off-main machinery, 7
+dead values, and one real find: audio `isPlaying` now honors
+`play()`'s result). The **live-ink echo loop** was killed: PencilKit
+fires `canvasViewDrawingDidChange` for programmatic drawing sets, so
+the passive same-household device re-entered every CloudKit-applied
+stroke as if drawn locally — re-save, OCR + summary rescheduling, a
+hint back at the sender, and a live-ink rebroadcast whose ghost
+overlay (rendered off-main with unspecified traits → black ink
+resolved WHITE under dark mode) painted "faded ink" over the
+sender's page. Store-derived applies are now guarded; the ghost
+renders under a pinned light trait. Tool audit: ruler picked from
+cursor drew invisible ink (nil companion fell back to a clear-pen
+placeholder — companion now seeds from the persisted ink tool). The
+six-report round fixed: undo/redo's 200ms button-state poll (quick
+undo→redo tapped a disabled button — now refreshed synchronously,
+with an erase→undo→immediate-redo regression), Recent Exports
+(records stored absolute container paths that die on every
+reinstall — now rebased by filename), `.ceciliabook` shared into the
+app (share extension imported the URL as text — archives now detour
+into the app-group inbox as files), adaptive AI summaries (scale
+with content; >2500 words map-reduce through chunks — long notebooks
+previously got NO summary because the context overflow was
+swallowed), quiz auto-update on open (daily gap) beside the weekly
+launch sweep, and the rescan settings row. Verification gate is now
+**full iOS suite + FRESH Mac build + Release build** (a stale
+incremental Mac build masked a real compile break; Debug-only gates
+missed the Release-only compiler crash). **The next App Store
+archive must be cut from current `main` — 3.0 (3) predates ALL of
+this, including the forward-compat fix that stops it showing
+"Unknown payload type" next to newer devices.**
+
+Previous phase — **Stability sprint continued: audits, scroll/dictation feel, sharing
 fidelity (2026-07-13 → 07-16).** Two code audits swept every commit of
 the sprint; five defects found and fixed (dictation-pill orphaning on
 stop-failure, stale image-rotation base, archive-import media-directory

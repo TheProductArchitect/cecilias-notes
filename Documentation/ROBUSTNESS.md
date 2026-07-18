@@ -74,13 +74,41 @@ exceed cap+budget+2; treat any occurrence in a device log as a bug.
 ### 3. Drawing & autosave
 
 ```
-PKCanvasViewDelegate.canvasViewDrawingDidChange
+PKCanvasViewDelegate.canvasViewDrawingDidChange   [USER ink only — see guard below]
   → hosts[i].isDirty = true
   → debounced 1.2s Task → savePageAsync
        → StrokeCache write-through (immediate, main)
        → PKDrawing.dataRepresentation() [Task.detached — 50-300 ms on inked pages]
        → re-fetch page by id → updatePageStrokes(strokeData:) → context.save [main]
 ```
+
+**Programmatic-apply guard (2026-07-18, INVARIANT):** PencilKit fires
+`canvasViewDrawingDidChange` for programmatic `canvas.drawing =`
+assignments exactly as for user strokes. Every STORE-DERIVED apply in
+the coordinator (mount cache/empty/decode, reload cache/fetch/empty)
+must go through `applyDrawingProgrammatically { … }` —
+`canvasViewDrawingDidChange` early-returns while the depth counter is
+non-zero. Unguarded, a passive same-household device re-entered every
+CloudKit-applied stroke as local ink: full re-save, OCR + AI-summary
+rescheduling, a notebook-changed hint back at the sender, and a
+live-ink REBROADCAST whose ghost overlay painted "faded ink" over the
+sender's page (the echo loop). User-initiated programmatic mutations
+in EditorViewModel (undo-all, clear page, lasso, highlighter, shape
+recognition) stay UNGUARDED on purpose — that ink genuinely changed
+and must save + stream. Live-ink ghost renders MUST pin
+`UITraitCollection(userInterfaceStyle: .light)` via `performAsCurrent`
+— off-main trait resolution under system dark mode turns black ink
+white.
+
+**Undo managers (2026-07-18):** each `CeciliasNotesPKCanvasView` owns
+a private page-scoped `UndoManager` (window-shared managers interleave
+pages). History dies with the canvas on unmount — accepted; reusing a
+manager across remounts would leave entries targeting dead canvas
+instances ("button lit, tap does nothing"). The toolbar's
+enabled-state is a 200 ms poll PLUS a synchronous refresh inside the
+undo()/redo() handlers — the poll alone left a fast undo→redo tapping
+a still-disabled button (regression:
+`test_undoRedo_eraseStroke_immediateRedo`).
 Synchronous `savePage` survives ONLY for teardown/dismiss durability
 (`flushAllDirty`, renderer dismantle).
 
@@ -144,6 +172,24 @@ NSPersistentStoreRemoteChange → scheduleDuplicateSweep (2s debounce)
 ```
 
 **Churn risk:** REVERTED logs mean something un-deletes rows after reconcile — tombstone-aware dedupe + `deletedAt` belt on `fetchAllNotebooks` reduce resurrection; root reverter still TBD.
+
+**Editor vanish guard (2026-07-17):** `EditorViewModel` holds a live
+`Notebook` for its whole lifetime — a remote HARD delete invalidates
+it and any later touch is an uncatchable SwiftData fatalError. The
+editor listens for `NSPersistentStoreRemoteChange` (debounced 1 s)
+and checks liveness by captured UUID via `fetchCount` (NEVER by
+touching the held model; fetch failure = alive). Gone →
+`.editorNotebookVanished` → LibraryView dismisses the editor. The Mac
+editor needs no guard: it re-fetches by id per render and falls back
+to "Notebook not found".
+
+**Multipeer lane symmetry (2026-07-17, INVARIANT):** every in-app
+device runs an advertiser (`MultipeerSyncService`) AND a browser
+(`MultipeerSendService`); which session carries a payload depends on
+who invited whom. Receivers MUST accept every message type they
+implement on either end of either session — the browser lane
+silently dropping `"file"` lost cross-account Send to Device while
+the sender showed Sent. See MULTIPEER_SYNC_PROTOCOL §Transport.
 
 ---
 

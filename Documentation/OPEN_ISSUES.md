@@ -1,7 +1,7 @@
 # Open issues — unresolved
 
 Status tracker for bugs and gaps that are **known but not yet
-fixed**. Last reviewed 2026-07-12 (branch `main`).
+fixed**. Last reviewed 2026-07-18 (branch `main`).
 Resolved items should be deleted from this file, not struck
 through — git history is the archive.
 
@@ -53,7 +53,16 @@ across the project's history. Re-baseline still pending — recent
 fixes (below) may have collapsed several. A 2026-07-10 device
 log shows one firing during page scroll (amid `TextCatcher
 onAppear` lines), so at least one site is on the editor
-scroll/mount path, not the dictation path.
+scroll/mount path, not the dictation path. **2026-07-18
+re-check:** still firing ~once per overlay mount during scroll
+(device log: after `TextCatcher onAppear` and
+`AudioElementStripContent.onAppear` lines). The audio strip's
+own publishes are already deferred a tick, so the remaining
+publisher is another member of the overlay mount transaction —
+unattributed; candidates are the active-page/overlay-input
+publishes on the mount path. Each occurrence is a re-entrant
+render pass mid-scroll, so this is also a (minor) scroll-feel
+item.
 
 **In place now.**
   - The `navigateToPage` cluster in `startDictationRecording` —
@@ -208,3 +217,37 @@ is actively editing the transcript block when the summary lands
 (~5–20 s after stop), the editor deliberately doesn't reload
 mid-edit, and the user's subsequent persist overwrites the
 summary — silent loss, not a crash. Revisit if reported.
+
+---
+
+## 7. Notebook open mounts pages it immediately unmounts — LOW
+
+**Symptom.** 2026-07-18 device log: opening a notebook whose
+resume page is deep in the document mounts + stroke-decodes pages
+0–7 from offset 0, then unmounts all of them when the resume-page
+jump lands. One-time wasted decode/mount work per open — part of
+the "still a bit laggy" feel on open, bounded by the mid-scroll
+canvas cap.
+
+**Next step.** Apply the resume offset BEFORE the first
+membership pass (seed the scroll offset in `makeUIView` /
+first layout instead of jumping after the initial mount pass).
+
+---
+
+## 8. Stroke undo history dies when a page's canvas unmounts — LOW (accepted)
+
+**Symptom.** Undo/redo for strokes is scoped per page canvas
+(deliberate — a shared window manager interleaved pages). The
+membership engine unmounts canvases outside the keep-band, and
+the page's `UndoManager` dies with the canvas: scroll far away
+and back, and undo/redo for that page starts empty.
+
+**Why accepted.** Reusing a manager across remounts leaves
+entries targeting dead canvas instances — the "undo button lit,
+tap does nothing" bug class the per-canvas design eliminated.
+The active page's canvas never unmounts while the user is on it,
+so in-place work always has its history; only leave-and-return
+loses it. Documented in ROBUSTNESS §3. Revisit only if users
+report it in practice (the 2026-07-18 undo reports were the
+button-state poll race — fixed — not this).

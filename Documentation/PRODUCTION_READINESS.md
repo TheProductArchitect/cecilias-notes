@@ -6,6 +6,63 @@ known-and-accepted.
 
 ---
 
+## Update — 2026-07-18 (release-readiness push: Archive unblocked, audits closed)
+
+State of `main` at 3035dba. **The Archive path itself is now
+verified**: Release generic/iOS builds green (it did NOT for weeks —
+Swift 6.3.3's optimizer crashed on a generic hosting controller's
+synthesized deinit, worked around with `@_optimize(none)`; App Store
+validation additionally required `LSSupportsOpeningDocumentsInPlace`,
+declared NO because the app imports rather than edits in place), and
+the Release warning list is zero.
+
+### Verification gate (updated)
+
+Full iOS suite (unit + UI, 177/0/1) **plus a fresh
+`CeciliasNotesMac` build plus a Release generic/iOS build**. The two
+additions exist because each caught a real break the Debug-only gate
+missed: a stale incremental Mac build masked missing shared
+notification symbols, and the Release-only optimizer crash was
+invisible to every Debug run.
+
+### Fixed since 07-16 (all on `main`, all verified)
+
+- Cross-account Send to Device: un-broken at three layers
+  (browser-lane `"file"` drop, `.ceciliabook` extension stripped by
+  the sanitiser, inbox watcher predicate never matching archives).
+- iOS `NSBonjourServices` now declares `_cn-sync._udp` (DTLS).
+- Unknown multipeer payload types: quiet drop per protocol (the
+  shipped 3.0 (3) paints "Unknown payload type" next to newer
+  devices — one more reason the archive must ship).
+- Live-ink echo loop + traitless ghost render ("faded ink", drawing
+  jank with a second same-household device open) — programmatic
+  drawing applies guarded; ghost pinned to light traits.
+- Ruler-from-cursor drew invisible ink (clear-pen placeholder
+  companion) — companion now seeds from the persisted ink tool.
+- Undo/redo button-state poll raced fast taps (silent no-op redo) —
+  synchronous refresh + erase→undo→immediate-redo regression test.
+- Recent Exports empty forever (absolute container paths die on
+  every reinstall/update) — records rebase by filename.
+- `.ceciliabook` shared to the app imported the URL as text — the
+  share extension now routes archives as files.
+- AI summaries scale with content and map-reduce past the on-device
+  context limit (long notebooks previously got NO summary, silently).
+- Quiz auto-update also runs on quiz open (daily gap).
+- Editor survives a remote hard-delete of its open notebook
+  (`.editorNotebookVanished` guard — the last member of the
+  invalidated-model crash family).
+
+### Human checklist before submission
+
+1. **Cut the archive from current `main`** (3.0 (3) predates the
+   entire July body of work).
+2. Two-device passes: live ink, multipeer quieting, dictation pause
+   fix, cross-account Send to Device round-trip (never had a
+   working end-to-end before 07-17).
+3. On-device feel check for the remaining scroll-lag items (open-time
+   mount churn on resume jump; overlay-mount publish warnings) —
+   tracked in OPEN_ISSUES.
+
 ## Update — 2026-07-03 (stability + interaction-correctness pass)
 
 State after the July hardening sessions on `main`. Everything below

@@ -5,10 +5,10 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 355,
-    "types": 707,
-    "notifications_declared": 91,
-    "notification_symbols_referenced": 109
+    "files": 356,
+    "types": 704,
+    "notifications_declared": 92,
+    "notification_symbols_referenced": 111
   },
   "files": [
     {
@@ -184,6 +184,21 @@
       "posts": [],
       "observes": [],
       "lines": 97
+    },
+    {
+      "path": "CeciliasNotes/CeciliasNotes/Core/Extensions/ElementChangeNotifications.swift",
+      "module": "Core",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation"
+      ],
+      "declared_types": [],
+      "extends": [
+        "Notification.Name"
+      ],
+      "posts": [],
+      "observes": [],
+      "lines": 41
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Extensions/ModelContainer+CeciliasNotes.swift",
@@ -729,12 +744,13 @@
         "SwiftData"
       ],
       "declared_types": [
-        "CeciliasNotesExporter"
+        "CeciliasNotesExporter",
+        "ExportSerializer"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 360
+      "lines": 410
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesFileWatcher.swift",
@@ -757,7 +773,7 @@
         ".ceciliasNotesInboxEventsChanged"
       ],
       "observes": [],
-      "lines": 299
+      "lines": 305
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesImporter.swift",
@@ -1040,7 +1056,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 521
+      "lines": 595
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/KeyboardObserver.swift",
@@ -1147,7 +1163,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 195
+      "lines": 198
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerNotebookHint.swift",
@@ -1228,7 +1244,7 @@
         "MultipeerLiveInk.receivedNotification"
       ],
       "observes": [],
-      "lines": 556
+      "lines": 596
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/MultipeerSyncService.swift",
@@ -1256,7 +1272,7 @@
         "MultipeerLiveInk.receivedNotification"
       ],
       "observes": [],
-      "lines": 709
+      "lines": 740
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/NewNotebookCustomiseTrigger.swift",
@@ -1481,7 +1497,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 70
+      "lines": 84
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/Quiz/QuizDiagnosticStore.swift",
@@ -1627,7 +1643,7 @@
         ".shareInboxCaptureArrived"
       ],
       "observes": [],
-      "lines": 150
+      "lines": 163
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SpotlightService.swift",
@@ -1705,7 +1721,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2527
+      "lines": 2526
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -1783,13 +1799,12 @@
         "Foundation"
       ],
       "declared_types": [
-        "MainThreadWatchdog",
-        "_Engine"
+        "MainThreadWatchdog"
       ],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 154
+      "lines": 159
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Utilities/MetricKitCollector.swift",
@@ -1878,7 +1893,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 40
+      "lines": 43
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Utilities/TagValidator.swift",
@@ -1963,7 +1978,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 140
+      "lines": 142
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/DesignSystem/CeciliasNotesComponents.swift",
@@ -2381,7 +2396,7 @@
       ],
       "posts": [],
       "observes": [],
-      "lines": 265
+      "lines": 268
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/CeciliasNotesPKCanvasView.swift",
@@ -2437,7 +2452,7 @@
         "MultipeerLiveInk.receivedNotification",
         "rectCacheNote"
       ],
-      "lines": 2921
+      "lines": 2970
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -2601,7 +2616,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 155
+      "lines": 153
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift",
@@ -2629,7 +2644,7 @@
         ".ceciliasNotesCommandPrint",
         ".ceciliasNotesCanvasShouldPanTo"
       ],
-      "lines": 1254
+      "lines": 1266
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel+Highlighter.swift",
@@ -2659,6 +2674,7 @@
       "imports": [
         "AVFoundation",
         "Combine",
+        "CoreData",
         "Foundation",
         "PencilKit",
         "SwiftData",
@@ -2676,20 +2692,23 @@
         "StorageKeys"
       ],
       "extends": [
-        "UIColor"
+        "UIColor",
+        "Notification.Name"
       ],
       "posts": [
         ".imageImportRequested",
         ".mediaAttachmentsChanged",
+        ".editorNotebookVanished",
         ".pixelEraserWidthChanged",
         ".pixelEraserWidthChanged"
       ],
       "observes": [
         "name",
         "MultipeerNotebookHint.changedNotification",
+        ".NSPersistentStoreRemoteChange",
         "UserDefaults.didChangeNotification"
       ],
-      "lines": 2725
+      "lines": 2772
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/HeaderVisibility.swift",
@@ -2756,9 +2775,7 @@
       "declared_types": [
         "HighlightElementsOverlayView"
       ],
-      "extends": [
-        "Notification.Name"
-      ],
+      "extends": [],
       "posts": [
         ".highlightElementsChanged",
         ".highlightElementsChanged"
@@ -2766,7 +2783,7 @@
       "observes": [
         ".highlightElementsChanged"
       ],
-      "lines": 225
+      "lines": 219
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageCropSheet.swift",
@@ -2835,16 +2852,14 @@
       "declared_types": [
         "ImageElementsOverlayView"
       ],
-      "extends": [
-        "Notification.Name"
-      ],
+      "extends": [],
       "posts": [
         ".mediaAttachmentsChanged"
       ],
       "observes": [
         ".mediaAttachmentsChanged"
       ],
-      "lines": 198
+      "lines": 192
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ShareImageImporter.swift",
@@ -2893,9 +2908,7 @@
       "declared_types": [
         "LassoGroupOps"
       ],
-      "extends": [
-        "Notification.Name"
-      ],
+      "extends": [],
       "posts": [
         ".imageElementCrossPageHandoffRequested",
         ".shapeElementsChanged",
@@ -2907,7 +2920,7 @@
         ".strokeContentRewritten"
       ],
       "observes": [],
-      "lines": 670
+      "lines": 664
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoLiveDrag.swift",
@@ -3052,8 +3065,7 @@
         "LectureRecorderResult",
         "LectureRecorder",
         "LectureRecorderError",
-        "AudioCaptureActor",
-        "CapturedAudioBuffer"
+        "AudioCaptureActor"
       ],
       "extends": [],
       "posts": [],
@@ -3166,8 +3178,7 @@
         "CameraPicker",
         "Coordinator",
         "DocumentScannerPicker",
-        "Coordinator",
-        "_PHPickerImageBox"
+        "Coordinator"
       ],
       "extends": [],
       "posts": [],
@@ -3188,8 +3199,7 @@
         "MediaPickerPresenter",
         "PhotoPickerDelegate",
         "CameraPickerDelegate",
-        "DocumentPickerDelegate",
-        "_PickedImagesBox"
+        "DocumentPickerDelegate"
       ],
       "extends": [],
       "posts": [],
@@ -3546,15 +3556,13 @@
       "declared_types": [
         "StickyNoteCommit"
       ],
-      "extends": [
-        "Notification.Name"
-      ],
+      "extends": [],
       "posts": [
         ".stickyNotesChanged",
         ".stickyNotesChanged"
       ],
       "observes": [],
-      "lines": 136
+      "lines": 130
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/StickyNotes/StickyNoteElementView.swift",
@@ -4020,7 +4028,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 602
+      "lines": 601
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Toolbar/SaveStatusIndicator.swift",
@@ -4266,7 +4274,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 116
+      "lines": 129
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Export/ExportOptionsView.swift",
@@ -4309,7 +4317,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 1396
+      "lines": 1398
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Export/PDFDerivedExport.swift",
@@ -4548,6 +4556,7 @@
       "posts": [],
       "observes": [
         ".recordingPillReturnTapped",
+        ".editorNotebookVanished",
         "UIApplication.willEnterForegroundNotification",
         "UIApplication.didEnterBackgroundNotification",
         ".ceciliasNotesCommandNewNotebook",
@@ -4560,7 +4569,7 @@
         ".shareInboxImageArrived",
         ".shareInboxCaptureArrived"
       ],
-      "lines": 760
+      "lines": 774
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift",
@@ -4762,7 +4771,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 399
+      "lines": 403
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Library/Trash/TrashView.swift",
@@ -4881,7 +4890,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 311
+      "lines": 318
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Quiz/QuizListView.swift",
@@ -7222,14 +7231,6 @@
       ]
     },
     {
-      "name": "CapturedAudioBuffer",
-      "kind": "struct",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift",
-      "conforms_to": [
-        "@unchecked Sendable"
-      ]
-    },
-    {
       "name": "Category",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/MediaStorage.swift",
@@ -7971,6 +7972,12 @@
       "name": "ExportResult",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift",
+      "conforms_to": []
+    },
+    {
+      "name": "ExportSerializer",
+      "kind": "actor",
+      "file": "CeciliasNotes/CeciliasNotes/Core/Services/CeciliasNotesExporter.swift",
       "conforms_to": []
     },
     {
@@ -12009,14 +12016,6 @@
       ]
     },
     {
-      "name": "_Engine",
-      "kind": "class",
-      "file": "CeciliasNotes/CeciliasNotes/Core/Utilities/MainThreadWatchdog.swift",
-      "conforms_to": [
-        "@unchecked Sendable"
-      ]
-    },
-    {
       "name": "_MetadataQueryBox",
       "kind": "class",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/CloudSyncManager.swift",
@@ -12028,22 +12027,6 @@
       "name": "_ObserverTokenBox",
       "kind": "class",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/CloudSyncManager.swift",
-      "conforms_to": [
-        "@unchecked Sendable"
-      ]
-    },
-    {
-      "name": "_PHPickerImageBox",
-      "kind": "class",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/MediaPickerController.swift",
-      "conforms_to": [
-        "@unchecked Sendable"
-      ]
-    },
-    {
-      "name": "_PickedImagesBox",
-      "kind": "class",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Media/MediaPickerPresenter.swift",
       "conforms_to": [
         "@unchecked Sendable"
       ]
@@ -12103,6 +12086,26 @@
         "symbol": "ceciliasNotesOpenAsk",
         "string": "ceciliasnotes.command.openAsk",
         "declared_in": "CeciliasNotes/CeciliasNotes/Core/AppIntents/CeciliasNotesIntents.swift"
+      },
+      {
+        "symbol": "stickyNotesChanged",
+        "string": "stickyNotesChanged",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Core/Extensions/ElementChangeNotifications.swift"
+      },
+      {
+        "symbol": "mediaAttachmentsChanged",
+        "string": "mediaAttachmentsChanged",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Core/Extensions/ElementChangeNotifications.swift"
+      },
+      {
+        "symbol": "highlightElementsChanged",
+        "string": "highlightElementsChanged",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Core/Extensions/ElementChangeNotifications.swift"
+      },
+      {
+        "symbol": "strokeContentRewritten",
+        "string": "strokeContentRewritten",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Core/Extensions/ElementChangeNotifications.swift"
       },
       {
         "symbol": "ceciliasNotesInboxEventsChanged",
@@ -12205,19 +12208,9 @@
         "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/AudioElements/AudioElementCommit.swift"
       },
       {
-        "symbol": "highlightElementsChanged",
-        "string": "highlightElementsChanged",
-        "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/HighlightElements/HighlightElementsOverlayView.swift"
-      },
-      {
-        "symbol": "mediaAttachmentsChanged",
-        "string": "mediaAttachmentsChanged",
-        "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageElementsOverlayView.swift"
-      },
-      {
-        "symbol": "strokeContentRewritten",
-        "string": "strokeContentRewritten",
-        "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift"
+        "symbol": "editorNotebookVanished",
+        "string": "ceciliasnotes.editor.notebookVanished",
+        "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift"
       },
       {
         "symbol": "ceciliasNotesCanvasShouldPanTo",
@@ -12258,11 +12251,6 @@
         "symbol": "imageElementCrossPageHandoffRequested",
         "string": "editor.imageElementCrossPageHandoffRequested",
         "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/ShapeElementsOverlayView.swift"
-      },
-      {
-        "symbol": "stickyNotesChanged",
-        "string": "stickyNotesChanged",
-        "declared_in": "CeciliasNotes/CeciliasNotes/Features/Editor/StickyNotes/StickyNoteCommit.swift"
       },
       {
         "symbol": "textElementsChanged",
@@ -12539,6 +12527,13 @@
         ]
       },
       {
+        "name": "NSPersistentStoreRemoteChange",
+        "posted_in": [],
+        "observed_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift"
+        ]
+      },
+      {
         "name": "Name(\"pdfPageElementsChanged\"",
         "posted_in": [
           "CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift",
@@ -12727,6 +12722,15 @@
         "posted_in": [],
         "observed_in": [
           "CeciliasNotes/CeciliasNotes/Features/Editor/Strokes/StrokeCache.swift"
+        ]
+      },
+      {
+        "name": "editorNotebookVanished",
+        "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift"
+        ],
+        "observed_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift"
         ]
       },
       {
