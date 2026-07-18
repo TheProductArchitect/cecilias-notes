@@ -1306,6 +1306,18 @@ final class EditorViewModel: ObservableObject {
         // ToolSettings, which lastDrawingToolBeforeRuler re-reads.
         if tool.identity == .ruler, selectedTool.isDrawingTool {
             lastDrawingToolBeforeRuler = selectedTool
+        } else if tool.identity == .ruler, lastDrawingToolBeforeRuler == nil {
+            // Ruler picked with no ink tool in hand (fresh session
+            // straight from cursor/text — cursor is the iPad reopen
+            // default). Without a companion the canvas fell back to
+            // ruler's own placeholder PKTool, which is a CLEAR pen:
+            // ruler-guided strokes came out invisible yet were still
+            // committed, saved, and live-ink streamed. Seed the
+            // companion the same way editor open does — persisted
+            // last inking tool, else the default pen.
+            lastDrawingToolBeforeRuler = Self.resolveInitialTool(
+                userDefaults: userDefaults, toolSettings: toolSettings, theme: theme
+            )
         }
         selectedTool = tool
         // Remember inking tools as the reopen default. Transient modes
