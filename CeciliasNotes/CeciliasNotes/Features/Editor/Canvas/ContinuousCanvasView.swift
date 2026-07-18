@@ -1918,9 +1918,9 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // time an inked page crossed the warm band while
             // scrolling.
             if let cached = StrokeCache.shared.drawing(forPage: pageId) {
-                canvas.drawing = cached
+                applyDrawingProgrammatically { canvas.drawing = cached }
             } else {
-                canvas.drawing = PKDrawing()
+                applyDrawingProgrammatically { canvas.drawing = PKDrawing() }
                 hosts[i].strokeDecodeTask?.cancel()
                 hosts[i].strokeDecodeGeneration &+= 1
                 let generation = hosts[i].strokeDecodeGeneration
@@ -1947,7 +1947,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                               canvas.superview != nil
                         else { return }
                         dlog("[Canvas] drawing APPLIED (mount decode) page=\(pageId.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
-                        canvas.drawing = drawing
+                        self.applyDrawingProgrammatically { canvas.drawing = drawing }
                         StrokeCache.shared.cache(drawing, forPage: pageId)
                         self.clearLiveInkIfSuperseded(
                             pageId: pageId, durableStrokeCount: drawing.strokes.count
@@ -2374,18 +2374,18 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 hosts[i].isDirty = false
                 if let cached = StrokeCache.shared.drawing(forPage: pid) {
                     dlog("[Canvas] drawing APPLIED (reload cache) page=\(pid.uuidString.prefix(8)) strokes=\(cached.strokes.count)")
-                    canvas.drawing = cached
+                    applyDrawingProgrammatically { canvas.drawing = cached }
                     clearLiveInkIfSuperseded(pageId: pid, durableStrokeCount: cached.strokes.count)
                 } else if let page = page(for: pid),
                           let data = StorageService.shared.strokeData(for: page),
                           let drawing = try? PKDrawing(data: data) {
                     dlog("[Canvas] drawing APPLIED (reload fetch) page=\(pid.uuidString.prefix(8)) strokes=\(drawing.strokes.count)")
-                    canvas.drawing = drawing
+                    applyDrawingProgrammatically { canvas.drawing = drawing }
                     StrokeCache.shared.cache(drawing, forPage: pid)
                     clearLiveInkIfSuperseded(pageId: pid, durableStrokeCount: drawing.strokes.count)
                 } else {
                     dlog("[Canvas] drawing APPLIED (reload EMPTY) page=\(pid.uuidString.prefix(8))")
-                    canvas.drawing = PKDrawing()
+                    applyDrawingProgrammatically { canvas.drawing = PKDrawing() }
                 }
             }
         }
@@ -2450,7 +2450,17 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 let strokeCount = drawing.strokes.count
                 // Rasterise at 2× — the preview is glanceable ink,
                 // not archival; the durable canvas replaces it.
-                let image = drawing.image(from: pageBounds, scale: 2.0)
+                // Pin LIGHT traits for the render: this detached task
+                // has unspecified current traits, and under system
+                // dark mode PencilKit resolved black ink to WHITE —
+                // the ghost overlay painted washed-out strokes over
+                // identical black durable ink ("colors fading"). The
+                // durable canvas pins .light for the same reason.
+                var rendered: UIImage?
+                UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+                    rendered = drawing.image(from: pageBounds, scale: 2.0)
+                }
+                guard let image = rendered else { return }
                 await MainActor.run { [weak self] in
                     self?.applyLiveInk(
                         image: image, strokeCount: strokeCount, pageId: pageId
@@ -2750,7 +2760,36 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         // MARK: - PKCanvasViewDelegate
 
+        /// Non-zero while a `canvas.drawing = …` assignment is OURS —
+        /// mount/reload applies of store-derived ink. PencilKit fires
+        /// `canvasViewDrawingDidChange` for programmatic sets exactly
+        /// as for user strokes; unguarded, every CloudKit stroke
+        /// landing on a passively-open same-household device
+        /// re-entered the pipeline as if the user had drawn it: full
+        /// re-encode + re-save of identical ink, OCR + AI-summary
+        /// re-scheduling, a notebook-changed hint back at the sender,
+        /// and a live-ink REBROADCAST. The echo painted a ghost copy
+        /// of the sender's own page back over its canvas ("faded
+        /// ink"), and the per-stroke churn on both ends was drawing
+        /// jank. User-initiated programmatic mutations (undo-all,
+        /// clear page, lasso deletes, highlighter conversion in
+        /// EditorViewModel) stay UNGUARDED on purpose — that ink
+        /// genuinely changed and must save + stream.
+        private var programmaticDrawingApplyDepth = 0
+
+        /// Wrap every store-derived `canvas.drawing =` assignment.
+        /// The delegate callback fires synchronously inside the
+        /// setter, so the depth guard brackets it cleanly.
+        private func applyDrawingProgrammatically(_ body: () -> Void) {
+            programmaticDrawingApplyDepth += 1
+            body()
+            programmaticDrawingApplyDepth -= 1
+        }
+
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            // Store-derived applies carry nothing new to save, index,
+            // hint, or stream — only USER ink proceeds past here.
+            guard programmaticDrawingApplyDepth == 0 else { return }
             guard let i = hosts.firstIndex(where: { $0.canvasView === canvasView }) else { return }
             let pageId = hosts[i].pageId
             // Live-ink stream to paired same-household peers — a
