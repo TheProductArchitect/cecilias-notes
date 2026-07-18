@@ -480,8 +480,14 @@ struct LassoOverlayView: View {
                     }
                     .frame(width: displayed.width, height: displayed.height)
                     .contentShape(Rectangle())
-                    .position(x: displayed.midX, y: displayed.midY)
+                    // Rotation BEFORE .position — after it, the effect
+                    // anchors on the overlay's own coordinate origin
+                    // (visually the page centre) and the selection
+                    // chrome ORBITS instead of spinning in place. Same
+                    // bug class as the aedf390 element-rotation fix;
+                    // this stroke-selection site was the one missed.
                     .rotationEffect(.radians(rotateAngle))
+                    .position(x: displayed.midX, y: displayed.midY)
                     .gesture(bodyDragGesture)
                 }
             }

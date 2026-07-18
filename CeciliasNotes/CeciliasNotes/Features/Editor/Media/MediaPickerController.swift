@@ -27,9 +27,26 @@ struct PhotoLibraryPicker: UIViewControllerRepresentable {
         let onPick: ([UIImage]) -> Void
         init(onPick: @escaping ([UIImage]) -> Void) { self.onPick = onPick }
 
+        // DISMISSAL RULE for every picker in this file: never call
+        // `dismiss(animated:)` from a delegate. These representables
+        // are the CONTENT of the editor's SwiftUI `.sheet` — a UIKit
+        // dismissal races SwiftUI's presentation bookkeeping, and
+        // when the picker ALSO dismisses itself (VNDocumentCamera
+        // does on camera-service failure — the Fig err=-17281 storm
+        // in the 2026-07-18 device log) the second dismiss climbs
+        // the presentation chain and pops the editor's
+        // fullScreenCover: "after scanning an image the notebook
+        // went back to home screen". Every completion/cancel path
+        // clears `activeMediaSource`, and THAT is what dismisses
+        // the sheet.
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true)
-            guard !results.isEmpty else { return }
+            guard !results.isEmpty else {
+                // PHPicker signals cancel as empty results; route it
+                // through onPick so `activeMediaSource` still clears
+                // and the sheet closes.
+                onPick([])
+                return
+            }
             // PHPicker callbacks fire on arbitrary threads. A
             // captured-var accumulator trips Swift 6 even with an
             // external lock; route through a reference-typed box
@@ -109,12 +126,15 @@ struct CameraPicker: UIViewControllerRepresentable {
 
         func imagePickerController(_ picker: UIImagePickerController,
                                    didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
-            picker.dismiss(animated: true)
-            if let img = info[.originalImage] as? UIImage { onPick(img) }
+            // No UIKit dismiss — see the dismissal rule above.
+            if let img = info[.originalImage] as? UIImage {
+                onPick(img)
+            } else {
+                onCancel()
+            }
         }
 
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-            picker.dismiss(animated: true)
             onCancel()
         }
     }
@@ -144,20 +164,25 @@ struct DocumentScannerPicker: UIViewControllerRepresentable {
             self.onScan = onScan; self.onCancel = onCancel
         }
 
+        // No UIKit dismiss in any callback — see the dismissal rule
+        // at the top of the file. The failure path is the one that
+        // bit: VNDocumentCamera dismisses ITSELF when the capture
+        // service dies, and our extra dismiss then popped the
+        // editor's cover.
         func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                           didFinishWith scan: VNDocumentCameraScan) {
-            controller.dismiss(animated: true)
             onScan(scan)
         }
 
         func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
-            controller.dismiss(animated: true)
             onCancel()
         }
 
         func documentCameraViewController(_ controller: VNDocumentCameraViewController,
                                           didFailWithError error: Error) {
-            controller.dismiss(animated: true)
+            #if DEBUG
+            dlog("[ImageInsert] scanner didFailWithError: \(error)")
+            #endif
             onCancel()
         }
     }

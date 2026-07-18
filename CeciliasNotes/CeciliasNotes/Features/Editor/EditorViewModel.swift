@@ -1344,9 +1344,27 @@ final class EditorViewModel: ObservableObject {
 
     /// Persist the current tool's settings — call after any mutation that
     /// changes colour/width/opacity (slider release, palette ± button, etc.).
+    /// Debounce for tool-settings disk writes. The width/opacity
+    /// sliders route every DRAG TICK through
+    /// `persistCurrentToolSettings` — snapshotting in memory is
+    /// cheap, but `toolSettings.save()` encodes + writes UserDefaults
+    /// per tick, which read as scrub lag on the width slider. The
+    /// snapshot stays per-tick (live PKTool + picker state); the
+    /// save lands once the scrub pauses.
+    private var toolSettingsSaveTask: Task<Void, Never>?
+
+    private func scheduleToolSettingsSave() {
+        toolSettingsSaveTask?.cancel()
+        toolSettingsSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.toolSettings.save()
+        }
+    }
+
     private func persistCurrentToolSettings() {
         toolSettings.snapshot(selectedTool)
-        toolSettings.save()
+        scheduleToolSettingsSave()
     }
 
     func toggleLastTwoTools() {
@@ -1668,7 +1686,7 @@ final class EditorViewModel: ObservableObject {
         if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
             lastDrawingToolBeforeRuler = companion.withWidth(width)
             toolSettings.snapshot(lastDrawingToolBeforeRuler!)
-            toolSettings.save()
+            scheduleToolSettingsSave()
             applyToolToCanvas()
             return
         }
@@ -1709,7 +1727,7 @@ final class EditorViewModel: ObservableObject {
         if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
             lastDrawingToolBeforeRuler = companion.withOpacity(opacity)
             toolSettings.snapshot(lastDrawingToolBeforeRuler!)
-            toolSettings.save()
+            scheduleToolSettingsSave()
             applyToolToCanvas()
             return
         }
@@ -1723,7 +1741,7 @@ final class EditorViewModel: ObservableObject {
         if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
             lastDrawingToolBeforeRuler = companion.withColour(colour)
             toolSettings.snapshot(lastDrawingToolBeforeRuler!)
-            toolSettings.save()
+            scheduleToolSettingsSave()
             applyToolToCanvas()
             addRecentColour(colour)
             return
@@ -1743,7 +1761,7 @@ final class EditorViewModel: ObservableObject {
         if selectedTool.identity == .ruler, let companion = lastDrawingToolBeforeRuler {
             lastDrawingToolBeforeRuler = companion.withColour(colour)
             toolSettings.snapshot(lastDrawingToolBeforeRuler!)
-            toolSettings.save()
+            scheduleToolSettingsSave()
             applyToolToCanvas()
             return
         }
