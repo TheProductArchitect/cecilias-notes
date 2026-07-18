@@ -161,6 +161,118 @@ final class UndoRedoUITests: XCTestCase {
                       "Undo should be enabled again after redo")
     }
 
+    /// Regression for "if I erase a stroke, it can't redo my erase":
+    /// erase a committed stroke with the whole-stroke eraser, undo
+    /// the erase, then redo it IMMEDIATELY. The immediate redo is
+    /// the point — the 200ms state poll alone left a quick
+    /// undo→redo tapping a still-disabled redo button (silent
+    /// no-op); the synchronous button refresh closes that window.
+    @MainActor
+    func test_undoRedo_eraseStroke_immediateRedo() throws {
+        let app = makeApp()
+        app.launch()
+
+        completeOnboarding(name: "Redo", in: app)
+
+        let newSubjectCTA = app.buttons["+ new subject"].firstMatch
+        XCTAssertTrue(newSubjectCTA.waitForExistence(timeout: 8))
+        newSubjectCTA.tap()
+        if app.keyboards.firstMatch.waitForExistence(timeout: 5) {
+            app.typeText("\n")
+        }
+        let newNotebookCTA = app.buttons["+ new notebook"].firstMatch
+        XCTAssertTrue(newNotebookCTA.waitForExistence(timeout: 8))
+        newNotebookCTA.tap()
+
+        let editorToolbar = app.toolbars["Toolbar"]
+        XCTAssertTrue(editorToolbar.waitForExistence(timeout: 10),
+                      "Editor should open after creating a notebook")
+
+        // Dismiss the new-notebook customise sheet (same dance as
+        // test_undoRedo_strokes — see the comments there).
+        Thread.sleep(forTimeInterval: 1.0)
+        if app.keyboards.firstMatch.exists {
+            app.typeText("\n")
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        let doneButtons = app.buttons.matching(
+            NSPredicate(format: "label ==[c] 'done'")
+        )
+        for i in 0..<doneButtons.count {
+            let b = doneButtons.element(boundBy: i)
+            if b.exists && b.isHittable {
+                b.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                break
+            }
+        }
+        Thread.sleep(forTimeInterval: 1.0)
+
+        // Pen, then one stroke. Let the debounced save land so the
+        // stroke is committed store-side (matching the user's
+        // "existing strokes" precondition as closely as the harness
+        // allows without the timing-fragile close/reopen dance —
+        // PencilKit's undo manager treats decoded and fresh strokes
+        // identically, so the erase→undo→redo mechanics are the
+        // same either way).
+        tapPaletteTool(labelled: "Pen", in: app)
+        drawStroke(in: app, offset: CGVector(dx: 0, dy: 0))
+
+        let undoButton = app.buttons["arrow.uturn.backward"].firstMatch
+        XCTAssertTrue(waitFor(undoButton, enabled: true, timeout: 5),
+                      "Undo should be enabled after drawing")
+        Thread.sleep(forTimeInterval: 2.0)
+
+        // Whole-stroke eraser, then drag across the stroke's path.
+        tapPaletteTool(labelled: "Eraser", in: app)
+        drawStroke(in: app, offset: CGVector(dx: 0, dy: 0))
+
+        let redoButton = app.buttons["arrow.uturn.forward"].firstMatch
+        XCTAssertTrue(waitFor(undoButton, enabled: true, timeout: 5),
+                      "Undo should be enabled after erasing the stroke")
+
+        // Undo the erase → stroke back, redo must arm.
+        undoButton.tap()
+        XCTAssertTrue(waitFor(redoButton, enabled: true, timeout: 5),
+                      "Redo should be enabled after undoing an erase")
+
+        // Redo the erase — immediately, no settling pause: the
+        // synchronous button refresh must have armed it already
+        // (the 200ms poll alone left this tap on a disabled button).
+        redoButton.tap()
+        XCTAssertTrue(waitFor(redoButton, enabled: false, timeout: 5),
+                      "Redo should be spent after re-applying the erase")
+        XCTAssertTrue(undoButton.isEnabled,
+                      "Undo should be re-armed after the redo")
+    }
+
+    /// Tap a tool-palette button by label, skipping the zero-frame
+    /// flyout duplicate (same pattern as test_undoRedo_strokes).
+    @MainActor
+    private func tapPaletteTool(labelled label: String, in app: XCUIApplication) {
+        let matches = app.buttons.matching(
+            NSPredicate(format: "label == %@ OR label == %@", label, "\(label), selected")
+        )
+        XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 8),
+                      "\(label) tool should be present in the palette")
+        // Frame filter only — no `isHittable`, whose evaluation can
+        // itself register a "Failed to determine hittability" test
+        // failure on a mid-animation element (see LassoUITests).
+        for attempt in 0..<3 {
+            for i in 0..<matches.count {
+                let b = matches.element(boundBy: i)
+                guard b.exists else { continue }
+                let f = b.frame
+                guard f.width > 1, f.height > 1 else { continue }
+                b.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                Thread.sleep(forTimeInterval: 0.5)
+                return
+            }
+            _ = attempt
+            Thread.sleep(forTimeInterval: 0.75)
+        }
+        XCTFail("No visible \(label) button in the palette")
+    }
+
     /// Poll an element's isEnabled until it matches or times out.
     @MainActor
     private func waitFor(

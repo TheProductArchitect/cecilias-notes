@@ -1015,13 +1015,25 @@ struct EditorView: View {
     // MARK: Toolbar callbacks
 
     private func undo() {
-        viewModel.canvasView?.undoManager?.undo()
+        let mgr = viewModel.canvasView?.undoManager
+        mgr?.undo()
+        // The 200ms state poll leaves both buttons stale right after
+        // a tap — a quick undo-then-redo landed on a still-disabled
+        // redo button and silently no-oped, which read as "redo
+        // doesn't work" (and rapid multi-undo as "undo sometimes
+        // doesn't work"). Refresh synchronously so the very next tap
+        // sees the truth.
+        canUndo = mgr?.canUndo ?? false
+        canRedo = mgr?.canRedo ?? false
         viewModel.scheduleAutosave()
         viewModel.pulseInteraction(.undoRedo)
     }
 
     private func redo() {
-        viewModel.canvasView?.undoManager?.redo()
+        let mgr = viewModel.canvasView?.undoManager
+        mgr?.redo()
+        canUndo = mgr?.canUndo ?? false
+        canRedo = mgr?.canRedo ?? false
         viewModel.scheduleAutosave()
         viewModel.pulseInteraction(.undoRedo)
     }

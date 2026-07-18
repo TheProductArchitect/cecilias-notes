@@ -300,7 +300,7 @@ struct StorageSettingsView: View {
             // ago" timestamp and wondering why it didn't reset.
             actionRow(
                 title: "Re-scan iCloud Files",
-                detail: "Imports .inkbook files dropped into iCloud Drive by external tools. Does not force a notebook sync — the home-page indicator tracks that separately.",
+                detail: "Imports notebook files agents dropped into iCloud Drive.",
                 icon: "arrow.down.to.line",
                 disabled: false,
                 disabledSubLabel: nil,

@@ -540,7 +540,9 @@ final class ExportService {
         return url
     }
 
-    static var globalExportsDirectory: URL {
+    // nonisolated: `ExportRecord.resolvedURL` rebases stale manifest
+    // paths against this directory from nonisolated contexts.
+    nonisolated static var globalExportsDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("CeciliasNotes")
             .appendingPathComponent("Exports")

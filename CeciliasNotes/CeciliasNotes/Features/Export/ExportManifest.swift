@@ -28,10 +28,23 @@ struct ExportRecord: Codable, Identifiable, Sendable {
         self.exportedAt    = exportedAt
     }
 
+    /// The stored absolute `fileURL` is only valid inside the sandbox
+    /// container that wrote it — iOS rotates the container UUID on
+    /// every reinstall/update, which stranded every record: the file
+    /// migrates to the new container, the recorded path doesn't, so
+    /// `refresh()` pruned the whole manifest and Recent Exports sat
+    /// empty despite fresh exports. Resolve by filename against the
+    /// CURRENT exports directory whenever the stored path is dead.
+    nonisolated var resolvedURL: URL {
+        if FileManager.default.fileExists(atPath: fileURL.path) { return fileURL }
+        return ExportService.globalExportsDirectory
+            .appendingPathComponent(fileURL.lastPathComponent)
+    }
+
     /// `nonisolated` so the property reads cleanly from any actor —
     /// `FileManager.default.fileExists(atPath:)` is thread-safe.
     nonisolated var fileExists: Bool {
-        FileManager.default.fileExists(atPath: fileURL.path)
+        FileManager.default.fileExists(atPath: resolvedURL.path)
     }
 
     var formattedSize: String {
@@ -84,7 +97,7 @@ actor ExportManifest {
     func delete(id: UUID) async {
         await ensureLoaded()
         if let record = records.first(where: { $0.id == id }) {
-            try? FileManager.default.removeItem(at: record.fileURL)
+            try? FileManager.default.removeItem(at: record.resolvedURL)
         }
         records.removeAll { $0.id == id }
         save()

@@ -88,15 +88,26 @@ final class LassoUITests: XCTestCase {
         )
         XCTAssertTrue(matches.firstMatch.waitForExistence(timeout: 8),
                       "\(name) tool should be present in the palette")
-        for i in 0..<matches.count {
-            let b = matches.element(boundBy: i)
-            if b.exists && b.isHittable && b.frame.width > 1 {
+        // No `isHittable` here: asking it on a mid-animation element
+        // makes XCTest register "Failed to determine hittability …
+        // activation point invalid" as a test failure before the loop
+        // can skip the element (the recurring flake on this suite).
+        // The frame filter alone drops the zero-frame flyout variant,
+        // and coordinate taps don't require hittability.
+        for attempt in 0..<3 {
+            for i in 0..<matches.count {
+                let b = matches.element(boundBy: i)
+                guard b.exists else { continue }
+                let f = b.frame
+                guard f.width > 1, f.height > 1 else { continue }
                 b.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 Thread.sleep(forTimeInterval: 0.5)
                 return
             }
+            _ = attempt
+            Thread.sleep(forTimeInterval: 0.75)   // palette still settling
         }
-        XCTFail("No hittable \(name) tool button found")
+        XCTFail("No visible \(name) tool button found")
     }
 
     /// True while any element in the AX tree carries the marker text.

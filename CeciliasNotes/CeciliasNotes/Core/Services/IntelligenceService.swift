@@ -172,11 +172,47 @@ final class IntelligenceService {
     /// the notebook's `updatedAt` so stale summaries auto-invalidate.
     func summarise(text: String) async -> String? {
         guard canRun else { return nil }
-        let wordCount = text.split(whereSeparator: { $0.isWhitespace }).count
+        let words = text.split(whereSeparator: { $0.isWhitespace })
+        let wordCount = words.count
         guard wordCount >= 50 else { return nil }
 
+        // Scale the ask with the material — a 60-word note gets one
+        // sentence; only multi-hundred-word notebooks earn two. The
+        // fixed "1–2 sentences" ask padded short notes with filler.
+        let ask = wordCount < 150 ? "exactly one short sentence" : "1–2 sentences"
+
+        // The on-device model's context window gives out around a few
+        // thousand words; past it the session throws and `respond`
+        // returns nil — long notebooks silently never got a summary
+        // at all. Map-reduce: summarise ~2000-word chunks, then
+        // summarise the summaries.
+        if wordCount > 2500 {
+            var partials: [String] = []
+            var index = 0
+            while index < words.count {
+                let end = min(index + 2000, words.count)
+                let chunk = words[index..<end].joined(separator: " ")
+                index = end
+                if let part = await respond(to: """
+                Summarise these notes in 1–2 sentences. Be direct.
+
+                \(chunk)
+                """) {
+                    partials.append(part)
+                }
+            }
+            guard !partials.isEmpty else { return nil }
+            return await respond(to: """
+            Combine these section summaries into \(ask). Be direct. \
+            Do not say "these notes cover" — just state what they \
+            contain.
+
+            \(partials.joined(separator: "\n"))
+            """)
+        }
+
         let prompt = """
-        Summarise these notes in 1–2 sentences. Be direct. Do not say \
+        Summarise these notes in \(ask). Be direct. Do not say \
         "these notes cover" — just state what they contain.
 
         \(text)
@@ -311,8 +347,46 @@ final class IntelligenceService {
     @available(iOS 26.0, *)
     func summariseLecture(transcript: String) async -> (paragraph: String, bullets: [String])? {
         guard canRun else { return nil }
-        let wordCount = transcript.split(whereSeparator: { $0.isWhitespace }).count
+        let words = transcript.split(whereSeparator: { $0.isWhitespace })
+        let wordCount = words.count
         guard wordCount >= 50 else { return nil }
+
+        // Scale the envelope with the transcript — a two-minute
+        // voice memo doesn't need a three-sentence paragraph and
+        // eight topics; the fixed ask padded short recordings with
+        // filler.
+        let (paragraphAsk, bulletAsk): (String, String) =
+            wordCount < 200 ? ("1–2 sentence", "2–4")
+            : wordCount < 800 ? ("2–3 sentence", "4–6")
+            : ("3–5 sentence", "6–10")
+
+        // Long transcripts overflow the on-device context window and
+        // the session throws (respond → nil), so the summary was
+        // silently absent. Reduce first: partial summaries per
+        // ~2000-word chunk, then the envelope prompt runs over the
+        // combined partials.
+        let material: String
+        if wordCount > 2500 {
+            var partials: [String] = []
+            var index = 0
+            while index < words.count {
+                let end = min(index + 2000, words.count)
+                let chunk = words[index..<end].joined(separator: " ")
+                index = end
+                if let part = await respond(to: """
+                Summarise this lecture segment in 2–3 sentences, \
+                keeping every distinct topic mentioned.
+
+                \(chunk)
+                """) {
+                    partials.append(part)
+                }
+            }
+            guard !partials.isEmpty else { return nil }
+            material = partials.joined(separator: "\n")
+        } else {
+            material = transcript
+        }
 
         // The prompt asks for a fixed envelope so the parser below
         // can split deterministically. The model occasionally
@@ -320,12 +394,12 @@ final class IntelligenceService {
         // padding; both fall through the parse and return nil.
         let prompt = """
         You are summarising a recorded lecture or meeting. Write a \
-        2–3 sentence summary paragraph, then list 5–8 key topics as \
-        short bullet phrases. Format your response exactly as: \
-        SUMMARY: [paragraph] BULLETS: [bullet1] | [bullet2] | ... \
+        \(paragraphAsk) summary paragraph, then list \(bulletAsk) key \
+        topics as short bullet phrases. Format your response exactly \
+        as: SUMMARY: [paragraph] BULLETS: [bullet1] | [bullet2] | ... \
         Return nothing else.
 
-        \(transcript)
+        \(material)
         """
         guard let raw = await respond(to: prompt) else { return nil }
         return Self.parseLectureSummary(raw)

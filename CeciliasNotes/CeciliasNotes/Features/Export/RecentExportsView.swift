@@ -35,7 +35,7 @@ struct RecentExportsView: View {
         .presentationDragIndicator(.visible)
         .task { await load() }
         .sheet(item: $sharingRecord) { record in
-            ActivityView(url: record.fileURL)
+            ActivityView(url: record.resolvedURL)
         }
         .alert("File Not Found", isPresented: $showMissingAlert, presenting: missingRecord) { record in
             Button("Re-export") { onReExport(record.notebookId) }

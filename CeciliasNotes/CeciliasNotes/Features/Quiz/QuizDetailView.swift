@@ -56,6 +56,13 @@ struct QuizDetailView: View {
             }
         }
         .background(theme.surface)
+        .task(id: quizID) {
+            // Opportunistic auto-update on open (daily gap) so notes
+            // added since the last pass surface as new questions
+            // while the user is actually looking at the quiz —
+            // the silent launch sweep only runs weekly.
+            QuizAutoUpdater.runForOpenedQuiz(id: quizID)
+        }
 #if os(iOS)
         .fullScreenCover(isPresented: $isTaking) {
             if let quiz {

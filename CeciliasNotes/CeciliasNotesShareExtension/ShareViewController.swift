@@ -170,6 +170,25 @@ final class ShareViewController: UIViewController {
         } catch {
             return
         }
+        // Notebook archives shared from Files (or another device) are
+        // FILE imports, not link captures — writing the URL string as
+        // a note produced a notebook whose only content was the
+        // file's path. Copy the archive into the shared inbox; the
+        // main app's ShareInboxWatcher routes it to the archive
+        // importer on next foreground.
+        if let fileURL = (item as? URL) ?? ((item as? NSURL) as URL?),
+           fileURL.isFileURL {
+            let ext = fileURL.pathExtension.lowercased()
+            if ext == "ceciliabook" {
+                let scoped = fileURL.startAccessingSecurityScopedResource()
+                defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
+                let dest = inbox.appendingPathComponent("\(UUID().uuidString).\(ext)")
+                try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+                try? FileManager.default.copyItem(at: fileURL, to: dest)
+                return
+            }
+        }
+
         let urlString: String?
         if let url = item as? URL {
             urlString = url.absoluteString

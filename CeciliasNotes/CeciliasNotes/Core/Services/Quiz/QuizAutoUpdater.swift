@@ -9,8 +9,13 @@ import SwiftData
 @MainActor
 enum QuizAutoUpdater {
 
-    /// Minimum gap between auto-update passes for a given quiz.
+    /// Minimum gap between auto-update passes for a given quiz on
+    /// the silent launch sweep.
     static let updateInterval: TimeInterval = 7 * 24 * 60 * 60   // 7 days
+    /// Snappier cadence for the opened-quiz pass — "I added notes
+    /// yesterday, opened the quiz today, where are the new
+    /// questions" should just work without waiting out the week.
+    static let openedQuizInterval: TimeInterval = 24 * 60 * 60   // 1 day
     /// How many questions a single pass may add.
     static let batchSize = 5
 
@@ -20,7 +25,15 @@ enum QuizAutoUpdater {
         Task { await run() }
     }
 
-    static func run() async {
+    /// Opportunistic single-quiz pass fired when its detail view
+    /// opens. Same silent contract as the launch sweep, but with the
+    /// daily gap — the user is LOOKING at the quiz, so fresher
+    /// content should surface here first.
+    static func runForOpenedQuiz(id: UUID) {
+        Task { await run(onlyQuizId: id, minimumGap: openedQuizInterval) }
+    }
+
+    static func run(onlyQuizId: UUID? = nil, minimumGap: TimeInterval = updateInterval) async {
         let context = StorageService.shared.context
         let now = Date()
 
@@ -32,9 +45,10 @@ enum QuizAutoUpdater {
         guard let quizzes = try? context.fetch(descriptor) else { return }
 
         for quiz in quizzes {
-            // Respect the weekly cadence.
+            if let onlyQuizId, quiz.id != onlyQuizId { continue }
+            // Respect the pass cadence.
             if let last = quiz.lastAutoUpdateAt,
-               now.timeIntervalSince(last) < updateInterval {
+               now.timeIntervalSince(last) < minimumGap {
                 continue
             }
             // Stop silently once the cap is reached.

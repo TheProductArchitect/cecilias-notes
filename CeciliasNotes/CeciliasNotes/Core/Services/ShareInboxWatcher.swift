@@ -115,6 +115,19 @@ final class ShareInboxWatcher {
                     object: nil,
                     userInfo: ["fileURL": file]
                 )
+            case "ceciliabook":
+                // Full-fidelity archive shared into the extension
+                // (see ShareViewController.ingestURL's file detour).
+                // No UI decision needed — import as a fresh editable
+                // copy immediately, exactly like the iCloud-inbox
+                // path, then consume the file.
+                Task { @MainActor in
+                    if let data = try? Data(contentsOf: file),
+                       let nb = await NotebookArchiveIO.importArchiveAsync(data: data) {
+                        MultipeerNotebookHint.broadcastNotebookChanged(notebookId: nb.id)
+                    }
+                    self.consume(file)
+                }
             default:
                 // Unknown payload — leave it alone so we don't
                 // silently drop the user's content. They can clear
