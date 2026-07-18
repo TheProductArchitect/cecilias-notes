@@ -545,9 +545,6 @@ final class EditorViewModel: ObservableObject {
             // form sessions; `.idle` (and the transient `.paused`)
             // both fall back to `.drawing`.
             guard recordingState != oldValue else { return }
-            #if DEBUG
-            let stack = Thread.callStackSymbols.prefix(5).joined(separator: "\n  ")
-            #endif
             switch recordingState {
             case .recording:
                 stateMachine.enterMode(.audioRecording(sessionId: UUID()))

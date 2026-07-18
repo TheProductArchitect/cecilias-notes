@@ -118,11 +118,14 @@ final class AudioPlaybackController: NSObject, ObservableObject {
                 guard let player = self.player else {
                     return
                 }
-                let prepared = player.prepareToPlay()
+                _ = player.prepareToPlay()
                 let didPlay = player.play()
-                let cat = AVAudioSession.sharedInstance().category.rawValue
                 self.startTimer()
-                self.isPlaying = true
+                // Only claim the playing state when AVAudioPlayer
+                // actually accepted the play — previously this set
+                // true unconditionally, leaving a stuck play badge
+                // when the session start was refused.
+                self.isPlaying = didPlay
             }
         }
     }

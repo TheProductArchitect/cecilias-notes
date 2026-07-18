@@ -101,8 +101,10 @@ public extension Color {
 public extension UIColor {
 
     /// Hex string → UIColor. Accepts "#RRGGBB" or "RRGGBB". Invalid
-    /// input resolves to black.
-    convenience init(hex: String) {
+    /// input resolves to black. `nonisolated` — pure computation over
+    /// a thread-safe UIColor initializer; the page-thumbnail renderer
+    /// calls it from its background render closure.
+    nonisolated convenience init(hex: String) {
         var sanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         sanitized = sanitized.hasPrefix("#") ? String(sanitized.dropFirst()) : sanitized
 

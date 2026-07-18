@@ -168,7 +168,7 @@ struct DocumentScannerPicker: UIViewControllerRepresentable {
 /// Lock-guarded image accumulator for PHPicker results. Swift 6 can't
 /// prove an external NSLock guards a captured `var`, so each
 /// `loadObject` callback writes through this reference box instead.
-private final class _PHPickerImageBox: @unchecked Sendable {
+private nonisolated final class _PHPickerImageBox: @unchecked Sendable {
     private let lock = NSLock()
     private var images: [UIImage] = []
 

@@ -603,7 +603,6 @@ extension StorageService {
     /// persist a drag-reorder in a single save. Existing values are
     /// overwritten — call sites pass the *desired* final ordering.
     func reorderNotebooks(_ notebooks: [Notebook]) throws {
-        let now = Date()
         for (index, notebook) in notebooks.enumerated() where notebook.sortOrder != index {
             notebook.sortOrder = index
             notebook.markModified()

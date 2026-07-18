@@ -273,7 +273,7 @@ private func setAlternateIconWithRetry(_ key: String?, attemptsLeft: Int) {
         // `setAlternateIconName`'s completion is not guaranteed on
         // the main thread — hop back before touching UIKit/state.
         Task { @MainActor in
-            if let error {
+            if error != nil {
                 if attemptsLeft > 1 {
                     try? await Task.sleep(for: .seconds(1))
                     setAlternateIconWithRetry(key, attemptsLeft: attemptsLeft - 1)

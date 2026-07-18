@@ -10,11 +10,14 @@ import os
 /// before the user backgrounds the app.
 enum SessionHealth {
 
-    private static let hangFlagKey = "ceciliasnotes.session.hadMainThreadHang"
-    private static let latchLock = OSAllocatedUnfairLock(initialState: false)
+    private nonisolated static let hangFlagKey = "ceciliasnotes.session.hadMainThreadHang"
+    private nonisolated static let latchLock = OSAllocatedUnfairLock(initialState: false)
 
-    /// Call from the watchdog queue when the main runloop misses a ping.
-    static func recordMainThreadHangFromWatchdog() {
+    /// Call from the watchdog queue when the main runloop misses a
+    /// ping. `nonisolated` is the point: it runs while main is HUNG,
+    /// so it must never require the main actor — the lock and
+    /// UserDefaults are the thread-safety story.
+    nonisolated static func recordMainThreadHangFromWatchdog() {
         latchLock.withLock { $0 = true }
         UserDefaults.standard.set(true, forKey: hangFlagKey)
     }

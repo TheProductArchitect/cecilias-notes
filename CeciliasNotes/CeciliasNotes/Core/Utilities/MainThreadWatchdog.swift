@@ -40,7 +40,12 @@ enum MainThreadWatchdog {
         engine.install(threshold: threshold, interval: interval)
     }
 
-    private final class _Engine: @unchecked Sendable {
+    // `nonisolated` — the engine's whole job is running OFF the main
+    // actor while main may be hung: its state is confined to the
+    // watchdog queue (the main-thread Timer hops to it to ack). The
+    // default-MainActor mode otherwise infers isolation these
+    // dispatch closures can never honour.
+    private nonisolated final class _Engine: @unchecked Sendable {
         private let queue = DispatchQueue(label: "app.ceciliasnotes.main-thread-watchdog")
         private var isInstalled = false
         private var pendingPingID = 0

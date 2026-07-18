@@ -109,7 +109,6 @@ final class EditorStateMachine: ObservableObject {
 
         #if DEBUG
         dlog("[StateMachine] \(mode) → \(next)")
-        let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
         #endif
         mode = next
     }
@@ -119,7 +118,6 @@ final class EditorStateMachine: ObservableObject {
         guard mode != .drawing else { return }
         #if DEBUG
         dlog("[StateMachine] \(mode) → .drawing")
-        let stack = Thread.callStackSymbols.prefix(8).joined(separator: "\n  ")
         #endif
         mode = .drawing
     }

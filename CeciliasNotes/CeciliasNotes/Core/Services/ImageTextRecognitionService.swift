@@ -13,7 +13,7 @@ enum ImageTextRecognitionService {
             request.usesLanguageCorrection = true
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             try? handler.perform([request])
-            let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
+            let observations = request.results ?? []
             let lines = observations
                 .sorted { a, b in
                     let ay = 1 - (a.boundingBox.origin.y + a.boundingBox.height)

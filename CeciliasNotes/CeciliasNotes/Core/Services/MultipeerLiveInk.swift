@@ -30,10 +30,13 @@ enum MultipeerLiveInk {
     static let receivedNotification = Notification.Name("ceciliasnotes.multipeer.liveInkReceived")
 
     enum UserInfoKey {
-        static let notebookId = "notebookId"
-        static let pageId = "pageId"
-        static let seq = "seq"
-        static let drawingData = "drawingData"
+        // nonisolated: read inside the canvas's notification-observer
+        // closure, which is Sendable/nonisolated — plain String
+        // constants must not inherit the default MainActor isolation.
+        nonisolated static let notebookId = "notebookId"
+        nonisolated static let pageId = "pageId"
+        nonisolated static let seq = "seq"
+        nonisolated static let drawingData = "drawingData"
     }
 
     /// Snapshots above this size stop streaming (the page still syncs

@@ -382,7 +382,7 @@ private final class DocumentPickerDelegate: NSObject, UIDocumentPickerDelegate {
 /// callback on arbitrary background threads, so the storage is
 /// guarded by an internal lock and the type is `@unchecked Sendable`
 /// — the lock is the actual safety guarantee.
-private final class _PickedImagesBox: @unchecked Sendable {
+private nonisolated final class _PickedImagesBox: @unchecked Sendable {
     private let lock = NSLock()
     private var images: [UIImage] = []
 

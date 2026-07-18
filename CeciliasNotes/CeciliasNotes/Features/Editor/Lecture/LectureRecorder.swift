@@ -1251,6 +1251,6 @@ actor AudioCaptureActor {
 /// recycles after the tap returns; we always pass a deep copy across
 /// actor boundaries. The `@unchecked` declaration affirms that
 /// promise to the compiler.
-private struct CapturedAudioBuffer: @unchecked Sendable {
+private nonisolated struct CapturedAudioBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
 }
