@@ -75,7 +75,7 @@ final class ShareViewController: UIViewController {
         // the chain caused iOS to suspend the extension before the
         // URL was actually dispatched, leaving the share sheet
         // hung for ~2 minutes before the system reaped it.
-        await ingestAttachments()
+        let kind = await ingestAttachments()
         await MainActor.run {
             spinner.stopAnimating()
         }
@@ -85,7 +85,17 @@ final class ShareViewController: UIViewController {
         // historically broke the open call on some iOS versions.
         try? await Task.sleep(nanoseconds: 250_000_000)
         await MainActor.run {
-            let deepLink = URL(string: "ceciliasnotes://library")!
+            // Notebook archives should open the imported notebook,
+            // not bounce through the library home. PDF / image /
+            // text shares still need the library surface so the
+            // import picker / quick-capture UI can present.
+            let deepLink: URL
+            switch kind {
+            case .notebookArchive:
+                deepLink = URL(string: "ceciliasnotes://inbox")!
+            case .other:
+                deepLink = URL(string: "ceciliasnotes://library")!
+            }
             // `extensionContext?.open(_:)` is unreliable for share
             // extensions on every iOS version we ship to (17.6+) —
             // the call returns success but the host app never
@@ -133,17 +143,38 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func ingestAttachments() async {
-        guard let inboxURL = inboxURL() else { return }
+    private enum IngestKind {
+        /// At least one `.ceciliabook` was copied into the inbox —
+        /// the main app should open the imported notebook.
+        case notebookArchive
+        /// PDF / image / text / web URL — library UI decides next.
+        case other
+    }
+
+    private func ingestAttachments() async -> IngestKind {
+        guard let inboxURL = inboxURL() else { return .other }
 
         let attachments = (extensionContext?.inputItems as? [NSExtensionItem])?
             .flatMap { $0.attachments ?? [] } ?? []
 
+        var sawNotebook = false
+        let notebookTypeID = "app.ceciliasnotes.notebook"
+
         for provider in attachments {
-            if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+            if provider.hasItemConformingToTypeIdentifier(notebookTypeID) {
+                await writeAttachment(
+                    provider: provider,
+                    typeID: notebookTypeID,
+                    suggestedExt: "ceciliabook",
+                    inbox: inboxURL
+                )
+                sawNotebook = true
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                 await ingestText(provider: provider, typeID: UTType.plainText.identifier, inbox: inboxURL)
             } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-                await ingestURL(provider: provider, inbox: inboxURL)
+                if await ingestURL(provider: provider, inbox: inboxURL) {
+                    sawNotebook = true
+                }
             } else if provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier) {
                 await writeAttachment(
                     provider: provider,
@@ -159,16 +190,30 @@ final class ShareViewController: UIViewController {
                     suggestedExt: ext,
                     inbox: inboxURL
                 )
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                // Files sometimes hands notebook archives as a bare
+                // file URL without the custom UTI registered yet.
+                if await ingestURL(provider: provider, typeID: UTType.fileURL.identifier, inbox: inboxURL) {
+                    sawNotebook = true
+                }
             }
         }
+        return sawNotebook ? .notebookArchive : .other
     }
 
-    private func ingestURL(provider: NSItemProvider, inbox: URL) async {
+    /// Returns `true` when the provider was a `.ceciliabook` file
+    /// copy (not a web-link capture).
+    @discardableResult
+    private func ingestURL(
+        provider: NSItemProvider,
+        typeID: String = UTType.url.identifier,
+        inbox: URL
+    ) async -> Bool {
         let item: NSSecureCoding?
         do {
-            item = try await provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil)
+            item = try await provider.loadItem(forTypeIdentifier: typeID, options: nil)
         } catch {
-            return
+            return false
         }
         // Notebook archives shared from Files (or another device) are
         // FILE imports, not link captures — writing the URL string as
@@ -185,7 +230,7 @@ final class ShareViewController: UIViewController {
                 let dest = inbox.appendingPathComponent("\(UUID().uuidString).\(ext)")
                 try? FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
                 try? FileManager.default.copyItem(at: fileURL, to: dest)
-                return
+                return true
             }
         }
 
@@ -199,9 +244,12 @@ final class ShareViewController: UIViewController {
         } else {
             urlString = nil
         }
-        guard let link = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty else { return }
+        guard let link = urlString?.trimmingCharacters(in: .whitespacesAndNewlines), !link.isEmpty else {
+            return false
+        }
         let title = URL(string: link)?.host ?? "Link"
         writeCapturePayload(title: title, body: link, inbox: inbox)
+        return false
     }
 
     private func ingestText(provider: NSItemProvider, typeID: String, inbox: URL) async {

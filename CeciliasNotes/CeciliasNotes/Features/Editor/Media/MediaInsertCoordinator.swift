@@ -96,8 +96,16 @@ final class MediaInsertCoordinator: ObservableObject {
         viewModel?.activeMediaSource = nil
         var inputs: [ImageInput] = []
         for url in urls {
-            guard url.startAccessingSecurityScopedResource() else { continue }
-            defer { url.stopAccessingSecurityScopedResource() }
+            // `FilesPicker` opens with `asCopy: true`, so the URL is a
+            // plain tmp-Inbox copy inside our own sandbox — NOT a
+            // security-scoped URL. `startAccessingSecurityScopedResource()`
+            // returns false for those, and the old
+            // `guard ... else { continue }` silently dropped every
+            // picked file (device log: PDF picked → Inbox copy created
+            // → no import ever ran). Call it for the URLs that need it,
+            // but never gate the read on its result.
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
 
             let ext = url.pathExtension.lowercased()
             if ext == "pdf" {
@@ -121,18 +129,35 @@ final class MediaInsertCoordinator: ObservableObject {
     /// Called by VNDocumentCameraViewController.
     func handleScannedDocument(_ scan: VNDocumentCameraScan) async {
         guard let vm = viewModel else { return }
+        // Show the processing HUD BEFORE dismissing the scanner and
+        // BEFORE pulling page images. `imageOfPage(at:)` is a heavy
+        // synchronous decode; with the camera service already dying
+        // (device log: Fig err=-17281 + "quad is nil" × N) doing that
+        // loop with no HUD made the app look frozen on scan page 3+.
+        isProcessing = true
+        processingProgress = 0
+        defer { isProcessing = false; processingProgress = 0 }
         viewModel?.activeMediaSource = nil
+
+        // Yield once so SwiftUI can paint the HUD and dismiss the
+        // scanner sheet before we start decoding page bitmaps.
+        await Task.yield()
+
+        let pageCount = scan.pageCount
+        guard pageCount > 0 else { return }
+
         var images: [UIImage] = []
-        for i in 0..<scan.pageCount {
+        images.reserveCapacity(pageCount)
+        for i in 0..<pageCount {
             images.append(scan.imageOfPage(at: i))
+            processingProgress = Double(i + 1) / Double(pageCount) * 0.35
+            // Keep the runloop breathing between large page decodes.
+            await Task.yield()
         }
         guard !images.isEmpty else { return }
 
         let pageSize = vm.currentPage.pageSize.pointSize
         let mediaDir = mediaDirectory(for: vm)
-
-        isProcessing = true
-        defer { isProcessing = false; processingProgress = 0 }
 
         var processed: [ProcessedImage] = []
         try? FileManager.default.createDirectory(at: mediaDir, withIntermediateDirectories: true)
@@ -140,7 +165,7 @@ final class MediaInsertCoordinator: ObservableObject {
             if let result = try? await ImageProcessingService.shared.processImage(.uiImage(img), mediaDir: mediaDir) {
                 processed.append(result)
             }
-            await MainActor.run { processingProgress = Double(i + 1) / Double(images.count) }
+            processingProgress = 0.35 + Double(i + 1) / Double(images.count) * 0.45
         }
 
         guard !processed.isEmpty else { return }
@@ -149,23 +174,39 @@ final class MediaInsertCoordinator: ObservableObject {
         let first = processed[0]
         let firstRect = centredRect(for: first.originalSize, pageSize: pageSize)
         saveImageRecord(first, on: vm.currentPage, notebookId: vm.notebook.id,
-                        rect: firstRect, pageSize: pageSize)
+                        rect: firstRect, pageSize: pageSize,
+                        persistImmediately: false, notify: false)
 
         // Pages 2+ → CONSECUTIVE new pages after the current one,
         // anchor rolling forward per insert. The old no-arg
         // `vm.addPage()` targeted the notebook's LAST page: scan
         // page 2 landed at the end of the document.
         var anchorPageId = vm.currentPage.id
-        for extra in processed.dropFirst() {
+        for (offset, extra) in processed.dropFirst().enumerated() {
             guard let newPage = vm.addPage(afterPageId: anchorPageId) else { continue }
             anchorPageId = newPage.id
             let r = centredRect(for: extra.originalSize, pageSize: pageSize)
             saveImageRecord(extra, on: newPage, notebookId: vm.notebook.id,
-                            rect: r, pageSize: pageSize)
+                            rect: r, pageSize: pageSize,
+                            persistImmediately: false, notify: false)
+            processingProgress = 0.80 + Double(offset + 1) / Double(max(processed.count - 1, 1)) * 0.20
+            await Task.yield()
         }
-        // `MediaAttachmentStore.save` posts `.mediaAttachmentsChanged`
-        // — `ImageAttachmentsView` re-renders from that notification,
-        // so no explicit refresh call is needed.
+
+        // One save + one overlay refresh for the whole scan — the
+        // previous per-page context.save() of multi-MB externalStorage
+        // blobs + `.mediaAttachmentsChanged` fan-out blocked the main
+        // thread for seconds on 3+ page scans.
+        let context = StorageService.shared.context
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Image] batched scan save failed: \(error)")
+            #endif
+        }
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        processingProgress = 1
     }
 
     // MARK: - PDF handling
@@ -185,19 +226,27 @@ final class MediaInsertCoordinator: ObservableObject {
         isProcessing = true
         defer { isProcessing = false; processingProgress = 0 }
 
+        // First SUCCESSFULLY processed page → current page; every
+        // subsequent one → consecutive new pages, anchor rolling
+        // forward. Keyed on success rather than `i == 0` so a PDF
+        // whose first page fails to rasterise doesn't silently drop
+        // all the others (the old anchor stayed nil forever).
         var pdfAnchorPageId: UUID?
         for i in 0..<pageCount {
             guard let pdfPage = doc.page(at: i)?.pageRef else { continue }
             if let img = try? await ImageProcessingService.shared.rasterisePDFPage(pdfPage) {
                 let input: ImageInput = .uiImage(img)
                 if let processed = try? await ImageProcessingService.shared.processImage(input, mediaDir: mediaDir) {
-                    let r = centredRect(for: processed.originalSize, pageSize: pageSize)
+                    // A PDF page IS a page — fill the notebook page
+                    // (aspect-fit), unlike photos which land at 60%.
+                    let r = fullPageRect(for: processed.originalSize, pageSize: pageSize)
 
-                    if i == 0 {
+                    if pdfAnchorPageId == nil {
                         pdfAnchorPageId = viewModel.currentPage.id
                         saveImageRecord(processed, on: viewModel.currentPage,
                                         notebookId: viewModel.notebook.id,
-                                        rect: r, pageSize: pageSize)
+                                        rect: r, pageSize: pageSize,
+                                        persistImmediately: false, notify: false)
                     } else if let anchor = pdfAnchorPageId,
                               let newPage = viewModel.addPage(afterPageId: anchor) {
                         // Consecutive after the current page — same
@@ -205,15 +254,25 @@ final class MediaInsertCoordinator: ObservableObject {
                         pdfAnchorPageId = newPage.id
                         saveImageRecord(processed, on: newPage,
                                         notebookId: viewModel.notebook.id,
-                                        rect: r, pageSize: pageSize)
+                                        rect: r, pageSize: pageSize,
+                                        persistImmediately: false, notify: false)
                     }
                 }
             }
-            await MainActor.run { processingProgress = Double(i + 1) / Double(pageCount) }
+            processingProgress = Double(i + 1) / Double(pageCount)
+            await Task.yield()
         }
-        // See `handleScannedDocument` — re-render is driven by the
-        // `.mediaAttachmentsChanged` notification posted from
-        // `MediaAttachmentStore.save`.
+        if pdfAnchorPageId != nil {
+            let context = StorageService.shared.context
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[Image] batched PDF save failed: \(error)")
+                #endif
+            }
+            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        }
     }
 
     // MARK: - Main pipeline
@@ -250,6 +309,8 @@ final class MediaInsertCoordinator: ObservableObject {
         }
 
         // Insert cascade: first at centre, each subsequent +16pt right+down.
+        // Batch the SwiftData save + overlay notification so multi-select
+        // imports don't pay N synchronous externalStorage commits.
         for (i, processed) in results.enumerated() {
             let offset = CGFloat(i) * 16
             var rect   = centredRect(for: processed.originalSize, pageSize: pageSize)
@@ -257,13 +318,18 @@ final class MediaInsertCoordinator: ObservableObject {
             rect.origin.y = min(rect.origin.y + offset, pageSize.height - rect.height - 8)
             saveImageRecord(processed, on: vm.currentPage,
                             notebookId: vm.notebook.id,
-                            rect: rect, pageSize: pageSize)
+                            rect: rect, pageSize: pageSize,
+                            persistImmediately: false, notify: false)
         }
-        // Re-render driven by the `.mediaAttachmentsChanged`
-        // notification — see `handleScannedDocument`. The previous
-        // `selectedAttachmentIds` Set write is dropped: Phase 4C's
-        // `ImageAttachmentsView` selects via tap, not via this
-        // post-insert seed.
+        let context = StorageService.shared.context
+        do {
+            try context.save()
+        } catch {
+            #if DEBUG
+            dlog("[Image] batched insert save failed: \(error)")
+            #endif
+        }
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
     }
 
     // MARK: - Helpers
@@ -280,6 +346,29 @@ final class MediaInsertCoordinator: ObservableObject {
     private func mediaDirectory(for vm: EditorViewModel) -> URL {
         MediaStorage.ensureDirectoriesExist()
         return MediaStorage.directory(for: .images)
+    }
+
+    /// Aspect-fit `imageSize` to the FULL page, centred. Used for
+    /// imported PDF pages, which should read as the page itself —
+    /// the photo-style 60% `centredRect` made every Files-app PDF
+    /// import land as a small floating image in the page centre.
+    /// A4-ish PDFs on A4-ish notebook pages fill edge to edge;
+    /// mismatched aspects (landscape slides on portrait pages)
+    /// letterbox rather than distort.
+    private func fullPageRect(for imageSize: CGSize, pageSize: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return CGRect(origin: .zero, size: pageSize)
+        }
+        let scale = min(pageSize.width / imageSize.width,
+                        pageSize.height / imageSize.height)
+        let w = imageSize.width  * scale
+        let h = imageSize.height * scale
+        return CGRect(
+            x: (pageSize.width  - w) / 2,
+            y: (pageSize.height - h) / 2,
+            width:  w,
+            height: h
+        )
     }
 
     private func centredRect(for imageSize: CGSize, pageSize: CGSize) -> CGRect {
@@ -313,7 +402,9 @@ final class MediaInsertCoordinator: ObservableObject {
         on page: Page,
         notebookId: UUID,
         rect: CGRect,
-        pageSize: CGSize
+        pageSize: CGSize,
+        persistImmediately: Bool = true,
+        notify: Bool = true
     ) {
         let context = StorageService.shared.context
         let element = PageElement(
@@ -340,12 +431,14 @@ final class MediaInsertCoordinator: ObservableObject {
         // elements — without the stamp a freshly inserted photo
         // never appears in the strip until the next stroke.
         StrokeCommit.stampPage(pageId: page.id, context: context)
-        do {
-            try context.save()
-        } catch {
-            #if DEBUG
-            dlog("[Image] save failed in MediaInsertCoordinator: \(error)")
-            #endif
+        if persistImmediately {
+            do {
+                try context.save()
+            } catch {
+                #if DEBUG
+                dlog("[Image] save failed in MediaInsertCoordinator: \(error)")
+                #endif
+            }
         }
         PageElementUndo.registerCreate(
             elementId: element.id,
@@ -353,6 +446,8 @@ final class MediaInsertCoordinator: ObservableObject {
             canvas: viewModel?.canvasView,
             actionName: "Insert Image"
         )
-        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        if notify {
+            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        }
     }
 }

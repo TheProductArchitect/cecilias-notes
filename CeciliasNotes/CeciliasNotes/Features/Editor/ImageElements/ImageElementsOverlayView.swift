@@ -127,6 +127,12 @@ struct ImageElementsOverlayView: View, Equatable {
                 reloadElements()
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .editorBlankPageTapped)
+        ) { note in
+            guard (note.object as? UUID) == pageId else { return }
+            if selectedElementId != nil { selectedElementId = nil }
+        }
     }
 
     // MARK: - Fetch

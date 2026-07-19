@@ -63,6 +63,12 @@ extension Notification.Name {
 
 enum ImageImportUserInfoKey {
     static let image       = "image"
+    /// Optional. `[UIImage]` — every image the user picked when the
+    /// picker allows multi-select. When present, the editor commits
+    /// each one (cascaded slightly so they don't stack perfectly);
+    /// `image` stays populated with the first for any observer that
+    /// only handles one.
+    static let images      = "images"
     static let ext         = "ext"
     static let normalizedX = "normalizedX"
     static let normalizedY = "normalizedY"

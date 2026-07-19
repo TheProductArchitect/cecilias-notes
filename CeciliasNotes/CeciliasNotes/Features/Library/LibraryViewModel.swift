@@ -535,16 +535,19 @@ final class LibraryViewModel: ObservableObject {
                             )
                             return
                         }
-                        // The editor's `imageImportCompleted` observer
-                        // takes one image at a time. Surface only the
-                        // first picked image — the picker supports
-                        // multi-select but the toolbar import lands a
-                        // single attachment at the page-centre coords.
+                        // Multi-select: ship EVERY picked image. The
+                        // editor commits each one with a small cascade
+                        // so they don't stack perfectly. `image` stays
+                        // populated with the first for single-image
+                        // observers. (Previously only `first` was
+                        // posted — "importing multiple images only
+                        // imports one image".)
                         NotificationCenter.default.post(
                             name: .imageImportCompleted,
                             object: nil,
                             userInfo: [
                                 ImageImportUserInfoKey.image:       first,
+                                ImageImportUserInfoKey.images:      images,
                                 ImageImportUserInfoKey.ext:         "jpg",
                                 ImageImportUserInfoKey.normalizedX: normX,
                                 ImageImportUserInfoKey.normalizedY: normY,

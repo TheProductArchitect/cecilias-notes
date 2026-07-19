@@ -73,10 +73,14 @@ actor ImageProcessingService {
         )
     }
 
-    /// Rasterise a single PDF page to UIImage at 150dpi.
+    /// Rasterise a single PDF page to UIImage at 200dpi. Imported
+    /// PDF pages now display full-page (not the photo-style 60%
+    /// centre rect), so 150dpi read slightly soft on 2x screens;
+    /// 200dpi of an A4 page (~1654×2339px) stays well under the
+    /// 4096 downscale cap.
     func rasterisePDFPage(_ page: CGPDFPage) async throws -> UIImage {
         let mediaBox = page.getBoxRect(.mediaBox)
-        let scale: CGFloat = 150.0 / 72.0   // 150dpi from 72pt PDF points
+        let scale: CGFloat = 200.0 / 72.0   // 200dpi from 72pt PDF points
         let size = CGSize(width: mediaBox.width * scale, height: mediaBox.height * scale)
 
         let renderer = UIGraphicsImageRenderer(size: size)

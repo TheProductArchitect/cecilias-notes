@@ -633,22 +633,14 @@ struct MacTextFormatToolbar: View {
             .frame(width: 52, alignment: .leading)
     }
 
-    /// Quiet editing indicator — a single accent dot while a block
-    /// has the caret, nothing otherwise. (This slot briefly said
-    /// "click text", which read as a broken button.)
+    /// Quiet editing indicator — previously a solid accent circle that
+    /// read as a stray "blue dot" on the format strip. Empty spacer
+    /// keeps the rail balanced without the ornament.
     @ViewBuilder
     private var formatStatus: some View {
-        Group {
-            if isEditingText {
-                Circle()
-                    .fill(theme.accent)
-                    .frame(width: 5, height: 5)
-                    .accessibilityHidden(true)
-            } else {
-                Color.clear.frame(width: 5, height: 5)
-            }
-        }
-        .frame(width: 52, alignment: .trailing)
+        Color.clear.frame(width: 5, height: 5)
+            .frame(width: 52, alignment: .trailing)
+            .accessibilityHidden(true)
     }
 
     private var toolRail: some View {
@@ -703,19 +695,29 @@ struct MacTextFormatToolbar: View {
     }
 
     private func applyFormat(_ action: @escaping () -> Void) {
-        // From preview state the click first has to focus a block;
-        // `performWhenReady` holds the action until the text view
-        // attaches. `wasEditing` is captured NOW — once focus lands
-        // the state always says "editing", but only a preview-state
-        // click should widen to the whole block.
+        applyFormat(widenEmptySelection: false, action)
+    }
+
+    /// Paragraph-level format (S/M/L, heading, family, alignment).
+    /// Always widens a caret-only selection so the first click applies
+    /// visibly — the previous path needed a second click after focus.
+    private func applyParagraphFormat(_ action: @escaping () -> Void) {
+        applyFormat(widenEmptySelection: true, action)
+    }
+
+    private func applyFormat(widenEmptySelection: Bool, _ action: @escaping () -> Void) {
+        // Capture whether a caret was already live BEFORE we ask for
+        // focus. Preview-state clicks must widen to the whole block
+        // (otherwise only typingAttributes change and the format
+        // vanishes when the preview remounts).
         let wasEditing = isEditingText
-        MacStateUpdates.deferred {
-            onNeedsTextFocus()
-            controller.performWhenReady { [weak controller] in
-                guard let controller else { return }
-                if !wasEditing { controller.selectAllIfNoSelection() }
-                action()
+        onNeedsTextFocus()
+        controller.performWhenReady { [weak controller] in
+            guard let controller else { return }
+            if !wasEditing || widenEmptySelection {
+                controller.selectAllIfNoSelection()
             }
+            action()
         }
     }
 
@@ -735,7 +737,7 @@ struct MacTextFormatToolbar: View {
     private var headingMenu: some View {
         Menu {
             ForEach(MacRichTextHeading.allCases, id: \.self) { h in
-                Button { applyFormat { controller.setHeading(h) } } label: {
+                Button { applyParagraphFormat { controller.setHeading(h) } } label: {
                     HStack {
                         Text(h.label)
                         if controller.currentAttributes.heading == h {
@@ -755,7 +757,7 @@ struct MacTextFormatToolbar: View {
     private var sizePicker: some View {
         HStack(spacing: 0) {
             ForEach(MacRichTextSize.allCases, id: \.self) { size in
-                Button { applyFormat { controller.setSize(size) } } label: {
+                Button { applyParagraphFormat { controller.setSize(size) } } label: {
                     Text(size.label)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(
@@ -910,7 +912,7 @@ struct MacTextFormatToolbar: View {
     private var familyMenu: some View {
         Menu {
             ForEach(MacRichTextFontFamily.allCases, id: \.self) { f in
-                Button { applyFormat { controller.setFamily(f) } } label: {
+                Button { applyParagraphFormat { controller.setFamily(f) } } label: {
                     HStack {
                         Text(f.label)
                         if controller.currentAttributes.family == f {
@@ -930,7 +932,7 @@ struct MacTextFormatToolbar: View {
     private var alignmentPicker: some View {
         HStack(spacing: 0) {
             ForEach(MacRichTextAlignment.allCases, id: \.self) { a in
-                Button { applyFormat { controller.setAlignment(a) } } label: {
+                Button { applyParagraphFormat { controller.setAlignment(a) } } label: {
                     Image(systemName: a.systemImage)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(

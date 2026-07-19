@@ -185,6 +185,28 @@ final class EditorViewModel: ObservableObject {
         didSet { ActivePageCanvas.current = canvasView }
     }
 
+    /// Stable per-page undo stacks for the editor session. Each
+    /// warm-band `CeciliasNotesPKCanvasView` is short-lived (unmounted
+    /// when the page leaves the band), but PencilKit +
+    /// `PageElementUndo` both register into `canvas.undoManager`.
+    /// Owning the managers here — and reinjecting the same instance
+    /// on remount — keeps last-in-first-out across scroll: a delete
+    /// registered before a canvas recycle stays on top of the stack
+    /// the toolbar undoes next. Cleared on editor dismiss so a
+    /// reopened notebook starts fresh.
+    private var pageUndoManagers: [UUID: UndoManager] = [:]
+
+    /// Returns the undo manager for `pageId`, creating it on first
+    /// use. Mounted canvases must call this and assign the result to
+    /// `CeciliasNotesPKCanvasView.pageUndoManager` before the canvas
+    /// is interactive.
+    func undoManager(forPage pageId: UUID) -> UndoManager {
+        if let existing = pageUndoManagers[pageId] { return existing }
+        let manager = UndoManager()
+        pageUndoManagers[pageId] = manager
+        return manager
+    }
+
     /// Transport struct for the normalised tap location the user
     /// wants the imported image centred on. Used as the `at:`
     /// argument to `commitImportedImage` from every entry point
@@ -865,12 +887,18 @@ final class EditorViewModel: ObservableObject {
         flushPendingSaveSync()
     }
 
-    /// Image-import completion handler. Reads the picked image +
+    /// Image-import completion handler. Reads the picked image(s) +
     /// extension + normalised tap location from the notification's
     /// `userInfo` and routes through `commitImportedImage`. The
     /// library has already cleared its `pendingImageImport` state
     /// by the time this fires (both VMs observe the same
     /// notification independently).
+    ///
+    /// Multi-select: when the `images` array is present every picked
+    /// image commits, cascaded +3% right+down per image so the stack
+    /// is visibly a stack (mirrors the +16pt cascade the Files
+    /// import uses). Previously only the first image landed —
+    /// "importing multiple images only imports one image".
     @objc private func handleImageImportCompleted(_ note: Notification) {
         guard
             let image = note.userInfo?[ImageImportUserInfoKey.image] as? UIImage,
@@ -878,11 +906,18 @@ final class EditorViewModel: ObservableObject {
         else { return }
         let normX = (note.userInfo?[ImageImportUserInfoKey.normalizedX] as? Double) ?? 0.5
         let normY = (note.userInfo?[ImageImportUserInfoKey.normalizedY] as? Double) ?? 0.5
-        commitImportedImage(
-            image,
-            fileExtension: ext,
-            at: ImageImportRequest(normalizedX: normX, normalizedY: normY)
-        )
+        let images = (note.userInfo?[ImageImportUserInfoKey.images] as? [UIImage]) ?? [image]
+        for (i, img) in images.enumerated() {
+            let cascade = Double(i) * 0.03
+            commitImportedImage(
+                img,
+                fileExtension: ext,
+                at: ImageImportRequest(
+                    normalizedX: min(normX + cascade, 0.95),
+                    normalizedY: min(normY + cascade, 0.95)
+                )
+            )
+        }
     }
 
     /// Editor view should call this on dismiss. Step 5.5 removed
@@ -2764,6 +2799,10 @@ final class EditorViewModel: ObservableObject {
         // Focus Mode is editor-scoped — exit on the way back to Library so
         // the next notebook opens with normal chrome.
         isFocusMode = false
+        // Drop per-page undo stacks with the editor — they hold
+        // strong refs to canvases / anchors from this session and
+        // must not outlive the notebook cover.
+        pageUndoManagers.removeAll()
         // Clear the launch-time resume pointer. Background while
         // inside the editor (the user-facing "resume me here"
         // case) leaves the key in place; pressing Back is the

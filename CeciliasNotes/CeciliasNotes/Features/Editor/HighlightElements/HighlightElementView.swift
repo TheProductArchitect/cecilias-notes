@@ -53,7 +53,7 @@ struct HighlightElementView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        if !isSelected { isSelected = true }
+                        isSelected.toggle()
                     }
                 )
                 .position(x: renderRect.midX, y: renderRect.midY)

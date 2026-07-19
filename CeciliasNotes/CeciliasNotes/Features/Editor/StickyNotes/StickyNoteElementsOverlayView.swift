@@ -109,6 +109,14 @@ struct StickyNoteElementsOverlayView: View, Equatable {
         .onReceive(
             NotificationCenter.default.publisher(for: .stickyNotesChanged)
         ) { _ in reloadElements() }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .editorBlankPageTapped)
+        ) { note in
+            guard (note.object as? UUID) == pageId else { return }
+            if selectedId != nil || editingId != nil {
+                exitEditAndDeselect()
+            }
+        }
     }
 
     // MARK: - Fetch

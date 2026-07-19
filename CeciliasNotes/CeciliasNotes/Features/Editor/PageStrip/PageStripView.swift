@@ -1,3 +1,4 @@
+import Combine
 import CoreTransferable
 import SwiftUI
 import UIKit
@@ -295,6 +296,32 @@ private struct PageStripThumbnail: View {
             // ready (never flash to blank during regen).
             loadThumbnail()
         }
+        // Element edits (text typing, sticky recolour, image move,
+        // shape resize…) stamp the ELEMENT row, not
+        // `page.updatedAt`, so the onChange above never fires for
+        // them. The composite key's elementsFingerprint picks up
+        // the change; these signals are the "recompose the key
+        // now" nudge. Cache hits make the no-change case cheap.
+        .onReceive(elementChangeSignals) { _ in
+            loadThumbnail()
+        }
+    }
+
+    /// Every discrete "some element on some page changed" broadcast
+    /// merged into one publisher. None carry a reliable pageId, so
+    /// every visible row re-keys — a property-read fetch, no blobs.
+    private var elementChangeSignals: AnyPublisher<Notification, Never> {
+        let center = NotificationCenter.default
+        return Publishers.MergeMany(
+            center.publisher(for: .textElementsChanged),
+            center.publisher(for: .stickyNotesChanged),
+            center.publisher(for: .mediaAttachmentsChanged),
+            center.publisher(for: .highlightElementsChanged),
+            center.publisher(for: .shapeElementsChanged),
+            center.publisher(for: .audioElementsChanged),
+            center.publisher(for: .strokeContentRewritten)
+        )
+        .eraseToAnyPublisher()
     }
 
     private func loadThumbnail() {

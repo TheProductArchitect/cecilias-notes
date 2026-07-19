@@ -100,6 +100,12 @@ struct HighlightElementsOverlayView: View, Equatable {
         ) { _ in
             reloadElements()
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .editorBlankPageTapped)
+        ) { note in
+            guard (note.object as? UUID) == pageId else { return }
+            if selectedElementId != nil { selectedElementId = nil }
+        }
     }
 
     private func reloadElements() {

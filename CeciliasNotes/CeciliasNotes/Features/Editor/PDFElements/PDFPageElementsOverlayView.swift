@@ -99,6 +99,12 @@ struct PDFPageElementsOverlayView: View, Equatable {
         ) { _ in
             reloadElements()
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .editorBlankPageTapped)
+        ) { note in
+            guard (note.object as? UUID) == pageId else { return }
+            if selectedElementId != nil { selectedElementId = nil }
+        }
     }
 
     private func reloadElements() {
@@ -130,6 +136,12 @@ struct PDFPageElementsOverlayView: View, Equatable {
         if selectedElementId == element.id {
             selectedElementId = nil
         }
+        PageElementUndo.registerDelete(
+            elementId: element.id,
+            kind: .pdfPage,
+            canvas: inputs.canvasView,
+            actionName: "Delete PDF Page"
+        )
         element.deletedAt = Date()
         element.updatedAt = Date()
         do {

@@ -30,7 +30,11 @@ final class DeepLinkRouter: ObservableObject {
     @Published var forceLibraryHome: Bool = false
 
     /// Parses `ceciliasnotes://open/{uuid}`, `ceciliasnotes://notebook/{id}/page/{id}`,
-    /// `ceciliasnotes://library`, `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`.
+    /// `ceciliasnotes://library`, `ceciliasnotes://settings`, `ceciliasnotes://quick-capture`,
+    /// `ceciliasnotes://inbox` (bring-to-foreground only — share
+    /// extension uses this for `.ceciliabook` so the inbox watcher
+    /// can open the imported notebook without first forcing the
+    /// library home surface).
     func handle(_ url: URL) {
         // Tap-to-open a `.ceciliabook` file (Files, AirDrop, Drive,
         // Mail attachment). Import it as a fresh editable copy, then
@@ -83,6 +87,13 @@ final class DeepLinkRouter: ObservableObject {
             openPageId = nil
             openSettings = false
             forceLibraryHome = true
+        case "inbox":
+            // Share extension handed us a `.ceciliabook`. Just bring
+            // the app forward — ShareInboxWatcher imports and posts
+            // `.ceciliasNotesOpenNotebook` once the copy is ready.
+            // Intentionally does NOT set forceLibraryHome (that was
+            // the "shared into library, never opened" bug).
+            break
         case "quick-capture":
             pendingQuickCapture = true
         default:

@@ -31,14 +31,38 @@ enum MeetingSummaryCommit {
         firstElementId: UUID,
         notebookId: UUID
     ) {
-        guard DictationSummaryPreference.isEnabled else { return }
+        guard DictationSummaryPreference.isEnabled else {
+            #if DEBUG
+            dlog("[Summary] skipped — auto-summary preference OFF")
+            #endif
+            return
+        }
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= MeetingSummarizer.minimumTranscriptCharacters else { return }
-        guard MeetingSummarizer.canRun else { return }
+        guard trimmed.count >= MeetingSummarizer.minimumTranscriptCharacters else {
+            #if DEBUG
+            dlog("[Summary] skipped — transcript \(trimmed.count) chars < minimum \(MeetingSummarizer.minimumTranscriptCharacters); short transcripts are their own summary")
+            #endif
+            return
+        }
+        guard MeetingSummarizer.canRun else {
+            #if DEBUG
+            dlog("[Summary] skipped — Apple Intelligence unavailable or user opted out")
+            #endif
+            return
+        }
 
         Task { @MainActor in
-            guard let summary = try? await MeetingSummarizer.summarize(transcript: trimmed) else { return }
-            commitSummary(summary, transcriptElementId: firstElementId, notebookId: notebookId)
+            do {
+                let summary = try await MeetingSummarizer.summarize(transcript: trimmed)
+                #if DEBUG
+                dlog("[Summary] generated \(summary.count) chars from \(trimmed.count)-char transcript")
+                #endif
+                commitSummary(summary, transcriptElementId: firstElementId, notebookId: notebookId)
+            } catch {
+                #if DEBUG
+                dlog("[Summary] generation failed: \(error)")
+                #endif
+            }
         }
     }
 

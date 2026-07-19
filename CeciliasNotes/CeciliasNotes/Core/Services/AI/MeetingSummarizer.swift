@@ -113,28 +113,65 @@ enum TranscriptStructurer {
         let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= minimumCharacters,
               trimmed.count <= maximumCharacters,
-              AIService.shared.canRun else { return nil }
+              AIService.shared.canRun else {
+            #if DEBUG
+            dlog("[Structurer] skipped — chars=\(trimmed.count) range=\(minimumCharacters)...\(maximumCharacters) canRun=\(AIService.shared.canRun)")
+            #endif
+            return nil
+        }
         guard let structured = try? await AIService.shared.provider.complete(
             systemPrompt: systemPrompt,
             userPrompt: trimmed,
             maxTokens: 1_600,
             temperature: 0.2
-        ) else { return nil }
-        guard isFaithful(original: trimmed, structured: structured) else { return nil }
+        ) else {
+            #if DEBUG
+            dlog("[Structurer] model call failed — keeping raw transcript")
+            #endif
+            return nil
+        }
+        guard isFaithful(original: trimmed, structured: structured) else {
+            #if DEBUG
+            dlog("[Structurer] REJECTED unfaithful output — original=\(trimmed.count) chars structured=\(structured.count) chars; keeping raw transcript")
+            #endif
+            return nil
+        }
+        #if DEBUG
+        dlog("[Structurer] accepted — original=\(trimmed.count) chars structured=\(structured.count) chars")
+        #endif
         return structured
     }
 
-    /// Cheap guard against the model rewriting instead of
-    /// reformatting: the structured text may ADD headings/labels but
-    /// must retain nearly all original words. Compare letters-only
-    /// content length — a lossy rewrite shows up as a shortfall.
+    /// Guard against the model rewriting instead of reformatting.
+    /// The prompt's HARD RULE is "every original word, verbatim, in
+    /// order"; the model may only ADD text (headings, speaker
+    /// labels, paragraph breaks). So the original word sequence must
+    /// appear as an in-order subsequence of the structured output,
+    /// and the additions must stay small. The previous check only
+    /// compared letters-only lengths — because the model adds
+    /// headings, nearly any rewrite passed it, and a device log
+    /// showed a 256-char dictation coming back visibly reworded
+    /// ("formatted the dictation text in a poor way").
     static func isFaithful(original: String, structured: String) -> Bool {
-        func letterCount(_ s: String) -> Int {
-            s.unicodeScalars.lazy.filter { CharacterSet.letters.contains($0) }.count
+        let originalWords = normalizedWords(original)
+        guard !originalWords.isEmpty else { return false }
+        let structuredWords = normalizedWords(structured)
+
+        // Every original word, in order.
+        var i = 0
+        for word in structuredWords where i < originalWords.count {
+            if word == originalWords[i] { i += 1 }
         }
-        let originalLetters = letterCount(original)
-        guard originalLetters > 0 else { return false }
-        let structuredLetters = letterCount(structured)
-        return structuredLetters >= Int(Double(originalLetters) * 0.92)
+        guard i == originalWords.count else { return false }
+
+        // Additions bounded: headings and a few speaker labels only.
+        let added = structuredWords.count - originalWords.count
+        return added <= max(8, originalWords.count / 8)
+    }
+
+    private static func normalizedWords(_ s: String) -> [String] {
+        s.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 }

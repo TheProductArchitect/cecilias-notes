@@ -182,7 +182,13 @@ struct LibraryView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .ceciliasNotesOpenNotebook)) { note in
                 guard let id = note.userInfo?[CeciliasNotesIntentKeys.notebookId] as? UUID else { return }
-                Task { @MainActor in deepLink.openNotebookId = id }
+                Task { @MainActor in
+                    // Share-inbox / intent open can race the library's
+                    // in-memory list — refresh so `notebook(id:)` finds
+                    // a freshly imported `.ceciliabook`.
+                    viewModel.refresh()
+                    deepLink.openNotebookId = id
+                }
             }
             // Paired peer says a notebook changed (multipeer hint —
             // the LAN lane carries only this nudge; the data itself
