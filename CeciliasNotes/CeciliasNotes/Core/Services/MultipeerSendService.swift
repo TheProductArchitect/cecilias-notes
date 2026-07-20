@@ -252,6 +252,19 @@ final class MultipeerSendService: NSObject, ObservableObject {
     /// re-invite the peer. Both must share one gate — see
     /// `considerAutoConnect`.
     private var nextReconnectAllowedAt: [String: Date] = [:]
+    /// Hard session cap on OUTBOUND chasing of a single peer. A paired
+    /// device that stays Bonjour-advertised but is unreachable (dead
+    /// data link — asleep, on cellular, AWDL down) is never `lostPeer`,
+    /// so backoff alone chases it for the entire session and each
+    /// invite floods "Failed to send a DTLS packet / No route to host"
+    /// — the storm that made the whole app unresponsive on-device.
+    /// After this many failed attempts we stop inviting; the advertiser
+    /// (`MultipeerSyncService`) still accepts the peer if it comes back
+    /// and initiates, and a successful `.connected` resets the counter.
+    private let maxReconnectChases = 5
+    /// True once this peer has hit the chase cap this session. Cleared
+    /// on a successful connect.
+    private var chaseGaveUp: Set<String> = []
 
     private func scheduleReconnect(to peer: MCPeerID) {
         guard keepBrowsingAlive || MultipeerPairingStore.sharedKey(forPeerName: peer.displayName) != nil else {
@@ -259,6 +272,14 @@ final class MultipeerSendService: NSObject, ObservableObject {
         }
         reconnectTasks[peer.displayName]?.cancel()
         let attempt = reconnectAttempts[peer.displayName, default: 0]
+        guard attempt < maxReconnectChases else {
+            if chaseGaveUp.insert(peer.displayName).inserted {
+                #if DEBUG
+                dlog("[Multipeer] giving up chasing \(peer.displayName) after \(attempt) failed attempts — stops the DTLS storm; will reconnect if it re-initiates or on relaunch")
+                #endif
+            }
+            return
+        }
         reconnectAttempts[peer.displayName] = attempt + 1
         // 5 s → 10 → 20 → 40 → 80 → 160 → capped 300 s.
         let delay = min(300.0, 5.0 * pow(2.0, Double(min(attempt, 6))))
@@ -459,6 +480,11 @@ final class MultipeerSendService: NSObject, ObservableObject {
         // ~30 s DTLS handshake retry storm in-process, so the app
         // never got a quiet second all session.
         let name = peer.displayName
+        guard !chaseGaveUp.contains(name) else { return }
+        guard reconnectAttempts[name, default: 0] < maxReconnectChases else {
+            chaseGaveUp.insert(name)
+            return
+        }
         guard Date() >= (nextReconnectAllowedAt[name] ?? .distantPast) else { return }
         if MultipeerPairingStore.sharedKey(forPeerName: name) != nil {
             if session?.connectedPeers.contains(peer) != true, targetPeer == nil || targetPeer == peer {
@@ -565,6 +591,7 @@ extension MultipeerSendService: MCSessionDelegate {
             case .connected:
                 self.reconnectAttempts[peerID.displayName] = 0
                 self.nextReconnectAllowedAt[peerID.displayName] = nil
+                self.chaseGaveUp.remove(peerID.displayName)
                 self.refreshConnectedPeerNames()
                 if let key = self.pairingKey(for: peerID),
                    self.pendingCode != nil || self.pendingFirstParty {
