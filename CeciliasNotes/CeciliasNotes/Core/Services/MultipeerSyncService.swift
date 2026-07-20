@@ -159,7 +159,23 @@ final class MultipeerSyncService: NSObject, ObservableObject {
     func setEnabled(_ enabled: Bool) {
         UserDefaults.standard.set(enabled, forKey: Self.enabledKey)
         isEnabled = enabled
-        if enabled { start() } else { stop() }
+        if enabled {
+            start()
+            // Resume the browse/reconnect lane too, but only when there
+            // is actually something to look for — otherwise leave it
+            // dormant (matches the launch gate in CeciliasNotesApp).
+            if !MultipeerPairingStore.pairedPeerNames().isEmpty
+                || MultipeerPairingStore.householdTokenHash() != nil {
+                MultipeerSendService.shared.startBackgroundReconnect()
+            }
+        } else {
+            stop()
+            // Definitively silence the browse lane: cancels every
+            // pending reconnect task, stops the browser, disconnects
+            // the session. This is what stops the DTLS "No route to
+            // host" storm when a paired device is unreachable.
+            MultipeerSendService.shared.stop()
+        }
     }
 
     /// Enter pairing mode for the next `pairingModeWindow` seconds.

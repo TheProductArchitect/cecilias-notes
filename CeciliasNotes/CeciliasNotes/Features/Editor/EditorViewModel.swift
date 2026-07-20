@@ -766,12 +766,25 @@ final class EditorViewModel: ObservableObject {
         // subscription holds the lock until `state` returns to
         // `.idle`. Same auto-hide-suppression pattern as the
         // customise panel and share sheet.
+        // Safety valve: if a prior session left the shared recorder
+        // wedged (state non-idle but no live recorder), clear it now so
+        // the `.recordingPanel` lock can't brick this editor's canvas.
+        RecordingSession.shared.abandonIfWedged()
+
         RecordingSession.shared.$state
-            .map { $0.isRecording }
+            // Only lock THIS editor's canvas while a recording that
+            // belongs to THIS notebook is live. A recording started in
+            // another notebook (the pill lets it continue across
+            // navigation) must not disable drawing here — that was a
+            // "pencil does nothing" trap when opening a second notebook
+            // mid-recording.
+            .map { [notebookId = notebook.id] state in
+                state.isRecording && state.notebookId == notebookId
+            }
             .removeDuplicates()
-            .sink { [weak self] isRecording in
+            .sink { [weak self] locksThisCanvas in
                 guard let self else { return }
-                if isRecording {
+                if locksThisCanvas {
                     self.beginInteraction(.recordingPanel)
                 } else {
                     self.endInteraction(.recordingPanel)

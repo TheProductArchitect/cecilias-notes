@@ -418,26 +418,34 @@ enum MediaStorage {
         }
         let result: String? = await Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
+            // A missing or empty source is the common "recording lost"
+            // cause (audio-session interruption, engine never flushed) —
+            // distinguish it from a genuine move/copy failure so the log
+            // is actionable rather than a bare "adopt failed".
+            let srcAttrs = try? fm.attributesOfItem(atPath: source.path)
+            let srcSize = (srcAttrs?[.size] as? NSNumber)?.int64Value ?? -1
+            guard fm.fileExists(atPath: source.path), srcSize > 0 else {
+                logger.error("adopt source missing/empty category=\(category.rawValue, privacy: .public) id=\(id, privacy: .public) exists=\(fm.fileExists(atPath: source.path)) size=\(srcSize)")
+                return nil
+            }
             do {
                 if fm.fileExists(atPath: dest.path) {
                     try fm.removeItem(at: dest)
                 }
                 try fm.moveItem(at: source, to: dest)
                 return relativePath(forCategory: category, id: id)
-            } catch {
+            } catch let moveError {
                 // Move can fail across volumes — fall back to copy + delete.
                 do {
                     try fm.copyItem(at: source, to: dest)
                     try? fm.removeItem(at: source)
                     return relativePath(forCategory: category, id: id)
-                } catch {
+                } catch let copyError {
+                    logger.error("adopt move+copy failed category=\(category.rawValue, privacy: .public) id=\(id, privacy: .public) srcSize=\(srcSize) move=\(moveError.localizedDescription, privacy: .public) copy=\(copyError.localizedDescription, privacy: .public)")
                     return nil
                 }
             }
         }.value
-        if result == nil {
-            logger.error("adopt failed category=\(category.rawValue, privacy: .public) id=\(id, privacy: .public)")
-        }
         return result
     }
 

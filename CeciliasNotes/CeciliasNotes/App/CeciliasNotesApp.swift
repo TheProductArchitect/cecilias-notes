@@ -280,7 +280,15 @@ struct CeciliasNotesApp: App {
                     // instead of waiting to be found. This is what
                     // lets an iPhone and an iPad on the same Wi-Fi
                     // form the live link without a Mac in the room.
-                    if !MultipeerPairingStore.pairedPeerNames().isEmpty
+                    // Gated on the same `receive on local network`
+                    // preference as the advertiser: when the user turns
+                    // multipeer OFF, the browse lane must not keep
+                    // chasing paired peers — an unreachable-but-still-
+                    // advertised device otherwise drives an endless
+                    // "Failed to send a DTLS packet / No route to host"
+                    // storm that degrades the whole app on-device.
+                    if MultipeerSyncService.shared.isEnabled,
+                       !MultipeerPairingStore.pairedPeerNames().isEmpty
                         || MultipeerPairingStore.householdTokenHash() != nil {
                         MultipeerSendService.shared.startBackgroundReconnect()
                     }

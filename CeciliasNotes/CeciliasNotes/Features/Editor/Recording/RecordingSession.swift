@@ -495,6 +495,23 @@ final class RecordingSession: ObservableObject {
         }
     }
 
+    /// Safety valve against a wedged session bricking the editor.
+    /// The `.recordingPanel` interaction lock (which makes the canvas
+    /// non-interactive) is held for as long as `state.isRecording`.
+    /// If a prior teardown left `state` non-idle but both recorders
+    /// gone — a dead wedge, not a live recording — drawing would stay
+    /// disabled forever. Reset to `.idle` so the lock releases. A
+    /// genuinely live recording (a recorder is present) is untouched.
+    /// Safe to call on every editor open.
+    func abandonIfWedged() {
+        guard state.isRecording else { return }
+        guard audioRecorder == nil, dictationRecorder == nil else { return }
+        #if DEBUG
+        dlog("[Recording] abandonIfWedged — state non-idle with no live recorder; resetting to idle")
+        #endif
+        resetSession()
+    }
+
     private func stopVoiceNote(_ ctx: VoiceNoteContext) async {
         guard let recorder = audioRecorder else { resetSession(); return }
         let result: (duration: Double, fileSizeBytes: Int64)

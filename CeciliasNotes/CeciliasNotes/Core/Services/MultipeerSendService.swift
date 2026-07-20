@@ -210,7 +210,11 @@ final class MultipeerSendService: NSObject, ObservableObject {
         // listening — Mac awake with Cecilia's Notes closed) every
         // second of invite window is a second of DTLS handshake
         // retransmits ("No route to host" storm in the device logs).
-        let timeout: TimeInterval = reason == .reconnect ? 8 : 30
+        // A reachable peer completes the DTLS handshake in ~1 s; only
+        // a ghost (still Bonjour-advertised, dead data link) burns the
+        // whole window in "No route to host" retransmits. Keep the
+        // reconnect window short so each failed chase floods less.
+        let timeout: TimeInterval = reason == .reconnect ? 4 : 30
         #if DEBUG
         // One line per invite so a device log shows the chase cadence
         // directly — the DTLS retransmit storm has no attribution of
