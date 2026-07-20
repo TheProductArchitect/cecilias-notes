@@ -257,6 +257,15 @@ enum NotebookArchiveIO {
             template: PageTemplate.from(jsonString: archive.notebook.defaultTemplate)
         ) else { return nil }
 
+        // Surface the import at the TOP of its subject. `createNotebook`
+        // assigns the highest `sortOrder` (append-to-end), and the
+        // library sorts by `sortOrder` ascending — so a fresh import
+        // otherwise lands at the very bottom of a long list and reads
+        // as "nothing was imported." Give it the lowest order so it's
+        // the first card the user sees.
+        let minOrder = storage.fetchNotebooks(subjectId: subjectId).map(\.sortOrder).min() ?? 0
+        notebook.sortOrder = minOrder - 1
+
         let sortedPages = archive.pages.sorted { $0.index < $1.index }
 
         // A well-formed archive always has ≥1 page (the exporter
