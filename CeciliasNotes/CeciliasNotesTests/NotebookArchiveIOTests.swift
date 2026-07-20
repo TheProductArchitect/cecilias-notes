@@ -124,4 +124,92 @@ final class NotebookArchiveIOTests: XCTestCase {
         XCTAssertNil(NotebookArchiveIO.importArchive(data: Data("not a notebook".utf8)))
         XCTAssertNil(NotebookArchiveIO.importArchive(data: Data()))
     }
+
+    // MARK: - Regression: import must surface at the TOP of its subject
+    //
+    // Bug (fixed 4fc64ab): an imported .ceciliabook landed at the very
+    // bottom of the library and read as "nothing was imported", because
+    // createNotebook append-assigns the highest sortOrder and the
+    // library sorts ascending. reconstruct() now gives the import the
+    // lowest order in its subject.
+    func test_import_surfacesNotebookAtTopOfSubject() throws {
+        let storage = StorageService.shared
+        let a = try storage.createNotebook(
+            title: "Existing A", subjectId: nil, coverColorHex: "#111111",
+            coverTexture: .none, pageSize: .a4, template: .blank
+        )
+        let b = try storage.createNotebook(
+            title: "Existing B", subjectId: nil, coverColorHex: "#222222",
+            coverTexture: .none, pageSize: .a4, template: .blank
+        )
+        // Give A one page of content so the archive is well-formed.
+        let aPage = try XCTUnwrap(storage.fetchPages(in: a).first)
+        let el = PageElement(
+            pageId: aPage.id, notebookId: a.id, kind: .text,
+            normalizedX: 0.1, normalizedY: 0.1, normalizedWidth: 0.5, normalizedHeight: 0.1, zIndex: 1
+        )
+        el.textContent = TextContent(text: "hi", source: .typed, size: .body)
+        storage.context.insert(el)
+        try storage.context.save()
+
+        let data = try XCTUnwrap(NotebookArchiveIO.archiveData(for: a))
+        let imported = try XCTUnwrap(NotebookArchiveIO.importArchive(data: data))
+
+        let peers = storage.fetchNotebooks(subjectId: imported.subjectId)
+        let minOrder = try XCTUnwrap(peers.map(\.sortOrder).min())
+        XCTAssertEqual(imported.sortOrder, minOrder,
+                       "imported notebook must have the lowest sortOrder (top of the subject)")
+        XCTAssertLessThan(imported.sortOrder, a.sortOrder,
+                          "import must sort above pre-existing notebook A")
+        XCTAssertLessThan(imported.sortOrder, b.sortOrder,
+                          "import must sort above pre-existing notebook B")
+    }
+
+    // MARK: - Regression: multi-page ink must all round-trip
+    //
+    // Strengthens the net around the "imported notebook is empty"
+    // report: every page's PKDrawing (StrokeContent.strokeData) must
+    // survive export→import, with no cross-page contamination.
+    func test_roundTrip_multiPage_preservesEveryPagesInk() throws {
+        let storage = StorageService.shared
+        let nb = try storage.createNotebook(
+            title: "Multi-Page Ink", subjectId: nil, coverColorHex: "#333333",
+            coverTexture: .none, pageSize: .a4, template: .blank
+        )
+        // Seed page (1) plus two more → three pages, each with a
+        // DISTINCT ink blob so cross-page mixups would be caught.
+        var pages = storage.fetchPages(in: nb)
+        for n in 2...3 {
+            let p = Page(notebookId: nb.id, pageNumber: n, pageSize: .a4, backgroundTemplate: .blank)
+            p.notebook = nb
+            storage.context.insert(p)
+            pages.append(p)
+        }
+        var expectedInk: [Int: Data] = [:]  // pageNumber → ink bytes
+        for p in pages {
+            let ink = Data([UInt8(p.pageNumber), 0xAA, 0xBB, UInt8(p.pageNumber &* 7)])
+            expectedInk[p.pageNumber] = ink
+            let strokeEl = PageElement(
+                pageId: p.id, notebookId: nb.id, kind: .stroke,
+                normalizedX: 0, normalizedY: 0, normalizedWidth: 1, normalizedHeight: 1, zIndex: 0
+            )
+            strokeEl.strokeContent = StrokeContent(
+                strokeData: ink, toolKind: "pen", colorHex: "#000000", widthBase: 2, opacity: 1
+            )
+            storage.context.insert(strokeEl)
+        }
+        try storage.context.save()
+
+        let data = try XCTUnwrap(NotebookArchiveIO.archiveData(for: nb), "export must produce data")
+        let imported = try XCTUnwrap(NotebookArchiveIO.importArchive(data: data), "import must succeed")
+
+        let importedPages = storage.fetchPages(in: imported).sorted { $0.pageNumber < $1.pageNumber }
+        XCTAssertEqual(importedPages.count, 3, "all three pages must round-trip (not an empty notebook)")
+        for p in importedPages {
+            let strokes = elements(pageId: p.id).filter { $0.kind == .stroke }
+            XCTAssertEqual(strokes.count, 1, "page \(p.pageNumber) must keep its stroke element")
+            XCTAssertEqual(strokes.first?.strokeContent?.strokeData, expectedInk[p.pageNumber],
+                           "page \(p.pageNumber) ink must match exactly (no loss, no cross-page mixup)")
+        }
+    }
 }

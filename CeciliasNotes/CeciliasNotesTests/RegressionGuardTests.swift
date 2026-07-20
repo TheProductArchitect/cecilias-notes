@@ -172,6 +172,96 @@ final class RegressionGuardTests: XCTestCase {
         }
     }
 
+    // MARK: - Bug: editor must open in cursor, not a drawing tool
+    //
+    // Regression (introduced 3f8bdc2, fixed 2050aae): opening the
+    // editor in the last inking tool made a one-finger drag INK
+    // instead of scroll, because a fresh install / reinstall resets
+    // `InputCapabilityDetector.hasPencil` → `.auto` finger mode →
+    // `.anyInput`. The editor MUST open neutral (cursor on a
+    // draw-capable device, text otherwise) so finger scroll works and
+    // the Pencil auto-swaps to a pen on first contact.
+    func test_editorOpensInCursor_notADrawingTool() throws {
+        let ctx = StorageService.shared.context
+        let nb = Notebook(
+            title: "Open Tool Guard", subjectId: nil, coverColorHex: "",
+            coverTexture: .none, pageSize: .a4, defaultTemplate: .blank
+        )
+        ctx.insert(nb)
+        scratchNotebookIDs.append(nb.id)
+        let page = Page(notebookId: nb.id, pageNumber: 1, pageSize: .a4, backgroundTemplate: .blank)
+        page.notebook = nb
+        nb.pages = [page]
+        ctx.insert(page)
+        scratchPageIDs.append(page.id)
+        try ctx.save()
+
+        // Isolated defaults so the editor's resume/open bookkeeping
+        // doesn't leak into `.standard`.
+        let defaults = UserDefaults(suiteName: "test-editor-open-\(UUID().uuidString)")!
+        let vm = EditorViewModel(notebook: nb, storage: .shared, userDefaults: defaults)
+
+        XCTAssertFalse(
+            vm.selectedTool.isDrawingTool,
+            "editor must NOT open in a drawing tool — a one-finger drag would ink instead of scroll"
+        )
+        if DeviceCapabilities.canDraw {
+            XCTAssertTrue(
+                vm.selectedTool.isCursorMode,
+                "a draw-capable device must open in cursor so one-finger drag scrolls"
+            )
+        }
+    }
+
+    // MARK: - Bug: a dictation with no captured audio must fail loudly
+    //
+    // Regression guard (ee3ffd7): `MediaStorage.adoptAudio` returning
+    // nil is the "recording lost" path — a missing/empty source (audio
+    // session interrupted, engine never flushed) must be caught and
+    // reported, not silently "adopted" into a dangling reference.
+    func test_adoptAudio_missingSource_returnsNil() async {
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(UUID().uuidString).m4a")
+        let result = await MediaStorage.adoptAudio(at: missing, id: UUID())
+        XCTAssertNil(result, "adopting a non-existent recording must fail cleanly")
+    }
+
+    func test_adoptAudio_emptySource_returnsNil() async throws {
+        let empty = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(UUID().uuidString).m4a")
+        try Data().write(to: empty)
+        defer { try? FileManager.default.removeItem(at: empty) }
+        let result = await MediaStorage.adoptAudio(at: empty, id: UUID())
+        XCTAssertNil(result, "adopting a 0-byte recording must fail cleanly (nothing was captured)")
+    }
+
+    func test_adoptAudio_validSource_movesAndReturnsPath() async throws {
+        let id = UUID()
+        let src = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("\(UUID().uuidString).m4a")
+        try Data([0x01, 0x02, 0x03, 0x04]).write(to: src)
+        let dest = MediaStorage.url(for: .audio, id: id)
+        defer { try? FileManager.default.removeItem(at: dest) }
+
+        let result = await MediaStorage.adoptAudio(at: src, id: id)
+        XCTAssertNotNil(result, "a real (non-empty) recording must be adopted")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.path),
+                      "adopted audio must land in the audio/ tree")
+    }
+
+    // MARK: - Bug: a wedged recording must never brick the canvas
+    //
+    // Guard (ee3ffd7): `abandonIfWedged()` is called on editor open so
+    // a stale non-idle session can't hold the `.recordingPanel` lock
+    // and disable drawing. On a genuinely idle session it must be a
+    // safe no-op.
+    func test_abandonIfWedged_onIdleSession_isSafeNoOp() {
+        XCTAssertFalse(RecordingSession.shared.state.isRecording)
+        RecordingSession.shared.abandonIfWedged()
+        XCTAssertFalse(RecordingSession.shared.state.isRecording,
+                       "abandoning an already-idle session must leave it idle")
+    }
+
     // MARK: - tearDown housekeeping
 
     private var scratchNotebookIDs: [UUID] = []
