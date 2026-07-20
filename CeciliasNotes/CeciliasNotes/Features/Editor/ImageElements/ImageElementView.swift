@@ -96,11 +96,7 @@ struct ImageElementView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        // Toggle — needed for full-bleed images where
-                        // there is no "blank" page area outside the
-                        // element rect for the page-level deselect
-                        // recognizer to land on.
-                        isSelected.toggle()
+                        if !isSelected { isSelected = true }
                     }
                 )
                 .simultaneousGesture(

@@ -47,19 +47,6 @@ struct MacDocModeView: View {
                 .padding(.horizontal, MacDocLayout.horizontalGutter)
                 .padding(.top, topChromeInset + 48)
                 .padding(.bottom, 64)
-                // Gutter / empty canvas around the paper — leave edit
-                // mode. Lives behind the pages so paper taps still win.
-                .background {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard editingBlockID != nil || selectedElementID != nil else { return }
-                            MacStateUpdates.deferred {
-                                editingBlockID = nil
-                                selectedElementID = nil
-                            }
-                        }
-                }
             }
             .background(theme.background)
             .background(
@@ -305,49 +292,28 @@ private struct MacDocPageSection: View {
                         .frame(maxWidth: contentWidth, alignment: .leading)
                 }
 
-                // Remaining page paper — tap ends edit mode. A long
-                // minHeight here used to stretch the page card past
-                // its fixed paper size; keep a modest hit target and
-                // let the fixed page frame own the layout.
                 Color.clear
-                    .frame(minHeight: 28)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(minHeight: 48)
+                    .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         MacStateUpdates.deferred {
-                            if editingBlockID != nil || selectedElementID != nil {
-                                selectedElementID = nil
-                                editingBlockID = nil
-                            } else {
-                                onWritingBegan()
-                                onInsertTextAt(CGPoint(x: contentWidth * 0.5, y: displaySize.height * 0.85))
-                            }
+                            selectedElementID = nil
+                            editingBlockID = nil
+                            onWritingBegan()
+                            onInsertTextAt(CGPoint(x: contentWidth * 0.5, y: displaySize.height * 0.85))
                         }
                     }
             }
             .padding(.horizontal, MacDocPageLayout.horizontalMargin)
             .padding(.vertical, MacDocPageLayout.topMargin)
-            .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
-            .clipped()
+            .frame(width: displaySize.width, alignment: .topLeading)
             .onPreferenceChange(MacDocBlockHeightKey.self) { heights in
                 measuredHeights.merge(heights) { _, new in new }
-                // Live typing / dictation can grow a block past the
-                // paper edge — re-run overflow split so content moves
-                // to the next page instead of stretching this one.
-                let stacked = contentElements.reduce(MacDocPageLayout.topMargin) { partial, element in
-                    let h = measuredHeights[element.id]
-                        ?? CGFloat(element.normalizedHeight) * displaySize.height
-                    return partial + h + MacDocPageLayout.blockSpacing
-                }
-                if stacked > contentBottom {
-                    MacStateUpdates.deferred { MacPageOverflow.reconcilePage(page.id) }
-                }
             }
         }
-        // Fixed paper size — never grow the page card with content.
-        // Overflow is handled by MacPageOverflow → next page.
-        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
-        .clipped()
+        .frame(width: displaySize.width)
+        .frame(minHeight: displaySize.height, alignment: .topLeading)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
@@ -358,9 +324,6 @@ private struct MacDocPageSection: View {
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Page \(page.pageNumber)")
         .onAppear {
-            MacStateUpdates.deferred { MacPageOverflow.reconcilePage(page.id) }
-        }
-        .onChange(of: contentElements.count) { _, _ in
             MacStateUpdates.deferred { MacPageOverflow.reconcilePage(page.id) }
         }
     }

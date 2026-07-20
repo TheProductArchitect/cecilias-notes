@@ -144,15 +144,6 @@ struct NotebookGridView: View {
                 .padding(.bottom, 32)
                 .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: levelFolders.map(\.id))
                 .animation(.ceciliasNotesSpring(CeciliasNotesSpring.smooth), value: levelNotebooks.map(\.id))
-                .background {
-                    #if os(macOS)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            viewModel.macGridFocusedNotebookId = nil
-                        }
-                    #endif
-                }
             }
             // Scrolling the grid dismisses any open inline-rename
             // keyboard immediately. Works for floating + docked
@@ -172,15 +163,11 @@ struct NotebookGridView: View {
             viewModel.macGridFocusedNotebookId = nil
             return
         }
-        // Keep focus only if the focused card is still in this level.
-        // Do NOT auto-pick notebooks[0] — that painted a blue ring on
-        // the first card by default and looked like a stuck selection
-        // when returning to the library (Mac screenshot report).
         if let focused = viewModel.macGridFocusedNotebookId,
            notebooks.contains(where: { $0.id == focused }) {
             return
         }
-        viewModel.macGridFocusedNotebookId = nil
+        viewModel.macGridFocusedNotebookId = notebooks[0].id
     }
 
     /// One notebook tile. Carries the cross-subject move drag

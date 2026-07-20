@@ -86,8 +86,7 @@ struct AudioElementView: View {
                 .simultaneousGesture(
                     TapGesture().onEnded {
                         guard allowsSelection else { return }
-                        guard !isRecordingActive else { return }
-                        isSelected.toggle()
+                        if !isSelected && !isRecordingActive { isSelected = true }
                     }
                 )
                 .gesture(allowsSelection && isSelected && !isRecordingActive ? bodyDragGesture : nil)
@@ -353,28 +352,43 @@ private struct AudioElementStripContent: View {
             #if DEBUG
             dlog("[AudioPlayback] AudioElementStripContent.onAppear — elementId=\(elementId.uuidString.prefix(8)) contentId=\(content.id.uuidString.prefix(8)) isRecording=\(isRecording)")
             #endif
-            // Keep page mounting render-only. The previous path
-            // synchronously stat'ed the file, created AVAudioPlayer,
-            // and prepared its decoder for every audio element as the
-            // page first crossed the viewport. The device log shows
-            // that exact load sequence beside each first-time overlay
-            // mount — the subtle initial jerk that disappears once
-            // pages are warm. Playback now loads lazily on the user's
-            // first play / seek action.
+            // Deferred one runloop tick: this onAppear fires INSIDE
+            // the SwiftUI transaction that mounts the overlay tree
+            // (scroll membership mounts pages mid-scroll). The
+            // `isRecordingActive` binding write plus the @Published
+            // mutations inside `player.load` were the "Publishing
+            // changes from within view updates" warnings in the
+            // device log — and the file stat + AVAudioPlayer prepare
+            // were synchronous IO inside the mount transaction, paid
+            // per page crossing while scrolling.
+            let url = content.fileURL
             DispatchQueue.main.async {
                 isRecordingActive = isRecording
+                guard !isRecording else { return }
+                #if DEBUG
+                let fm = FileManager.default
+                let exists = fm.fileExists(atPath: url.path)
+                let size = (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? -1
+                let ubi = UbiquitousFileStatus.currentState(at: url)
+                dlog("[AudioPlayback] file check — url=\(url.lastPathComponent) exists=\(exists) size=\(size) ubi=\(ubi) durationSecondsOnContent=\(content.durationSeconds)")
+                #endif
+                if case .downloading = UbiquitousFileStatus.currentState(at: url) {
+                    _ = UbiquitousFileStatus.requestDownload(at: url)
+                }
+                player.load(url: url)
             }
         }
         .onDisappear { player.pause() }
         .onChange(of: isRecording) { _, nowRecording in
             isRecordingActive = nowRecording
+            guard !nowRecording else { return }
+            player.load(url: content.resolvedFileURL() ?? content.fileURL)
         }
         .onReceive(NotificationCenter.default.publisher(for: .audioSeekRequested)) { note in
             guard let id   = note.userInfo?[AudioSeekKey.contentId] as? UUID,
                   let time = note.userInfo?[AudioSeekKey.time] as? Double,
                   id == content.id
             else { return }
-            ensurePlayerLoaded()
             player.seek(to: time)
         }
     }
@@ -460,7 +474,6 @@ private struct AudioElementStripContent: View {
 
     private var playPauseButton: some View {
         Button {
-            ensurePlayerLoaded()
             player.togglePlayPause()
         } label: {
             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
@@ -482,17 +495,6 @@ private struct AudioElementStripContent: View {
                 }
         )
         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-    }
-
-    /// Resolve/download/prepare only after explicit user interaction.
-    /// This keeps filesystem and AVFoundation work out of page-mount
-    /// and scroll callbacks.
-    private func ensurePlayerLoaded() {
-        let url = content.resolvedFileURL() ?? content.fileURL
-        if case .downloading = UbiquitousFileStatus.currentState(at: url) {
-            _ = UbiquitousFileStatus.requestDownload(at: url)
-        }
-        player.load(url: url)
     }
 
     private var timeLabel: some View {

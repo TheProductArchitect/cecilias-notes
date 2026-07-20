@@ -124,14 +124,6 @@ struct TextElementsOverlayView: View, Equatable {
             // sheet). Re-fetch so it appears immediately.
             reloadElements()
         }
-        .onReceive(
-            NotificationCenter.default.publisher(for: .editorBlankPageTapped)
-        ) { note in
-            guard (note.object as? UUID) == pageId else { return }
-            if selectedId != nil || editingId != nil {
-                exitEditAndDeselect()
-            }
-        }
         #if DEBUG
         // OPEN_ISSUES #1 diagnostic — reports whether the gated
         // background catcher is mounted. The `v3` marker confirms

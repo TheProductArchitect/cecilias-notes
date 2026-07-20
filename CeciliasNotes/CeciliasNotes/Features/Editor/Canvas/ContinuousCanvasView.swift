@@ -545,14 +545,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
         private var lastFingerDrawingEnabled: Bool?
         private var lastCanvasInteractive: Bool?
         private var lastMembershipUpdate: CFTimeInterval = 0
-        /// Last contentOffset.y we ran membership against. Used to skip
-        /// no-op rest-time passes caused by the ±1pt inset/snap chatter.
-        private var lastMembershipOffsetY: CGFloat = .nan
-        #if DEBUG
-        /// Suppresses the per-tick `[Membership]` flood — only log when
-        /// mount counts / scrolling flag / coarse offset change.
-        private var lastMembershipLogSignature: String = ""
-        #endif
         /// Throttle for auto-add-page-on-bottom-stroke. Without this a
         /// flurry of short strokes near the bottom of the last page would
         /// spawn multiple pages back-to-back.
@@ -1136,67 +1128,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 overlaysHost.view.bottomAnchor.constraint(equalTo: renderer.bottomAnchor),
             ])
             overlaysHost.attachAsChild(of: renderer)
-            // Page-level blank-tap deselect. Per-overlay SwiftUI
-            // catchers miss taps when a sibling overlay stacked above
-            // them claims the empty area (or when an element view's
-            // full-page layout frame eats the hit). This recognizer
-            // sits on the hosting view, never cancels touches, and
-            // only broadcasts when the tap missed every element rect.
-            let blankTap = UITapGestureRecognizer(
-                target: self,
-                action: #selector(handleOverlayBlankTap(_:))
-            )
-            blankTap.cancelsTouchesInView = false
-            blankTap.delegate = self
-            overlaysHost.view.addGestureRecognizer(blankTap)
-            overlayBlankTapPageIds[ObjectIdentifier(overlaysHost.view)] = page.id
             return overlaysHost
-        }
-
-        /// pageId keyed by the overlays hosting view identity — used by
-        /// the blank-tap recognizer installed in `mountOverlaysHost`.
-        private var overlayBlankTapPageIds: [ObjectIdentifier: UUID] = [:]
-
-        @objc private func handleOverlayBlankTap(_ gesture: UITapGestureRecognizer) {
-            guard gesture.state == .ended, let hostView = gesture.view else { return }
-            guard let pageId = overlayBlankTapPageIds[ObjectIdentifier(hostView)] else { return }
-            let point = gesture.location(in: hostView)
-            let pageSize = hostView.bounds.size
-            guard pageSize.width > 0, pageSize.height > 0 else { return }
-            if pointHitsAnySelectableElement(point, pageId: pageId, pageSize: pageSize) {
-                return
-            }
-            NotificationCenter.default.post(name: .editorBlankPageTapped, object: pageId)
-            if LassoSelectionState.shared.pageId == pageId {
-                LassoSelectionState.shared.clear()
-            }
-        }
-
-        /// True when `point` lands on any non-stroke page element.
-        /// Strokes are ink; blank-tap deselect for stroke/lasso chrome
-        /// is owned by `LassoOverlayView` / `LassoSelectionState`.
-        private func pointHitsAnySelectableElement(
-            _ point: CGPoint,
-            pageId: UUID,
-            pageSize: CGSize
-        ) -> Bool {
-            let context = StorageService.shared.context
-            let descriptor = FetchDescriptor<PageElement>(
-                predicate: #Predicate<PageElement> {
-                    $0.pageId == pageId && $0.deletedAt == nil
-                }
-            )
-            let elements = (try? context.fetch(descriptor)) ?? []
-            for element in elements where element.kind != .stroke {
-                let rect = CGRect(
-                    x: element.normalizedX * pageSize.width,
-                    y: element.normalizedY * pageSize.height,
-                    width: element.normalizedWidth * pageSize.width,
-                    height: element.normalizedHeight * pageSize.height
-                ).insetBy(dx: -12, dy: -12)
-                if rect.contains(point) { return true }
-            }
-            return false
         }
 
         private func overlayInputs(for pageId: UUID) -> EditorPageOverlayInputs {
@@ -1209,27 +1141,16 @@ struct ContinuousCanvasView: UIViewRepresentable {
         /// Refresh the single active-page overlay when tool / canvas
         /// inputs change without remounting the hosting controller.
         func refreshActivePageOverlayInputs() {
-            guard let activeId = lastActivePageId else { return }
-            refreshOverlayInputs(forPageId: activeId)
-        }
-
-        /// Refresh one page's overlay inputs in place. Must run
-        /// whenever that page's canvas mounts or unmounts (not just
-        /// for the active page): the overlays capture
-        /// `inputs.canvasView` and register element undo entries
-        /// with ITS per-page undo manager, so a stale/nil canvas
-        /// silently drops those registrations — the "undo after a
-        /// delete undoes the previous change instead" report.
-        func refreshOverlayInputs(forPageId pageId: UUID) {
-            guard let i = hosts.firstIndex(where: { $0.pageId == pageId }),
+            guard let activeId = lastActivePageId,
+                  let i = hosts.firstIndex(where: { $0.pageId == activeId }),
                   let overlaysHost = hosts[i].overlaysHost,
-                  let page = page(for: pageId) else { return }
-            let inputs = overlayInputs(for: pageId)
+                  let page = page(for: activeId) else { return }
+            let inputs = overlayInputs(for: activeId)
             if overlaysHost.rootView.overlayInputs == inputs { return }
             let pageCS = PageCoordinateSpace(baseSize: page.pageSize.pointSize)
             overlaysHost.rootView = PageOverlaysContainer(
                 viewModel: viewModel,
-                pageId: pageId,
+                pageId: activeId,
                 notebookId: viewModel.notebook.id,
                 coordinateSpace: pageCS,
                 overlayInputs: inputs
@@ -1254,7 +1175,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
                   let overlaysHost = hosts[i].overlaysHost else { return }
             dlog("[Overlays] unmount idx=\(i) page=\(hosts[i].pageId.uuidString.prefix(8))")
             pendingOverlayMountIndices.remove(i)
-            overlayBlankTapPageIds.removeValue(forKey: ObjectIdentifier(overlaysHost.view))
             overlaysHost.detachFromParentVC()
             overlaysHost.view.removeFromSuperview()
             hosts[i].overlaysHost = nil
@@ -1262,7 +1182,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
 
         private func tearDownAllHosts() {
             hostBuildQueue.removeAll()
-            overlayBlankTapPageIds.removeAll()
             pendingCanvasMountTask?.cancel()
             pendingCanvasMountTask = nil
             pendingCanvasMountIndices.removeAll()
@@ -1689,17 +1608,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             guard let scrollView, let contentView else { return }
             let viewportTop    = scrollView.contentOffset.y
             let viewportBottom = viewportTop + scrollView.bounds.height
-            // Rest-time inset/snap chatter moves contentOffset by ~1pt
-            // repeatedly. Re-running the full mount/unmount scan on
-            // every chatter tick is wasted main-thread work and is the
-            // log signature behind "scroll lags once in a while."
-            if !force,
-               !isActivelyScrolling,
-               lastMembershipOffsetY.isFinite,
-               abs(viewportTop - lastMembershipOffsetY) < 2 {
-                return
-            }
-            lastMembershipOffsetY = viewportTop
             let canvasPad = isActivelyScrolling
                 ? 0
                 : scrollView.bounds.height * warmBandPaddingFactor
@@ -1853,16 +1761,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     }
                 }
             }
-            // Building a full SwiftUI overlay tree can instantiate
-            // TextKit views, fetch every element type, and (before
-            // audio became lazy) prepare media decoders. Even one
-            // such mount is visible as a small first-pass hitch during
-            // a fling. Preserve already-mounted overlays, but defer
-            // new trees while velocity is high; the rest callback
-            // drains only hosts still near the landing viewport.
-            if !shouldDeferOverlayMountsForScroll {
-                flushPendingOverlayMounts()
-            }
+            // Flush even mid-scroll: the scheduler batches one overlay
+            // tree per 16 ms and re-checks the band per mount, so a
+            // sweep pays at most a frame here and there instead of
+            // showing element-less pages until rest.
+            flushPendingOverlayMounts()
             // At rest, drain the warm-band canvas prefetch queue too
             // (one mount per tick). Mid-scroll the queue keeps
             // deferring to the rest flush in `setActivelyScrolling`,
@@ -1898,25 +1801,7 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if deferredUnmountSaves {
                 flushPendingUnmountSaves()
             }
-            #if DEBUG
-            // Log only on meaningful membership / mode changes — the
-            // previous per-call line flooded device logs (~500+/session)
-            // and burned main-thread time on string format + fflush
-            // during the ±1pt rest oscillation.
-            let canvasCount = hosts.reduce(0) { $0 + ($1.canvasView != nil ? 1 : 0) }
-            let overlayCount = hosts.reduce(0) { $0 + ($1.overlaysHost != nil ? 1 : 0) }
-            // Offset itself is deliberately excluded. At 120 Hz an
-            // 8-point bucket still changed nearly every sampled pass
-            // (419 lines in one device trace), and `dlog` flushes
-            // stdout synchronously. Counts/mode retain the useful
-            // membership evidence without putting logging back on
-            // every scroll update.
-            let signature = "\(isActivelyScrolling)|\(force)|\(canvasCount)|\(overlayCount)"
-            if signature != lastMembershipLogSignature {
-                lastMembershipLogSignature = signature
-                dlog("[Membership] offset=\(Int(viewportTop)) zoom=\(String(format: "%.2f", scrollView.zoomScale)) scrolling=\(isActivelyScrolling) force=\(force) canvases=\(canvasCount) overlays=\(overlayCount)")
-            }
-            #endif
+            dlog("[Membership] offset=\(Int(viewportTop)) zoom=\(String(format: "%.2f", scrollView.zoomScale)) scrolling=\(isActivelyScrolling) force=\(force) canvases=\(hosts.filter { $0.canvasView != nil }.count) overlays=\(hosts.filter { $0.overlaysHost != nil }.count)")
         }
 
         private func flushPendingCanvasMounts() {
@@ -1973,14 +1858,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             scheduleOverlayMounts(indices)
         }
 
-        /// New overlay trees may be visually absent for a fraction of
-        /// a second during a fast fling, but mounting them mid-frame is
-        /// measurably worse: it stalls the content already on screen.
-        private var shouldDeferOverlayMountsForScroll: Bool {
-            guard isActivelyScrolling, let scrollView else { return false }
-            return abs(scrollView.panGestureRecognizer.velocity(in: scrollView).y) > 700
-        }
-
         /// Mount at most one `PageOverlaysContainer` per runloop tick
         /// so scrolling through a long notebook cannot wedge the main
         /// thread mounting every overlay tree in one frame.
@@ -1992,10 +1869,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 guard let self else { return }
                 while !queue.isEmpty {
                     guard !Task.isCancelled else { return }
-                    if self.shouldDeferOverlayMountsForScroll {
-                        self.pendingOverlayMountIndices.formUnion(queue)
-                        return
-                    }
                     let i = queue.removeFirst()
                     guard self.isHostNearViewport(i) else { continue }
                     self.ensureOverlaysMounted(at: i)
@@ -2020,11 +1893,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // shifted rendered strokes. See
             // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
             let canvas = CeciliasNotesPKCanvasView(frame: frame)
-            // Reinject the session-stable per-page undo manager
-            // BEFORE any stroke / element can register into it.
-            // A fresh manager per mount would wipe LIFO history
-            // every time the page left the warm band.
-            canvas.pageUndoManager = viewModel.undoManager(forPage: pageId)
             canvas.delegate = self
             canvas.backgroundColor = .clear
             canvas.isOpaque = false
@@ -2165,13 +2033,8 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // primary ownership of `viewModel.canvasView`.
             if hosts[i].pageId == lastActivePageId {
                 viewModel.canvasView = canvas
+                refreshActivePageOverlayInputs()
             }
-            // EVERY page's overlay must learn about its new canvas —
-            // not just the active page's. Overlays register element
-            // undo entries with `inputs.canvasView`'s per-page undo
-            // manager; leaving a stale/nil canvas in the inputs
-            // silently dropped those registrations.
-            refreshOverlayInputs(forPageId: hosts[i].pageId)
         }
 
         private func unmountCanvas(at i: Int, deferStorageSave: Bool = false) {
@@ -2204,10 +2067,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if viewModel.canvasView === canvas {
                 viewModel.canvasView = nil
             }
-            // Drop the dead canvas from the page's overlay inputs so
-            // element ops don't register undo entries into a manager
-            // no toolbar tap can ever reach.
-            refreshOverlayInputs(forPageId: pageId)
         }
 
         private func flushPendingUnmountSaves() {
@@ -2855,12 +2714,6 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 if abs(offset.y - minY) < threshold { target.y = minY }
                 else if abs(offset.y - maxY) < threshold { target.y = maxY }
             }
-            // Ignore sub-point chatter — animated snaps of <2pt are
-            // what kept contentOffset oscillating after rest and
-            // re-entered scrollViewDidScroll → membership.
-            if hypot(target.x - offset.x, target.y - offset.y) < 2 {
-                return
-            }
             if target != offset {
                 scrollView.setContentOffset(target, animated: true)
             }
@@ -2885,14 +2738,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     ]
                 )
             }
-            // Membership scans every host frame — throttle while
-            // scrolling (~10 Hz) AND at rest (~20 Hz). At-rest was
-            // previously unthrottled; combined with inset/snap
-            // chatter that meant dozens of full-band passes after
-            // every fling for a 1pt oscillation.
-            let membershipInterval = isActivelyScrolling ? 0.1 : 0.05
-            if now - lastMembershipUpdate > membershipInterval {
-                lastMembershipUpdate = now
+            // Membership scans every host frame — throttle to ~10 Hz
+            // while actively scrolling so scroll ticks don't wedge the
+            // main thread on band math + pending-mount bookkeeping.
+            if isActivelyScrolling {
+                if now - lastMembershipUpdate > 0.1 {
+                    lastMembershipUpdate = now
+                    updateCanvasMembership()
+                }
+            } else {
                 updateCanvasMembership()
             }
             updateActivePageFromScroll()

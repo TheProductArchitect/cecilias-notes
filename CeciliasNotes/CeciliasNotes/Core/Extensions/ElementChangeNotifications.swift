@@ -37,12 +37,4 @@ extension Notification.Name {
     /// element, so the canvas coordinator can reload the affected
     /// pages' PKCanvasViews. userInfo: `"pageIds": [UUID]`.
     static let strokeContentRewritten = Notification.Name("strokeContentRewritten")
-
-    /// Posted when the user taps empty page area. `object` is the
-    /// page `UUID`. Overlay selection state is local `@State` per
-    /// overlay, so a page-level blank tap has to broadcast — a
-    /// catcher living inside one overlay cannot clear a selection
-    /// owned by a sibling stacked above/below it in
-    /// `PageOverlaysContainer`.
-    static let editorBlankPageTapped = Notification.Name("editorBlankPageTapped")
 }

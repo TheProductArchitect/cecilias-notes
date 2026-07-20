@@ -185,28 +185,6 @@ final class EditorViewModel: ObservableObject {
         didSet { ActivePageCanvas.current = canvasView }
     }
 
-    /// Stable per-page undo stacks for the editor session. Each
-    /// warm-band `CeciliasNotesPKCanvasView` is short-lived (unmounted
-    /// when the page leaves the band), but PencilKit +
-    /// `PageElementUndo` both register into `canvas.undoManager`.
-    /// Owning the managers here — and reinjecting the same instance
-    /// on remount — keeps last-in-first-out across scroll: a delete
-    /// registered before a canvas recycle stays on top of the stack
-    /// the toolbar undoes next. Cleared on editor dismiss so a
-    /// reopened notebook starts fresh.
-    private var pageUndoManagers: [UUID: UndoManager] = [:]
-
-    /// Returns the undo manager for `pageId`, creating it on first
-    /// use. Mounted canvases must call this and assign the result to
-    /// `CeciliasNotesPKCanvasView.pageUndoManager` before the canvas
-    /// is interactive.
-    func undoManager(forPage pageId: UUID) -> UndoManager {
-        if let existing = pageUndoManagers[pageId] { return existing }
-        let manager = UndoManager()
-        pageUndoManagers[pageId] = manager
-        return manager
-    }
-
     /// Transport struct for the normalised tap location the user
     /// wants the imported image centred on. Used as the `at:`
     /// argument to `commitImportedImage` from every entry point
@@ -896,8 +874,7 @@ final class EditorViewModel: ObservableObject {
     ///
     /// Multi-select: when the `images` array is present every picked
     /// image commits, cascaded +3% right+down per image so the stack
-    /// is visibly a stack (mirrors the +16pt cascade the Files
-    /// import uses). Previously only the first image landed —
+    /// is visibly a stack. Previously only the first image landed —
     /// "importing multiple images only imports one image".
     @objc private func handleImageImportCompleted(_ note: Notification) {
         guard
@@ -2799,10 +2776,6 @@ final class EditorViewModel: ObservableObject {
         // Focus Mode is editor-scoped — exit on the way back to Library so
         // the next notebook opens with normal chrome.
         isFocusMode = false
-        // Drop per-page undo stacks with the editor — they hold
-        // strong refs to canvases / anchors from this session and
-        // must not outlive the notebook cover.
-        pageUndoManagers.removeAll()
         // Clear the launch-time resume pointer. Background while
         // inside the editor (the user-facing "resume me here"
         // case) leaves the key in place; pressing Back is the

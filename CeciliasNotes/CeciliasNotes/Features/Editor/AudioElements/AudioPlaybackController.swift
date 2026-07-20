@@ -10,9 +10,9 @@ import SwiftUI
 /// across elements).
 ///
 /// Lifecycle:
-///   • `load(url:)` is called lazily on the first play / seek action.
+///   • `load(url:)` is called when the element view appears.
 ///     Creates the AVAudioPlayer, reads `duration`, leaves
-///     `isPlaying = false`. Page mounting performs no decoder work.
+///     `isPlaying = false`.
 ///   • `togglePlayPause()` starts/pauses; spins up a 10Hz timer to
 ///     drive `currentTime` so the progress bar moves smoothly.
 ///   • `seek(to:)` jumps to a specific second.

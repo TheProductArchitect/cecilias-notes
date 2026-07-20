@@ -9,14 +9,11 @@ import UIKit
 /// pressure. Generation always happens off the main actor; results
 /// are stored on the main actor.
 ///
-/// Cache keys are composite `(pageId, contentStamp, pdfFingerprint,
-/// elementsFingerprint)` where `contentStamp` is `page.updatedAt`
-/// and `elementsFingerprint` digests the active elements' own
-/// `updatedAt` stamps. Every stroke persist bumps the page's
-/// `updatedAt` (and stroke rewrites that bypass `updatePageStrokes`
-/// call `StrokeCommit.stampPage`); text / sticky / shape / image
-/// edits stamp their element row, which the fingerprint picks up.
-/// A change produces a new key and old entries orphan and evict
+/// Cache keys are composite `(pageId, contentStamp, pdfFingerprint)`
+/// where `contentStamp` is `page.updatedAt`. Every stroke persist
+/// bumps the page's `updatedAt` (and stroke rewrites that bypass
+/// `updatePageStrokes` call `StrokeCommit.stampPage`), so a new
+/// sketch produces a new key and old entries orphan and evict
 /// naturally — no manual invalidate from the save path.
 ///
 /// The key used to be a fingerprint OF THE STROKE BYTES — which
@@ -48,12 +45,6 @@ final class PageThumbnailCache {
         let pageId: UUID
         let contentStamp: Date
         let pdfFingerprint: UInt64
-        /// Combined count + latest `updatedAt` across the page's
-        /// active elements. Text / sticky / shape edits stamp the
-        /// ELEMENT row, not `page.updatedAt` — without this the key
-        /// never changed for those kinds and the strip served stale
-        /// thumbnails forever.
-        let elementsFingerprint: UInt64
     }
 
     // MARK: - Storage
@@ -134,13 +125,13 @@ final class PageThumbnailCache {
         let task = Task.detached(priority: .utility) { [weak self] () -> UIImage? in
             let drawing = warmDrawing
                 ?? Self.loadDrawingOffMain(pageId: pageId, container: container)
-            let layers = Self.loadElementLayersOffMain(pageId: pageId, container: container)
+            let imageLayers = Self.loadImageLayersOffMain(pageId: pageId, container: container)
             #if DEBUG
-            dlog("[Thumb] render begin pageId=\(pageId) stamp=\(key.contentStamp) strokes=\(drawing?.strokes.count ?? 0) images=\(layers.images.count) texts=\(layers.texts.count) stickies=\(layers.stickies.count) shapes=\(layers.shapes.count) highlights=\(layers.highlights.count) audio=\(layers.audios.count)")
+            dlog("[Thumb] render begin pageId=\(pageId) stamp=\(key.contentStamp) strokes=\(drawing?.strokes.count ?? 0) images=\(imageLayers.count)")
             #endif
             let image = await Self.render(
                 drawing: drawing,
-                layers: layers,
+                imageLayers: imageLayers,
                 pageRect: pageRect,
                 targetSize: targetSize,
                 pdfBacking: pdfBacking
@@ -167,55 +158,17 @@ final class PageThumbnailCache {
     }
 
     /// Compose a `Key` from a page on the main actor. MUST stay a
-    /// pure property read plus one small element-row fetch — this
+    /// pure property read plus the small PDF-element lookup — this
     /// runs per strip-row body evaluation, and reading stroke bytes
     /// here is exactly the main-thread SQLite storm the stamp-based
     /// key exists to prevent.
     func composeKey(for page: Page) -> Key {
-        let meta = Self.lookupElementsMetadata(forPageId: page.id)
+        let pdfIndex = Self.lookupPDFBacking(forPageId: page.id)?.index
         return Key(
             pageId: page.id,
             contentStamp: page.updatedAt,
-            pdfFingerprint: meta.pdfIndex.map { UInt64($0) + 1 } ?? 0,
-            elementsFingerprint: meta.fingerprint
+            pdfFingerprint: pdfIndex.map { UInt64($0) + 1 } ?? 0
         )
-    }
-
-    /// One element-row fetch (property reads only, no blobs)
-    /// yielding both key ingredients:
-    ///   • `pdfIndex` — page index of the full-bleed PDF backing,
-    ///     mirroring `lookupPDFBacking` minus the file-exists check.
-    ///   • `fingerprint` — order-independent digest of the active
-    ///     elements: count folded with every element's `updatedAt`
-    ///     bit pattern. Text / sticky / shape / image edits stamp
-    ///     the ELEMENT row, not `page.updatedAt`, so this is what
-    ///     makes the composite key change (and the strip re-render)
-    ///     when non-stroke content changes.
-    @MainActor
-    static func lookupElementsMetadata(
-        forPageId pageId: UUID
-    ) -> (pdfIndex: Int?, fingerprint: UInt64) {
-        let context = StorageService.shared.context
-        let descriptor = FetchDescriptor<PageElement>(
-            predicate: #Predicate<PageElement> {
-                $0.pageId == pageId && $0.deletedAt == nil
-            }
-        )
-        guard let elements = try? context.fetch(descriptor) else { return (nil, 0) }
-
-        var acc = UInt64(elements.count)
-        for element in elements {
-            acc = acc &+ element.updatedAt
-                .timeIntervalSinceReferenceDate.bitPattern
-        }
-
-        let candidates = elements.filter { $0.kind == .pdfPage }
-        let fullBleed = candidates.first {
-            $0.zIndex == 0 &&
-                $0.normalizedX == 0 && $0.normalizedY == 0 &&
-                $0.normalizedWidth == 1 && $0.normalizedHeight == 1
-        } ?? candidates.first
-        return (fullBleed?.pdfPageContent?.pageIndex, acc)
     }
 
     /// Fetch + decode the page's stroke blob on a background
@@ -250,68 +203,14 @@ final class PageThumbnailCache {
         let zIndex: Int
     }
 
-    /// Plain-text projection of a `.text` element. The thumbnail is
-    /// far too small for rich-text fidelity; plain `text` + `size`
-    /// gives the visual gist without unarchiving attributed data
-    /// off-main.
-    struct TextLayer: Sendable {
-        let text: String
-        let size: TextSize
-        let rect: CGRect
-        let rotation: Double
-        let zIndex: Int
-    }
-
-    struct StickyLayer: Sendable {
-        let text: String
-        let colorVariant: String
-        let rect: CGRect
-        let rotation: Double
-        let zIndex: Int
-    }
-
-    struct ShapeLayer: Sendable {
-        let kind: ShapeKind
-        let strokeColorHex: String
-        let strokeWidth: Double
-        let fillColorHex: String?
-        let fillOpacity: Double
-        let rect: CGRect
-        let rotation: Double
-        let zIndex: Int
-    }
-
-    struct HighlightLayer: Sendable {
-        let style: HighlightStyle
-        let colorVariant: String
-        let rect: CGRect
-    }
-
-    struct AudioLayer: Sendable {
-        let rect: CGRect
-    }
-
-    /// Every element layer the thumbnail composites, snapshotted as
-    /// Sendable values off the main actor.
-    struct ElementLayers: Sendable {
-        var images: [ImageLayer] = []
-        var texts: [TextLayer] = []
-        var stickies: [StickyLayer] = []
-        var shapes: [ShapeLayer] = []
-        var highlights: [HighlightLayer] = []
-        var audios: [AudioLayer] = []
-    }
-
-    /// Fetch + decode the page's elements on a background
-    /// `ModelContext`. The thumbnail used to composite only paper +
-    /// PDF + ink + images — text / sticky / shape / highlight /
-    /// audio content was invisible in the strip, so mostly-text
-    /// pages all looked like blank paper ("can't tell which page
-    /// I'm jumping to").
-    nonisolated private static func loadElementLayersOffMain(
+    /// Fetch + decode the page's image elements on a background
+    /// `ModelContext`. Thumbnails composited only paper + PDF + ink
+    /// — pages whose content is photos/imports rendered as blank
+    /// paper in the strip ("thumbnails won't show images").
+    nonisolated private static func loadImageLayersOffMain(
         pageId: UUID,
         container: ModelContainer
-    ) -> ElementLayers {
+    ) -> [ImageLayer] {
         let context = ModelContext(container)
         let descriptor = FetchDescriptor<PageElement>(
             predicate: #Predicate<PageElement> {
@@ -319,18 +218,10 @@ final class PageThumbnailCache {
             }
         )
         let elements = (try? context.fetch(descriptor)) ?? []
-        var layers = ElementLayers()
-
-        for element in elements {
-            let rect = CGRect(
-                x: element.normalizedX,
-                y: element.normalizedY,
-                width: element.normalizedWidth,
-                height: element.normalizedHeight
-            )
-            switch element.kind {
-            case .image:
-                guard let content = element.imageContent else { continue }
+        return elements
+            .filter { $0.kind == .image }
+            .compactMap { element -> ImageLayer? in
+                guard let content = element.imageContent else { return nil }
                 // In-row bytes first (canonical, CloudKit-synced),
                 // falling back to the on-disk file for legacy rows
                 // that predate the in-row column — those images
@@ -340,69 +231,25 @@ final class PageThumbnailCache {
                 // about the page).
                 let bytes = content.imageData
                     ?? (try? Data(contentsOf: content.fileURL))
-                guard let bytes, let raw = UIImage(data: bytes) else { continue }
+                guard let bytes, let raw = UIImage(data: bytes) else { return nil }
                 let image = ImageDataView.applyCrop(
                     to: raw,
                     x: content.cropOriginX, y: content.cropOriginY,
                     w: content.cropWidth, h: content.cropHeight
                 )
-                layers.images.append(ImageLayer(
-                    image: image, rect: rect,
-                    rotation: element.rotation, zIndex: element.zIndex
-                ))
-            case .text:
-                guard let content = element.textContent,
-                      !content.text.isEmpty else { continue }
-                layers.texts.append(TextLayer(
-                    text: content.text, size: content.size, rect: rect,
-                    rotation: element.rotation, zIndex: element.zIndex
-                ))
-            case .stickyNote:
-                guard let content = element.stickyNoteContent else { continue }
-                layers.stickies.append(StickyLayer(
-                    text: content.text, colorVariant: content.colorVariant,
-                    rect: rect,
-                    rotation: element.rotation, zIndex: element.zIndex
-                ))
-            case .shape:
-                guard let content = element.shapeContent else { continue }
-                layers.shapes.append(ShapeLayer(
-                    kind: content.shapeKind,
-                    strokeColorHex: content.strokeColorHex,
-                    strokeWidth: content.strokeWidth,
-                    fillColorHex: content.fillColorHex,
-                    fillOpacity: content.fillOpacity,
-                    rect: rect,
-                    rotation: element.rotation, zIndex: element.zIndex
-                ))
-            case .highlight:
-                guard let content = element.highlightContent else { continue }
-                // Highlight rects live on the content row in
-                // normalised PDF-page coordinates; for the strip's
-                // tiny scale drawing them in page space (matching
-                // ExportService) is a faithful-enough hint.
-                layers.highlights.append(HighlightLayer(
-                    style: content.style,
-                    colorVariant: content.colorVariant,
+                return ImageLayer(
+                    image: image,
                     rect: CGRect(
-                        x: content.rectOriginX, y: content.rectOriginY,
-                        width: content.rectWidth, height: content.rectHeight
-                    )
-                ))
-            case .audio:
-                layers.audios.append(AudioLayer(rect: rect))
-            case .stroke, .pdfPage:
-                // Ink and PDF backing composite via their dedicated
-                // paths (PKDrawing / drawPDFPage).
-                continue
+                        x: element.normalizedX,
+                        y: element.normalizedY,
+                        width: element.normalizedWidth,
+                        height: element.normalizedHeight
+                    ),
+                    rotation: element.rotation,
+                    zIndex: element.zIndex
+                )
             }
-        }
-
-        layers.images.sort { $0.zIndex < $1.zIndex }
-        layers.texts.sort { $0.zIndex < $1.zIndex }
-        layers.stickies.sort { $0.zIndex < $1.zIndex }
-        layers.shapes.sort { $0.zIndex < $1.zIndex }
-        return layers
+            .sorted { $0.zIndex < $1.zIndex }
     }
 
     /// Step 5.5: replaces the legacy `Page.pdfPageIndex` /
@@ -446,7 +293,7 @@ final class PageThumbnailCache {
     // MARK: - Internals
 
     nonisolated private func cacheKey(_ k: Key) -> NSString {
-        "\(k.pageId.uuidString)|\(k.contentStamp.timeIntervalSinceReferenceDate)|\(k.pdfFingerprint)|\(k.elementsFingerprint)" as NSString
+        "\(k.pageId.uuidString)|\(k.contentStamp.timeIntervalSinceReferenceDate)|\(k.pdfFingerprint)" as NSString
     }
 
     // MARK: Rendering
@@ -463,7 +310,7 @@ final class PageThumbnailCache {
     /// (PDFDocument open + PKDrawing.image) back onto main.
     nonisolated private static func render(
         drawing: PKDrawing?,
-        layers: ElementLayers,
+        imageLayers: [ImageLayer],
         pageRect: CGRect,
         targetSize: CGSize,
         pdfBacking: (url: URL, index: Int)?
@@ -499,8 +346,13 @@ final class PageThumbnailCache {
 
                 // Image elements, z-ordered, below the ink — matches
                 // the editor's compositing (ink draws over photos).
-                for layer in layers.images {
-                    let target = denormalize(layer.rect, in: targetSize)
+                for layer in imageLayers {
+                    let target = CGRect(
+                        x: layer.rect.origin.x * targetSize.width,
+                        y: layer.rect.origin.y * targetSize.height,
+                        width: layer.rect.width * targetSize.width,
+                        height: layer.rect.height * targetSize.height
+                    )
                     if layer.rotation != 0 {
                         let cg = ctx.cgContext
                         cg.saveGState()
@@ -514,237 +366,17 @@ final class PageThumbnailCache {
                     }
                 }
 
-                // Compositing order below mirrors ExportService's
-                // page rasterisation: highlights under ink, then
-                // shapes / text / stickies / audio markers on top.
-                drawHighlights(layers.highlights, in: ctx.cgContext, targetSize: targetSize)
+                guard let drawing else { return }
 
-                if let drawing {
-                    // `PKDrawing.image(from:scale:)` rasterises the
-                    // stored drawing into a UIImage at the supplied
-                    // scale. We then draw it into our composite at the
-                    // target size to overlay the paper / PDF background.
-                    let drawingImage = drawing.image(from: pageRect, scale: scale)
-                    drawingImage.draw(in: CGRect(origin: .zero, size: targetSize))
-                }
-
-                let fontScale = targetSize.width / pageRect.width
-                drawShapes(layers.shapes, in: ctx.cgContext, targetSize: targetSize, fontScale: fontScale)
-                drawTexts(layers.texts, in: ctx.cgContext, targetSize: targetSize, fontScale: fontScale)
-                drawStickies(layers.stickies, in: ctx.cgContext, targetSize: targetSize, fontScale: fontScale)
-                drawAudioMarkers(layers.audios, in: ctx.cgContext, targetSize: targetSize)
+                // `PKDrawing.image(from:scale:)` rasterises the
+                // stored drawing into a UIImage at the supplied
+                // scale. We then draw it into our composite at the
+                // target size to overlay the paper / PDF background.
+                let drawingImage = drawing.image(from: pageRect, scale: scale)
+                drawingImage.draw(in: CGRect(origin: .zero, size: targetSize))
             }
         }
         return output
-    }
-
-    nonisolated private static func denormalize(_ rect: CGRect, in targetSize: CGSize) -> CGRect {
-        CGRect(
-            x: rect.origin.x * targetSize.width,
-            y: rect.origin.y * targetSize.height,
-            width: rect.width * targetSize.width,
-            height: rect.height * targetSize.height
-        )
-    }
-
-    /// Applies rotation about the rect's centre, then runs `body`
-    /// with the rect translated to origin — the pattern every
-    /// rotated element draw shares.
-    nonisolated private static func withElementTransform(
-        _ ctx: CGContext, rect: CGRect, rotation: Double,
-        _ body: (CGRect) -> Void
-    ) {
-        ctx.saveGState()
-        if rotation != 0 {
-            ctx.translateBy(x: rect.midX, y: rect.midY)
-            ctx.rotate(by: CGFloat(rotation))
-            ctx.translateBy(x: -rect.width / 2, y: -rect.height / 2)
-        } else {
-            ctx.translateBy(x: rect.minX, y: rect.minY)
-        }
-        body(CGRect(origin: .zero, size: rect.size))
-        ctx.restoreGState()
-    }
-
-    nonisolated private static func drawTexts(
-        _ texts: [TextLayer], in ctx: CGContext,
-        targetSize: CGSize, fontScale: CGFloat
-    ) {
-        for layer in texts {
-            let rect = denormalize(layer.rect, in: targetSize)
-            guard rect.width > 1, rect.height > 1 else { continue }
-            // Same point sizes the editor uses (TextSize.pointSize
-            // is MainActor-isolated under default isolation, so the
-            // mapping is inlined here), scaled by the page →
-            // thumbnail ratio so line breaks land roughly where
-            // they do on the real page. Tiny but legible enough to
-            // identify the page — which is the job.
-            let basePointSize: CGFloat
-            switch layer.size {
-            case .small:   basePointSize = 14
-            case .body:    basePointSize = 17
-            case .heading: basePointSize = 24
-            }
-            let font = UIFont.systemFont(
-                ofSize: max(1.5, basePointSize * fontScale),
-                weight: layer.size == .heading ? .semibold : .regular
-            )
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: UIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
-            ]
-            withElementTransform(ctx, rect: rect, rotation: layer.rotation) { box in
-                (layer.text as NSString).draw(
-                    with: box,
-                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                    attributes: attrs,
-                    context: nil
-                )
-            }
-        }
-    }
-
-    nonisolated private static func drawStickies(
-        _ stickies: [StickyLayer], in ctx: CGContext,
-        targetSize: CGSize, fontScale: CGFloat
-    ) {
-        for layer in stickies {
-            let rect = denormalize(layer.rect, in: targetSize)
-            guard rect.width > 1, rect.height > 1 else { continue }
-            withElementTransform(ctx, rect: rect, rotation: layer.rotation) { box in
-                ctx.setFillColor(stickyColor(layer.colorVariant).cgColor)
-                ctx.fill(box)
-                guard !layer.text.isEmpty else { return }
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.systemFont(ofSize: max(1.5, 13 * fontScale)),
-                    .foregroundColor: UIColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1)
-                ]
-                (layer.text as NSString).draw(
-                    with: box.insetBy(dx: 1, dy: 1),
-                    options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                    attributes: attrs,
-                    context: nil
-                )
-            }
-        }
-    }
-
-    nonisolated private static func drawShapes(
-        _ shapes: [ShapeLayer], in ctx: CGContext,
-        targetSize: CGSize, fontScale: CGFloat
-    ) {
-        for layer in shapes {
-            let rect = denormalize(layer.rect, in: targetSize)
-            guard rect.width > 0.5, rect.height > 0.5 else { continue }
-            withElementTransform(ctx, rect: rect, rotation: layer.rotation) { box in
-                let stroke = UIColor(hex: layer.strokeColorHex)
-                let fill = layer.fillColorHex.map {
-                    UIColor(hex: $0).withAlphaComponent(CGFloat(layer.fillOpacity))
-                }
-                ctx.setStrokeColor(stroke.cgColor)
-                ctx.setLineWidth(max(0.4, CGFloat(layer.strokeWidth) * fontScale))
-                if let fill { ctx.setFillColor(fill.cgColor) }
-                switch layer.kind {
-                case .rectangle, .roundedRectangle:
-                    if fill != nil { ctx.fill(box) }
-                    ctx.stroke(box)
-                case .ellipse, .star, .heart, .callout:
-                    // Decorative shapes approximate as their bounding
-                    // ellipse at thumbnail scale — same call
-                    // ExportService makes.
-                    if fill != nil { ctx.fillEllipse(in: box) }
-                    ctx.strokeEllipse(in: box)
-                case .triangle:
-                    ctx.move(to: CGPoint(x: box.midX, y: 0))
-                    ctx.addLine(to: CGPoint(x: 0, y: box.height))
-                    ctx.addLine(to: CGPoint(x: box.width, y: box.height))
-                    ctx.closePath()
-                    if fill != nil {
-                        ctx.fillPath()
-                        ctx.move(to: CGPoint(x: box.midX, y: 0))
-                        ctx.addLine(to: CGPoint(x: 0, y: box.height))
-                        ctx.addLine(to: CGPoint(x: box.width, y: box.height))
-                        ctx.closePath()
-                    }
-                    ctx.strokePath()
-                case .line, .arrow:
-                    ctx.move(to: CGPoint(x: 0, y: box.height / 2))
-                    ctx.addLine(to: CGPoint(x: box.width, y: box.height / 2))
-                    ctx.strokePath()
-                }
-            }
-        }
-    }
-
-    nonisolated private static func drawHighlights(
-        _ highlights: [HighlightLayer], in ctx: CGContext, targetSize: CGSize
-    ) {
-        for layer in highlights {
-            let rect = denormalize(layer.rect, in: targetSize)
-            ctx.saveGState()
-            switch layer.style {
-            case .highlight:
-                ctx.setFillColor(highlightColor(layer.colorVariant).cgColor)
-                ctx.fill(rect)
-            case .underline:
-                ctx.setStrokeColor(UIColor.darkGray.cgColor)
-                ctx.setLineWidth(0.5)
-                ctx.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-                ctx.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-                ctx.strokePath()
-            case .strikethrough:
-                ctx.setStrokeColor(UIColor.darkGray.cgColor)
-                ctx.setLineWidth(0.5)
-                ctx.move(to: CGPoint(x: rect.minX, y: rect.midY))
-                ctx.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-                ctx.strokePath()
-            }
-            ctx.restoreGState()
-        }
-    }
-
-    /// Tiny rounded pill where the audio strip sits — enough to say
-    /// "this page has a recording" at 80pt without drawing symbol
-    /// images off-main.
-    nonisolated private static func drawAudioMarkers(
-        _ audios: [AudioLayer], in ctx: CGContext, targetSize: CGSize
-    ) {
-        for layer in audios {
-            var rect = denormalize(layer.rect, in: targetSize)
-            rect.size.height = max(rect.height, 2)
-            rect.size.width = max(rect.width, 6)
-            let path = CGPath(
-                roundedRect: rect,
-                cornerWidth: rect.height / 2, cornerHeight: rect.height / 2,
-                transform: nil
-            )
-            ctx.saveGState()
-            ctx.addPath(path)
-            ctx.setFillColor(UIColor(red: 0.55, green: 0.45, blue: 0.85, alpha: 0.45).cgColor)
-            ctx.fillPath()
-            ctx.restoreGState()
-        }
-    }
-
-    /// Bright Default-theme sticky palette — same constants
-    /// ExportService bakes into exported PDFs so the strip and the
-    /// export read the same.
-    nonisolated private static func stickyColor(_ key: String) -> UIColor {
-        switch key {
-        case "pink":  return UIColor(red: 1.00, green: 0.75, blue: 0.85, alpha: 1.0)
-        case "blue":  return UIColor(red: 0.70, green: 0.85, blue: 1.00, alpha: 1.0)
-        case "green": return UIColor(red: 0.75, green: 0.95, blue: 0.70, alpha: 1.0)
-        default:      return UIColor(red: 1.00, green: 0.92, blue: 0.50, alpha: 1.0)
-        }
-    }
-
-    nonisolated private static func highlightColor(_ key: String) -> UIColor {
-        switch key {
-        case "pink":  return UIColor(red: 1.00, green: 0.70, blue: 0.85, alpha: 0.4)
-        case "blue":  return UIColor(red: 0.70, green: 0.85, blue: 1.00, alpha: 0.4)
-        case "green": return UIColor(red: 0.75, green: 0.95, blue: 0.70, alpha: 0.4)
-        default:      return UIColor(red: 1.00, green: 0.95, blue: 0.40, alpha: 0.4)
-        }
     }
 
     /// Letterbox-fit a PDF page into `target`. Keeps aspect ratio,

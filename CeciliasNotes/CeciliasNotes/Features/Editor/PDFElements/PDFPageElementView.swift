@@ -61,10 +61,7 @@ struct PDFPageElementView: View {
                 .contentShape(Rectangle())
                 .simultaneousGesture(
                     TapGesture().onEnded {
-                        // Toggle — full-page PDF references cover the
-                        // whole canvas, so blank-tap deselect never
-                        // has an empty target outside the element.
-                        isSelected.toggle()
+                        if !isSelected { isSelected = true }
                     }
                 )
                 .gesture(isSelected ? pageDragGesture : nil)

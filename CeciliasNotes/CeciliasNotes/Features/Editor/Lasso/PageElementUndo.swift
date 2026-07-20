@@ -23,12 +23,7 @@ enum PageElementUndo {
         canvas: PKCanvasView?,
         actionName: String
     ) {
-        guard let manager = canvas?.undoManager else {
-            #if DEBUG
-            dlog("[Undo] registerCreate DROPPED — nil canvas/undoManager kind=\(kind.rawValue) action=\(actionName)")
-            #endif
-            return
-        }
+        guard let manager = canvas?.undoManager else { return }
         registerToggle(
             elementId: elementId,
             kind: kind,
@@ -58,12 +53,7 @@ enum PageElementUndo {
         canvas: PKCanvasView?,
         actionName: String
     ) {
-        guard let manager = canvas?.undoManager else {
-            #if DEBUG
-            dlog("[Undo] registerDelete DROPPED — nil canvas/undoManager kind=\(kind.rawValue) action=\(actionName)")
-            #endif
-            return
-        }
+        guard let manager = canvas?.undoManager else { return }
         registerToggle(
             elementId: elementId,
             kind: kind,
@@ -154,9 +144,7 @@ enum PageElementUndo {
             NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
         case .highlight:
             NotificationCenter.default.post(name: .highlightElementsChanged, object: nil)
-        case .pdfPage:
-            NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
-        case .stroke:
+        case .stroke, .pdfPage:
             break
         }
     }

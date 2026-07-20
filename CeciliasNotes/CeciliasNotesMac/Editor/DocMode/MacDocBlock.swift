@@ -540,12 +540,9 @@ private struct MacDocTextPreview: View {
             if let content = element.textContent {
                 let attributed = MacRichTextCodec.decode(from: content)
                 if attributed.length > 0 {
-                    // AppKit-backed: SwiftUI `Text(AttributedString(ns))`
-                    // drops / remaps NSFont traits on macOS, so bold /
-                    // italic / size changes looked correct while editing
-                    // (NSTextView) then vanished in preview.
-                    MacAttributedTextPreview(attributed: attributed)
+                    Text(AttributedString(attributed))
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else if !content.text.isEmpty {
                     Text(content.text)
                         .font(.system(size: 15))
@@ -570,86 +567,6 @@ private struct MacDocTextPreview: View {
         .frame(maxHeight: maxHeight, alignment: .topLeading)
         .clipped()
         .allowsHitTesting(false)
-    }
-}
-
-/// Read-only AppKit text that preserves the same attributed string
-/// the editor writes — used for the non-editing preview of a block.
-private struct MacAttributedTextPreview: NSViewRepresentable {
-    let attributed: NSAttributedString
-
-    func makeNSView(context: Context) -> MacPreviewTextView {
-        let view = MacPreviewTextView(frame: .zero)
-        view.setAttributed(attributed)
-        return view
-    }
-
-    func updateNSView(_ view: MacPreviewTextView, context: Context) {
-        view.setAttributed(attributed)
-    }
-}
-
-/// Non-editable, non-scrolling text view that reports intrinsic height
-/// from its text layout — mirrors the growing editor's metrics so
-/// preview and edit modes don't jump.
-private final class MacPreviewTextView: NSView {
-    private let textView = NSTextView(frame: .zero)
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        textView.isEditable = false
-        textView.isSelectable = false
-        textView.isRichText = true
-        textView.drawsBackground = false
-        textView.backgroundColor = .clear
-        textView.textContainerInset = .zero
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.textContainer?.widthTracksTextView = true
-        textView.isHorizontallyResizable = false
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        textView.minSize = NSSize(width: 0, height: 0)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        addSubview(textView)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func setAttributed(_ attributed: NSAttributedString) {
-        if textView.attributedString() != attributed {
-            textView.textStorage?.setAttributedString(attributed)
-            invalidateIntrinsicContentSize()
-            needsLayout = true
-        }
-    }
-
-    override func layout() {
-        super.layout()
-        let width = bounds.width
-        textView.textContainer?.containerSize = NSSize(
-            width: max(1, width),
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        textView.frame = NSRect(x: 0, y: 0, width: width, height: 10_000)
-        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-        let used = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
-        let height = max(20, ceil(used.height))
-        textView.frame = NSRect(x: 0, y: 0, width: width, height: height)
-    }
-
-    override var intrinsicContentSize: NSSize {
-        let width = bounds.width > 1 ? bounds.width : 576
-        textView.textContainer?.containerSize = NSSize(
-            width: width,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-        textView.layoutManager?.ensureLayout(for: textView.textContainer!)
-        let used = textView.layoutManager?.usedRect(for: textView.textContainer!) ?? .zero
-        return NSSize(width: NSView.noIntrinsicMetric, height: max(20, ceil(used.height)))
     }
 }
 
