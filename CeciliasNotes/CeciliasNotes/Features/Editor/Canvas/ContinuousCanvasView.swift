@@ -25,6 +25,23 @@ final class PalmRejectingScrollView: UIScrollView {
     /// well below a resting palm/forearm contact.
     private let palmRadiusThreshold: CGFloat = 60
 
+    /// Feed the pencil detector even in cursor mode. The editor opens
+    /// in `.cursor` (so one-finger drag scrolls), and the first Pencil
+    /// contact is supposed to auto-swap to the inking tool via
+    /// `.pencilTouchObserved`. That notification is normally posted
+    /// from `CeciliasNotesPKCanvasView.touchesBegan` — but in cursor
+    /// mode the canvas is `isUserInteractionEnabled = false`, so a
+    /// Pencil touch lands HERE on the scroll view instead and the
+    /// canvas never sees it. Without this hook the swap could never
+    /// fire after a fresh install / reinstall reset `hasPencil`, so
+    /// the editor sat in cursor forever and the Pencil drew nothing.
+    /// Observe-only: records the touch, then defers entirely to
+    /// `super` — it does not affect scrolling or drawing.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        InputCapabilityDetector.shared.recordTouches(touches)
+        super.touchesBegan(touches, with: event)
+    }
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldReceive touch: UITouch

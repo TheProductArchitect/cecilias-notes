@@ -677,31 +677,28 @@ final class EditorViewModel: ObservableObject {
         // so the meaningful interaction is "tap to start writing
         // text." Cursor would just sit there inert.
         //
-        // Handwriting-first: a pencil-capable iPad opens in the last
-        // inking tool so a Pencil writes the instant it touches down.
+        // iPad defaults to the neutral cursor so a one-finger drag
+        // scrolls the page; the first pencil contact (observed via
+        // `pencilTouchObserved`) swaps in the user's last inking
+        // tool. Pencil users write the moment they touch down,
+        // finger-first users scroll without accidental ink.
         //
-        // This replaces the old "open in `.cursor`, auto-swap to the
-        // inking tool on the first `pencilTouchObserved`" flow, which
-        // DEADLOCKED: cursor mode disables the canvas
-        // (`canvasIsInteractive == false → isUserInteractionEnabled =
-        // false`), and the ONLY source of `pencilTouchObserved` is the
-        // canvas's own `touchesBegan` — a disabled canvas never sees
-        // the touch that would swap it. When `hasPencil` was already
-        // latched from a prior session it happened to be masked, but a
-        // fresh install / REINSTALL resets `hasPencil`, so the editor
-        // opened in cursor and the Pencil could never start drawing
-        // ("won't draw anything"). Finger scroll still works: the
-        // first Pencil contact latches `hasPencil` → pencilOnly policy.
-        let inkingTool = Self.resolveInitialTool(
+        // The pencil-touch detection that drives that swap is fed by
+        // a passive observer on the scroll view (see
+        // `PencilTouchObserver` in ContinuousCanvasView), NOT the
+        // canvas — the canvas is disabled in cursor mode, so it can
+        // never see the touch that would enable it. That closes the
+        // "reinstall wiped hasPencil → stuck in cursor → won't draw"
+        // deadlock without opening in a drawing tool (which would make
+        // one-finger drags ink instead of scroll under `.auto`).
+        self.selectedTool = DeviceCapabilities.canDraw ? .cursor : .text
+        // Remember the inking tool we'll swap *to* on first pencil
+        // touch this session.
+        self.pendingInkingToolForPencil = Self.resolveInitialTool(
             userDefaults: userDefaults,
             toolSettings: toolSettings,
             theme: resolvedTheme
         )
-        self.selectedTool = DeviceCapabilities.canDraw ? inkingTool : .text
-        // Retained for the finger-only → pencil transition: if the
-        // user switches to cursor and later touches the Pencil down,
-        // `handlePencilTouchObserved` still swaps back to inking.
-        self.pendingInkingToolForPencil = inkingTool
 
         loadPersistedState(theme: resolvedTheme)
 
