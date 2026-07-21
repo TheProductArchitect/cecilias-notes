@@ -40,19 +40,25 @@ final class CeciliasNotesPKCanvasView: PKCanvasView {
     /// `false` for them. Nil closure → behave exactly like PKCanvasView.
     var shouldYieldTouchToOverlay: ((CGPoint, UIEvent?) -> Bool)?
 
-    /// Per-canvas undo scope. PKCanvasView registers its stroke undo
+    /// Per-PAGE undo scope. PKCanvasView registers its stroke undo
     /// entries with `self.undoManager`, which by default resolves to
     /// the shared UIWindow manager through the responder chain. The
     /// continuous canvas mounts one PKCanvasView per warm-band page,
     /// so with the shared manager every page's strokes interleaved on
     /// ONE stack: tapping undo could silently revert a stroke on a
-    /// different (even off-screen) page, and unmounting a canvas on
-    /// scroll left dead entries behind — the undo button lit up but
-    /// tapping it did nothing. A private manager per canvas scopes
-    /// undo to the page the user is looking at; the toolbar reads
-    /// `viewModel.canvasView?.undoManager`, which always points at
-    /// the active page's canvas.
-    private let pageUndoManager = UndoManager()
+    /// different (even off-screen) page.
+    ///
+    /// The manager is owned by `EditorViewModel` (keyed by pageId) and
+    /// injected at mount time — NOT created here. A fresh `UndoManager`
+    /// per canvas instance meant scrolling a page out of the warm band
+    /// destroyed its stack: an element delete or a stroke registered
+    /// before the recycle vanished, so the next undo jumped to whatever
+    /// older entry survived on a different page's stack ("undo after a
+    /// delete undoes the previous change instead"). A stable per-page
+    /// manager keeps LIFO across remounts; the toolbar reads
+    /// `viewModel.canvasView?.undoManager`, which always points at the
+    /// active page's manager.
+    var pageUndoManager = UndoManager()
     override var undoManager: UndoManager? { pageUndoManager }
 
     /// Opt out of iPadOS's system-wide editing gestures (three-finger

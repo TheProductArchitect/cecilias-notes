@@ -262,6 +262,48 @@ final class RegressionGuardTests: XCTestCase {
                        "abandoning an already-idle session must leave it idle")
     }
 
+    // MARK: - Bug: undo stack must survive scroll (session-stable per page)
+    //
+    // Regression (the "undo after a delete jumps to an older change"
+    // report): each warm-band canvas used to own a fresh UndoManager,
+    // so scrolling a page out and back destroyed its stack and the
+    // next undo hit a different page's entries. EditorViewModel now
+    // owns a session-stable manager PER PAGE and reinjects the SAME
+    // instance on every canvas remount — so a stroke/delete registered
+    // before a recycle stays on top of the stack the toolbar undoes
+    // next. This pins the stability guarantee (the actual remount is
+    // exercised on-device; the manager identity is what makes LIFO
+    // hold, and that is unit-testable).
+    func test_undoManager_isStablePerPage_andDistinctAcrossPages() throws {
+        let ctx = StorageService.shared.context
+        let nb = Notebook(
+            title: "Undo Stability", subjectId: nil, coverColorHex: "",
+            coverTexture: .none, pageSize: .a4, defaultTemplate: .blank
+        )
+        ctx.insert(nb)
+        scratchNotebookIDs.append(nb.id)
+        let page = Page(notebookId: nb.id, pageNumber: 1, pageSize: .a4, backgroundTemplate: .blank)
+        page.notebook = nb
+        nb.pages = [page]
+        ctx.insert(page)
+        scratchPageIDs.append(page.id)
+        try ctx.save()
+
+        let defaults = UserDefaults(suiteName: "test-undo-\(UUID().uuidString)")!
+        let vm = EditorViewModel(notebook: nb, storage: .shared, userDefaults: defaults)
+
+        let p1 = UUID()
+        let p2 = UUID()
+        let first = vm.undoManager(forPage: p1)
+        let againSamePage = vm.undoManager(forPage: p1)   // simulates a canvas remount
+        let otherPage = vm.undoManager(forPage: p2)
+
+        XCTAssertTrue(first === againSamePage,
+                      "a page must get the SAME undo manager across remounts (LIFO must survive scroll)")
+        XCTAssertFalse(first === otherPage,
+                       "different pages must have separate undo stacks")
+    }
+
     // MARK: - tearDown housekeeping
 
     private var scratchNotebookIDs: [UUID] = []

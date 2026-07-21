@@ -185,6 +185,28 @@ final class EditorViewModel: ObservableObject {
         didSet { ActivePageCanvas.current = canvasView }
     }
 
+    /// Session-stable per-page undo stacks. Each warm-band
+    /// `CeciliasNotesPKCanvasView` is short-lived (unmounted when the
+    /// page leaves the band), but PencilKit and `PageElementUndo` both
+    /// register into `canvas.undoManager`. Owning the managers here —
+    /// and reinjecting the SAME instance on every remount — keeps
+    /// last-in-first-out across scroll: a delete or stroke registered
+    /// before a canvas recycle stays on top of the stack the toolbar
+    /// undoes next. Cleared on editor dismiss so a reopened notebook
+    /// starts fresh.
+    private var pageUndoManagers: [UUID: UndoManager] = [:]
+
+    /// The undo manager for `pageId`, created on first use. Mounted
+    /// canvases assign the result to
+    /// `CeciliasNotesPKCanvasView.pageUndoManager` before the canvas
+    /// is interactive.
+    func undoManager(forPage pageId: UUID) -> UndoManager {
+        if let existing = pageUndoManagers[pageId] { return existing }
+        let manager = UndoManager()
+        pageUndoManagers[pageId] = manager
+        return manager
+    }
+
     /// Transport struct for the normalised tap location the user
     /// wants the imported image centred on. Used as the `at:`
     /// argument to `commitImportedImage` from every entry point
@@ -2798,6 +2820,11 @@ final class EditorViewModel: ObservableObject {
         // Focus Mode is editor-scoped — exit on the way back to Library so
         // the next notebook opens with normal chrome.
         isFocusMode = false
+        // Drop the per-page undo stacks with the editor — they hold
+        // strong refs to canvases/anchors from this session and must
+        // not outlive the notebook cover (a reopened notebook starts
+        // with fresh, empty undo history).
+        pageUndoManagers.removeAll()
         // Clear the launch-time resume pointer. Background while
         // inside the editor (the user-facing "resume me here"
         // case) leaves the key in place; pressing Back is the

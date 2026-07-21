@@ -1930,6 +1930,11 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // shifted rendered strokes. See
             // `Documentation/MEDIA_SUBSYSTEM_AUDIT.md` §6.D.
             let canvas = CeciliasNotesPKCanvasView(frame: frame)
+            // Reinject the session-stable per-page undo manager BEFORE
+            // any stroke or element op can register into it. A fresh
+            // manager per mount would wipe LIFO history every time the
+            // page left and re-entered the warm band.
+            canvas.pageUndoManager = viewModel.undoManager(forPage: pageId)
             canvas.delegate = self
             canvas.backgroundColor = .clear
             canvas.isOpaque = false
