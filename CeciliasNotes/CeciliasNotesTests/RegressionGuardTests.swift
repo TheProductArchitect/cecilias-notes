@@ -304,6 +304,54 @@ final class RegressionGuardTests: XCTestCase {
                        "different pages must have separate undo stacks")
     }
 
+    // MARK: - Bug: page-strip thumbnails must invalidate on element edits
+    //
+    // The page navigator previews only redrew on `page.updatedAt`, but
+    // editing a text/sticky/shape element stamps the ELEMENT's
+    // updatedAt, not the page's — so a text-heavy page's thumbnail
+    // stayed blank/stale forever. PageThumbnailCache now folds an
+    // `elementsFingerprint` (count + each element's updatedAt) into the
+    // cache key. This guards that the fingerprint actually moves when
+    // elements are added or touched.
+    func test_thumbnailFingerprint_movesWhenElementsAddedOrEdited() throws {
+        let ctx = StorageService.shared.context
+        let nb = Notebook(
+            title: "Thumb Fingerprint", subjectId: nil, coverColorHex: "",
+            coverTexture: .none, pageSize: .a4, defaultTemplate: .blank
+        )
+        ctx.insert(nb)
+        scratchNotebookIDs.append(nb.id)
+        let page = Page(notebookId: nb.id, pageNumber: 1, pageSize: .a4, backgroundTemplate: .blank)
+        page.notebook = nb
+        nb.pages = [page]
+        ctx.insert(page)
+        scratchPageIDs.append(page.id)
+        try ctx.save()
+
+        let empty = PageThumbnailCache.lookupElementsMetadata(forPageId: page.id).fingerprint
+
+        // Add a text element — fingerprint must change (count moves).
+        let textEl = PageElement(
+            pageId: page.id, notebookId: nb.id, kind: .text,
+            normalizedX: 0.1, normalizedY: 0.1, normalizedWidth: 0.6, normalizedHeight: 0.1, zIndex: 1
+        )
+        textEl.textContent = TextContent(text: "typed", source: .typed, size: .body)
+        ctx.insert(textEl)
+        try ctx.save()
+        let afterAdd = PageThumbnailCache.lookupElementsMetadata(forPageId: page.id).fingerprint
+        XCTAssertNotEqual(empty, afterAdd,
+                          "adding a text element must change the thumbnail fingerprint (else the preview never redraws)")
+
+        // Touch the element's updatedAt (simulates a text edit) —
+        // fingerprint must change again even though page.updatedAt
+        // didn't.
+        textEl.updatedAt = textEl.updatedAt.addingTimeInterval(5)
+        try ctx.save()
+        let afterEdit = PageThumbnailCache.lookupElementsMetadata(forPageId: page.id).fingerprint
+        XCTAssertNotEqual(afterAdd, afterEdit,
+                          "editing an element (its updatedAt) must change the fingerprint, not just page.updatedAt")
+    }
+
     // MARK: - tearDown housekeeping
 
     private var scratchNotebookIDs: [UUID] = []
