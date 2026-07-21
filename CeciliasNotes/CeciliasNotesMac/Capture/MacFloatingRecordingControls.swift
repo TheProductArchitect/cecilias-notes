@@ -1,19 +1,30 @@
 import SwiftUI
 
 /// Right-edge recording cluster — floats above page chrome.
+/// Voice-memo uses this fully; live transcription prefers the
+/// in-page chrome but still mounts the summary toggle here so it
+/// matches iPad's always-reachable "Summary on/off" chip.
 struct MacFloatingRecordingControls: View {
     @ObservedObject var session: MacRecordingSession = .shared
     @Environment(\.theme) private var theme
     var topInset: CGFloat = 68
     @State private var pulsing = false
+    @AppStorage("ceciliasnotes.dictation.autoSummary") private var summaryOn: Bool = true
 
     var body: some View {
-        if session.mode.isActive, !session.mode.isTranscribing {
+        if session.mode.isActive {
             HStack {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 12) {
-                    timerPill
-                    stopButton
+                    if !session.mode.isTranscribing {
+                        timerPill
+                    }
+                    if session.mode.isTranscribing, MeetingSummarizer.canRun {
+                        summaryChip
+                    }
+                    if !session.mode.isTranscribing {
+                        stopButton
+                    }
                 }
                 .padding(.trailing, 20)
                 .padding(.top, topInset)
@@ -24,6 +35,30 @@ struct MacFloatingRecordingControls: View {
             .zIndex(90)
             .allowsHitTesting(true)
         }
+    }
+
+    /// Same affordance as iPad `FloatingRecordingControls.summaryChip`
+    /// — toggle whether this dictation gets an AI summary on stop.
+    private var summaryChip: some View {
+        Button {
+            summaryOn.toggle()
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: summaryOn ? "sparkles" : "sparkles.slash")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(summaryOn ? "Summary on" : "Summary off")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(summaryOn ? theme.accent : theme.foregroundMuted)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(Capsule().fill(.ultraThinMaterial))
+            .overlay(Capsule().strokeBorder(theme.hairline, lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .macSuppressFocusRing()
+        .accessibilityLabel(summaryOn ? "Summary on. Click to turn off." : "Summary off. Click to turn on.")
     }
 
     private var timerPill: some View {
