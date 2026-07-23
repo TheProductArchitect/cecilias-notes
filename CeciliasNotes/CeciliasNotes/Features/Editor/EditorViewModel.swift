@@ -1342,6 +1342,10 @@ final class EditorViewModel: ObservableObject {
     /// leave `lastTool` pointing at the squeeze tool, so the next double-tap
     /// would toggle to the squeeze tool instead of the user's prior choice.
     func selectTool(_ tool: CeciliasNotesTool, tracksLastTool: Bool = true) {
+        // Device-log breadcrumb for the "brushes don't work" reports:
+        // if a palette tap reaches the view-model this line proves it,
+        // and the identity pair shows what actually switched.
+        dlog("[Tool] selectTool \(selectedTool.identity.rawValue) → \(tool.identity.rawValue)")
         if tool.identity != selectedTool.identity {
             // Snapshot the *outgoing* tool before we overwrite selectedTool.
             toolSettings.snapshot(selectedTool)

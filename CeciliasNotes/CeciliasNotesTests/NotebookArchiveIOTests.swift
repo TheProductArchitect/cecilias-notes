@@ -29,7 +29,7 @@ final class NotebookArchiveIOTests: XCTestCase {
         return (try? StorageService.shared.context.fetch(d)) ?? []
     }
 
-    func test_roundTrip_preservesElementsMediaAndGeometry() throws {
+    func test_roundTrip_preservesElementsMediaAndGeometry() async throws {
         let storage = StorageService.shared
         let nb = try storage.createNotebook(
             title: "Round Trip",
@@ -85,7 +85,8 @@ final class NotebookArchiveIOTests: XCTestCase {
 
         // Export → import
         let data = try XCTUnwrap(NotebookArchiveIO.archiveData(for: nb), "export must produce data")
-        let imported = try XCTUnwrap(NotebookArchiveIO.importArchive(data: data), "import must succeed")
+        let importedOpt = await NotebookArchiveIO.importArchive(data: data)
+        let imported = try XCTUnwrap(importedOpt, "import must succeed")
 
         // Fresh identity + preserved notebook metadata.
         XCTAssertNotEqual(imported.id, nb.id, "imported notebook must get a fresh id")
@@ -120,9 +121,11 @@ final class NotebookArchiveIOTests: XCTestCase {
         XCTAssertEqual(sticky.stickyNoteContent?.colorVariant, "blue")
     }
 
-    func test_importGarbageData_isQuietNil() throws {
-        XCTAssertNil(NotebookArchiveIO.importArchive(data: Data("not a notebook".utf8)))
-        XCTAssertNil(NotebookArchiveIO.importArchive(data: Data()))
+    func test_importGarbageData_isQuietNil() async throws {
+        let garbage = await NotebookArchiveIO.importArchive(data: Data("not a notebook".utf8))
+        XCTAssertNil(garbage)
+        let empty = await NotebookArchiveIO.importArchive(data: Data())
+        XCTAssertNil(empty)
     }
 
     // MARK: - Regression: import must surface at the TOP of its subject
@@ -132,7 +135,7 @@ final class NotebookArchiveIOTests: XCTestCase {
     // createNotebook append-assigns the highest sortOrder and the
     // library sorts ascending. reconstruct() now gives the import the
     // lowest order in its subject.
-    func test_import_surfacesNotebookAtTopOfSubject() throws {
+    func test_import_surfacesNotebookAtTopOfSubject() async throws {
         let storage = StorageService.shared
         let a = try storage.createNotebook(
             title: "Existing A", subjectId: nil, coverColorHex: "#111111",
@@ -153,7 +156,8 @@ final class NotebookArchiveIOTests: XCTestCase {
         try storage.context.save()
 
         let data = try XCTUnwrap(NotebookArchiveIO.archiveData(for: a))
-        let imported = try XCTUnwrap(NotebookArchiveIO.importArchive(data: data))
+        let importedOpt2 = await NotebookArchiveIO.importArchive(data: data)
+        let imported = try XCTUnwrap(importedOpt2)
 
         let peers = storage.fetchNotebooks(subjectId: imported.subjectId)
         let minOrder = try XCTUnwrap(peers.map(\.sortOrder).min())
@@ -170,7 +174,7 @@ final class NotebookArchiveIOTests: XCTestCase {
     // Strengthens the net around the "imported notebook is empty"
     // report: every page's PKDrawing (StrokeContent.strokeData) must
     // survive export→import, with no cross-page contamination.
-    func test_roundTrip_multiPage_preservesEveryPagesInk() throws {
+    func test_roundTrip_multiPage_preservesEveryPagesInk() async throws {
         let storage = StorageService.shared
         let nb = try storage.createNotebook(
             title: "Multi-Page Ink", subjectId: nil, coverColorHex: "#333333",
@@ -201,7 +205,8 @@ final class NotebookArchiveIOTests: XCTestCase {
         try storage.context.save()
 
         let data = try XCTUnwrap(NotebookArchiveIO.archiveData(for: nb), "export must produce data")
-        let imported = try XCTUnwrap(NotebookArchiveIO.importArchive(data: data), "import must succeed")
+        let importedOpt = await NotebookArchiveIO.importArchive(data: data)
+        let imported = try XCTUnwrap(importedOpt, "import must succeed")
 
         let importedPages = storage.fetchPages(in: imported).sorted { $0.pageNumber < $1.pageNumber }
         XCTAssertEqual(importedPages.count, 3, "all three pages must round-trip (not an empty notebook)")

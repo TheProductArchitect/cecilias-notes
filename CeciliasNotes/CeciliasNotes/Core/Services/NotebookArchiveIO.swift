@@ -193,15 +193,14 @@ enum NotebookArchiveIO {
     // MARK: - Import
 
     @discardableResult
-    static func importArchive(from url: URL) -> Notebook? {
+    static func importArchive(from url: URL) async -> Notebook? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        return importArchive(data: data)
+        return await importArchiveAsync(data: data)
     }
 
     @discardableResult
-    static func importArchive(data: Data) -> Notebook? {
-        guard let archive = decodeArchive(data) else { return nil }
-        return reconstruct(archive)
+    static func importArchive(data: Data) async -> Notebook? {
+        await importArchiveAsync(data: data)
     }
 
     /// Decode is the expensive half (a media-heavy archive is tens
@@ -214,21 +213,47 @@ enum NotebookArchiveIO {
         return archive
     }
 
-    /// Import with the decode off-main. Use this from user-facing
-    /// entry points (tap-to-open, inbox watcher) — the synchronous
-    /// `importArchive(data:)` decoded up to 32 MB of JSON inside
-    /// `onOpenURL` on the main thread, a guaranteed multi-second
-    /// ANR for a media-heavy notebook (2026-07-17 audit).
-    @discardableResult
-    static func importArchiveAsync(data: Data) async -> Notebook? {
-        let archive = await Task.detached(priority: .userInitiated) {
-            decodeArchive(data)
-        }.value
-        guard let archive else { return nil }
-        return reconstruct(archive)
+    /// Base64→Data for every media / PDF entry, run OFF the main
+    /// actor. `reconstruct` used to decode these inline per element —
+    /// on the main thread — which, together with the per-page model
+    /// churn, is what blew the watchdog ("app went to ANR on trying
+    /// to open .ceciliabook") for a 20MB+ archive on-device.
+    nonisolated private static func decodeMediaBytes(
+        _ archive: NotebookArchive
+    ) -> (media: [String: Data], pdfs: [String: Data]) {
+        var media: [String: Data] = [:]
+        for (k, b64) in archive.media ?? [:] {
+            if let d = Data(base64Encoded: b64) { media[k] = d }
+        }
+        var pdfs: [String: Data] = [:]
+        for (k, b64) in archive.pdfDocuments ?? [:] {
+            if let d = Data(base64Encoded: b64) { pdfs[k] = d }
+        }
+        return (media, pdfs)
     }
 
-    private static func reconstruct(_ archive: NotebookArchive) -> Notebook? {
+    /// Import with the decode off-main. Use this from user-facing
+    /// entry points (tap-to-open, inbox watcher) — the synchronous
+    /// path decoded up to 32 MB of JSON inside `onOpenURL` on the
+    /// main thread, a guaranteed multi-second ANR for a media-heavy
+    /// notebook (2026-07-17 audit; base64 + yields added after the
+    /// 2026-07-23 on-device watchdog kill).
+    @discardableResult
+    static func importArchiveAsync(data: Data) async -> Notebook? {
+        let decoded = await Task.detached(priority: .userInitiated) { () -> (NotebookArchive, [String: Data], [String: Data])? in
+            guard let archive = decodeArchive(data) else { return nil }
+            let bytes = decodeMediaBytes(archive)
+            return (archive, bytes.media, bytes.pdfs)
+        }.value
+        guard let (archive, media, pdfs) = decoded else { return nil }
+        return await reconstruct(archive, decodedMedia: media, decodedPDFs: pdfs)
+    }
+
+    private static func reconstruct(
+        _ archive: NotebookArchive,
+        decodedMedia: [String: Data],
+        decodedPDFs: [String: Data]
+    ) async -> Notebook? {
         let storage = StorageService.shared
         let context = storage.context
 
@@ -284,6 +309,12 @@ enum NotebookArchiveIO {
         var pdfDocIdMap: [String: UUID] = [:]
         var pdfPageContentIdMap: [String: UUID] = [:]
         for (offset, ap) in sortedPages.enumerated() {
+            // Let the main runloop breathe between pages. The whole
+            // rebuild runs on the main actor (SwiftData mainContext);
+            // without yields a 20MB+ archive stalls past the scene
+            // watchdog and the OS kills the app mid-import (the
+            // on-device ANR). One yield per page keeps input alive.
+            await Task.yield()
             let page = Page(
                 notebookId: notebook.id,
                 pageNumber: offset + 1,
@@ -304,7 +335,7 @@ enum NotebookArchiveIO {
             for ae in ordered {
                 buildElement(
                     ae, page: page, notebook: notebook,
-                    media: archive.media, pdfDocuments: archive.pdfDocuments,
+                    media: decodedMedia, pdfDocuments: decodedPDFs,
                     pdfDocIdMap: &pdfDocIdMap, pdfPageContentIdMap: &pdfPageContentIdMap,
                     context: context
                 )
@@ -349,8 +380,8 @@ enum NotebookArchiveIO {
         _ ae: NotebookArchive.ArchiveElement,
         page: Page,
         notebook: Notebook,
-        media: [String: String]?,
-        pdfDocuments: [String: String]?,
+        media: [String: Data],
+        pdfDocuments: [String: Data],
         pdfDocIdMap: inout [String: UUID],
         pdfPageContentIdMap: inout [String: UUID],
         context: ModelContext
@@ -377,7 +408,7 @@ enum NotebookArchiveIO {
         case .image:
             guard let i = ae.image else { return }
             let newId = UUID()
-            let bytes = media?[i.contentId].flatMap { Data(base64Encoded: $0) }
+            let bytes = media[i.contentId]
             let c = ImageContent(
                 id: newId,
                 filename: "\(newId.uuidString).\(i.fileFormat)",
@@ -396,7 +427,7 @@ enum NotebookArchiveIO {
         case .audio:
             guard let a = ae.audio else { return }
             let newId = UUID()
-            let bytes = media?[a.contentId].flatMap { Data(base64Encoded: $0) }
+            let bytes = media[a.contentId]
             let c = AudioContent(
                 id: newId,
                 filename: "\(newId.uuidString).m4a",
@@ -435,7 +466,7 @@ enum NotebookArchiveIO {
             let newDocId = pdfDocIdMap[p.pdfDocumentId] ?? {
                 let id = UUID()
                 pdfDocIdMap[p.pdfDocumentId] = id
-                if let b64 = pdfDocuments?[p.pdfDocumentId], let bytes = Data(base64Encoded: b64) {
+                if let bytes = pdfDocuments[p.pdfDocumentId] {
                     try? bytes.write(to: MediaStorage.url(forPDF: id), options: .atomic)
                 }
                 return id

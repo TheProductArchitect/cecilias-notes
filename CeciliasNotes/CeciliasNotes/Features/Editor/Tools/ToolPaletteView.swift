@@ -465,6 +465,7 @@ struct ToolPaletteView: View {
     }
 
     private func handleCategoryTap(_ category: ToolCategory) {
+        dlog("[Tool] palette category tap: \(category.displayName) (lastVariant=\(ToolCategoryStore.lastVariant(for: category).rawValue) current=\(viewModel.selectedTool.identity.rawValue))")
         // Tap activates the category's last-used variant. When the
         // tool is already active, re-tapping opens the customize
         // popover (color / width / opacity) instead — the always-on
