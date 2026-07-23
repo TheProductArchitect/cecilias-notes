@@ -86,14 +86,28 @@ Each previously-fixed bug has a test that fails when the symptom
 returns. If you fix a bug here, add the same kind of guard test —
 that's the price of admission for "ensure this never resurfaces."
 
-Run the suite locally before pushing:
+**Run the verification gate before every push:**
 
 ```bash
-xcodebuild -project CeciliasNotes/CeciliasNotes.xcodeproj \
-  -scheme CeciliasNotes \
-  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5),OS=latest' \
-  test
+Scripts/run-tests.sh          # full gate: unit + UI + Mac + Release (~20-30 min)
+Scripts/run-tests.sh quick    # unit tests only (~4 min) — tight iterations
 ```
+
+The full gate runs four stages, each of which has caught a real
+regression the others missed:
+
+| Stage | What it catches |
+|---|---|
+| `unit` | logic + regression guards (undo, archive round-trip incl. a real 22MB notebook, summarizer, thumbnails) |
+| `ui` | interaction breaks — drawing, undo/redo, lasso, dictation, onboarding |
+| `mac` | shared-file edits that compile on iOS but break the Mac target |
+| `release` | optimizer-only compile failures that Debug never sees |
+
+It needs an iPad simulator on **iOS 26.4+** (auto-detected; the
+deployment target refuses older runtimes). If a UI stage fails with a
+`RequestDenied by SBMainWorkspace` launch denial or a simulator audio
+abort, rerun that stage solo before blaming your change — those are
+known simulator flakes.
 
 ### 5. Open the PR
 
