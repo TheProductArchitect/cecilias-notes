@@ -44,6 +44,19 @@ enum ShapeRecognizer {
     /// trivially recoverable.
     static let confidenceThreshold: CGFloat = 0.65
 
+    /// Handwriting protection. Recognition runs after EVERY drawing-
+    /// tool stroke while Shape Assist is on — and handwriting is full
+    /// of "shapes": an `l` / `t`-crossbar / dash is a line, an `o` /
+    /// `O` / `0` is a circle. With the old gates (4pt box, 24pt path
+    /// — smaller than most letters) writing got "cleaned" into
+    /// geometry 600ms after pen-lift, which users reported as
+    /// "anything I write gets undone after a few strokes." Deliberate
+    /// shapes are drawn big; letters aren't. A line must now be at
+    /// least `minLineLength` long and a circle at least
+    /// `minCircleSide` across before conversion is even considered.
+    static let minLineLength: CGFloat = 80
+    static let minCircleSide: CGFloat = 48
+
     /// Polygon approximation tolerance — fraction of the contour's
     /// arclength. `0.04` is loose enough to swallow rounded rectangle
     /// corners while still distinguishing a hexagon from a circle.
@@ -75,8 +88,11 @@ enum ShapeRecognizer {
         // future "extended shapes" toggle resurrects them — they
         // simply aren't reachable from this entry point.
 
-        // 1. Open strokes — line only (arrows disabled).
+        // 1. Open strokes — line only (arrows disabled). Handwriting
+        // guard: an `l`, a dash, or a `t`-crossbar is a short straight
+        // stroke; only deliberate, ruler-scale lines convert.
         if !isClosed {
+            guard pathLength >= minLineLength else { return nil }
             if let line = scoreLine(points: points), line.confidence >= confidenceThreshold {
                 return line.shape
             }
@@ -86,7 +102,10 @@ enum ShapeRecognizer {
         // 2. Closed strokes — accept only roughly-round shapes as
         // circles. We use a coarse circularity heuristic instead of
         // Vision contour polygon approximation: actual circle =
-        // isoperimetric ratio close to 1.
+        // isoperimetric ratio close to 1. Handwriting guard: an `o` /
+        // `O` / `0` is a small circle; only deliberately-drawn,
+        // diagram-scale circles convert.
+        guard min(bbox.width, bbox.height) >= minCircleSide else { return nil }
         let circularity = 4 * .pi * area(points) / max(1, pathLength * pathLength)
         let aspect = bbox.width / max(1, bbox.height)
         let isCircular = circularity > 0.78 && abs(aspect - 1) < 0.22

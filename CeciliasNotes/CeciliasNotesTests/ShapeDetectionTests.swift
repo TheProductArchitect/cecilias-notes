@@ -142,6 +142,50 @@ final class ShapeDetectionTests: XCTestCase {
         }
     }
 
+    // MARK: - Handwriting protection (the "my writing gets undone" bug)
+    //
+    // Shape Assist runs after EVERY drawing-tool stroke. Handwriting is
+    // full of geometric strokes — an `l`/dash is a line, an `o` is a
+    // circle — and with the old 4pt/24pt gates letters were converted
+    // into clean geometry 600ms after pen-lift, which users reported as
+    // "anything I write gets undone after a few strokes." These pin the
+    // size floor: letter-scale strokes must NEVER convert; deliberate
+    // diagram-scale shapes still must.
+
+    func test_letterSizedVerticalStroke_isNotConverted() async {
+        // A handwritten `l`: ~28pt tall, near-straight.
+        let pts = (0...20).map { i in
+            CGPoint(x: 100 + CGFloat(i % 3) * 0.6, y: 100 + CGFloat(i) * 1.4)
+        }
+        let shape = await ShapeRecognizer.recognize(makeStroke(pts))
+        XCTAssertNil(shape, "a letter-sized stroke (~28pt) must never become a line")
+    }
+
+    func test_letterSizedO_isNotConverted() async {
+        // A handwritten `o`: ~20pt circle.
+        let pts = (0...32).map { i -> CGPoint in
+            let a = CGFloat(i) / 32 * 2 * .pi
+            return CGPoint(x: 200 + 10 * cos(a), y: 200 + 10 * sin(a))
+        }
+        let shape = await ShapeRecognizer.recognize(makeStroke(pts))
+        XCTAssertNil(shape, "a letter-sized `o` (~20pt) must never become a circle")
+    }
+
+    func test_deliberateLongLine_isStillConverted() async {
+        // A deliberate ruler-scale diagonal line: 160pt wide × 80pt
+        // tall (~179pt long) — comfortably past minLineLength and the
+        // pre-existing bbox.height > 4 flat-stroke guard.
+        let pts = (0...40).map { i -> CGPoint in
+            let t = CGFloat(i) / 40
+            return CGPoint(x: 100 + t * 160, y: 300 + t * 80)
+        }
+        let shape = await ShapeRecognizer.recognize(makeStroke(pts))
+        XCTAssertNotNil(shape, "a deliberate ~179pt line must still convert")
+        if case .line = shape {} else {
+            XCTFail("expected .line, got \(String(describing: shape))")
+        }
+    }
+
     func test_squiggleIsNotRecognised() async {
         let stroke = squiggleStroke()
         let result = await ShapeRecognizer.recognize(stroke)

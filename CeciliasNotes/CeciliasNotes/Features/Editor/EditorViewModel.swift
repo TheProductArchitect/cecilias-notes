@@ -1564,6 +1564,10 @@ final class EditorViewModel: ObservableObject {
         else { return }
 
         let replacementIndex = strokes.count - 1
+        // Device-log breadcrumb: every stroke→shape conversion is
+        // visible, so "my ink changed by itself" reports are
+        // attributable (Shape Assist) instead of a mystery.
+        dlog("[Shape] Assist converting last stroke → \(shape) on page=\(pageId?.uuidString.prefix(8) ?? "?")")
         let cleanStroke = makeCleanStroke(for: shape, like: lastStroke)
         var newStrokes = strokes
         newStrokes[replacementIndex] = cleanStroke

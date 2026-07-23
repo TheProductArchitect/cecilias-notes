@@ -1016,6 +1016,7 @@ struct EditorView: View {
 
     private func undo() {
         let mgr = viewModel.canvasView?.undoManager
+        dlog("[Undo] toolbar undo tapped — canUndo=\(mgr?.canUndo ?? false)")
         mgr?.undo()
         // The 200ms state poll leaves both buttons stale right after
         // a tap — a quick undo-then-redo landed on a still-disabled
@@ -1031,6 +1032,7 @@ struct EditorView: View {
 
     private func redo() {
         let mgr = viewModel.canvasView?.undoManager
+        dlog("[Undo] toolbar redo tapped — canRedo=\(mgr?.canRedo ?? false)")
         mgr?.redo()
         canUndo = mgr?.canUndo ?? false
         canRedo = mgr?.canRedo ?? false
