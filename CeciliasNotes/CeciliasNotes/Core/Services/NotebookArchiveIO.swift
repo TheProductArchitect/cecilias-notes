@@ -315,9 +315,28 @@ enum NotebookArchiveIO {
         do {
             try context.save()
         } catch {
-            #if DEBUG
-            dlog("[Archive] import save failed: \(error)")
-            #endif
+            // Atomicity: `createNotebook` already SAVED the notebook
+            // (with its seed page) before the page rebuild. If this
+            // final save fails, returning nil used to leave that
+            // empty husk behind in the library — the on-device
+            // "imported notebook was all empty" report. Roll the husk
+            // back so a failed import leaves no trace.
+            dlog("[Archive] import save FAILED: \(error) — rolling back notebook husk \(notebook.id)")
+            context.rollback()
+            let nbId = notebook.id
+            let husks = (try? context.fetch(
+                FetchDescriptor<Notebook>(predicate: #Predicate { $0.id == nbId })
+            )) ?? []
+            for husk in husks { context.delete(husk) }
+            let orphanPages = (try? context.fetch(
+                FetchDescriptor<Page>(predicate: #Predicate { $0.notebookId == nbId })
+            )) ?? []
+            for p in orphanPages { context.delete(p) }
+            let orphanEls = (try? context.fetch(
+                FetchDescriptor<PageElement>(predicate: #Predicate { $0.notebookId == nbId })
+            )) ?? []
+            for e in orphanEls { context.delete(e) }
+            try? context.save()
             return nil
         }
         NotificationCenter.default.post(name: .textElementsChanged, object: nil)
