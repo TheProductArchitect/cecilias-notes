@@ -303,22 +303,41 @@ future PencilKit exposes wet-compositing control.
 
 ---
 
-## 11. Editor scroll: "slight ad-hoc lag, not butter" — LOW (accepted, profile first)
+## 11. Editor scroll: "slight ad-hoc lag, not butter" — PARTIALLY FIXED (big stalls gone; steady-state profiled)
 
 **Symptom (2026-07-24).** Continuous-canvas scrolling is
-acceptable but not perfectly smooth — occasional single-frame
-hitch. Sibling of the library-scroll item (#9).
+acceptable but not perfectly smooth. Sibling of the library-scroll
+item (#9).
 
-**Already mitigated.** `updateCanvasMembership` is throttled to
-~10 Hz while `isActivelyScrolling`, canvas mounts (the expensive
-`PKCanvasView` alloc + `PKDrawing` decode) are deferred to
-scroll-rest, and the viewport notification is capped at 30 Hz.
-The remaining hitch is most likely a mount that can't be deferred
-(a page entering the *visible* viewport must exist before it's on
-screen) plus the issue-2 publish warnings firing on overlay
-mount.
+**Profiled (Instruments "Animation Hitches", M4 iPad Pro, 74s
+scroll).** Two distinct problems, both on the main thread:
 
-**Next step.** Instruments (Core Animation FPS + Time Profiler
-main-thread) while flicking a 20+-page notebook; change nothing
-without numbers — the throttles above were added blind once
-already and the risk is re-introducing a mount stutter.
+  1. **~50 hangs, incl. 300–421 ms "Microhangs"** — root-caused to
+     the **CloudKit duplicate sweep**. `scheduleDuplicateSweep()`
+     fires 2 s after every `NSPersistentStoreRemoteChange`, and
+     `StorageService.purgeDuplicateRows()` fetched EVERY row of five
+     model types (no predicate — it can't know which ids are
+     duplicated without materialising them), which on a large
+     library materialised the whole `PageElement` table on the main
+     actor (289 ms in the inverted call tree). On a synced device it
+     landed mid-scroll. **FIXED:** the mid-session sweep now runs on
+     a private background `ModelContext`
+     (`purgeDuplicateRowsOffMain()`); only the overlay-refresh
+     notifications stay on main. Launch still uses the main-context
+     path (no UI up yet). Pinned by `StorageServiceTests`
+     (`test_runDuplicatePurge_*`).
+
+  2. **Steady 60/40 fps (16.7 / 25 ms frames on a 120 Hz panel)** —
+     the remaining "not butter". Next main-thread costs in the same
+     trace: `StorageService.fetchPages(in:)` (242 ms — whole-notebook
+     page fetch with sort, called on the synchronous page-load path)
+     and smaller per-page fetches (`fetchAudioElements` 59 ms,
+     `fetchSubjects` 36 ms) plus live-canvas compositing.
+
+**Next step.** `fetchPages(in:)` is the biggest remaining
+main-thread item, but it returns `[Page]` used synchronously by
+the page-host builder — making it async ripples widely, so it needs
+its own focused pass (cache the sorted page list per notebook and
+invalidate on page add/delete/reorder, rather than re-fetching+re-
+sorting on every rebuild). The membership throttles from the prior
+round are already in place; don't touch them without a fresh trace.

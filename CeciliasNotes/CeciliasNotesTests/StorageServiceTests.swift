@@ -148,4 +148,77 @@ final class StorageServiceTests: XCTestCase {
         try storage.moveNotebook(nb, toFolder: nil)
         XCTAssertNil(nb.folderId, "folderId should clear when moved out")
     }
+
+    // MARK: - Duplicate purge (off-main sweep)
+
+    /// The mid-session dedup sweep now runs on a background
+    /// `ModelContext` (device trace 2026-07-24: on the main thread it
+    /// froze scrolling ~289 ms). These pin the pure sweep logic that
+    /// both the launch (main) and background paths share, so the move
+    /// off-main can't silently change WHICH row survives.
+
+    private func makeDupNotebook(id: UUID, title: String) -> Notebook {
+        let nb = Notebook(
+            title: title,
+            subjectId: nil,
+            coverColorHex: "",
+            coverTexture: .none,
+            pageSize: .a4,
+            defaultTemplate: .blank
+        )
+        nb.id = id
+        return nb
+    }
+
+    func test_runDuplicatePurge_removesDuplicates_keepingNewest() throws {
+        let ctx = container.mainContext
+        let sharedId = UUID()
+        let older = makeDupNotebook(id: sharedId, title: "older")
+        older.updatedAt = Date(timeIntervalSince1970: 1_000)
+        let newer = makeDupNotebook(id: sharedId, title: "newer")
+        newer.updatedAt = Date(timeIntervalSince1970: 2_000)
+        ctx.insert(older)
+        ctx.insert(newer)
+
+        let purged = StorageService.runDuplicatePurge(in: ctx)
+        XCTAssertEqual(purged, 1, "exactly one of the two same-id rows is removed")
+
+        let survivors = (try ctx.fetch(FetchDescriptor<Notebook>()))
+            .filter { $0.id == sharedId }
+        XCTAssertEqual(survivors.count, 1)
+        XCTAssertEqual(survivors.first?.title, "newer",
+                       "newest updatedAt wins among non-tombstoned copies")
+    }
+
+    func test_runDuplicatePurge_prefersTombstone_overFresherShadow() throws {
+        // CloudKit's per-property merge can echo a fresher, un-deleted
+        // shadow of a row the user already deleted. Newest-wins alone
+        // would resurrect the delete; the sweep must keep the tombstone.
+        let ctx = container.mainContext
+        let sharedId = UUID()
+        let deleted = makeDupNotebook(id: sharedId, title: "deleted")
+        deleted.deletedAt = Date(timeIntervalSince1970: 1_000)
+        deleted.isDeleted = true
+        deleted.updatedAt = Date(timeIntervalSince1970: 1_000)
+        let freshShadow = makeDupNotebook(id: sharedId, title: "shadow")
+        freshShadow.updatedAt = Date(timeIntervalSince1970: 5_000)  // newer!
+        ctx.insert(deleted)
+        ctx.insert(freshShadow)
+
+        let purged = StorageService.runDuplicatePurge(in: ctx)
+        XCTAssertEqual(purged, 1)
+
+        let survivors = (try ctx.fetch(FetchDescriptor<Notebook>()))
+            .filter { $0.id == sharedId }
+        XCTAssertEqual(survivors.count, 1)
+        XCTAssertEqual(survivors.first?.title, "deleted",
+                       "the tombstone is kept even though the shadow is newer")
+    }
+
+    func test_runDuplicatePurge_noDuplicates_removesNothing() throws {
+        let ctx = container.mainContext
+        ctx.insert(makeDupNotebook(id: UUID(), title: "a"))
+        ctx.insert(makeDupNotebook(id: UUID(), title: "b"))
+        XCTAssertEqual(StorageService.runDuplicatePurge(in: ctx), 0)
+    }
 }

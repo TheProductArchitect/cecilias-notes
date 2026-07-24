@@ -196,40 +196,14 @@ final class StorageService: ObservableObject {
     /// deletes cascade through the SwiftData relationships, so a
     /// duplicate Notebook row also drops its duplicate Page rows,
     /// duplicate Pages drop their PageElements, etc.
+    /// Main-context duplicate purge. Used at LAUNCH (line ~120),
+    /// before any UI is up, where blocking the main thread is fine and
+    /// the sweep must finish before the first list build. Mid-session
+    /// sweeps go through `purgeDuplicateRowsOffMain()` instead — see
+    /// that method for why.
     func purgeDuplicateRows() {
-        var purgedContainers = 0
-        var purgedElements = 0
-        purgedContainers += purgeDuplicates(
-            type: Notebook.self,
-            keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt },
-            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
-        )
-        purgedContainers += purgeDuplicates(
-            type: Page.self,
-            keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt },
-            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
-        )
-        purgedElements += purgeDuplicates(
-            type: PageElement.self,
-            keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt },
-            isTombstone: { $0.deletedAt != nil }
-        )
-        purgedContainers += purgeDuplicates(
-            type: Subject.self,
-            keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt },
-            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
-        )
-        purgedContainers += purgeDuplicates(
-            type: Folder.self,
-            keyedBy: { $0.id },
-            updatedAt: { $0.updatedAt },
-            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
-        )
-        guard purgedContainers + purgedElements > 0 else { return }
+        let purged = Self.runDuplicatePurge(in: context)
+        guard purged > 0 else { return }
         do {
             try context.save()
         } catch {
@@ -237,28 +211,102 @@ final class StorageService: ObservableObject {
             dlog("[Storage] purgeDuplicateRows SAVE FAILED: \(error)")
             #endif
         }
+        postPurgeNotifications()
+    }
 
-        // The element overlays fetch manually (not @Query), so a
-        // purge that deletes rows MUST tell them to re-fetch. Without
-        // this, an overlay keeps rendering the deleted PageElement
-        // instance it fetched moments earlier, and the next property
-        // access on a deleted SwiftData model traps. The window this
-        // closes is real on device: the debounced sweep fires ~2 s
-        // after any save burst — e.g. right after a dictation stops
-        // and its finalize/structure/summary saves land — which is
-        // exactly when duplicate rows from CloudKit echoes exist.
-        if purgedElements > 0 || purgedContainers > 0 {
-            NotificationCenter.default.post(name: .textElementsChanged, object: nil)
-            NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
-            NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
-            #if canImport(UIKit)
-            // Declared in iOS-only overlay files; the Mac editor
-            // redraws off .textElementsChanged alone.
-            NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
-            NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
-            NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
-            #endif
-        }
+    /// Off-main duplicate purge for the mid-session (debounced) sweep.
+    ///
+    /// The sweep fetches EVERY row of five model types with no
+    /// predicate — it has to, since it can't know which ids are
+    /// duplicated without materialising them — and on a large library
+    /// that materialised the whole `PageElement` table on the main
+    /// actor. Because it is debounced to fire ~2 s after every
+    /// `NSPersistentStoreRemoteChange`, on a CloudKit-synced device it
+    /// landed *mid-scroll* and froze the main thread ~289 ms (device
+    /// Instruments trace, 2026-07-24 — these were the 300–421 ms
+    /// "Microhang" spikes in the scroll session). Move the
+    /// fetch/dedup/delete/save onto a private background
+    /// `ModelContext`; only the cheap overlay-refresh notifications
+    /// stay on main. Deletes committed by the background context land
+    /// in the same store, and the notifications drive the manual-fetch
+    /// overlays + lists to re-query (the same refresh contract the
+    /// main-thread version relied on).
+    func purgeDuplicateRowsOffMain() async {
+        let container = self.container
+        let didPurge = await Task.detached(priority: .utility) {
+            let ctx = ModelContext(container)
+            let purged = Self.runDuplicatePurge(in: ctx)
+            guard purged > 0 else { return false }
+            do {
+                try ctx.save()
+            } catch {
+                #if DEBUG
+                dlog("[Storage] purgeDuplicateRowsOffMain SAVE FAILED: \(error)")
+                #endif
+                return false
+            }
+            return true
+        }.value
+        if didPurge { postPurgeNotifications() }
+    }
+
+    /// The type-by-type duplicate sweep, parameterised on the context
+    /// so it can run on the main context (launch) or a private
+    /// background context (mid-session, off the main thread).
+    /// `nonisolated static` so the background task can call it without
+    /// touching main-actor state. Returns the number of rows deleted;
+    /// the caller owns `save()` and any refresh notifications.
+    nonisolated static func runDuplicatePurge(in ctx: ModelContext) -> Int {
+        var purged = 0
+        purged += purgeDuplicates(
+            type: Notebook.self, in: ctx,
+            keyedBy: { $0.id }, updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
+        )
+        purged += purgeDuplicates(
+            type: Page.self, in: ctx,
+            keyedBy: { $0.id }, updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
+        )
+        purged += purgeDuplicates(
+            type: PageElement.self, in: ctx,
+            keyedBy: { $0.id }, updatedAt: { $0.updatedAt },
+            isTombstone: { $0.deletedAt != nil }
+        )
+        purged += purgeDuplicates(
+            type: Subject.self, in: ctx,
+            keyedBy: { $0.id }, updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
+        )
+        purged += purgeDuplicates(
+            type: Folder.self, in: ctx,
+            keyedBy: { $0.id }, updatedAt: { $0.updatedAt },
+            isTombstone: { $0.isDeleted || $0.deletedAt != nil }
+        )
+        return purged
+    }
+
+    /// The element overlays fetch manually (not `@Query`), so a purge
+    /// that deletes rows MUST tell them to re-fetch. Without this, an
+    /// overlay keeps rendering the deleted `PageElement` instance it
+    /// fetched moments earlier, and the next property access on a
+    /// deleted SwiftData model traps. The window this closes is real on
+    /// device: the debounced sweep fires ~2 s after any save burst —
+    /// e.g. right after a dictation stops and its
+    /// finalize/structure/summary saves land — which is exactly when
+    /// duplicate rows from CloudKit echoes exist.
+    @MainActor
+    private func postPurgeNotifications() {
+        NotificationCenter.default.post(name: .textElementsChanged, object: nil)
+        NotificationCenter.default.post(name: .audioElementsChanged, object: nil)
+        NotificationCenter.default.post(name: .shapeElementsChanged, object: nil)
+        #if canImport(UIKit)
+        // Declared in iOS-only overlay files; the Mac editor
+        // redraws off .textElementsChanged alone.
+        NotificationCenter.default.post(name: .stickyNotesChanged, object: nil)
+        NotificationCenter.default.post(name: .pdfPageElementsChanged, object: nil)
+        NotificationCenter.default.post(name: .mediaAttachmentsChanged, object: nil)
+        #endif
     }
 
     /// Launch-time soft-delete reconciliation. CloudKit's per-property
@@ -366,14 +414,15 @@ final class StorageService: ObservableObject {
     /// Returns the number of stale rows deleted so the caller can
     /// decide whether views need a re-fetch nudge.
     @discardableResult
-    private func purgeDuplicates<Model: PersistentModel>(
+    nonisolated static func purgeDuplicates<Model: PersistentModel>(
         type: Model.Type,
+        in ctx: ModelContext,
         keyedBy key: (Model) -> UUID,
         updatedAt: (Model) -> Date,
         isTombstone: ((Model) -> Bool)? = nil
     ) -> Int {
         let descriptor = FetchDescriptor<Model>()
-        guard let rows = try? context.fetch(descriptor) else { return 0 }
+        guard let rows = try? ctx.fetch(descriptor) else { return 0 }
         let grouped = Dictionary(grouping: rows, by: key)
         var purged = 0
         for (_, copies) in grouped where copies.count > 1 {
@@ -387,7 +436,7 @@ final class StorageService: ObservableObject {
                 return updatedAt(a) > updatedAt(b)
             }
             for stale in sorted.dropFirst() {
-                context.delete(stale)
+                ctx.delete(stale)
                 purged += 1
             }
             #if DEBUG

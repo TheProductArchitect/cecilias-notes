@@ -12,7 +12,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 ## Snapshot
 
 - Swift files scanned: **356**
-- Types declared: **713**
+- Types declared: **710**
 - `Notification.Name` declarations: **92**
 - Notification symbols referenced (post/observe): **111**
 
@@ -22,10 +22,10 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 
 | Module | Files | Lines |
 | --- | ---: | ---: |
-| `App/` | 3 | 934 |
-| `Core/` | 101 | 18,318 |
+| `App/` | 3 | 940 |
+| `Core/` | 101 | 18,367 |
 | `DesignSystem/` | 15 | 1,779 |
-| `Features/` | 168 | 53,455 |
+| `Features/` | 168 | 53,456 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -50,9 +50,9 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 
 | Lines | File |
 | ---: | --- |
-| 3,048 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
+| 3,045 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
 | 2,613 | [`CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorViewModel.swift) |
-| 2,526 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
+| 2,575 | [`CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift) |
 | 1,613 | [`CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryViewModel.swift) |
 | 1,398 | [`CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift`](../CeciliasNotes/CeciliasNotes/Features/Export/ExportService.swift) |
 | 1,257 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lecture/LectureRecorder.swift) |
@@ -72,7 +72,7 @@ These are the largest files. When a symptom is diffuse, start here — the big o
 | 740 | [`CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift) |
 | 739 | [`CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift`](../CeciliasNotes/CeciliasNotes/Features/Settings/Sections/CloudSettingsView.swift) |
 | 732 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditorView.swift) |
-| 702 | [`CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift`](../CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift) |
+| 708 | [`CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift`](../CeciliasNotes/CeciliasNotes/App/CeciliasNotesApp.swift) |
 | 667 | [`CeciliasNotes/CeciliasNotesMac/Editor/MacRendering.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacRendering.swift) |
 | 664 | [`CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift) |
 
@@ -206,7 +206,7 @@ Types grouped by the protocols they conform to. Useful for finding all implement
 - **`Commands`** — 2 conformers: `CeciliasNotesCommands`, `MacAppCommands`
 - **`Decodable`** — 4 conformers: `DeleteRequest`, `Header`, `ResponseEnvelope`, `ResponseQuestion`
 - **`Encodable`** — 2 conformers: `RequestEnvelope`, `SourceBlock`
-- **`Equatable`** — 47 conformers: `AIError`, `AppError`, `AudioElementsOverlayView`, `CeciliasNotesTool`, `DictationContext`, `DiscoveredDevice`, `EditorPageOverlayInputs`, `ElementSnapshot`, `ExportViewState`, `HighlightElementsOverlayView`, `ImageElementsOverlayView`, `Issue`, … +35
+- **`Equatable`** — 45 conformers: `AIError`, `AppError`, `AudioElementsOverlayView`, `CeciliasNotesTool`, `DictationContext`, `DiscoveredDevice`, `EditorPageOverlayInputs`, `ElementSnapshot`, `ExportViewState`, `HighlightElementsOverlayView`, `ImageElementsOverlayView`, `Issue`, … +33
 - **`Error`** — 8 conformers: `AIError`, `AudioRecorderError`, `DictationTimeoutError`, `ExportError`, `Issue`, `LectureRecorderError`, `ParseError`, `RangeParseError`
 - **`Hashable`** — 13 conformers: `AnnotationListItem`, `AskCitation`, `InteractionReason`, `Key`, `LibraryContext`, `MacHeaderInteraction`, `NotebookSummary`, `PageCoordinateSpace`, `PageTemplate`, `TemplateCategory`, `Theme`, `TranscriptionSegment`, … +1
 - **`Identifiable`** — 29 conformers: `AnnotationListItem`, `AskCitation`, `ConversationTurn`, `DiscoveredDevice`, `ExportDeliveryFormat`, `ExportRecord`, `IdentifiableURL`, `ImageImportRequest`, `InboxEvent`, `MacCaptureHotkey`, `MacImportFeedback`, `MacNotebookTemplate`, … +17

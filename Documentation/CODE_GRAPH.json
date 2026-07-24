@@ -6,7 +6,7 @@
   ],
   "counts": {
     "files": 356,
-    "types": 713,
+    "types": 710,
     "notifications_declared": 92,
     "notification_symbols_referenced": 111
   },
@@ -30,7 +30,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 702
+      "lines": 708
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/App/CeciliasNotesCommands.swift",
@@ -1722,7 +1722,7 @@
         ".syntheticDataDidChange"
       ],
       "observes": [],
-      "lines": 2526
+      "lines": 2575
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Core/Services/SyncConflictLog.swift",
@@ -2454,7 +2454,7 @@
         "MultipeerLiveInk.receivedNotification",
         "rectCacheNote"
       ],
-      "lines": 3048
+      "lines": 3045
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -2478,15 +2478,11 @@
       "imports": [
         "CoreGraphics"
       ],
-      "declared_types": [
-        "MagneticSnapMath",
-        "PageEdge",
-        "PageBand"
-      ],
+      "declared_types": [],
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 82
+      "lines": 86
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOverlayFetch.swift",
@@ -9768,12 +9764,6 @@
       ]
     },
     {
-      "name": "MagneticSnapMath",
-      "kind": "enum",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/MagneticSnapMath.swift",
-      "conforms_to": []
-    },
-    {
       "name": "MainThreadWatchdog",
       "kind": "enum",
       "file": "CeciliasNotes/CeciliasNotes/Core/Utilities/MainThreadWatchdog.swift",
@@ -10300,14 +10290,6 @@
       "conforms_to": []
     },
     {
-      "name": "PageBand",
-      "kind": "struct",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/MagneticSnapMath.swift",
-      "conforms_to": [
-        "Equatable"
-      ]
-    },
-    {
       "name": "PageContext",
       "kind": "struct",
       "file": "CeciliasNotes/CeciliasNotes/Core/Services/AI/PageContext.swift",
@@ -10338,14 +10320,6 @@
       "conforms_to": [
         "Transferable",
         "Codable"
-      ]
-    },
-    {
-      "name": "PageEdge",
-      "kind": "enum",
-      "file": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/MagneticSnapMath.swift",
-      "conforms_to": [
-        "Equatable"
       ]
     },
     {

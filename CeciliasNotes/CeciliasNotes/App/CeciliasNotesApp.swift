@@ -411,7 +411,13 @@ struct CeciliasNotesApp: App {
         Self.pendingDuplicateSweep = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled else { return }
-            storage.purgeDuplicateRows()
+            // Off-main: the sweep materialises every row of five model
+            // types (no predicate) and, debounced 2 s after CloudKit
+            // deliveries, used to fire mid-scroll and freeze the main
+            // thread ~289 ms (device trace 2026-07-24). Only the
+            // overlay-refresh notifications hop back to main.
+            await storage.purgeDuplicateRowsOffMain()
+            guard !Task.isCancelled else { return }
             let skipReconcile = StorageService.launchHygieneCompletedAt.map {
                 Date().timeIntervalSince($0) < 60
             } ?? false
