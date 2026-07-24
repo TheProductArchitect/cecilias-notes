@@ -347,6 +347,32 @@ struct ImageElementView: View {
             .buttonStyle(.plain)
 
             Button {
+                PageElementOrdering.apply(.toFront, to: element,
+                                          context: StorageService.shared.context)
+            } label: {
+                Image(systemName: "square.3.layers.3d.top.filled")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Bring to Front")
+
+            Button {
+                PageElementOrdering.apply(.toBack, to: element,
+                                          context: StorageService.shared.context)
+            } label: {
+                Image(systemName: "square.3.layers.3d.bottom.filled")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(theme.foreground)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send to Back")
+
+            Button {
                 isCropping = true
             } label: {
                 Image(systemName: "crop")

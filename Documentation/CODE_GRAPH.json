@@ -5,10 +5,10 @@
     "CeciliasNotes/CeciliasNotesMac"
   ],
   "counts": {
-    "files": 356,
+    "files": 357,
     "types": 710,
     "notifications_declared": 92,
-    "notification_symbols_referenced": 111
+    "notification_symbols_referenced": 112
   },
   "files": [
     {
@@ -2485,6 +2485,22 @@
       "lines": 86
     },
     {
+      "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOrdering.swift",
+      "module": "Features",
+      "target": "CeciliasNotes",
+      "imports": [
+        "Foundation",
+        "SwiftData"
+      ],
+      "declared_types": [],
+      "extends": [],
+      "posts": [
+        "refreshNotification(for: kind"
+      ],
+      "observes": [],
+      "lines": 102
+    },
+    {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOverlayFetch.swift",
       "module": "Features",
       "target": "CeciliasNotes",
@@ -2852,7 +2868,7 @@
         ".imageElementCrossPageHandoffRequested"
       ],
       "observes": [],
-      "lines": 520
+      "lines": 546
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/ImageElements/ImageElementsOverlayView.swift",
@@ -13466,6 +13482,13 @@
         "observed_in": [
           "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift"
         ]
+      },
+      {
+        "name": "refreshNotification(for: kind",
+        "posted_in": [
+          "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOrdering.swift"
+        ],
+        "observed_in": []
       },
       {
         "name": "requestSwitchNotebookNotification",

@@ -336,6 +336,22 @@ feeds it scroll geometry and page frames.
   1.0× or the fit-to-width scale; and a page that fits horizontally
   always recentres (no threshold — there is one valid resting X).
 
+## Element layers (z-order)
+
+`PageElement`s carry a `zIndex`; same-kind elements render in that
+order inside their shared overlay (`PageElementOverlayFetch` sorts by
+it). **Bring to Front / Send to Back** (image element's floating
+toolbar) reorder an element among its **same-kind** siblings via
+`PageElementOrdering` (`Features/Editor/Canvas/`) — pure `newZIndex`
+math (unit-tested in `PageElementOrderingTests`) plus a `@MainActor
+apply` that registers undo, saves, and posts the kind's overlay-refresh
+notification. Cross-kind stacking (image vs text) is fixed by
+`PageOverlaysContainer`'s ZStack order and is deliberately not
+reorderable; strokes live in the `PKCanvasView` above all overlays and
+are not part of the element z-stack. Extending the control to shapes /
+sticky notes is just wiring their toolbars to the same
+`PageElementOrdering.apply`.
+
 ## Active investigations
 
 Open, unresolved bugs are tracked in **`OPEN_ISSUES.md`** — each with

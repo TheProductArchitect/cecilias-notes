@@ -11,10 +11,10 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 
 ## Snapshot
 
-- Swift files scanned: **356**
+- Swift files scanned: **357**
 - Types declared: **710**
 - `Notification.Name` declarations: **92**
-- Notification symbols referenced (post/observe): **111**
+- Notification symbols referenced (post/observe): **112**
 
 ## Target layout
 
@@ -25,7 +25,7 @@ Full machine-readable data: [`CODE_GRAPH.json`](CODE_GRAPH.json).
 | `App/` | 3 | 940 |
 | `Core/` | 101 | 18,367 |
 | `DesignSystem/` | 15 | 1,779 |
-| `Features/` | 168 | 53,456 |
+| `Features/` | 169 | 53,584 |
 | `Resources/` | 1 | 248 |
 
 ### `CeciliasNotesMac`
@@ -179,6 +179,7 @@ The app uses `NotificationCenter` as a lightweight cross-view/cross-service mess
 | **`recordingPillReturnTapped`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift) | [`RecordingPill.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift) | [`LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
 | **`recordingScrollToActivePage`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/RecordingPill.swift) | [`FloatingRecordingControls.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Recording/FloatingRecordingControls.swift) | [`EditorView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/EditorView.swift) |
 | `rectCacheNote` | — | — | [`ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift) |
+| `refreshNotification(for: kind` | — | [`PageElementOrdering.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOrdering.swift) | — |
 | **`requestSwitchNotebookNotification`** | [`CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFReferenceImporter.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFReferenceImporter.swift) | [`PDFReferenceImporter.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/PDFElements/PDFReferenceImporter.swift) | [`LibraryView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/LibraryView.swift) |
 | **`searchIndexLoaded`** | [`CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift) | [`SearchIndexService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/SearchIndexService.swift) | [`AskMyNotesView.swift`](../CeciliasNotes/CeciliasNotes/Features/Library/Ask/AskMyNotesView.swift) |
 | **`shapeElementsChanged`** | [`CeciliasNotes/CeciliasNotesMac/Editor/MacEditing.swift`](../CeciliasNotes/CeciliasNotesMac/Editor/MacEditing.swift) | [`StorageService.swift`](../CeciliasNotes/CeciliasNotes/Core/Services/StorageService.swift), [`ContinuousCanvasView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/ContinuousCanvasView.swift), [`LassoGroupOps.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoGroupOps.swift), [`LassoTransformUndo.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Lasso/LassoTransformUndo.swift), … +3 | [`ShapeElementsOverlayView.swift`](../CeciliasNotes/CeciliasNotes/Features/Editor/Shapes/ShapeElementsOverlayView.swift) |
@@ -246,7 +247,7 @@ Files that own app startup or top-level scene composition. Read these first if y
 
 ## Cross-target sharing
 
-- iOS target files: **288**
+- iOS target files: **289**
 - Mac target files: **68**
 - The Mac target compiles most iOS files directly via `PBXFileSystemSynchronizedRootGroup` synced folders with per-file exceptions. Search the pbxproj for `PBXFileSystemSynchronizedBuildFileExceptionSet` to see the exclusion lists.
 - Platform guards to look for: `#if canImport(UIKit)`, `#if canImport(AppKit)`, `#if os(iOS)`. Anything wrapped in these is asymmetric and worth an extra read when debugging cross-platform.
