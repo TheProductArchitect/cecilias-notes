@@ -272,3 +272,53 @@ cheap.
 **Next step.** Instruments (Core Animation FPS + SwiftUI view
 body counts) on device while scrolling a 20+-notebook grid;
 change nothing without numbers.
+
+---
+
+## 10. Translucent-ink opacity shifts wet→dry + "text flickers under the brush" — LOW (inherent, accepted)
+
+**Symptom (2026-07-24).** With a semi-transparent ink (brush /
+watercolor at 0.85, or any tool with the opacity slider below 1)
+the stroke looks one opacity *while writing* and settles to
+another *on pen-lift*; existing text underneath appears to
+"flicker" while a brush stroke is drawn over it.
+
+**Root cause (confirmed, not a state bug).** The `PKCanvasView`
+is transparent (`isOpaque = false`) and mounted **above** the
+per-page overlays (`ContinuousCanvasView` ~line 2093), so ink
+draws over text. PencilKit renders a translucent stroke's *wet*
+(in-progress) form by compositing each predicted sub-segment
+source-over — overlaps within the one stroke accumulate alpha and
+read darker/uneven — then re-flattens to a single uniform alpha
+layer on lift (the *dry* form). Text visible *through* the
+translucent wet ink changes as the stroke re-renders each frame,
+which reads as flicker. Both are the documented wet/dry behaviour
+of `PKInkingTool` with `color.alpha < 1`; there is no public API
+to render the wet stroke pre-flattened.
+
+**Why accepted.** The only avoidance is forcing opaque ink (alpha
+== 1) on those tools, which removes the feature the user asked
+for. Same family as issue #5 (wet-ink shadow). Revisit only if a
+future PencilKit exposes wet-compositing control.
+
+---
+
+## 11. Editor scroll: "slight ad-hoc lag, not butter" — LOW (accepted, profile first)
+
+**Symptom (2026-07-24).** Continuous-canvas scrolling is
+acceptable but not perfectly smooth — occasional single-frame
+hitch. Sibling of the library-scroll item (#9).
+
+**Already mitigated.** `updateCanvasMembership` is throttled to
+~10 Hz while `isActivelyScrolling`, canvas mounts (the expensive
+`PKCanvasView` alloc + `PKDrawing` decode) are deferred to
+scroll-rest, and the viewport notification is capped at 30 Hz.
+The remaining hitch is most likely a mount that can't be deferred
+(a page entering the *visible* viewport must exist before it's on
+screen) plus the issue-2 publish warnings firing on overlay
+mount.
+
+**Next step.** Instruments (Core Animation FPS + Time Profiler
+main-thread) while flicking a 20+-page notebook; change nothing
+without numbers — the throttles above were added blind once
+already and the risk is re-introducing a mount stutter.

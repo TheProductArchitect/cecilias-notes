@@ -306,13 +306,44 @@ should address. None are bugs; all are explicit deferrals.
 
 ---
 
+## Editor "magnetic" geometry
+
+The continuous canvas leans on a few snapping behaviours so the
+document feels sticky rather than free-floating. The view-independent
+math lives in **`Features/Editor/Canvas/MagneticSnapMath.swift`** so it
+is unit-testable without a live `UIScrollView` (see
+`MagneticSnapMathTests`); `ContinuousCanvasView` is a thin adapter that
+feeds it scroll geometry and page frames.
+
+- **Cross-page element hand-off** (`resolveCrossPage`). Dragging an
+  image/shape/sticky off the top or bottom of its page hands it to a
+  sibling page. Strict containment when the drop lands inside a page;
+  a **nearest-edge magnetic fallback** when it lands in the inter-page
+  gutter or past the first/last page — it snaps to the END of the page
+  above the gap or the BEGINNING of the page below, whichever edge is
+  closer. Before this, a gutter drop found no containing page and the
+  element reverted to its origin.
+- **Palette reservation** (`paletteReservation`, in `applyContentInset`).
+  The tool-palette strip is reserved in the scroll-view inset only
+  while the page is narrower than the viewport (a centred rest
+  position to protect). Once the page overflows the viewport (zoomed
+  in) the reservation drops to 0 so the page can scroll flush to the
+  edges and stays centred — fixing "won't stick to the edges / leans
+  left when zooming in."
+- **Edge + zoom rest-point snapping** (`snapToEdgesIfClose`,
+  `scrollViewDidEndZooming`). Releasing a pan/zoom within ~44pt of a
+  viewport edge clicks flush to it; zoom deceleration magnetises to
+  1.0× or the fit-to-width scale; and a page that fits horizontally
+  always recentres (no threshold — there is one valid resting X).
+
 ## Active investigations
 
 Open, unresolved bugs are tracked in **`OPEN_ISSUES.md`** — each with
 symptom, failed prior attempts, the diagnostic in place, and the next
 step. Currently open: element-tap gesture absorption, the iOS 26
-alternate-icon swap, the Swift 6 warnings (below), and the dictation
-view-update warnings.
+alternate-icon swap, the Swift 6 warnings (below), the dictation
+view-update warnings, and the accepted-for-now translucent-ink
+opacity (#10) and editor-scroll smoothness (#11) items.
 
 ---
 

@@ -1427,7 +1427,13 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // full reservation as the page grows under the palette.
             let paletteStrip: CGFloat = 56 + 12   // matches ToolPaletteView
             let trueCentreGutter = (scrollView.bounds.width - width) / 2
-            let neededReservation = max(0, paletteStrip - max(0, trueCentreGutter))
+            // Reserve the palette strip only while the page is narrower
+            // than the viewport; drop it to 0 once the page overflows
+            // (zoomed in) so it can scroll flush to the edges and stays
+            // centred. See `MagneticSnapMath.paletteReservation`.
+            let neededReservation = MagneticSnapMath.paletteReservation(
+                paletteStrip: paletteStrip, trueCentreGutter: trueCentreGutter
+            )
             var reservedLeft:  CGFloat = 0
             var reservedRight: CGFloat = 0
             let paletteEdge = paletteEdgeForActiveNotebook(boundsSize: scrollView.bounds.size)
@@ -1497,16 +1503,31 @@ struct ContinuousCanvasView: UIViewRepresentable {
                 y: source.frame.minY + CGFloat(proposedY)  * source.frame.height
             )
 
-            // 2. Find the destination host whose frame contains the
-            //    projected content-view Y. Horizontal containment is
-            //    a softer match — page widths can differ in
-            //    mixed-size notebooks; we accept the host as long as
-            //    Y lands inside it.
-            let dest = hosts.first { host in
-                pointInContent.y >= host.frame.minY &&
-                pointInContent.y <  host.frame.maxY
+            // 2. Resolve the destination page. Strict containment when
+            //    the projected Y lands inside a page; a magnetic
+            //    nearest-edge fallback when it lands in the inter-page
+            //    gutter or past the first/last page (see
+            //    `MagneticSnapMath.resolveCrossPage`). Horizontal
+            //    containment is a softer match — page widths can
+            //    differ in mixed-size notebooks — so only Y drives the
+            //    band search.
+            let bands = hosts.enumerated().map {
+                MagneticSnapMath.PageBand(index: $0.offset,
+                                          minY: $0.element.frame.minY,
+                                          maxY: $0.element.frame.maxY)
             }
-            guard let dest, dest.pageId != sourcePageId else { return }
+            guard let resolved = MagneticSnapMath.resolveCrossPage(
+                pointY: pointInContent.y, bands: bands
+            ) else { return }
+            let dest = hosts[resolved.band.index]
+            let snapEdge = resolved.edge
+            // A same-page result is only meaningful when we're snapping
+            // to an edge (dragged off the page but the nearest edge is
+            // still this page — e.g. no next page exists). A same-page
+            // hit with no snap means the drop was already in-bounds and
+            // the caller mishandled it; ignore to preserve prior
+            // behaviour.
+            guard dest.pageId != sourcePageId || snapEdge != nil else { return }
 
             // 3. Compute the destination-page normalised coords.
             //    Clamp X within [0, 1 - elementW] and Y within
@@ -1523,13 +1544,23 @@ struct ContinuousCanvasView: UIViewRepresentable {
                     Double((pointInContent.x - dest.frame.minX) / dest.frame.width)
                 )
             )
-            let destNormY = max(
-                0,
-                min(
-                    1 - element.normalizedHeight,
-                    Double((pointInContent.y - dest.frame.minY) / dest.frame.height)
+            let destNormY: Double
+            switch snapEdge {
+            case .top:
+                // Beginning of the destination page.
+                destNormY = 0
+            case .bottom:
+                // End of the destination page (fully on-page).
+                destNormY = max(0, 1 - element.normalizedHeight)
+            case nil:
+                destNormY = max(
+                    0,
+                    min(
+                        1 - element.normalizedHeight,
+                        Double((pointInContent.y - dest.frame.minY) / dest.frame.height)
+                    )
                 )
-            )
+            }
 
             element.pageId      = dest.pageId
             element.normalizedX = destNormX
@@ -2667,28 +2698,25 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-            // Magnetic snap: native 1.0× AND the device-specific
-            // "fit the whole page" zoom both feel like rest points
-            // to the user. Pinch deceleration tends to land just
-            // off-grid (0.94 / 1.07 / 0.62) and feel "stuck"; an
-            // animated snap turns the off-grid landing into a
-            // click. Tolerance is 10% on each target so the snap
-            // is discoverable without fighting an intentional zoom.
+            // Only ONE zoom rest-point is magnetic: the device-specific
+            // "fit the whole page (with the tool-palette margin)" zoom
+            // — state 1 in the product spec, where the page sits
+            // centred with breathing room on either side. Every other
+            // zoom is left exactly where the user released it (only
+            // re-centred via `applyContentInset`); we do NOT snap to
+            // native 1.0× as a separate rest point, because when 1.0
+            // isn't the fit zoom (e.g. iPhone, where fit ≈ 0.66)
+            // yanking the user to it fights an intentional zoom. On
+            // iPad the fit zoom already IS 1.0, so the "native size"
+            // rest point still exists there — it just isn't a second,
+            // independent magnet. Tolerance is 10% so the snap is
+            // discoverable without grabbing a deliberate zoom.
+            // (State 2 — flush-to-edge when zoomed in — is a PAN snap,
+            // handled by `snapToEdgesIfClose` below.)
             let snapTolerance: CGFloat = 0.10
             let fitTarget = currentFitZoom(scrollView)
             var snapTo: CGFloat? = nil
-            // Prefer 1.0 when it's near the user's release zoom —
-            // it's the "everything at native size" rest point.
-            if abs(scale - 1.0) > 0.001 && abs(scale - 1.0) < snapTolerance {
-                snapTo = 1.0
-            }
-            // …then the fit-to-viewport zoom (the value iPhone
-            // settles to on first open of a page). On iPad this is
-            // usually also 1.0 so it collapses to the same branch;
-            // on iPhone it sits around 0.66 and is the user's
-            // "show me the whole page" rest point.
-            if snapTo == nil,
-               let fit = fitTarget,
+            if let fit = fitTarget,
                abs(scale - fit) > 0.001,
                abs(scale - fit) < snapTolerance {
                 snapTo = fit
@@ -2746,10 +2774,15 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if maxX > minX {
                 if abs(offset.x - minX) < threshold { target.x = minX }
                 else if abs(offset.x - maxX) < threshold { target.x = maxX }
-            } else if abs(offset.x - minX) < threshold {
+            } else {
                 // Content fits horizontally (page narrower than viewport
-                // after insets). Snap to the centred position so a
-                // slightly-drifted offset from zoom in/out is corrected.
+                // after insets). There is exactly ONE valid resting X —
+                // the centred position (`minX == -inset.left`) — so snap
+                // to it unconditionally. A zoom-out can leave the page
+                // drifted well past the 44pt edge threshold yet still
+                // fitting; gating on the threshold there left it visibly
+                // off-centre ("skewed to the left"). Recentring whenever
+                // the page fits keeps it magnetically centred.
                 target.x = minX
             }
             if maxY > minY {
