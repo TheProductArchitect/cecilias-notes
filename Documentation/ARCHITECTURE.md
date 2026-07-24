@@ -323,13 +323,21 @@ feeds it scroll geometry and page frames.
   above the gap or the BEGINNING of the page below, whichever edge is
   closer. Before this, a gutter drop found no containing page and the
   element reverted to its origin.
-- **Palette reservation** (`paletteReservation`, in `applyContentInset`).
-  The tool-palette strip is reserved in the scroll-view inset only
-  while the page is narrower than the viewport (a centred rest
-  position to protect). Once the page overflows the viewport (zoomed
-  in) the reservation drops to 0 so the page can scroll flush to the
-  edges and stays centred — fixing "won't stick to the edges / leans
-  left when zooming in."
+- **True centring** (`applyContentInset`). The page is centred with
+  symmetric left/right insets at every zoom where it fits, collapsing
+  to 0 once it overflows the viewport (zoomed in) so it can scroll
+  flush to either edge. An earlier version reserved the tool-palette
+  strip on one side so the floating pill wouldn't cover the page edge,
+  but a one-sided reservation is asymmetric and pushed a fitted page
+  off-centre ("the notebook isn't centred"). The palette is a small
+  draggable pill floating over the canvas; overlapping the page edge
+  is a better trade than an off-centre page.
+- **Zoom membership throttle.** `scrollViewWillBeginZooming` sets the
+  same "actively interacting" flag a scroll fling uses, so canvas /
+  overlay membership throttles (~10 Hz) and defers unmounts during a
+  pinch instead of churning mount→unmount→mount every tick — that
+  churn was the "text flickers while zooming in/out" report. The
+  `scrollViewDidEndZooming` settle runs the full pass.
 - **Edge + zoom rest-point snapping** (`snapToEdgesIfClose`,
   `scrollViewDidEndZooming`). Releasing a pan/zoom within ~44pt of a
   viewport edge clicks flush to it; zoom deceleration magnetises to

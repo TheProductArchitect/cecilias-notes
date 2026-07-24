@@ -15,28 +15,53 @@ import CoreGraphics
 ///    reservation must drop to 0 once the page overflows the viewport.
 final class MagneticSnapMathTests: XCTestCase {
 
-    // MARK: - Palette reservation (zoom / centring)
+    // MARK: - Horizontal centring (across screen sizes)
 
-    func test_paletteReservation_pageNarrowerThanViewport_reservesTaperedStrip() {
-        // Gutter smaller than the strip → reserve the remainder so the
-        // page clears the palette but isn't shoved further than needed.
-        let r = MagneticSnapMath.paletteReservation(paletteStrip: 68, trueCentreGutter: 20)
-        XCTAssertEqual(r, 48, accuracy: 0.0001)
+    private let a4Width: CGFloat = 595   // PageSize.a4.pointSize.width
+
+    func test_centering_iPadLandscape_centresWithSymmetricMargins() throws {
+        // iPad Pro 11" landscape ≈ 1194pt; A4 page at 1× fits.
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 1194, contentWidth: a4Width, zoomScale: 1)
+        XCTAssertEqual(c.inset, (1194 - 595) / 2, accuracy: 0.01)
+        // Centred offset is -inset — NOT 0 (0 would glue it to the left).
+        XCTAssertEqual(try XCTUnwrap(c.centeredOffsetX), -(1194 - 595) / 2, accuracy: 0.01,
+                       "must pin the centred offset, not leave it at 0")
     }
 
-    func test_paletteReservation_wideGutter_reservesNothing() {
-        // Gutter already clears the palette → no reservation, page
-        // stays truly centred.
-        let r = MagneticSnapMath.paletteReservation(paletteStrip: 68, trueCentreGutter: 120)
-        XCTAssertEqual(r, 0, accuracy: 0.0001)
+    func test_centering_iPadPortrait_centres() throws {
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 834, contentWidth: a4Width, zoomScale: 1)
+        XCTAssertEqual(c.inset, (834 - 595) / 2, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(c.centeredOffsetX), -(834 - 595) / 2, accuracy: 0.01)
     }
 
-    func test_paletteReservation_zoomedInPageOverflows_reservesNothing() {
-        // trueCentreGutter <= 0 means the page is WIDER than the
-        // viewport (zoomed in). Reservation must be 0 so the page can
-        // scroll flush to the edges and stay centred — the regression.
-        XCTAssertEqual(MagneticSnapMath.paletteReservation(paletteStrip: 68, trueCentreGutter: 0), 0)
-        XCTAssertEqual(MagneticSnapMath.paletteReservation(paletteStrip: 68, trueCentreGutter: -140), 0)
+    func test_centering_iPhoneFitToWidth_centres() {
+        // iPhone ≈ 390pt; A4 fit ≈ 0.62 → displayed ≈ 369 < 390, fits.
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 390, contentWidth: a4Width, zoomScale: 0.62)
+        let displayed = a4Width * 0.62
+        XCTAssertEqual(c.inset, (390 - displayed) / 2, accuracy: 0.01)
+        XCTAssertNotNil(c.centeredOffsetX)
+    }
+
+    func test_centering_zoomedInPastViewport_noInsetNoPin() {
+        // Zoomed to 2.5× on iPad: displayed 1487 > 1194 → page overflows,
+        // pans freely: no inset, no forced offset.
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 1194, contentWidth: a4Width, zoomScale: 2.5)
+        XCTAssertEqual(c.inset, 0)
+        XCTAssertNil(c.centeredOffsetX, "an overflowing page has no single centred offset — it pans")
+    }
+
+    func test_centering_narrowSplitView_pageWiderThanViewport_pans() {
+        // iPad narrow split view ≈ 320pt < A4 595 at 1× → overflows.
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 320, contentWidth: a4Width, zoomScale: 1)
+        XCTAssertEqual(c.inset, 0)
+        XCTAssertNil(c.centeredOffsetX)
+    }
+
+    func test_centering_exactFit_pinsToZeroInset() throws {
+        // Displayed width == bounds → inset 0, centred offset 0 (flush).
+        let c = MagneticSnapMath.horizontalCentering(boundsWidth: 595, contentWidth: a4Width, zoomScale: 1)
+        XCTAssertEqual(c.inset, 0)
+        XCTAssertEqual(try XCTUnwrap(c.centeredOffsetX), 0, accuracy: 0.01)
     }
 
     // MARK: - Cross-page hand-off resolution

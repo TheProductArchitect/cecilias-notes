@@ -14,8 +14,6 @@ struct LivePresencePill: View {
     @ObservedObject private var sender = MultipeerSendService.shared
     @Environment(\.theme) private var theme
 
-    @State private var pulsing = false
-
     /// Paired peers connected on either lane, de-duplicated.
     private var liveNames: [String] {
         var names = Set<String>()
@@ -32,11 +30,23 @@ struct LivePresencePill: View {
         let names = liveNames
         if !names.isEmpty {
             HStack(spacing: 6) {
+                // Self-contained pulse. The previous `@State` +
+                // `.scaleEffect` + `.animation(.repeatForever, value:)`
+                // let the forever-running animation capture the dot's
+                // LAYOUT geometry when the enclosing settings list
+                // re-laid-out (scroll / the `if isEnabled` reveal), so
+                // the dot appeared to fly/float across the row.
+                // `PhaseAnimator` keeps the animation local to the
+                // scale transform — it can't leak into position — and a
+                // fixed `frame` reserves the max size so layout never
+                // shifts.
                 Circle()
                     .fill(Color.green)
                     .frame(width: 7, height: 7)
-                    .scaleEffect(pulsing ? 1.15 : 0.9)
-                    .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
+                    .phaseAnimator([0.9, 1.15]) { dot, scale in
+                        dot.scaleEffect(scale)
+                    } animation: { _ in .easeInOut(duration: 0.9) }
+                    .frame(width: 9, height: 9)
                 Text(label(for: names))
                     // Single line, sized to content — device names can
                     // be long, and the toolbar column is narrow; without
@@ -54,7 +64,6 @@ struct LivePresencePill: View {
             .fixedSize()
             .help(names.joined(separator: ", "))
             .accessibilityLabel("Live: \(names.joined(separator: ", "))")
-            .onAppear { pulsing = true }
         }
     }
 

@@ -2454,7 +2454,7 @@
         "MultipeerLiveInk.receivedNotification",
         "rectCacheNote"
       ],
-      "lines": 3045
+      "lines": 3034
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/EditorPageOverlayInputs.swift",
@@ -2482,7 +2482,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 86
+      "lines": 66
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Editor/Canvas/PageElementOrdering.swift",
@@ -5282,7 +5282,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 68
+      "lines": 77
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Sync/MultipeerSettingsSection.swift",
@@ -5314,7 +5314,7 @@
       "extends": [],
       "posts": [],
       "observes": [],
-      "lines": 281
+      "lines": 300
     },
     {
       "path": "CeciliasNotes/CeciliasNotes/Features/Sync/UbiquitousFileStatus.swift",

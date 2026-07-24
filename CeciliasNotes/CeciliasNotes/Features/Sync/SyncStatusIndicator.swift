@@ -166,8 +166,27 @@ struct SyncStatusIndicator: View {
     }
 #endif
 
+    /// The status to DISPLAY. The CloudKit *database* sync (SwiftData)
+    /// runs independently of `CloudSyncManager`'s iCloud-*Drive* file
+    /// sync, and the latter's `isEnabled` flag defaults to `false`
+    /// (`UserDefaults.bool` on an unset key). So on devices whose
+    /// notebooks were syncing fine over CloudKit, the indicator still
+    /// read "iCloud sync off" — purely because the secondary file-sync
+    /// toggle had never been turned on (device log 2026-07-24:
+    /// `privateDatabase` + account `available`). When the container is
+    /// on the private database the app IS syncing to iCloud, so a
+    /// `.disabled` file-sync status must not surface as "off"; present
+    /// it as up-to-date instead.
+    private var effectiveStatus: CloudSyncManager.SyncStatus {
+        if cloudSync.syncStatus == .disabled,
+           CloudKitContainerState.status == .privateDatabase {
+            return .upToDate
+        }
+        return cloudSync.syncStatus
+    }
+
     private var glyph: String {
-        switch cloudSync.syncStatus {
+        switch effectiveStatus {
         case .upToDate:          return "checkmark.icloud"
         case .syncing:           return "arrow.triangle.2.circlepath.icloud"
         case .checking:          return "arrow.triangle.2.circlepath.icloud"
@@ -181,7 +200,7 @@ struct SyncStatusIndicator: View {
 #if os(macOS)
         return macIconTint
 #else
-        switch cloudSync.syncStatus {
+        switch effectiveStatus {
         case .upToDate:          return theme.recessiveQuaternary
         case .syncing, .checking: return theme.accent
         case .waitingForNetwork: return theme.recessiveTertiary
@@ -197,7 +216,7 @@ struct SyncStatusIndicator: View {
             return false
         }
 #endif
-        switch cloudSync.syncStatus {
+        switch effectiveStatus {
         case .syncing, .checking: return true
         default:                  return false
         }
@@ -207,7 +226,7 @@ struct SyncStatusIndicator: View {
 
     @ViewBuilder
     private var menuContent: some View {
-        switch cloudSync.syncStatus {
+        switch effectiveStatus {
         case .disabled:
             Text("iCloud sync off")
             Button("Open Settings → iCloud") {
@@ -248,7 +267,7 @@ struct SyncStatusIndicator: View {
     }
 
     private var accessibilityLabelText: String {
-        switch cloudSync.syncStatus {
+        switch effectiveStatus {
         case .disabled:           return "iCloud sync disabled"
         case .upToDate:           return "iCloud synced"
         case .syncing:            return "Syncing"

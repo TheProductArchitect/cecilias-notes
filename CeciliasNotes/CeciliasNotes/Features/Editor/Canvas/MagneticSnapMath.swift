@@ -15,24 +15,39 @@ import CoreGraphics
 /// project's default main-actor isolation.
 nonisolated enum MagneticSnapMath {
 
-    // MARK: - Palette reservation (zoom / centring)
+    // MARK: - Horizontal centring
 
-    /// How much of the tool-palette strip to reserve inside the scroll
-    /// view's content inset.
+    struct HorizontalCentering: Equatable {
+        /// Symmetric left/right content inset that centres the page.
+        let inset: CGFloat
+        /// The single valid resting `contentOffset.x` when the page fits
+        /// horizontally — `nil` when the page overflows the viewport
+        /// (zoomed in) and is free to pan.
+        let centeredOffsetX: CGFloat?
+    }
+
+    /// Everything needed to centre the document horizontally at a given
+    /// zoom, for ANY screen size.
     ///
-    /// Reserve the strip ONLY while the page is narrower than the
-    /// viewport (`trueCentreGutter > 0`) — there is a real centred
-    /// resting position to protect from the palette. Once the user
-    /// zooms IN far enough that the page overflows the viewport
-    /// (`trueCentreGutter <= 0`), the palette just floats over the
-    /// content and the reservation must drop to 0 so the page can
-    /// scroll flush to either edge. A non-zero reservation there both
-    /// stopped the page reaching the viewport edge ("won't stick to
-    /// the edges when zooming in") and, sitting on one side only,
-    /// shifted the overflowing page off-centre ("skewed to the left").
-    static func paletteReservation(paletteStrip: CGFloat, trueCentreGutter: CGFloat) -> CGFloat {
-        guard trueCentreGutter > 0 else { return 0 }
-        return max(0, paletteStrip - trueCentreGutter)
+    /// The subtlety this encodes: setting a symmetric `contentInset` is
+    /// necessary but NOT sufficient. UIScrollView does not reliably move
+    /// `contentOffset.x` to the one valid resting position when the
+    /// content fits, so a page can sit pinned at `offset.x == 0` — glued
+    /// to the left edge with all the slack piled on the right ("the
+    /// notebook isn't centred / leans left"). When the page fits there
+    /// is exactly one centred offset, `-inset`; the caller must pin it
+    /// explicitly. When the page overflows (`displayed > bounds`) there
+    /// is no single resting offset — it pans freely — so `inset == 0`
+    /// and `centeredOffsetX == nil`.
+    static func horizontalCentering(
+        boundsWidth: CGFloat,
+        contentWidth: CGFloat,
+        zoomScale: CGFloat
+    ) -> HorizontalCentering {
+        let displayed = contentWidth * zoomScale
+        let inset = max(0, (boundsWidth - displayed) / 2)
+        let fits = displayed <= boundsWidth
+        return HorizontalCentering(inset: inset, centeredOffsetX: fits ? -inset : nil)
     }
 
     // MARK: - Cross-page hand-off

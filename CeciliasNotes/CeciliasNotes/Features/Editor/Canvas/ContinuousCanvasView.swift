@@ -1409,43 +1409,22 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // representable its real frame.
             guard scrollView.bounds.width > 0, width > 0 else { return }
 
-            // Tool-palette overlay reservation. The vertical pill on
-            // a left- or right-edge palette covers ~68pt of the
-            // viewport; centering the page in the FULL scrollView
-            // bounds leaves it visually pushed under the palette.
-            // Subtract the palette-covered strip from the available
-            // width, centre the page in what's left, and add the
-            // palette strip back to the opposite-side inset.
-            //
-            // Reserve only the part of the strip the page would
-            // actually intrude on. When the page is zoomed out far
-            // enough that the true-centre gutter already clears the
-            // palette, an unconditional reservation shifted the page
-            // ~34pt off-centre — the user read it as "the page leans
-            // left." `max(0, strip − gutter)` keeps the page truly
-            // centred while it fits, and continuously hands back the
-            // full reservation as the page grows under the palette.
-            let paletteStrip: CGFloat = 56 + 12   // matches ToolPaletteView
-            let trueCentreGutter = (scrollView.bounds.width - width) / 2
-            // Reserve the palette strip only while the page is narrower
-            // than the viewport; drop it to 0 once the page overflows
-            // (zoomed in) so it can scroll flush to the edges and stays
-            // centred. See `MagneticSnapMath.paletteReservation`.
-            let neededReservation = MagneticSnapMath.paletteReservation(
-                paletteStrip: paletteStrip, trueCentreGutter: trueCentreGutter
+            // Centre the page TRULY — symmetric insets on both sides,
+            // and (critically) pin the centred offset. A previous
+            // version reserved the tool-palette strip on one side, but a
+            // one-sided reservation is asymmetric and shifted a fitted
+            // page off-centre ("leans to the side"). The palette is a
+            // small draggable pill floating OVER the canvas; overlapping
+            // the page edge beats pushing the page off-centre. Math lives
+            // in `MagneticSnapMath.horizontalCentering` (unit-tested
+            // across screen sizes / zooms).
+            let centering = MagneticSnapMath.horizontalCentering(
+                boundsWidth: scrollView.bounds.width,
+                contentWidth: scrollView.contentSize.width,
+                zoomScale: scale
             )
-            var reservedLeft:  CGFloat = 0
-            var reservedRight: CGFloat = 0
-            let paletteEdge = paletteEdgeForActiveNotebook(boundsSize: scrollView.bounds.size)
-            switch paletteEdge {
-            case .left:  reservedLeft  = neededReservation
-            case .right: reservedRight = neededReservation
-            case .top, .bottom: break
-            }
-            let availableWidth = scrollView.bounds.width - reservedLeft - reservedRight
-            let centeringInset = max(0, (availableWidth - width) / 2)
-            let leftInset  = centeringInset + reservedLeft
-            let rightInset = centeringInset + reservedRight
+            let leftInset  = centering.inset
+            let rightInset = centering.inset
 
             let vInset = max(0, scrollView.bounds.height / 2 - height / 2)
             let newInset = UIEdgeInsets(
@@ -1460,22 +1439,20 @@ struct ContinuousCanvasView: UIViewRepresentable {
             if scrollView.contentInset != newInset {
                 scrollView.contentInset = newInset
             }
-        }
-
-        /// Read the per-notebook palette edge from UserDefaults —
-        /// `ToolPaletteView` persists it under
-        /// `toolbar.position.<notebookId>` on every drag-end. Default
-        /// is `.right` to match the palette's own fallback.
-        private func paletteEdgeForActiveNotebook(boundsSize: CGSize) -> ToolbarEdge {
-            let key = "toolbar.position.\(viewModel.notebook.id.uuidString)"
-            if let raw = UserDefaults.standard.string(forKey: key),
-               let edge = ToolbarEdge(rawValue: raw) {
-                return edge
+            // THE actual centring step. Setting the inset alone does not
+            // move `contentOffset.x`: UIScrollView leaves a fitting page
+            // pinned wherever it was (usually `x == 0`, glued left with
+            // the slack on the right) rather than at the one valid
+            // centred offset. Pin it explicitly. Skip mid-gesture so we
+            // never fight an in-flight pinch/scroll — the gesture end
+            // re-centres via `snapToEdgesIfClose`. This is the piece the
+            // inset-only approach was missing, i.e. why centring "was
+            // never properly built."
+            if let centeredX = centering.centeredOffsetX, !isActivelyScrolling {
+                if abs(scrollView.contentOffset.x - centeredX) > 0.5 {
+                    scrollView.contentOffset.x = centeredX
+                }
             }
-            // No saved value → palette uses orientation-derived default.
-            return ToolbarEdgeBinding.isLandscape(boundsSize)
-                ? ToolbarEdgeBinding.landscapeDefault
-                : ToolbarEdgeBinding.portraitDefault
         }
 
         // MARK: Image cross-page hand-off
@@ -2678,10 +2655,31 @@ struct ContinuousCanvasView: UIViewRepresentable {
             // page narrower than the viewport sits centred rather
             // than pinned to the left edge.
             applyContentInset()
-            updateCanvasMembership()
+            // Membership mounts/unmounts overlay + canvas hosts. Running
+            // the FULL pass on every 120Hz pinch tick flipped mounted
+            // text/overlay hosts mounted→unmounted→mounted mid-gesture —
+            // the "text flickers while zooming in/out" report.
+            // `scrollViewWillBeginZooming` sets the same active flag a
+            // scroll fling uses, so throttle to ~10Hz and defer unmounts
+            // to zoom-rest; the didEnd callback runs the full settle.
+            if isActivelyScrolling {
+                let now = CACurrentMediaTime()
+                if now - lastMembershipUpdate > 0.1 {
+                    lastMembershipUpdate = now
+                    updateCanvasMembership()
+                }
+            } else {
+                updateCanvasMembership()
+            }
         }
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            setActivelyScrolling(true)
+        }
+
+        func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+            // Reuse the scroll-active flag so membership throttles and
+            // defers unmounts during the pinch — see `scrollViewDidZoom`.
             setActivelyScrolling(true)
         }
 
@@ -2698,6 +2696,10 @@ struct ContinuousCanvasView: UIViewRepresentable {
         }
 
         func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
+            // Pinch is over — clear the active flag so the full
+            // membership settle runs (flush deferred mounts, re-mount
+            // the landed page's overlays). Mirrors scroll-rest.
+            setActivelyScrolling(false)
             // Only ONE zoom rest-point is magnetic: the device-specific
             // "fit the whole page (with the tool-palette margin)" zoom
             // — state 1 in the product spec, where the page sits
