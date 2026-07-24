@@ -255,36 +255,9 @@ struct ToolPaletteView: View {
         // by re-tapping a selected tool. See `handleToolTap` /
         // `handleCategoryTap` for the trigger and
         // `customizePopover(for:)` for the per-tool content.
-        divider
-        shapeRecognitionToggle
-    }
-
-    // MARK: Shape recognition toggle
-
-    /// Tap to toggle. Active state uses the brand accent.
-    private var shapeRecognitionToggle: some View {
-        Button {
-            viewModel.shapeRecognitionEnabled.toggle()
-            HapticManager.shared.toolSwitched()
-        } label: {
-            // Active state: icon turns brand accent — no fill circle.
-            // Phase D removed the filled-pill treatment to match the
-            // editorial restraint elsewhere ("select" in the grid
-            // toolbar uses colour-only too).
-            Image(systemName: "rectangle.dashed.badge.record")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(viewModel.shapeRecognitionEnabled
-                                 ? theme.accent
-                                 : theme.recessiveSecondary)
-                .frame(width: buttonSize, height: buttonSize)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.ceciliasNotesPressable)
-        .accessibilityLabel(
-            viewModel.shapeRecognitionEnabled
-                ? "Shape Recognition: on"
-                : "Shape Recognition: off"
-        )
+        // (Shape Assist toggle removed 2026-07 — automatic stroke→shape
+        // conversion rewrote handwriting into geometry. The Shapes TOOL,
+        // for drawing deliberate rectangles/circles, is unaffected.)
     }
 
     /// Inset the pill from the active edge by safe-area + a small visual margin.

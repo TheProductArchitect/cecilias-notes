@@ -394,42 +394,7 @@ struct EditorView: View {
                     .zIndex(74)
                 }
 
-                // 5z. Shape recognition "Undo Shape" pill — floats at the
-                // top-centre when a stroke was just replaced. Tap to revert,
-                // auto-dismisses after 5s; the conversion is then committed
-                // (still undoable via standard ⌘Z). Visually a touch louder
-                // than the equivalent "Customise" pill — the user just lost
-                // a stroke they drew, so a calmer "Undo Shape" wouldn't
-                // catch the eye in time.
-                if viewModel.pendingShapeUndo != nil {
-                    VStack {
-                        Button {
-                            viewModel.undoShapeReplacement()
-                        } label: {
-                            HStack(spacing: CeciliasNotes.Spacing.xs) {
-                                Image(systemName: "arrow.uturn.backward")
-                                    .font(.ceciliasNotesSubhead)
-                                    .fontWeight(.semibold)
-                                Text("Undo Shape")
-                                    .font(.ceciliasNotesSubhead)
-                                    .fontWeight(.semibold)
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, CeciliasNotes.Spacing.md)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(theme.accent)
-                                    .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
-                            )
-                        }
-                        .buttonStyle(.ceciliasNotesPressable)
-                        .padding(.top, proxy.safeAreaInsets.top + 60)   // below toolbar
-                        Spacer()
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                    .zIndex(70)
-                }
+                // (5z. "Undo Shape" pill removed 2026-07 with Shape Assist.)
 
                 // 5a. Focus Mode exit pill (top-right). Semi-transparent so
                 // it doesn't compete with the writing. Also dismissable via
