@@ -352,9 +352,20 @@ final class EditorToolsUITests: XCTestCase {
         }
 
         step("verify editor survived") {
-            // App still alive and interactive.
-            check(app.toolbars["Toolbar"].exists,
-                  "Editor toolbar should survive the full tool cycle — toolbars['Toolbar'] not found", in: app)
+            // Do NOT query toolbars["Toolbar"] here. That AX element is
+            // the Customise sheet's keyboard accessory bar (present
+            // while the title field is focused at notebook open) — it
+            // is gone once the keyboard dismisses. The live editor
+            // chrome is custom SwiftUI and never appears as a UIToolbar.
+            // Match UndoRedoUITests: survival = palette still interactive.
+            check(undoButton.waitForExistence(timeout: 3),
+                  "Undo should still exist after the full tool cycle (editor alive)", in: app)
+            let penStillThere = app.buttons.matching(
+                NSPredicate(format: "label == %@ OR label == %@",
+                            "Pen", "Pen, selected")
+            ).firstMatch.exists
+            check(penStillThere,
+                  "Pen tool should still exist after the full tool cycle", in: app)
         }
     }
 }
