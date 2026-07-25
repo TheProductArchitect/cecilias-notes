@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+// `syncNow` flushes the SwiftData context so pending edits enter the
+// CloudKit export queue immediately — needs ModelContext's API.
+import SwiftData
 
 // MARK: - CloudSyncManager
 
@@ -173,6 +176,25 @@ final class CloudSyncManager: ObservableObject {
     }
 
     func syncNow() async {
+        // The CloudKit *database* sync (notebooks / pages / elements) is
+        // driven by NSPersistentCloudKitContainer. iOS schedules the
+        // network round-trip itself and exposes NO public "sync now"
+        // API, so a tap cannot force an instant push/pull. The most
+        // immediate thing we can do is flush any unsaved local edits so
+        // they enter the CloudKit export queue this instant rather than
+        // waiting for the next autosave — then the system exports as
+        // soon as it will. (Previously this method no-op'd entirely
+        // whenever the iCloud-Drive file-sync flag was off, so a tap did
+        // nothing for the database sync at all.)
+        let ctx = StorageService.shared.context
+        if ctx.hasChanges {
+            try? ctx.save()
+        }
+        markSyncCompleted()
+
+        // iCloud-Drive FILE sync (media / asset files) only runs when
+        // the user has turned it on. When it's off the flush above is
+        // the whole story.
         guard isEnabled else { return }
         syncStatus = .checking
         do {
